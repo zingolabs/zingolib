@@ -20,60 +20,63 @@ pub mod version;
 
 /// TODO: Add Doc Comment Here!
 pub fn build_clap_app() -> clap::ArgMatches {
-    clap::Command::new("Zingo CLI").version(version::VERSION)
-            .arg(Arg::new("nosync")
-                .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
-                .long("nosync")
-                .short('n')
-                .action(clap::ArgAction::SetTrue))
-            .arg(Arg::new("regtest")
-                .long("regtest")
-                .help("Regtest mode")
-                .action(clap::ArgAction::SetTrue) )
-            .arg(Arg::new("no-clean")
-                .long("no-clean")
-                .help("Don't clean regtest state before running. Regtest mode only")
-                .action(clap::ArgAction::SetTrue))
-            .arg(Arg::new("chain")
-                .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
-            .arg(Arg::new("seed")
-                .short('s')
-                .long("seed")
-                .value_name("SEED PHRASE")
-                .value_parser(parse_seed)
-                .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
-            .arg(Arg::new("viewkey")
-                .long("viewkey")
-                .value_name("UFVK")
-                .value_parser(parse_ufvk)
-                .help("Create a new wallet with the given encoded unified full viewing key. Will fail if wallet already exists"))
-            .arg(Arg::new("birthday")
-                .long("birthday")
-                .value_name("birthday")
-                .value_parser(clap::value_parser!(u32))
-                .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
-            .arg(Arg::new("server")
-                .long("server")
-                .value_name("server")
-                .help("Lightwalletd server to connect to.")
-                .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
-            .arg(Arg::new("data-dir")
-                .long("data-dir")
-                .value_name("data-dir")
-                .help("Absolute path to use as data directory"))
-            .arg(Arg::new("COMMAND")
-                .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
-                .required(false)
-                .index(1))
-            .arg(Arg::new("extra_args")
-                .help("Params to execute command with. Run the 'help' command to get usage help.")
-                .required(false)
-                .num_args(1..)
-                .index(2)
-                .action(clap::ArgAction::Append)
-        ).get_matches()
+    let cmd = clap::Command::new("Zingo CLI").version(version::VERSION)
+        .arg(Arg::new("nosync")
+            .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
+            .long("nosync")
+            .short('n')
+            .action(clap::ArgAction::SetTrue))
+        .arg(Arg::new("regtest")
+            .long("regtest")
+            .help("Regtest mode")
+            .action(clap::ArgAction::SetTrue) )
+        .arg(Arg::new("no-clean")
+            .long("no-clean")
+            .help("Don't clean regtest state before running. Regtest mode only")
+            .action(clap::ArgAction::SetTrue))
+        .arg(Arg::new("chain")
+            .long("chain").short('c')
+            .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+        .arg(Arg::new("seed")
+            .short('s')
+            .long("seed")
+            .value_name("SEED PHRASE")
+            .value_parser(parse_seed)
+            .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists"))
+        .arg(Arg::new("viewkey")
+            .long("viewkey")
+            .value_name("UFVK")
+            .value_parser(parse_ufvk)
+            .help("Create a new wallet with the given encoded unified full viewing key. Will fail if wallet already exists"))
+        .arg(Arg::new("birthday")
+            .long("birthday")
+            .value_name("birthday")
+            .value_parser(clap::value_parser!(u32))
+            .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
+        .arg(Arg::new("server")
+            .long("server")
+            .value_name("server")
+            .help("Lightwalletd server to connect to.")
+            .value_parser(parse_uri)
+            .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+        .arg(Arg::new("data-dir")
+            .long("data-dir")
+            .value_name("data-dir")
+            .help("Absolute path to use as data directory"))
+        .arg(Arg::new("COMMAND")
+            .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
+            .required(false)
+            .index(1))
+        .arg(Arg::new("extra_args")
+            .help("Params to execute command with. Run the 'help' command to get usage help.")
+            .required(false)
+            .num_args(1..)
+            .index(2)
+            .action(clap::ArgAction::Append)
+    );
+
+    add_if_ledger(cmd)
+        .get_matches()
 }
 
 /// Custom function to parse a string into an http::Uri
@@ -280,6 +283,8 @@ pub struct ConfigTemplate {
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
+    #[cfg(feature = "ledger-support")]
+    ledger: bool,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -354,6 +359,10 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         };
 
         let clean_regtest_data = !matches.get_flag("no-clean");
+
+        #[cfg(feature = "ledger-support")]
+        let ledger = matches.get_flag("ledger");
+
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
@@ -412,6 +421,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             regtest_manager,
             child_process_handler,
             chaintype,
+            #[cfg(feature = "ledger-support")]
+            ledger,
         })
     }
 }
@@ -439,6 +450,8 @@ pub fn startup(
         Some(data_dir),
         filled_template.chaintype,
         true,
+        #[cfg(feature = "ledger-support")]
+        filled_template.ledger,
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
@@ -550,4 +563,19 @@ pub fn run_cli() {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
+}
+
+
+fn add_if_ledger(cmd: clap::Command) -> clap::Command {
+
+    #[cfg(feature = "ledger-support")]
+    return cmd
+    .arg(Arg::new("ledger")
+                .long("ledger")
+                .value_name("ledger")
+                .help("Create a new wallet by connecting to a ledger")
+                .action(clap::ArgAction::SetTrue));
+
+    #[cfg(not(feature = "ledger-support"))]
+    return cmd;
 }

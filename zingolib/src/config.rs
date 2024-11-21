@@ -69,6 +69,8 @@ pub fn load_clientconfig(
     data_dir: Option<PathBuf>,
     chain: ChainType,
     monitor_mempool: bool,
+    #[cfg(feature = "ledger-support")]
+    ledger: bool,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -104,7 +106,7 @@ pub fn load_clientconfig(
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         #[cfg(feature = "ledger-support")]
-        use_ledger: false,
+        use_ledger: ledger,
     };
 
     Ok(config)
@@ -153,6 +155,9 @@ pub struct ZingoConfigBuilder {
     pub wallet_name: Option<PathBuf>,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: Option<PathBuf>,
+    /// set to true if you will use a ledger hw wallet
+    #[cfg(feature = "ledger-support")]
+    pub use_ledger: bool,
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
@@ -219,6 +224,13 @@ impl ZingoConfigBuilder {
         self
     }
 
+    #[cfg(feature = "ledger-support")]
+    /// set to true to use a ledger hardware wallet
+    pub fn set_use_ledger(&mut self, ledger: bool) -> &mut Self {
+        self.use_ledger = ledger;
+        self
+    }
+
     /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
         let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
@@ -246,6 +258,8 @@ impl Default for ZingoConfigBuilder {
             wallet_name: None,
             logfile_name: None,
             chain: ChainType::Mainnet,
+            #[cfg(feature = "ledger-support")]
+            use_ledger: false,
         }
     }
 }

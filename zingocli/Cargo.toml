@@ -15,3 +15,6 @@ rustyline = { workspace = true }
 shellwords = { workspace = true }
 
 rustls.workspace = true
+
+[features]
+ledger-support = []
