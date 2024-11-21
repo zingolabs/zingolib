@@ -176,6 +176,70 @@ mod fast {
             && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
     }
 
+    /// This tests checks that messages_containing returns an empty vector when empty memos are included.
+    #[tokio::test]
+    async fn filter_empty_messages() {
+        let mut environment = LibtonodeEnvironment::setup().await;
+
+        let faucet = environment.create_faucet().await;
+        let recipient = environment.create_client().await;
+
+        environment.bump_chain().await;
+        faucet.do_sync(false).await.unwrap();
+
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        recipient.do_sync(false).await.unwrap();
+
+        let no_messages = &recipient.messages_containing(None).await;
+
+        assert_eq!(no_messages.0.len(), 0);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Hello"),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        recipient.do_sync(false).await.unwrap();
+
+        let single_message = &recipient.messages_containing(None).await;
+
+        assert_eq!(single_message.0.len(), 1);
+    }
+
     /// Test sending and receiving messages between three parties.
     ///
     /// This test case consists of the following sequence of events:
