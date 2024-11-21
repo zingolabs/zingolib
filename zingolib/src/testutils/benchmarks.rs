@@ -5,6 +5,7 @@ use zcash_primitives::consensus::BlockHeight;
 
 /// all relevant data for a sync.
 /// this struct will convert to json to be saved
+/// todo: distinguish between raw json standard and zingo specific template, add Options
 pub struct SyncBenchmark {
     network_info: NetworkInfo,
     system_info: (),
@@ -21,10 +22,22 @@ pub struct SyncBenchmark {
 }
 
 /// the connected server, indexer, and chain
-pub struct NetworkInfo {}
+/// also, how fast is the network
+pub struct NetworkInfo {
+    url: Url,
+    chain_type: ChainType,
+    bandwidth: (),
+    latency: (),
+}
 /// the hardware and underlying system
 pub struct SystemInfo {}
 /// the account (wallet) being synced
-pub struct AccountInfo {}
+pub struct AccountInfo {
+    wallet_id: NetworkSeedVersion,
+    hdwallet_accounts: Option<u32>,
+}
 /// the software being used to sync
-pub struct ClientInfo {}
+pub struct ClientInfo {
+    client: String,
+    version: String,
+}
