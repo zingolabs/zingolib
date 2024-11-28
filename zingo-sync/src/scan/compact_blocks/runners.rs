@@ -27,7 +27,7 @@ use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
 use crate::primitives::OutputId;
 
-type TaggedSaplingBatch = Batch<
+type TaggedSaplingBatch = TrialDecryptBatch<
     SaplingDomain,
     sapling_crypto::note_encryption::CompactOutputDescription,
     CompactDecryptor,
@@ -40,7 +40,7 @@ type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
 >;
 
 type TaggedOrchardBatch =
-    Batch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
+    TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
 type TaggedOrchardBatchRunner<Tasks> =
     BatchRunner<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor, Tasks>;
 
@@ -269,7 +269,7 @@ impl<Item: Task> Tasks<Item> for () {
 }
 
 /// A batch of outputs to trial decrypt.
-pub(crate) struct Batch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
+pub(crate) struct TrialDecryptBatch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     tags: Vec<KeyId>,
     ivks: Vec<D::IncomingViewingKey>,
     /// We currently store outputs and repliers as parallel vectors, because
@@ -286,7 +286,7 @@ pub(crate) struct Batch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     )>,
 }
 
-impl<D, Output, Dec> DynamicUsage for Batch<D, Output, Dec>
+impl<D, Output, Dec> DynamicUsage for TrialDecryptBatch<D, Output, Dec>
 where
     D: BatchDomain + DynamicUsage,
     D::IncomingViewingKey: DynamicUsage,
@@ -315,7 +315,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Batch<D, Output, Dec>
+impl<D, Output, Dec> TrialDecryptBatch<D, Output, Dec>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
@@ -337,7 +337,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Task for Batch<D, Output, Dec>
+impl<D, Output, Dec> Task for TrialDecryptBatch<D, Output, Dec>
 where
     D: BatchDomain + Send + 'static,
     D::IncomingViewingKey: Send,
@@ -378,7 +378,7 @@ where
     }
 }
 
-impl<D, Output, Dec> Batch<D, Output, Dec>
+impl<D, Output, Dec> TrialDecryptBatch<D, Output, Dec>
 where
     D: BatchDomain,
     Output: Clone,
@@ -425,11 +425,11 @@ pub(crate) struct BatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
 {
     batch_size_threshold: usize,
     // The batch currently being accumulated.
-    acc: Batch<D, Output, Dec>,
+    acc: TrialDecryptBatch<D, Output, Dec>,
     // The running batches.
     running_tasks: T,
     // Receivers for the results of the running batches.
@@ -442,7 +442,7 @@ where
     D::IncomingViewingKey: DynamicUsage,
     Output: DynamicUsage,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>> + DynamicUsage,
+    T: Tasks<TrialDecryptBatch<D, Output, Dec>> + DynamicUsage,
 {
     fn dynamic_usage(&self) -> usize {
         self.acc.dynamic_usage()
@@ -472,7 +472,7 @@ impl<D, Output, Dec, T> BatchRunner<D, Output, Dec, T>
 where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
 {
     /// Constructs a new batch runner for the given incoming viewing keys.
     pub(crate) fn new(
@@ -482,7 +482,7 @@ where
         let (tags, ivks) = ivks.unzip();
         Self {
             batch_size_threshold,
-            acc: Batch::new(tags, ivks),
+            acc: TrialDecryptBatch::new(tags, ivks),
             running_tasks: T::new(),
             pending_results: HashMap::default(),
         }
@@ -498,7 +498,7 @@ where
     D::Recipient: Send,
     Output: Clone + Send + 'static,
     Dec: Decryptor<D, Output>,
-    T: Tasks<Batch<D, Output, Dec>>,
+    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
 {
     /// Batches the given outputs for trial decryption.
     ///
@@ -531,7 +531,7 @@ where
     /// Subsequent calls to `Self::add_outputs` will be accumulated into a new batch.
     pub(crate) fn flush(&mut self) {
         if !self.acc.is_empty() {
-            let mut batch = Batch::new(self.acc.tags.clone(), self.acc.ivks.clone());
+            let mut batch = TrialDecryptBatch::new(self.acc.tags.clone(), self.acc.ivks.clone());
             mem::swap(&mut batch, &mut self.acc);
             self.running_tasks.run_task(batch);
         }
