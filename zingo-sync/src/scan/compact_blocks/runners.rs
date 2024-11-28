@@ -67,14 +67,16 @@ where
                 scanning_keys
                     .sapling()
                     .iter()
-                    .map(|(id, key)| (*id, key.prepare())),
+                    .map(|(id, key)| (*id, key.prepare()))
+                    .unzip(),
             ),
             orchard: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
                     .orchard()
                     .iter()
-                    .map(|(id, key)| (*id, key.prepare())),
+                    .map(|(id, key)| (*id, key.prepare()))
+                    .unzip(),
             ),
         }
     }
@@ -317,13 +319,41 @@ where
     }
 }
 
-impl<D, Output, Dec> TrialDecryptBatch<D, Output, Dec>
+pub(crate) trait Batch: Task {
+    /// The data needed to create the batch
+    type Initial;
+
+    /// The items to be processed, in the batch
+    type Input;
+
+    /// The result of processing the items
+    type Result;
+
+    fn new(init: Self::Initial) -> Self;
+
+    fn inputs(&self) -> &Vec<Self::Input>;
+
+    fn is_empty(&self) -> bool {
+        self.inputs().is_empty()
+    }
+}
+
+impl<D, Output, Dec> Batch for TrialDecryptBatch<D, Output, Dec>
 where
-    D: BatchDomain,
-    Dec: Decryptor<D, Output>,
+    D: BatchDomain + Send + 'static,
+    D::IncomingViewingKey: Send,
+    D::Memo: Send,
+    D::Note: Send,
+    D::Recipient: Send,
+    Output: Send + 'static,
+    Dec: Decryptor<D, Output> + 'static,
+    Dec::Memo: Send,
 {
-    /// Constructs a new batch.
-    fn new(tags: Vec<KeyId>, ivks: Vec<D::IncomingViewingKey>) -> Self {
+    type Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>);
+    type Input = (D, Output);
+    type Result = DecryptedOutput<D, Dec::Memo>;
+
+    fn new((tags, ivks): (Vec<KeyId>, Vec<D::IncomingViewingKey>)) -> Self {
         assert_eq!(tags.len(), ivks.len());
         Self {
             tags,
@@ -333,9 +363,8 @@ where
         }
     }
 
-    /// Returns `true` if the batch is currently empty.
-    fn is_empty(&self) -> bool {
-        self.outputs.is_empty()
+    fn inputs(&self) -> &Vec<Self::Input> {
+        &self.outputs
     }
 }
 
@@ -428,6 +457,7 @@ where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
     T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
+    TrialDecryptBatch<D, Output, Dec>: Batch,
 {
     batch_size_threshold: usize,
     // The batch currently being accumulated.
@@ -445,6 +475,7 @@ where
     Output: DynamicUsage,
     Dec: Decryptor<D, Output>,
     T: Tasks<TrialDecryptBatch<D, Output, Dec>> + DynamicUsage,
+    TrialDecryptBatch<D, Output, Dec>: Batch,
 {
     fn dynamic_usage(&self) -> usize {
         self.acc.dynamic_usage()
@@ -475,16 +506,16 @@ where
     D: BatchDomain,
     Dec: Decryptor<D, Output>,
     T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
+    TrialDecryptBatch<D, Output, Dec>: Batch,
 {
     /// Constructs a new batch runner for the given incoming viewing keys.
     pub(crate) fn new(
         batch_size_threshold: usize,
-        ivks: impl Iterator<Item = (KeyId, D::IncomingViewingKey)>,
+        ivks: <TrialDecryptBatch<D, Output, Dec> as Batch>::Initial,
     ) -> Self {
-        let (tags, ivks) = ivks.unzip();
         Self {
             batch_size_threshold,
-            acc: TrialDecryptBatch::new(tags, ivks),
+            acc: TrialDecryptBatch::new(ivks),
             running_tasks: T::new(),
             pending_results: HashMap::default(),
         }
@@ -501,6 +532,7 @@ where
     Output: Clone + Send + 'static,
     Dec: Decryptor<D, Output>,
     T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
+    TrialDecryptBatch<D, Output, Dec>: Batch<Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>)>,
 {
     /// Batches the given outputs for trial decryption.
     ///
@@ -533,7 +565,7 @@ where
     /// Subsequent calls to `Self::add_outputs` will be accumulated into a new batch.
     pub(crate) fn flush(&mut self) {
         if !self.acc.is_empty() {
-            let mut batch = TrialDecryptBatch::new(self.acc.tags.clone(), self.acc.ivks.clone());
+            let mut batch = TrialDecryptBatch::new((self.acc.tags.clone(), self.acc.ivks.clone()));
             mem::swap(&mut batch, &mut self.acc);
             self.running_tasks.run_task(batch);
         }
