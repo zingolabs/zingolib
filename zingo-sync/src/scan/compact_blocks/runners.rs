@@ -207,34 +207,8 @@ impl<D: BatchDomain, Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>> Decryptor<D, 
     }
 }
 
-/// A value correlated with an output index.
-struct OutputIndex<V> {
-    /// The index of the output within the corresponding shielded bundle.
-    output_index: usize,
-    /// The value for the output index.
-    value: V,
-}
-
-type OutputItem<D, M> = OutputIndex<DecryptedOutput<D, M>>;
-
-/// The sender for the result of batch scanning a specific transaction output.
-struct OutputReplier<D: Domain, M>(OutputIndex<channel::Sender<OutputItem<D, M>>>);
-
-impl<D: Domain, M> DynamicUsage for OutputReplier<D, M> {
-    #[inline(always)]
-    fn dynamic_usage(&self) -> usize {
-        // We count the memory usage of items in the channel on the receiver side.
-        0
-    }
-
-    #[inline(always)]
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        (0, Some(0))
-    }
-}
-
 /// The receiver for the result of batch scanning a specific transaction.
-struct BatchReceiver<D: Domain, M>(channel::Receiver<OutputItem<D, M>>);
+struct BatchReceiver<D: Domain, M>(channel::Receiver<(usize, DecryptedOutput<D, M>)>);
 
 impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
     fn dynamic_usage(&self) -> usize {
@@ -253,7 +227,7 @@ impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
         //   - Space for an item.
         //   - The state of the slot, stored as an AtomicUsize.
         const PTR_SIZE: usize = std::mem::size_of::<usize>();
-        let item_size = std::mem::size_of::<OutputItem<D, M>>();
+        let item_size = std::mem::size_of::<(usize, DecryptedOutput<D, M>)>();
         const ATOMIC_USIZE_SIZE: usize = std::mem::size_of::<AtomicUsize>();
         let block_size = PTR_SIZE + ITEMS_PER_BLOCK * (item_size + ATOMIC_USIZE_SIZE);
 
@@ -306,7 +280,10 @@ pub(crate) struct Batch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     /// all be part of the same struct, which would also track the output index
     /// (that is captured in the outer `OutputIndex` of each `OutputReplier`).
     outputs: Vec<(D, Output)>,
-    repliers: Vec<OutputReplier<D, Dec::Memo>>,
+    repliers: Vec<(
+        usize,
+        channel::Sender<(usize, DecryptedOutput<D, Dec::Memo>)>,
+    )>,
 }
 
 impl<D, Output, Dec> DynamicUsage for Batch<D, Output, Dec>
@@ -317,25 +294,23 @@ where
     Dec: Decryptor<D, Output>,
 {
     fn dynamic_usage(&self) -> usize {
-        self.tags.dynamic_usage()
-            + self.ivks.dynamic_usage()
-            + self.outputs.dynamic_usage()
-            + self.repliers.dynamic_usage()
+        self.tags.dynamic_usage() + self.ivks.dynamic_usage() + self.outputs.dynamic_usage()
     }
 
     fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
         let (tags_lower, tags_upper) = self.tags.dynamic_usage_bounds();
         let (ivks_lower, ivks_upper) = self.ivks.dynamic_usage_bounds();
         let (outputs_lower, outputs_upper) = self.outputs.dynamic_usage_bounds();
-        let (repliers_lower, repliers_upper) = self.repliers.dynamic_usage_bounds();
 
         (
-            tags_lower + ivks_lower + outputs_lower + repliers_lower,
-            tags_upper
-                .zip(ivks_upper)
-                .zip(outputs_upper)
-                .zip(repliers_upper)
-                .map(|(((a, b), c), d)| a + b + c + d),
+            tags_lower + ivks_lower + outputs_lower,
+            // The following is more concise, but harder to read
+            // [tags_upper, ivks_upper, outputs_upper]
+            //    .into_iter().try_fold(0, |a, b| Some(a, b?))
+            match (tags_upper, ivks_upper, outputs_upper) {
+                (Some(a), Some(b), Some(c)) => Some(a + b + c),
+                _ => None,
+            },
         )
     }
 }
@@ -386,18 +361,15 @@ where
         assert_eq!(outputs.len(), repliers.len());
 
         let decryption_results = Dec::batch_decrypt(&tags, &ivks, &outputs);
-        for (decryption_result, OutputReplier(replier)) in
+        for (decryption_result, (index, sender)) in
             decryption_results.into_iter().zip(repliers.into_iter())
         {
             // If `decryption_result` is `None` then we will just drop `replier`,
             // indicating to the parent `BatchRunner` that this output was not for us.
             if let Some(value) = decryption_result {
-                let result = OutputIndex {
-                    output_index: replier.output_index,
-                    value,
-                };
+                let result = (index, value);
 
-                if replier.value.send(result).is_err() {
+                if sender.send(result).is_err() {
                     tracing::debug!("BatchRunner was dropped before batch finished");
                     break;
                 }
@@ -419,7 +391,7 @@ where
         &mut self,
         domain: impl Fn(&Output) -> D,
         outputs: &[Output],
-        replier: channel::Sender<OutputItem<D, Dec::Memo>>,
+        replier: channel::Sender<(usize, DecryptedOutput<D, Dec::Memo>)>,
     ) {
         self.outputs.extend(
             outputs
@@ -427,12 +399,8 @@ where
                 .cloned()
                 .map(|output| (domain(&output), output)),
         );
-        self.repliers.extend((0..outputs.len()).map(|output_index| {
-            OutputReplier(OutputIndex {
-                output_index,
-                value: replier.clone(),
-            })
-        }));
+        self.repliers
+            .extend((0..outputs.len()).map(|output_index| (output_index, replier.clone())));
     }
 }
 
@@ -591,14 +559,7 @@ where
                 // the iterator therefore corresponds to complete knowledge of the outputs
                 // of this transaction that could be decrypted.
                 rx.into_iter()
-                    .map(
-                        |OutputIndex {
-                             output_index,
-                             value,
-                         }| {
-                            (OutputId::from_parts(txid, output_index), value)
-                        },
-                    )
+                    .map(|(output_index, value)| (OutputId::from_parts(txid, output_index), value))
                     .collect()
             })
             .unwrap_or_default()
