@@ -208,6 +208,8 @@ impl<D: BatchDomain, Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>> Decryptor<D, 
 }
 
 /// The receiver for the result of batch scanning a specific transaction.
+/// This wrapper type is only needed to allow a dynamic usage impl
+/// that would otherwise violate the orphan rule
 struct BatchReceiver<D: Domain, M>(channel::Receiver<(usize, DecryptedOutput<D, M>)>);
 
 impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
