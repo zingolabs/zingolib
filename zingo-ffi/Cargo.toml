@@ -3,7 +3,7 @@ members = ["lib", "android", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "1.10.2", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, branch = "dev", features = [
     "test-elevation",
 ] }
 uniffi = "0.27"
@@ -16,7 +16,3 @@ debug = false
 [profile.test]
 opt-level = 3
 debug = false
-
-# this is needed to build for IOS simulator
-#[patch.crates-io]
-#sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "81a777464ee1553c47c61ee9e3a43fda7a3135f1"}
