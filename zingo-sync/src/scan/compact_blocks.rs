@@ -60,10 +60,10 @@ where
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners
                 .sapling
-                .collect_results(block.hash(), transaction.txid());
+                .collect_results(&runners::ResultKey(block.hash(), transaction.txid()));
             let incoming_orchard_outputs = runners
                 .orchard
-                .collect_results(block.hash(), transaction.txid());
+                .collect_results(&runners::ResultKey(block.hash(), transaction.txid()));
 
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change

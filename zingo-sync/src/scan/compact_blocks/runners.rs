@@ -1,9 +1,9 @@
 //! Temporary copy of LRZ batch runners while we wait for their exposition and update LRZ
 
-use std::collections::HashMap;
 use std::fmt;
 use std::mem;
 use std::sync::atomic::AtomicUsize;
+use std::{collections::HashMap, hash::Hash};
 
 use crossbeam_channel as channel;
 
@@ -33,16 +33,22 @@ type TaggedSaplingBatch = TrialDecryptBatch<
     CompactDecryptor,
 >;
 type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
+    TrialDecryptBatch<
+        SaplingDomain,
+        sapling_crypto::note_encryption::CompactOutputDescription,
+        CompactDecryptor,
+    >,
     SaplingDomain,
-    sapling_crypto::note_encryption::CompactOutputDescription,
-    CompactDecryptor,
     Tasks,
 >;
 
 type TaggedOrchardBatch =
     TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
-type TaggedOrchardBatchRunner<Tasks> =
-    BatchRunner<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor, Tasks>;
+type TaggedOrchardBatchRunner<Tasks> = BatchRunner<
+    TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>,
+    OrchardDomain,
+    Tasks,
+>;
 
 pub(crate) trait SaplingTasks: Tasks<TaggedSaplingBatch> {}
 impl<T: Tasks<TaggedSaplingBatch>> SaplingTasks for T {}
@@ -98,42 +104,42 @@ where
         for tx in block.vtx.into_iter() {
             let txid = tx.txid();
 
-            self.sapling.add_outputs(
-                block_hash,
-                txid,
-                |_| SaplingDomain::new(zip212_enforcement),
-                &tx.outputs
+            self.sapling.add_widgets(
+                ResultKey(block_hash, txid),
+                tx.outputs
                     .iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|_| {
-                            ScanError::EncodingInvalid {
+                        CompactOutputDescription::try_from(output)
+                            .map_err(|_| ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
                                 pool_type: ShieldedProtocol::Sapling,
                                 index: i,
-                            }
-                        })
+                            })
+                            .map(|output| (SaplingDomain::new(zip212_enforcement), output))
                     })
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter(),
             );
 
-            self.orchard.add_outputs(
-                block_hash,
-                txid,
-                OrchardDomain::for_compact_action,
-                &tx.actions
+            self.orchard.add_widgets(
+                ResultKey(block_hash, txid),
+                tx.actions
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|_| ScanError::EncodingInvalid {
-                            at_height: block_height,
-                            txid,
-                            pool_type: ShieldedProtocol::Orchard,
-                            index: i,
-                        })
+                        CompactAction::try_from(action)
+                            .map_err(|_| ScanError::EncodingInvalid {
+                                at_height: block_height,
+                                txid,
+                                pool_type: ShieldedProtocol::Orchard,
+                                index: i,
+                            })
+                            .map(|action| (OrchardDomain::for_compact_action(&action), action))
                     })
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter(),
             );
         }
 
@@ -209,12 +215,12 @@ impl<D: BatchDomain, Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>> Decryptor<D, 
     }
 }
 
-/// The receiver for the result of batch scanning a specific transaction.
+/// The receiver for the result of batch scanning.
 /// This wrapper type is only needed to allow a dynamic usage impl
 /// that would otherwise violate the orphan rule
-struct BatchReceiver<D: Domain, M>(channel::Receiver<(usize, DecryptedOutput<D, M>)>);
+struct BatchReceiver<T>(channel::Receiver<(usize, T)>);
 
-impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
+impl<T> DynamicUsage for BatchReceiver<T> {
     fn dynamic_usage(&self) -> usize {
         // We count the memory usage of items in the channel on the receiver side.
         let num_items = self.0.len();
@@ -231,7 +237,7 @@ impl<D: Domain, M> DynamicUsage for BatchReceiver<D, M> {
         //   - Space for an item.
         //   - The state of the slot, stored as an AtomicUsize.
         const PTR_SIZE: usize = std::mem::size_of::<usize>();
-        let item_size = std::mem::size_of::<(usize, DecryptedOutput<D, M>)>();
+        let item_size = std::mem::size_of::<(usize, T)>();
         const ATOMIC_USIZE_SIZE: usize = std::mem::size_of::<AtomicUsize>();
         let block_size = PTR_SIZE + ITEMS_PER_BLOCK * (item_size + ATOMIC_USIZE_SIZE);
 
@@ -319,7 +325,10 @@ where
     }
 }
 
-pub(crate) trait Batch: Task {
+pub(crate) trait Batch<D>: Task + Sized
+where
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
+{
     /// The data needed to create the batch
     type Initial;
 
@@ -327,21 +336,48 @@ pub(crate) trait Batch: Task {
     type Input;
 
     /// The result of processing the items
-    type Result;
+    type ResultVal: Send;
+
+    /// As we may return more than one result, we want a unique
+    /// identifier for each
+    type ResultKey: Hash + Eq;
+
+    /// The key used to identify a batch
+    type BatchKey: Hash + Eq + DynamicUsage;
 
     fn new(init: Self::Initial) -> Self;
 
     fn inputs(&self) -> &Vec<Self::Input>;
+    fn inputs_mut(&mut self) -> &mut Vec<Self::Input>;
+
+    fn repliers_mut(&mut self) -> &mut Vec<(usize, channel::Sender<(usize, Self::ResultVal)>)>;
 
     fn is_empty(&self) -> bool {
         self.inputs().is_empty()
     }
+
+    /// Adds the given inputs to this batch.
+    ///
+    /// `replier` will be called with the result of every output.
+    fn add_widgets(
+        &mut self,
+        widgets: impl ExactSizeIterator<Item = Self::Input>,
+        replier: channel::Sender<(usize, Self::ResultVal)>,
+    ) {
+        let widget_len = widgets.len();
+        self.inputs_mut().extend(widgets);
+        self.repliers_mut()
+            .extend((0..widget_len).map(|output_index| (output_index, replier.clone())));
+    }
+    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<Self, D, T>) -> Self::Initial;
+
+    fn reskey_from_batchkeyval(batchkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey;
 }
 
-impl<D, Output, Dec> Batch for TrialDecryptBatch<D, Output, Dec>
+impl<D, Output, Dec> Batch<D> for TrialDecryptBatch<D, Output, Dec>
 where
     D: BatchDomain + Send + 'static,
-    D::IncomingViewingKey: Send,
+    D::IncomingViewingKey: Send + Clone,
     D::Memo: Send,
     D::Note: Send,
     D::Recipient: Send,
@@ -351,7 +387,9 @@ where
 {
     type Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>);
     type Input = (D, Output);
-    type Result = DecryptedOutput<D, Dec::Memo>;
+    type ResultVal = DecryptedOutput<D, Dec::Memo>;
+    type ResultKey = OutputId;
+    type BatchKey = ResultKey;
 
     fn new((tags, ivks): (Vec<KeyId>, Vec<D::IncomingViewingKey>)) -> Self {
         assert_eq!(tags.len(), ivks.len());
@@ -365,6 +403,22 @@ where
 
     fn inputs(&self) -> &Vec<Self::Input> {
         &self.outputs
+    }
+
+    fn inputs_mut(&mut self) -> &mut Vec<Self::Input> {
+        &mut self.outputs
+    }
+
+    fn repliers_mut(&mut self) -> &mut Vec<(usize, channel::Sender<(usize, Self::ResultVal)>)> {
+        &mut self.repliers
+    }
+
+    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<Self, D, T>) -> Self::Initial {
+        (runner.acc.tags.clone(), runner.acc.ivks.clone())
+    }
+
+    fn reskey_from_batchkeyval(batkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey {
+        Self::ResultKey::from_parts(batkey.1, reply_index)
     }
 }
 
@@ -409,35 +463,9 @@ where
     }
 }
 
-impl<D, Output, Dec> TrialDecryptBatch<D, Output, Dec>
-where
-    D: BatchDomain,
-    Output: Clone,
-    Dec: Decryptor<D, Output>,
-{
-    /// Adds the given outputs to this batch.
-    ///
-    /// `replier` will be called with the result of every output.
-    fn add_outputs(
-        &mut self,
-        domain: impl Fn(&Output) -> D,
-        outputs: &[Output],
-        replier: channel::Sender<(usize, DecryptedOutput<D, Dec::Memo>)>,
-    ) {
-        self.outputs.extend(
-            outputs
-                .iter()
-                .cloned()
-                .map(|output| (domain(&output), output)),
-        );
-        self.repliers
-            .extend((0..outputs.len()).map(|output_index| (output_index, replier.clone())));
-    }
-}
-
 /// A `HashMap` key for looking up the result of a batch scanning a specific transaction.
 #[derive(PartialEq, Eq, Hash)]
-struct ResultKey(BlockHash, TxId);
+pub(crate) struct ResultKey(pub BlockHash, pub TxId);
 
 impl DynamicUsage for ResultKey {
     #[inline(always)]
@@ -452,30 +480,29 @@ impl DynamicUsage for ResultKey {
 }
 
 /// Logic to run batches of trial decryptions on the global threadpool.
-pub(crate) struct BatchRunner<D, Output, Dec, T>
+pub(crate) struct BatchRunner<B, D, T>
 where
-    D: BatchDomain,
-    Dec: Decryptor<D, Output>,
-    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
-    TrialDecryptBatch<D, Output, Dec>: Batch,
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
+    B: Batch<D>,
+    T: Tasks<B>,
 {
     batch_size_threshold: usize,
     // The batch currently being accumulated.
-    acc: TrialDecryptBatch<D, Output, Dec>,
+    acc: B,
     // The running batches.
     running_tasks: T,
     // Receivers for the results of the running batches.
-    pending_results: HashMap<ResultKey, BatchReceiver<D, Dec::Memo>>,
+    pending_results: HashMap<B::BatchKey, BatchReceiver<B::ResultVal>>,
 }
 
-impl<D, Output, Dec, T> DynamicUsage for BatchRunner<D, Output, Dec, T>
+impl<D, Output, Dec, T> DynamicUsage for BatchRunner<TrialDecryptBatch<D, Output, Dec>, D, T>
 where
-    D: BatchDomain + DynamicUsage,
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send> + DynamicUsage,
     D::IncomingViewingKey: DynamicUsage,
     Output: DynamicUsage,
     Dec: Decryptor<D, Output>,
     T: Tasks<TrialDecryptBatch<D, Output, Dec>> + DynamicUsage,
-    TrialDecryptBatch<D, Output, Dec>: Batch,
+    TrialDecryptBatch<D, Output, Dec>: Batch<D>,
 {
     fn dynamic_usage(&self) -> usize {
         self.acc.dynamic_usage()
@@ -501,40 +528,34 @@ where
     }
 }
 
-impl<D, Output, Dec, T> BatchRunner<D, Output, Dec, T>
+impl<B, D, T> BatchRunner<B, D, T>
 where
-    D: BatchDomain,
-    Dec: Decryptor<D, Output>,
-    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
-    TrialDecryptBatch<D, Output, Dec>: Batch,
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
+    T: Tasks<B>,
+    B: Batch<D>,
 {
-    /// Constructs a new batch runner for the given incoming viewing keys.
-    pub(crate) fn new(
-        batch_size_threshold: usize,
-        ivks: <TrialDecryptBatch<D, Output, Dec> as Batch>::Initial,
-    ) -> Self {
+    /// Constructs a new batch runner
+    pub(crate) fn new(batch_size_threshold: usize, init: B::Initial) -> Self {
         Self {
             batch_size_threshold,
-            acc: TrialDecryptBatch::new(ivks),
+            acc: B::new(init),
             running_tasks: T::new(),
             pending_results: HashMap::default(),
         }
     }
 }
 
-impl<D, Output, Dec, T> BatchRunner<D, Output, Dec, T>
+impl<B, D, T> BatchRunner<B, D, T>
 where
-    D: BatchDomain + Send + 'static,
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send> + Send + 'static,
     D::IncomingViewingKey: Clone + Send,
     D::Memo: Send,
     D::Note: Send,
     D::Recipient: Send,
-    Output: Clone + Send + 'static,
-    Dec: Decryptor<D, Output>,
-    T: Tasks<TrialDecryptBatch<D, Output, Dec>>,
-    TrialDecryptBatch<D, Output, Dec>: Batch<Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>)>,
+    T: Tasks<B>,
+    B: Batch<D, Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>)>,
 {
-    /// Batches the given outputs for trial decryption.
+    /// Batches the given inputs.
     ///
     /// `block_tag` is the hash of the block that triggered this txid being added to the
     /// batch, or the all-zeros hash to indicate that no block triggered it (i.e. it was a
@@ -543,19 +564,16 @@ where
     /// If after adding the given outputs, the accumulated batch size is at least the size
     /// threshold that was set via `Self::new`, `Self::flush` is called. Subsequent calls
     /// to `Self::add_outputs` will be accumulated into a new batch.
-    pub(crate) fn add_outputs(
+    pub(crate) fn add_widgets(
         &mut self,
-        block_tag: BlockHash,
-        txid: TxId,
-        domain: impl Fn(&Output) -> D,
-        outputs: &[Output],
+        key: B::BatchKey,
+        inputs: impl ExactSizeIterator<Item = B::Input>,
     ) {
         let (tx, rx) = channel::unbounded();
-        self.acc.add_outputs(domain, outputs, tx);
-        self.pending_results
-            .insert(ResultKey(block_tag, txid), BatchReceiver(rx));
+        self.acc.add_widgets(inputs, tx);
+        self.pending_results.insert(key, BatchReceiver(rx));
 
-        if self.acc.outputs.len() >= self.batch_size_threshold {
+        if self.acc.inputs().len() >= self.batch_size_threshold {
             self.flush();
         }
     }
@@ -565,7 +583,7 @@ where
     /// Subsequent calls to `Self::add_outputs` will be accumulated into a new batch.
     pub(crate) fn flush(&mut self) {
         if !self.acc.is_empty() {
-            let mut batch = TrialDecryptBatch::new((self.acc.tags.clone(), self.acc.ivks.clone()));
+            let mut batch = B::new(B::init_from_runner(self));
             mem::swap(&mut batch, &mut self.acc);
             self.running_tasks.run_task(batch);
         }
@@ -578,11 +596,10 @@ where
     /// mempool change).
     pub(crate) fn collect_results(
         &mut self,
-        block_tag: BlockHash,
-        txid: TxId,
-    ) -> HashMap<OutputId, DecryptedOutput<D, Dec::Memo>> {
+        key: &B::BatchKey,
+    ) -> HashMap<B::ResultKey, B::ResultVal> {
         self.pending_results
-            .remove(&ResultKey(block_tag, txid))
+            .remove(key)
             // We won't have a pending result if the transaction didn't have outputs of
             // this runner's kind.
             .map(|BatchReceiver(rx)| {
@@ -593,7 +610,9 @@ where
                 // the iterator therefore corresponds to complete knowledge of the outputs
                 // of this transaction that could be decrypted.
                 rx.into_iter()
-                    .map(|(output_index, value)| (OutputId::from_parts(txid, output_index), value))
+                    .map(|(output_index, value)| {
+                        (B::reskey_from_batchkeyval(key, output_index), value)
+                    })
                     .collect()
             })
             .unwrap_or_default()
