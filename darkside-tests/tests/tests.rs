@@ -1,12 +1,14 @@
+use std::{future::Future, pin::Pin};
+
 use darkside_tests::utils::{
     prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector, DarksideHandler,
 };
 use tokio::time::sleep;
-use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::{lightclient::from_inputs, scenarios::setup::ClientBuilder};
 use zingolib::testvectors::seeds::DARKSIDE_SEED;
+use zingolib::{config::RegtestNetwork, lightclient::LightClient};
 
 #[tokio::test]
 async fn simple_sync() {
@@ -48,7 +50,31 @@ async fn simple_sync() {
 }
 
 #[tokio::test]
-async fn reorg_away_receipt() {
+async fn reorg_away_receipt_blaze() {
+    reorg_receipt_sync_generic(|lc| Box::pin(async { lc.do_sync(true).await.map(|_| ()) })).await;
+}
+
+#[ignore = "attempts to unwrap failed checked_sub on sapling output count"]
+#[tokio::test]
+async fn reorg_away_receipt_pepper() {
+    reorg_receipt_sync_generic(|lc| {
+        Box::pin(async {
+            let uri = lc.config().lightwalletd_uri.read().unwrap().clone();
+            let client = zingo_netutils::GrpcConnector::new(uri)
+                .get_client()
+                .await
+                .unwrap();
+            zingo_sync::sync::sync(client, &lc.config().chain.clone(), &mut lc.wallet)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    })
+    .await;
+}
+async fn reorg_receipt_sync_generic<F>(sync_fn: F)
+where
+    F: for<'a> Fn(&'a mut LightClient) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>,
+{
     let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
@@ -60,11 +86,12 @@ async fn reorg_away_receipt() {
         .unwrap();
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+            .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+            .await;
 
-    light_client.do_sync(true).await.unwrap();
+    sync_fn(&mut light_client).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -82,7 +109,7 @@ async fn reorg_away_receipt() {
     prepare_darksidewalletd(server_id.clone(), false)
         .await
         .unwrap();
-    light_client.do_sync(true).await.unwrap();
+    sync_fn(&mut light_client).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {

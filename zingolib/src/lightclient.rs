@@ -97,9 +97,7 @@ impl LightWalletSendProgress {
                 let tx_json_values: Vec<String> = binding
                     .unwrap()
                     .iter()
-                    .map(|x| {
-                        return x.as_str().unwrap().to_string();
-                    })
+                    .map(|x| x.as_str().unwrap().to_string())
                     .collect();
                 tx_json_values
             }

@@ -87,7 +87,7 @@ async fn receive_fetch_requests(
 // return `None` if a fetch request could not be selected
 fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
     // TODO: improve priority logic
-    if fetch_request_queue.first().is_some() {
+    if !fetch_request_queue.is_empty() {
         Some(fetch_request_queue.remove(0))
     } else {
         None
