@@ -1,5 +1,12 @@
 //! Entrypoint for sync engine
 
+//! Definitions:
+//! sync: coordination of on-chain state, with off-chain state
+//!   Keyed sync uses cryptographic keys to reveal transactions associated with the keys
+//!   and log them.
+//!
+//!   Keyless syncs can only track globally visible chain state
+
 use std::cmp;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{Add, Range};
