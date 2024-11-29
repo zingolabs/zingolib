@@ -414,7 +414,10 @@ where
     }
 
     fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<D, Self, T>) -> Self::Initial {
-        (runner.acc.tags.clone(), runner.acc.ivks.clone())
+        (
+            runner.accumulating_batch.tags.clone(),
+            runner.accumulating_batch.ivks.clone(),
+        )
     }
 
     fn reskey_from_batchkeyval(batkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey {
@@ -479,7 +482,7 @@ impl DynamicUsage for ResultKey {
     }
 }
 
-/// Logic to run batches of trial decryptions on the global threadpool.
+/// Logic to run batches of tasks on the global threadpool.
 pub(crate) struct BatchRunner<D, B, T>
 where
     D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
@@ -488,7 +491,7 @@ where
 {
     batch_size_threshold: usize,
     // The batch currently being accumulated.
-    acc: B,
+    accumulating_batch: B,
     // The running batches.
     running_tasks: T,
     // Receivers for the results of the running batches.
@@ -505,7 +508,7 @@ where
     TrialDecryptBatch<D, Output, Dec>: Batch<D>,
 {
     fn dynamic_usage(&self) -> usize {
-        self.acc.dynamic_usage()
+        self.accumulating_batch.dynamic_usage()
             + self.running_tasks.dynamic_usage()
             + self.pending_results.dynamic_usage()
     }
@@ -514,7 +517,7 @@ where
         let running_usage = self.running_tasks.dynamic_usage();
 
         let bounds = (
-            self.acc.dynamic_usage_bounds(),
+            self.accumulating_batch.dynamic_usage_bounds(),
             self.pending_results.dynamic_usage_bounds(),
         );
         (
@@ -538,7 +541,7 @@ where
     pub(crate) fn new(batch_size_threshold: usize, init: B::Initial) -> Self {
         Self {
             batch_size_threshold,
-            acc: B::new(init),
+            accumulating_batch: B::new(init),
             running_tasks: T::new(),
             pending_results: HashMap::default(),
         }
@@ -570,10 +573,10 @@ where
         inputs: impl ExactSizeIterator<Item = B::Input>,
     ) {
         let (tx, rx) = channel::unbounded();
-        self.acc.add_widgets(inputs, tx);
+        self.accumulating_batch.add_widgets(inputs, tx);
         self.pending_results.insert(key, BatchReceiver(rx));
 
-        if self.acc.inputs().len() >= self.batch_size_threshold {
+        if self.accumulating_batch.inputs().len() >= self.batch_size_threshold {
             self.flush();
         }
     }
@@ -582,9 +585,9 @@ where
     ///
     /// Subsequent calls to `Self::add_outputs` will be accumulated into a new batch.
     pub(crate) fn flush(&mut self) {
-        if !self.acc.is_empty() {
+        if !self.accumulating_batch.is_empty() {
             let mut batch = B::new(B::init_from_runner(self));
-            mem::swap(&mut batch, &mut self.acc);
+            mem::swap(&mut batch, &mut self.accumulating_batch);
             self.running_tasks.run_task(batch);
         }
     }
