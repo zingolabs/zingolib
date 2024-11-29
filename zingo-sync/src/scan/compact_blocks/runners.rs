@@ -33,20 +33,20 @@ type TaggedSaplingBatch = TrialDecryptBatch<
     CompactDecryptor,
 >;
 type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
+    SaplingDomain,
     TrialDecryptBatch<
         SaplingDomain,
         sapling_crypto::note_encryption::CompactOutputDescription,
         CompactDecryptor,
     >,
-    SaplingDomain,
     Tasks,
 >;
 
 type TaggedOrchardBatch =
     TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
 type TaggedOrchardBatchRunner<Tasks> = BatchRunner<
-    TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>,
     OrchardDomain,
+    TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>,
     Tasks,
 >;
 
@@ -369,7 +369,7 @@ where
         self.repliers_mut()
             .extend((0..widget_len).map(|output_index| (output_index, replier.clone())));
     }
-    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<Self, D, T>) -> Self::Initial;
+    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<D, Self, T>) -> Self::Initial;
 
     fn reskey_from_batchkeyval(batchkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey;
 }
@@ -413,7 +413,7 @@ where
         &mut self.repliers
     }
 
-    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<Self, D, T>) -> Self::Initial {
+    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<D, Self, T>) -> Self::Initial {
         (runner.acc.tags.clone(), runner.acc.ivks.clone())
     }
 
@@ -480,7 +480,7 @@ impl DynamicUsage for ResultKey {
 }
 
 /// Logic to run batches of trial decryptions on the global threadpool.
-pub(crate) struct BatchRunner<B, D, T>
+pub(crate) struct BatchRunner<D, B, T>
 where
     D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
     B: Batch<D>,
@@ -495,7 +495,7 @@ where
     pending_results: HashMap<B::BatchKey, BatchReceiver<B::ResultVal>>,
 }
 
-impl<D, Output, Dec, T> DynamicUsage for BatchRunner<TrialDecryptBatch<D, Output, Dec>, D, T>
+impl<D, Output, Dec, T> DynamicUsage for BatchRunner<D, TrialDecryptBatch<D, Output, Dec>, T>
 where
     D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send> + DynamicUsage,
     D::IncomingViewingKey: DynamicUsage,
@@ -528,11 +528,11 @@ where
     }
 }
 
-impl<B, D, T> BatchRunner<B, D, T>
+impl<D, B, T> BatchRunner<D, B, T>
 where
     D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
-    T: Tasks<B>,
     B: Batch<D>,
+    T: Tasks<B>,
 {
     /// Constructs a new batch runner
     pub(crate) fn new(batch_size_threshold: usize, init: B::Initial) -> Self {
@@ -545,15 +545,15 @@ where
     }
 }
 
-impl<B, D, T> BatchRunner<B, D, T>
+impl<D, B, T> BatchRunner<D, B, T>
 where
     D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send> + Send + 'static,
     D::IncomingViewingKey: Clone + Send,
     D::Memo: Send,
     D::Note: Send,
     D::Recipient: Send,
-    T: Tasks<B>,
     B: Batch<D, Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>)>,
+    T: Tasks<B>,
 {
     /// Batches the given inputs.
     ///
