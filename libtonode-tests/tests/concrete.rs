@@ -504,11 +504,27 @@ mod fast {
                 .propose_send(transaction_request_to_faucet_tex)
                 .await
                 .unwrap();
+            assert_eq!(
+                sender
+                    .wallet
+                    .wallet_capability()
+                    .get_rejection_addresses()
+                    .len(),
+                0
+            );
             assert_eq!(proposal_with_faucet_tex.steps().len(), 2usize);
             let _sent_txids_according_to_broadcast = sender
                 .complete_and_broadcast_stored_proposal()
                 .await
                 .unwrap();
+            assert_eq!(
+                sender
+                    .wallet
+                    .wallet_capability()
+                    .get_rejection_addresses()
+                    .len(),
+                1
+            );
             let _txids = sender
                 .wallet
                 .transactions()
