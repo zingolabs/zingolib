@@ -524,12 +524,14 @@ mod fast {
                     .len(),
                 3usize
             );
-            let val_tranfers = dbg!(sender.sorted_value_transfers(true).await);
+            let val_tranfers = sender.sorted_value_transfers(true).await;
             // This fails, as we don't scan sends to tex correctly yet
+            let first_vt = dbg!(val_tranfers[0].clone());
             assert_eq!(
-                val_tranfers[0].recipient_address().unwrap(),
+                first_vt.recipient_address().unwrap(),
                 tex_addr_from_first.encode()
             );
+            panic!("The first value transfer is the receipt from the faucet!!");
         }
     }
 
