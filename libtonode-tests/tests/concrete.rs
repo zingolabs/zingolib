@@ -491,16 +491,20 @@ mod fast {
             let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
                 scenarios::orchard_funded_recipient(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(faucet);
-            let payment = vec![Payment::without_memo(
-                tex_addr_from_first.clone(),
+            let tex_addr_from_faucet_first_taddr = first_taddr_to_tex(faucet);
+            let payment_to_faucet_tex = vec![Payment::without_memo(
+                tex_addr_from_faucet_first_taddr.clone(),
                 NonNegativeAmount::from_u64(100_000).unwrap(),
             )];
 
-            let transaction_request = TransactionRequest::new(payment).unwrap();
+            let transaction_request_to_faucet_tex =
+                TransactionRequest::new(payment_to_faucet_tex).unwrap();
 
-            let proposal = sender.propose_send(transaction_request).await.unwrap();
-            assert_eq!(proposal.steps().len(), 2usize);
+            let proposal_with_faucet_tex = sender
+                .propose_send(transaction_request_to_faucet_tex)
+                .await
+                .unwrap();
+            assert_eq!(proposal_with_faucet_tex.steps().len(), 2usize);
             let _sent_txids_according_to_broadcast = sender
                 .complete_and_broadcast_stored_proposal()
                 .await
@@ -529,7 +533,7 @@ mod fast {
             let first_vt = dbg!(val_tranfers[0].clone());
             assert_eq!(
                 first_vt.recipient_address().unwrap(),
-                tex_addr_from_first.encode()
+                tex_addr_from_faucet_first_taddr.encode()
             );
             panic!("The first value transfer is the receipt from the faucet!!");
         }
