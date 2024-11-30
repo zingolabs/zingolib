@@ -525,6 +525,11 @@ mod fast {
                     .len(),
                 1
             );
+            dbg!(sender.wallet.wallet_capability().get_rejection_addresses());
+            dbg!(sender
+                .wallet
+                .wallet_capability()
+                .transparent_child_addresses());
             let _txids = sender
                 .wallet
                 .transactions()
@@ -546,7 +551,7 @@ mod fast {
             );
             let val_tranfers = sender.sorted_value_transfers(true).await;
             // This fails, as we don't scan sends to tex correctly yet
-            let first_vt = dbg!(val_tranfers[0].clone());
+            let first_vt = val_tranfers[0].clone();
             assert_eq!(
                 first_vt.recipient_address().unwrap(),
                 tex_addr_from_faucet_first_taddr.encode()
