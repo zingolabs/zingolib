@@ -145,6 +145,297 @@ mod fast {
     use super::*;
 
     #[tokio::test]
+    async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
+        async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
+            json::object! {
+                "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
+            }
+        }
+        let value = 100_000;
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
+            scenarios::faucet_funded_recipient(
+                Some(value),
+                None,
+                None,
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+                regtest_network,
+            )
+            .await;
+        let orig_transaction_id = orig_transaction_id.unwrap();
+        assert_eq!(
+            do_maybe_recent_txid(&recipient).await["last_txid"],
+            orig_transaction_id
+        );
+        // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
+        for _ in 0..5 {
+            zingolib::testutils::send_value_between_clients_and_sync(
+                &regtest_manager,
+                &faucet,
+                &faucet,
+                5_000,
+                "unified",
+            )
+            .await
+            .unwrap();
+        }
+
+        let sent_to_self = 10;
+        // Send recipient->recipient, to make tree equality check at the end simpler
+        zingolib::testutils::send_value_between_clients_and_sync(
+            &regtest_manager,
+            &recipient,
+            &recipient,
+            sent_to_self,
+            "unified",
+        )
+        .await
+        .unwrap();
+        let fees = zingolib::testutils::lightclient::get_fees_paid_by_client(&recipient).await;
+        assert_eq!(value - fees, 90_000);
+        let balance_minus_step_one_fees = value - fees;
+
+        // 3a. stash zcashd state
+        log::debug!(
+            "old zcashd chain info {}",
+            std::str::from_utf8(
+                &regtest_manager
+                    .get_cli_handle()
+                    .arg("getblockchaininfo")
+                    .output()
+                    .unwrap()
+                    .stdout
+            )
+            .unwrap()
+        );
+
+        // Turn zcashd off and on again, to write down the blocks
+        drop(_cph); // turn off zcashd and lightwalletd
+        let _cph = regtest_manager.launch(false).unwrap();
+        log::debug!(
+            "new zcashd chain info {}",
+            std::str::from_utf8(
+                &regtest_manager
+                    .get_cli_handle()
+                    .arg("getblockchaininfo")
+                    .output()
+                    .unwrap()
+                    .stdout
+            )
+            .unwrap()
+        );
+
+        let zcd_datadir = &regtest_manager.zcashd_data_dir;
+        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
+        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
+
+        log::debug!(
+            "The original zcashd directory is at: {}",
+            &original_zcashd_directory.to_string_lossy().to_string()
+        );
+
+        let source = &zcd_datadir.to_string_lossy().to_string();
+        let dest = &original_zcashd_directory.to_string_lossy().to_string();
+        std::process::Command::new("cp")
+            .arg("-rf")
+            .arg(source)
+            .arg(dest)
+            .output()
+            .expect("directory copy failed");
+
+        // 3. Send z-to-z transaction to external z address with a memo
+        let sent_value = 2000;
+        let outgoing_memo = "Outgoing Memo";
+
+        let sent_transaction_id = from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "sapling"),
+                sent_value,
+                Some(outgoing_memo),
+            )],
+        )
+        .await
+        .unwrap()
+        .first()
+        .to_string();
+
+        let second_transaction_fee;
+        {
+            let tmds = recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await;
+            let record = tmds
+                .transaction_records_by_id
+                .get(
+                    &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
+                        .unwrap(),
+                )
+                .unwrap();
+            second_transaction_fee = tmds
+                .transaction_records_by_id
+                .calculate_transaction_fee(record)
+                .unwrap();
+            // Sync recipient
+        } // drop transaction_record references and tmds read lock
+        recipient.do_sync(false).await.unwrap();
+
+        // 4b write down state before clearing the mempool
+        let notes_before = recipient.do_list_notes(true).await;
+        let transactions_before = recipient.do_list_transactions().await;
+
+        // Sync recipient again. We assert this should be a no-op, as we just synced
+        recipient.do_sync(false).await.unwrap();
+        let post_sync_notes_before = recipient.do_list_notes(true).await;
+        let post_sync_transactions_before = recipient.do_list_transactions().await;
+        assert_eq!(post_sync_notes_before, notes_before);
+        assert_eq!(post_sync_transactions_before, transactions_before);
+
+        drop(_cph); // Turn off zcashd and lightwalletd
+
+        // 5. check that the sent transaction is correctly marked in the client
+        let transactions = recipient.do_list_transactions().await;
+        let mempool_only_tx = transactions
+            .members()
+            .find(|tx| tx["txid"] == sent_transaction_id)
+            .unwrap()
+            .clone();
+        dbg!(&mempool_only_tx["txid"]);
+        assert_eq!(
+            mempool_only_tx["outgoing_metadata"][0]["memo"],
+            "Outgoing Memo"
+        );
+        assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
+
+        // 6. note that the client correctly considers the note pending
+        assert_eq!(mempool_only_tx["pending"], true);
+
+        std::process::Command::new("rm")
+            .arg("-rf")
+            .arg(source)
+            .output()
+            .expect("recursive rm failed");
+        std::process::Command::new("cp")
+            .arg("--recursive")
+            .arg("--remove-destination")
+            .arg(dest)
+            .arg(source)
+            .output()
+            .expect("directory copy failed");
+        assert_eq!(
+            source,
+            &regtest_manager
+                .zcashd_data_dir
+                .to_string_lossy()
+                .to_string()
+        );
+        let _cph = regtest_manager.launch(false).unwrap();
+        let notes_after = recipient.do_list_notes(true).await;
+        let transactions_after = recipient.do_list_transactions().await;
+
+        assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
+        assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
+
+        // 6. Mine 10 blocks, the pending transaction should still be there.
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        assert_eq!(recipient.wallet.last_synced_height().await, 12);
+
+        let notes = recipient.do_list_notes(true).await;
+
+        let transactions = recipient.do_list_transactions().await;
+
+        // There are 2 unspent notes, the pending transaction, and the final receipt
+        //println!("{}", json::stringify_pretty(notes.clone(), 4));
+        //println!("{}", json::stringify_pretty(transactions.clone(), 4));
+        // Two unspent notes: one change, pending, one from faucet, confirmed
+        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
+        assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+        let note = notes["unspent_orchard_notes"][1].clone();
+        assert_eq!(note["created_in_txid"], sent_transaction_id);
+        assert_eq!(
+            note["value"].as_u64().unwrap(),
+            balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
+        );
+        assert!(note["pending"].as_bool().unwrap());
+        assert_eq!(transactions.len(), 3);
+
+        // 7. Mine 3 blocks, so the 2 block pending_window is passed
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 3)
+            .await
+            .unwrap();
+        assert_eq!(recipient.wallet.last_synced_height().await, 15);
+
+        let notes = recipient.do_list_notes(true).await;
+        let transactions = recipient.do_list_transactions().await;
+
+        // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
+        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
+        assert_eq!(
+            notes["spent_orchard_notes"][0]["created_in_txid"],
+            orig_transaction_id
+        );
+        assert!(!notes["unspent_orchard_notes"][0]["pending"]
+            .as_bool()
+            .unwrap());
+        assert_eq!(notes["pending_orchard_notes"].len(), 0);
+        assert_eq!(transactions.len(), 2);
+        let read_lock = recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let wallet_trees = read_lock.witness_trees().unwrap();
+        let last_leaf = wallet_trees
+            .witness_tree_orchard
+            .max_leaf_position(None)
+            .unwrap();
+        let server_trees = zingolib::grpc_connector::get_trees(
+            recipient.get_server_uri(),
+            recipient.wallet.last_synced_height().await,
+        )
+        .await
+        .unwrap();
+        let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
+            MerkleHashOrchard,
+            &[u8],
+            { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
+        >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
+        .unwrap()
+        .to_frontier()
+        .take();
+        let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
+            ShardTree::new(
+                MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
+                MAX_REORG,
+            );
+        server_orchard_shardtree
+            .insert_frontier_nodes(
+                server_orchard_front.unwrap(),
+                zingolib::testutils::incrementalmerkletree::Retention::Marked,
+            )
+            .unwrap();
+        // This height doesn't matter, all we need is any arbitrary checkpoint ID
+        // as witness_at_checkpoint_depth requres a checkpoint to function now
+        server_orchard_shardtree
+            .checkpoint(BlockHeight::from_u32(0))
+            .unwrap();
+        assert_eq!(
+            wallet_trees
+                .witness_tree_orchard
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
+                .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
+            server_orchard_shardtree
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
+                .unwrap()
+        )
+    }
+    #[tokio::test]
     async fn create_send_to_self_with_zfz_active() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(5_000_000).await;
@@ -164,8 +455,6 @@ mod fast {
             .unwrap();
 
         let value_transfers = &recipient.sorted_value_transfers(true).await;
-
-        dbg!(value_transfers);
 
         assert!(value_transfers.iter().any(|vt| vt.kind()
             == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
@@ -212,7 +501,7 @@ mod fast {
 
         let no_messages = &recipient.messages_containing(None).await;
 
-        assert_eq!(no_messages.0.len(), 0);
+        assert_eq!(no_messages.len(), 0);
 
         from_inputs::quick_send(
             &faucet,
@@ -237,7 +526,7 @@ mod fast {
 
         let single_message = &recipient.messages_containing(None).await;
 
-        assert_eq!(single_message.0.len(), 1);
+        assert_eq!(single_message.len(), 1);
     }
 
     /// Test sending and receiving messages between three parties.
@@ -254,9 +543,25 @@ mod fast {
     /// returns the expected messages for each party in the correct order.
     #[tokio::test]
     async fn message_thread() {
+        // Begin test setup
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(10_000_000).await;
-
+        macro_rules! send_and_sync {
+            ($client:ident, $message:ident) => {
+                // Propose sending the message
+                $client.propose_send($message.clone()).await.unwrap();
+                // Complete and broadcast the stored proposal
+                $client
+                    .complete_and_broadcast_stored_proposal()
+                    .await
+                    .unwrap();
+                // Increase the height and wait for the client
+                increase_height_and_wait_for_client(&regtest_manager, &$client, 1)
+                    .await
+                    .unwrap();
+            };
+        }
+        // Addresses: alice, bob, charlie
         let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
         let bob = faucet
             .wallet
@@ -270,7 +575,6 @@ mod fast {
                 false,
             )
             .unwrap();
-
         let charlie = faucet
             .wallet
             .wallet_capability()
@@ -284,6 +588,7 @@ mod fast {
             )
             .unwrap();
 
+        // messages
         let alice_to_bob = TransactionRequest::new(vec![Payment::new(
             ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
             NonNegativeAmount::from_u64(1_000).unwrap(),
@@ -296,7 +601,6 @@ mod fast {
         )
         .unwrap()])
         .unwrap();
-
         let alice_to_bob_2 = TransactionRequest::new(vec![Payment::new(
             ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
             NonNegativeAmount::from_u64(1_000).unwrap(),
@@ -309,7 +613,6 @@ mod fast {
         )
         .unwrap()])
         .unwrap();
-
         let alice_to_charlie = TransactionRequest::new(vec![Payment::new(
             ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
             NonNegativeAmount::from_u64(1_000).unwrap(),
@@ -322,7 +625,6 @@ mod fast {
         )
         .unwrap()])
         .unwrap();
-
         let charlie_to_alice = TransactionRequest::new(vec![Payment::new(
             ZcashAddress::from_str(&alice).unwrap(),
             NonNegativeAmount::from_u64(1_000).unwrap(),
@@ -339,7 +641,6 @@ mod fast {
         )
         .unwrap()])
         .unwrap();
-
         let bob_to_alice = TransactionRequest::new(vec![Payment::new(
             ZcashAddress::from_str(&alice).unwrap(),
             NonNegativeAmount::from_u64(1_000).unwrap(),
@@ -356,92 +657,40 @@ mod fast {
         )
         .unwrap()])
         .unwrap();
+        // Complete test setup
 
-        recipient.propose_send(alice_to_bob.clone()).await.unwrap();
-
-        recipient
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
+        // Message Sending
+        send_and_sync!(recipient, alice_to_bob);
+        send_and_sync!(recipient, alice_to_bob_2);
+        send_and_sync!(faucet, bob_to_alice);
+        send_and_sync!(recipient, alice_to_charlie);
+        send_and_sync!(faucet, charlie_to_alice);
+        // Final sync of recipient
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
 
-        recipient
-            .propose_send(alice_to_bob_2.clone())
-            .await
-            .unwrap();
-
-        recipient
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
-        faucet.propose_send(bob_to_alice.clone()).await.unwrap();
-
-        faucet
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
-        recipient
-            .propose_send(alice_to_charlie.clone())
-            .await
-            .unwrap();
-
-        recipient
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
-        faucet.propose_send(charlie_to_alice.clone()).await.unwrap();
-
-        faucet
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
-
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-
+        // Collect observations
         let value_transfers_bob = &recipient
             .messages_containing(Some(&bob.encode(&recipient.config().chain)))
             .await;
-
         let value_transfers_charlie = &recipient
             .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
             .await;
-
         let all_vts = &recipient.sorted_value_transfers(true).await;
         let all_messages = &recipient.messages_containing(None).await;
 
-        for vt in all_vts.0.iter() {
-            dbg!(vt.blockheight());
-        }
-
-        assert_eq!(value_transfers_bob.0.len(), 3);
-        assert_eq!(value_transfers_charlie.0.len(), 2);
+        // Make assertions
+        assert_eq!(value_transfers_bob.len(), 3);
+        assert_eq!(value_transfers_charlie.len(), 2);
 
         // Also asserting the order now (sorry juanky)
         // ALL MESSAGES (First one should be the oldest one)
         assert!(all_messages
-            .0
             .windows(2)
             .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() }));
-
         // ALL VTS (First one should be the most recent one)
         assert!(all_vts
-            .0
             .windows(2)
             .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() }));
     }
@@ -497,15 +746,15 @@ mod fast {
         let mut value_transfers3 = recipient.sorted_value_transfers(false).await;
         let mut value_transfers4 = recipient.sorted_value_transfers(false).await;
 
-        assert_eq!(value_transfers.0[0].memos().len(), 4);
+        assert_eq!(value_transfers[0].memos().len(), 4);
 
-        value_transfers3.0.reverse();
-        value_transfers4.0.reverse();
+        value_transfers3.reverse();
+        value_transfers4.reverse();
 
         assert_eq!(value_transfers, value_transfers1);
         assert_eq!(value_transfers, value_transfers2);
-        assert_eq!(value_transfers.0, value_transfers3.0);
-        assert_eq!(value_transfers.0, value_transfers4.0);
+        assert_eq!(value_transfers, &value_transfers3);
+        assert_eq!(value_transfers, &value_transfers4);
     }
 
     pub mod tex {
@@ -543,11 +792,11 @@ mod fast {
 
             let proposal = sender.propose_send(transaction_request).await.unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
-            let sent_txids_according_to_broadcast = sender
+            let _sent_txids_according_to_broadcast = sender
                 .complete_and_broadcast_stored_proposal()
                 .await
                 .unwrap();
-            let txids = sender
+            let _txids = sender
                 .wallet
                 .transactions()
                 .read()
@@ -556,8 +805,6 @@ mod fast {
                 .keys()
                 .cloned()
                 .collect::<Vec<TxId>>();
-            dbg!(&txids);
-            dbg!(sent_txids_according_to_broadcast);
             assert_eq!(
                 sender
                     .wallet
@@ -571,7 +818,7 @@ mod fast {
             let val_tranfers = dbg!(sender.sorted_value_transfers(true).await);
             // This fails, as we don't scan sends to tex correctly yet
             assert_eq!(
-                val_tranfers.0[0].recipient_address().unwrap(),
+                val_tranfers[0].recipient_address().unwrap(),
                 tex_addr_from_first.encode()
             );
         }
@@ -2741,298 +2988,6 @@ mod slow {
         */
     }
 
-    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
-    #[tokio::test]
-    async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
-        async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
-            json::object! {
-                "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-            }
-        }
-        let value = 100_000;
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
-            scenarios::faucet_funded_recipient(
-                Some(value),
-                None,
-                None,
-                PoolType::Shielded(ShieldedProtocol::Sapling),
-                regtest_network,
-            )
-            .await;
-        let orig_transaction_id = orig_transaction_id.unwrap();
-        assert_eq!(
-            do_maybe_recent_txid(&recipient).await["last_txid"],
-            orig_transaction_id
-        );
-        // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
-        for _ in 0..5 {
-            zingolib::testutils::send_value_between_clients_and_sync(
-                &regtest_manager,
-                &faucet,
-                &faucet,
-                5_000,
-                "unified",
-            )
-            .await
-            .unwrap();
-        }
-
-        let sent_to_self = 10;
-        // Send recipient->recipient, to make tree equality check at the end simpler
-        zingolib::testutils::send_value_between_clients_and_sync(
-            &regtest_manager,
-            &recipient,
-            &recipient,
-            sent_to_self,
-            "unified",
-        )
-        .await
-        .unwrap();
-        let fees = get_fees_paid_by_client(&recipient).await;
-        assert_eq!(value - fees, 90_000);
-        let balance_minus_step_one_fees = value - fees;
-
-        // 3a. stash zcashd state
-        log::debug!(
-            "old zcashd chain info {}",
-            std::str::from_utf8(
-                &regtest_manager
-                    .get_cli_handle()
-                    .arg("getblockchaininfo")
-                    .output()
-                    .unwrap()
-                    .stdout
-            )
-            .unwrap()
-        );
-
-        // Turn zcashd off and on again, to write down the blocks
-        drop(_cph); // turn off zcashd and lightwalletd
-        let _cph = regtest_manager.launch(false).unwrap();
-        log::debug!(
-            "new zcashd chain info {}",
-            std::str::from_utf8(
-                &regtest_manager
-                    .get_cli_handle()
-                    .arg("getblockchaininfo")
-                    .output()
-                    .unwrap()
-                    .stdout
-            )
-            .unwrap()
-        );
-
-        let zcd_datadir = &regtest_manager.zcashd_data_dir;
-        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
-        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
-
-        log::debug!(
-            "The original zcashd directory is at: {}",
-            &original_zcashd_directory.to_string_lossy().to_string()
-        );
-
-        let source = &zcd_datadir.to_string_lossy().to_string();
-        let dest = &original_zcashd_directory.to_string_lossy().to_string();
-        std::process::Command::new("cp")
-            .arg("-rf")
-            .arg(source)
-            .arg(dest)
-            .output()
-            .expect("directory copy failed");
-
-        // 3. Send z-to-z transaction to external z address with a memo
-        let sent_value = 2000;
-        let outgoing_memo = "Outgoing Memo";
-
-        let sent_transaction_id = from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "sapling"),
-                sent_value,
-                Some(outgoing_memo),
-            )],
-        )
-        .await
-        .unwrap()
-        .first()
-        .to_string();
-
-        let second_transaction_fee;
-        {
-            let tmds = recipient
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .read()
-                .await;
-            let record = tmds
-                .transaction_records_by_id
-                .get(
-                    &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
-                        .unwrap(),
-                )
-                .unwrap();
-            second_transaction_fee = tmds
-                .transaction_records_by_id
-                .calculate_transaction_fee(record)
-                .unwrap();
-            // Sync recipient
-        } // drop transaction_record references and tmds read lock
-        recipient.do_sync(false).await.unwrap();
-
-        // 4b write down state before clearing the mempool
-        let notes_before = recipient.do_list_notes(true).await;
-        let transactions_before = recipient.do_list_transactions().await;
-
-        // Sync recipient again. We assert this should be a no-op, as we just synced
-        recipient.do_sync(false).await.unwrap();
-        let post_sync_notes_before = recipient.do_list_notes(true).await;
-        let post_sync_transactions_before = recipient.do_list_transactions().await;
-        assert_eq!(post_sync_notes_before, notes_before);
-        assert_eq!(post_sync_transactions_before, transactions_before);
-
-        drop(_cph); // Turn off zcashd and lightwalletd
-
-        // 5. check that the sent transaction is correctly marked in the client
-        let transactions = recipient.do_list_transactions().await;
-        let mempool_only_tx = transactions
-            .members()
-            .find(|tx| tx["txid"] == sent_transaction_id)
-            .unwrap()
-            .clone();
-        log::debug!("the transactions are: {}", &mempool_only_tx);
-        assert_eq!(
-            mempool_only_tx["outgoing_metadata"][0]["memo"],
-            "Outgoing Memo"
-        );
-        assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
-
-        // 6. note that the client correctly considers the note pending
-        assert_eq!(mempool_only_tx["pending"], true);
-
-        std::process::Command::new("rm")
-            .arg("-rf")
-            .arg(source)
-            .output()
-            .expect("recursive rm failed");
-        std::process::Command::new("cp")
-            .arg("--recursive")
-            .arg("--remove-destination")
-            .arg(dest)
-            .arg(source)
-            .output()
-            .expect("directory copy failed");
-        assert_eq!(
-            source,
-            &regtest_manager
-                .zcashd_data_dir
-                .to_string_lossy()
-                .to_string()
-        );
-        let _cph = regtest_manager.launch(false).unwrap();
-        let notes_after = recipient.do_list_notes(true).await;
-        let transactions_after = recipient.do_list_transactions().await;
-
-        assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
-        assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
-
-        // 6. Mine 10 blocks, the pending transaction should still be there.
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
-            .await
-            .unwrap();
-        assert_eq!(recipient.wallet.last_synced_height().await, 21);
-
-        let notes = recipient.do_list_notes(true).await;
-
-        let transactions = recipient.do_list_transactions().await;
-
-        // There are 2 unspent notes, the pending transaction, and the final receipt
-        println!("{}", json::stringify_pretty(notes.clone(), 4));
-        println!("{}", json::stringify_pretty(transactions.clone(), 4));
-        // Two unspent notes: one change, pending, one from faucet, confirmed
-        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-        assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-        let note = notes["unspent_orchard_notes"][1].clone();
-        assert_eq!(note["created_in_txid"], sent_transaction_id);
-        assert_eq!(
-            note["value"].as_u64().unwrap(),
-            balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
-        );
-        assert!(note["pending"].as_bool().unwrap());
-        assert_eq!(transactions.len(), 3);
-
-        // 7. Mine 100 blocks, so the mempool expires
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 100)
-            .await
-            .unwrap();
-        assert_eq!(recipient.wallet.last_synced_height().await, 121);
-
-        let notes = recipient.do_list_notes(true).await;
-        let transactions = recipient.do_list_transactions().await;
-
-        // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
-        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-        assert_eq!(
-            notes["spent_orchard_notes"][0]["created_in_txid"],
-            orig_transaction_id
-        );
-        assert!(!notes["unspent_orchard_notes"][0]["pending"]
-            .as_bool()
-            .unwrap());
-        assert_eq!(notes["pending_orchard_notes"].len(), 0);
-        assert_eq!(transactions.len(), 2);
-        let read_lock = recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let wallet_trees = read_lock.witness_trees().unwrap();
-        let last_leaf = wallet_trees
-            .witness_tree_orchard
-            .max_leaf_position(None)
-            .unwrap();
-        let server_trees = zingolib::grpc_connector::get_trees(
-            recipient.get_server_uri(),
-            recipient.wallet.last_synced_height().await,
-        )
-        .await
-        .unwrap();
-        let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
-            MerkleHashOrchard,
-            &[u8],
-            { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
-        >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
-        .unwrap()
-        .to_frontier()
-        .take();
-        let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
-            ShardTree::new(
-                MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
-                MAX_REORG,
-            );
-        server_orchard_shardtree
-            .insert_frontier_nodes(
-                server_orchard_front.unwrap(),
-                zingolib::testutils::incrementalmerkletree::Retention::Marked,
-            )
-            .unwrap();
-        // This height doesn't matter, all we need is any arbitrary checkpoint ID
-        // as witness_at_checkpoint_depth requres a checkpoint to function now
-        server_orchard_shardtree
-            .checkpoint(BlockHeight::from_u32(0))
-            .unwrap();
-        assert_eq!(
-            wallet_trees
-                .witness_tree_orchard
-                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-                .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
-            server_orchard_shardtree
-                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-                .unwrap()
-        )
-    }
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
     async fn mempool_and_balance() {

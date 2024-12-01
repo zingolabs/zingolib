@@ -265,7 +265,7 @@ impl LightClient {
 
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.
     pub async fn messages_containing(&self, filter: Option<&str>) -> ValueTransfers {
-        let mut value_transfers = self.sorted_value_transfers(true).await.0;
+        let mut value_transfers = self.sorted_value_transfers(true).await;
         value_transfers.reverse();
 
         // Filter out VTs where all memos are empty.
@@ -293,7 +293,7 @@ impl LightClient {
             None => value_transfers.retain(|vt| !vt.memos().is_empty()),
         }
 
-        ValueTransfers(value_transfers)
+        value_transfers
     }
 
     /// Provides a list of value transfers sorted
@@ -301,7 +301,7 @@ impl LightClient {
     pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
         let mut value_transfers = self.value_transfers().await;
         if newer_first {
-            value_transfers.0.reverse();
+            value_transfers.reverse();
         }
         value_transfers
     }
@@ -557,7 +557,7 @@ impl LightClient {
                 }
             };
         }
-        ValueTransfers(value_transfers)
+        ValueTransfers::new(value_transfers)
     }
 
     /// TODO: doc comment
@@ -700,9 +700,9 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let value_transfers = self.sorted_value_transfers(true).await.0;
+        let value_transfers = self.sorted_value_transfers(true).await;
         let mut memobytes_by_address = HashMap::new();
-        for value_transfer in value_transfers {
+        for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()
@@ -955,9 +955,9 @@ impl LightClient {
     }
 
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let value_transfers = self.sorted_value_transfers(false).await.0;
+        let value_transfers = self.sorted_value_transfers(false).await;
         let mut amount_by_address = HashMap::new();
-        for value_transfer in value_transfers {
+        for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
                 let address = value_transfer
                     .recipient_address()

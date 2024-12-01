@@ -679,16 +679,40 @@ pub mod summaries {
 
     /// A wrapper struct for implementing display and json on a vec of value trasnfers
     #[derive(PartialEq, Debug)]
-    pub struct ValueTransfers(pub Vec<ValueTransfer>);
+    pub struct ValueTransfers(Vec<ValueTransfer>);
+    impl<'a> std::iter::IntoIterator for &'a ValueTransfers {
+        type Item = &'a ValueTransfer;
+        type IntoIter = std::slice::Iter<'a, ValueTransfer>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
+    }
+    impl std::ops::Deref for ValueTransfers {
+        type Target = Vec<ValueTransfer>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl std::ops::DerefMut for ValueTransfers {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    // Implement the Index trait
+    impl std::ops::Index<usize> for ValueTransfers {
+        type Output = ValueTransfer; // The type of the value returned by the index
+
+        fn index(&self, index: usize) -> &Self::Output {
+            &self.0[index] // Forward the indexing operation to the underlying data structure
+        }
+    }
 
     impl ValueTransfers {
         /// Creates a new ValueTransfer
         pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
             ValueTransfers(value_transfers)
-        }
-        /// Implicitly dispatch to the wrapped data
-        pub fn iter(&self) -> std::slice::Iter<ValueTransfer> {
-            self.0.iter()
         }
 
         /// Creates value transfers for all notes in a transaction that are sent to another
