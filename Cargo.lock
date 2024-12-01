@@ -769,7 +769,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
- "tower 0.4.13",
+ "tower 0.5.1",
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-netutils",
@@ -1767,7 +1767,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -3595,7 +3595,6 @@ version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
- "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -4520,7 +4519,7 @@ dependencies = [
  "thiserror",
  "tokio-rustls",
  "tonic",
- "tower 0.4.13",
+ "tower 0.5.1",
  "webpki-roots 0.25.4",
  "zcash_client_backend",
 ]
