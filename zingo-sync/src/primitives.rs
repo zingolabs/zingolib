@@ -17,12 +17,12 @@ use zcash_primitives::{
 use crate::{keys::KeyId, utils};
 
 /// Encapsulates the current state of sync
-#[derive(Debug, Getters, MutGetters)]
 pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
     pub(crate) scan_ranges: Vec<ScanRange>,
     /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
+    #[allow(dead_code)]
     pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
 }
 
