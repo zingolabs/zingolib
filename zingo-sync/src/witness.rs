@@ -1,6 +1,5 @@
 //! Module for stucts and types associated with witness construction
 
-use getset::{Getters, MutGetters};
 use incrementalmerkletree::{Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::Node;
@@ -15,13 +14,11 @@ type SaplingShardStore = MemoryShardStore<Node, BlockHeight>;
 type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 
 /// Shard tree wallet data struct
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
 pub struct ShardTrees {
     /// Sapling shard tree
-    sapling: ShardTree<SaplingShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
+    pub(crate) sapling: ShardTree<SaplingShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
     /// Orchard shard tree
-    orchard: ShardTree<OrchardShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
+    pub(crate) orchard: ShardTree<OrchardShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
 }
 
 impl ShardTrees {

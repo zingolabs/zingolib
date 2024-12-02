@@ -179,14 +179,14 @@ pub trait SyncShardTrees: SyncWallet {
         } = shard_tree_data;
 
         self.get_shard_trees_mut()?
-            .sapling_mut()
+            .sapling
             .batch_insert(
                 sapling_initial_position,
                 sapling_leaves_and_retentions.into_iter(),
             )
             .unwrap();
         self.get_shard_trees_mut()?
-            .orchard_mut()
+            .orchard
             .batch_insert(
                 orchard_initial_position,
                 orchard_leaves_and_retentions.into_iter(),
@@ -201,7 +201,7 @@ pub trait SyncShardTrees: SyncWallet {
         // TODO: investigate resetting the shard completely when truncate height is 0
         if !self
             .get_shard_trees_mut()?
-            .sapling_mut()
+            .sapling
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
@@ -209,7 +209,7 @@ pub trait SyncShardTrees: SyncWallet {
         }
         if !self
             .get_shard_trees_mut()?
-            .orchard_mut()
+            .orchard
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
