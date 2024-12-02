@@ -477,27 +477,27 @@ where
     // add spending transaction for all spent notes
     let wallet_transactions = wallet.get_wallet_transactions().unwrap();
     wallet_transactions
-        .values
+        .values()
         .flat_map(|tx| tx.sapling_notes)
         .filter(|note| note.spending_transaction.is_none())
-        .for_each(|note| {
+        .for_each(|mut note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| sapling_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
     wallet_transactions
-        .values
-        .flat_map(|tx| tx.orchard_notes_mut())
-        .filter(|note| note.spending_transaction().is_none())
-        .for_each(|note| {
+        .values()
+        .flat_map(|tx| tx.orchard_notes)
+        .filter(|note| note.spending_transaction.is_none())
+        .for_each(|mut note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| orchard_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
 

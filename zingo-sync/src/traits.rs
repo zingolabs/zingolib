@@ -92,8 +92,8 @@ pub trait SyncTransactions: SyncWallet {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
-            .filter(|tx| tx.block_height() > truncate_height)
-            .map(|tx| tx.transaction().txid())
+            .filter(|tx| tx.block_height > truncate_height)
+            .map(|tx| tx.transaction.txid())
             .collect();
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;

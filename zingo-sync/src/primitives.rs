@@ -127,10 +127,10 @@ impl WalletBlock {
 /// Wallet transaction
 #[derive(Debug)]
 pub struct WalletTransaction {
-    transaction: zcash_primitives::transaction::Transaction,
-    block_height: BlockHeight,
-    sapling_notes: Vec<SaplingNote>,
-    orchard_notes: Vec<OrchardNote>,
+    pub(crate) transaction: zcash_primitives::transaction::Transaction,
+    pub(crate) block_height: BlockHeight,
+    pub(crate) sapling_notes: Vec<SaplingNote>,
+    pub(crate) orchard_notes: Vec<OrchardNote>,
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
 }
@@ -192,7 +192,7 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Decrypted note with recipient and value
     note: N,
     /// Derived nullifier
-    nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
     /// Commitment tree leaf position
     position: Position,
     /// Memo
