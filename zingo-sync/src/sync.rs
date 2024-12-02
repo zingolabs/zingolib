@@ -422,12 +422,12 @@ where
     let sapling_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.sapling_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let orchard_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.orchard_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
     let nullifier_map = wallet.get_nullifiers_mut().unwrap();
@@ -475,11 +475,11 @@ where
         .unwrap();
 
     // add spending transaction for all spent notes
-    let wallet_transactions = wallet.get_wallet_transactions_mut().unwrap();
+    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
     wallet_transactions
-        .values_mut()
-        .flat_map(|tx| tx.sapling_notes_mut())
-        .filter(|note| note.spending_transaction().is_none())
+        .values
+        .flat_map(|tx| tx.sapling_notes)
+        .filter(|note| note.spending_transaction.is_none())
         .for_each(|note| {
             if let Some((_, txid)) = note
                 .nullifier()
@@ -489,7 +489,7 @@ where
             }
         });
     wallet_transactions
-        .values_mut()
+        .values
         .flat_map(|tx| tx.orchard_notes_mut())
         .filter(|note| note.spending_transaction().is_none())
         .for_each(|note| {
@@ -644,7 +644,7 @@ where
         .get_wallet_transactions()
         .unwrap()
         .values()
-        .map(|tx| tx.block_height())
+        .map(|tx| tx.block_height)
         .collect::<Vec<_>>();
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
         *height >= scan_range.block_range().end - 1

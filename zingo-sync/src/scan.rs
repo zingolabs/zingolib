@@ -51,8 +51,8 @@ impl InitialScanData {
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
             if let Some(prev) = &previous_wallet_block {
                 (
-                    prev.sapling_commitment_tree_size(),
-                    prev.orchard_commitment_tree_size(),
+                    prev.sapling_commitment_tree_size,
+                    prev.orchard_commitment_tree_size,
                 )
             } else if let Some(chain_metadata) = &first_block.chain_metadata {
                 // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size

@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use getset::{CopyGetters, Getters, Setters};
-
 use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
@@ -52,13 +50,12 @@ impl Default for SyncState {
 }
 
 /// Output ID for a given pool type
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct OutputId {
     /// ID of associated transaction
-    txid: TxId,
+    pub(crate) txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
-    output_index: usize,
+    pub(crate) output_index: usize,
 }
 
 impl OutputId {
@@ -90,17 +87,15 @@ impl Default for NullifierMap {
 }
 
 /// Wallet block data
-#[derive(Debug, Clone, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug)]
 pub struct WalletBlock {
-    block_height: BlockHeight,
-    block_hash: BlockHash,
+    pub(crate) block_height: BlockHeight,
+    pub(crate) block_hash: BlockHash,
     prev_hash: BlockHash,
     time: u32,
-    #[getset(skip)]
     txids: Vec<TxId>,
-    sapling_commitment_tree_size: u32,
-    orchard_commitment_tree_size: u32,
+    pub(crate) sapling_commitment_tree_size: u32,
+    pub(crate) orchard_commitment_tree_size: u32,
 }
 
 impl WalletBlock {
@@ -130,19 +125,13 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Debug, Getters, CopyGetters)]
+#[derive(Debug)]
 pub struct WalletTransaction {
-    #[getset(get = "pub")]
     transaction: zcash_primitives::transaction::Transaction,
-    #[getset(get_copy = "pub")]
     block_height: BlockHeight,
-    #[getset(skip)]
     sapling_notes: Vec<SaplingNote>,
-    #[getset(skip)]
     orchard_notes: Vec<OrchardNote>,
-    #[getset(skip)]
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-    #[getset(skip)]
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
 }
 
@@ -194,28 +183,21 @@ pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifie
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 /// Wallet note, shielded output with metadata relevant to the wallet
-#[derive(Debug, Getters, CopyGetters, Setters)]
+#[derive(Debug)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    #[getset(get_copy = "pub")]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
     key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
     note: N,
     /// Derived nullifier
-    #[getset(get_copy = "pub")]
     nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
     /// Commitment tree leaf position
-    #[getset(get_copy = "pub")]
     position: Position,
     /// Memo
-    #[getset(get = "pub")]
-    memo: Memo,
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
+    pub(crate) memo: Memo,
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -244,22 +226,17 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 /// Note sent from this capability to a recipient
-#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+#[derive(Debug, Clone)]
 pub struct OutgoingNote<N> {
     /// Output ID
-    #[getset(get_copy = "pub")]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
     key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
     note: N,
     /// Memo
-    #[getset(get = "pub")]
     memo: Memo,
     /// Recipient's full unified address from encoded memo
-    #[getset(get = "pub", set = "pub")]
     recipient_ua: Option<UnifiedAddress>,
 }
 
@@ -288,7 +265,7 @@ impl SyncOutgoingNotes for OutgoingNote<sapling_crypto::Note> {
     {
         encode_payment_address(
             parameters.hrp_sapling_payment_address(),
-            &self.note().recipient(),
+            &self.note.recipient(),
         )
     }
 }
@@ -298,7 +275,7 @@ impl SyncOutgoingNotes for OutgoingNote<orchard::Note> {
     where
         P: Parameters + NetworkConstants,
     {
-        utils::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
+        utils::encode_orchard_receiver(parameters, &self.note.recipient()).unwrap()
     }
 }
 
