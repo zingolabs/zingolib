@@ -87,11 +87,13 @@ impl Default for NullifierMap {
 }
 
 /// Wallet block data
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WalletBlock {
     pub(crate) block_height: BlockHeight,
     pub(crate) block_hash: BlockHash,
+    #[allow(dead_code)]
     prev_hash: BlockHash,
+    #[allow(dead_code)]
     time: u32,
     txids: Vec<TxId>,
     pub(crate) sapling_commitment_tree_size: u32,
@@ -186,14 +188,18 @@ pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 #[derive(Debug)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
+    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
+    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
+    #[allow(dead_code)]
     note: N,
     /// Derived nullifier
     pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
     /// Commitment tree leaf position
+    #[allow(dead_code)]
     position: Position,
     /// Memo
     pub(crate) memo: Memo,
@@ -229,12 +235,15 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 #[derive(Debug, Clone)]
 pub struct OutgoingNote<N> {
     /// Output ID
+    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
+    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
     note: N,
     /// Memo
+    #[allow(dead_code)]
     memo: Memo,
     /// Recipient's full unified address from encoded memo
     pub(crate) recipient_ua: Option<UnifiedAddress>,
