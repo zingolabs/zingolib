@@ -475,12 +475,12 @@ where
         .unwrap();
 
     // add spending transaction for all spent notes
-    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
+    let wallet_transactions = wallet.get_wallet_transactions_mut().unwrap();
     wallet_transactions
-        .values()
-        .flat_map(|tx| tx.sapling_notes)
+        .values_mut()
+        .flat_map(|tx| tx.sapling_notes.iter_mut())
         .filter(|note| note.spending_transaction.is_none())
-        .for_each(|mut note| {
+        .for_each(|note| {
             if let Some((_, txid)) = note
                 .nullifier
                 .and_then(|nf| sapling_spend_locators.get(&nf))
@@ -489,10 +489,10 @@ where
             }
         });
     wallet_transactions
-        .values()
-        .flat_map(|tx| tx.orchard_notes)
+        .values_mut()
+        .flat_map(|tx| tx.orchard_notes.iter_mut())
         .filter(|note| note.spending_transaction.is_none())
-        .for_each(|mut note| {
+        .for_each(|note| {
             if let Some((_, txid)) = note
                 .nullifier
                 .and_then(|nf| orchard_spend_locators.get(&nf))
