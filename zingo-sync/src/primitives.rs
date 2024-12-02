@@ -237,7 +237,7 @@ pub struct OutgoingNote<N> {
     /// Memo
     memo: Memo,
     /// Recipient's full unified address from encoded memo
-    recipient_ua: Option<UnifiedAddress>,
+    pub(crate) recipient_ua: Option<UnifiedAddress>,
 }
 
 impl<N> OutgoingNote<N> {

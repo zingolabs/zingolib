@@ -383,7 +383,7 @@ fn add_recipient_unified_address<P, Nz>(
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.set_recipient_ua(Some(ua.clone()));
+                note.recipient_ua = Some(ua.clone());
             });
     }
 }
