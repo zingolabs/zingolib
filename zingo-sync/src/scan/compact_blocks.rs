@@ -99,13 +99,13 @@ where
 
             calculate_nullifiers_and_positions(
                 sapling_tree_size,
-                scanning_keys.sapling(),
+                &scanning_keys.sapling,
                 &incoming_sapling_outputs,
                 &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_tree_size,
-                scanning_keys.orchard(),
+                &scanning_keys.orchard,
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );

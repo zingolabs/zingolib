@@ -18,13 +18,12 @@ use crate::{keys::KeyId, utils};
 
 /// Encapsulates the current state of sync
 #[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
 pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
-    scan_ranges: Vec<ScanRange>,
+    pub(crate) scan_ranges: Vec<ScanRange>,
     /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
-    spend_locations: Vec<(BlockHeight, TxId)>,
+    pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
 }
 
 impl SyncState {
@@ -37,7 +36,7 @@ impl SyncState {
     }
 
     pub fn fully_scanned(&self) -> bool {
-        self.scan_ranges().iter().all(|scan_range| {
+        self.scan_ranges.iter().all(|scan_range| {
             matches!(
                 scan_range.priority(),
                 zcash_client_backend::data_api::scanning::ScanPriority::Scanned

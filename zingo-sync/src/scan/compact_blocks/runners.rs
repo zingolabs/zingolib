@@ -65,14 +65,14 @@ where
             sapling: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
-                    .sapling()
+                    .sapling
                     .iter()
                     .map(|(id, key)| (*id, key.prepare())),
             ),
             orchard: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
-                    .orchard()
+                    .orchard
                     .iter()
                     .map(|(id, key)| (*id, key.prepare())),
             ),

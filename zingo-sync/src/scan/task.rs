@@ -157,7 +157,7 @@ where
                 if !wallet
                     .get_sync_state()
                     .unwrap()
-                    .scan_ranges()
+                    .scan_ranges
                     .iter()
                     .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
                 {
