@@ -141,11 +141,11 @@ pub trait SyncNullifiers: SyncWallet {
     /// Append nullifiers to wallet nullifier map
     fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
-            .sapling_mut()
-            .append(nullifier_map.sapling_mut());
+            .sapling
+            .append(&mut nullifier_map.sapling);
         self.get_nullifiers_mut()?
-            .orchard_mut()
-            .append(nullifier_map.orchard_mut());
+            .orchard
+            .append(&mut nullifier_map.orchard);
 
         Ok(())
     }
@@ -154,10 +154,10 @@ pub trait SyncNullifiers: SyncWallet {
     fn truncate_nullifiers(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
-            .sapling_mut()
+            .sapling
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
         nullifier_map
-            .orchard_mut()
+            .orchard
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
 
         Ok(())

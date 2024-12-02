@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use getset::{CopyGetters, Getters, MutGetters, Setters};
+use getset::{CopyGetters, Getters, Setters};
 
 use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::ScanRange;
@@ -69,11 +69,9 @@ impl OutputId {
 }
 
 /// Binary tree map of nullifiers from transaction spends or actions
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
 pub struct NullifierMap {
-    sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
-    orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
+    pub(crate) sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
+    pub(crate) orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
 }
 
 impl NullifierMap {

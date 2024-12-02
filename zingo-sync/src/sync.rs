@@ -434,12 +434,12 @@ where
     let sapling_spend_locators: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)> =
         sapling_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.sapling_mut().remove_entry(nf))
+            .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
             .collect();
     let orchard_spend_locators: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)> =
         orchard_nullifiers
             .iter()
-            .flat_map(|nf| nullifier_map.orchard_mut().remove_entry(nf))
+            .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
             .collect();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
@@ -654,12 +654,12 @@ where
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .sapling_mut()
+        .sapling
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .orchard_mut()
+        .orchard
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
 
     Ok(())
