@@ -508,7 +508,7 @@ mod decrypt_transaction {
                     })
                     .collect::<Vec<_>>();
 
-            let Ok(fvk) = D::unified_key_store_to_fvk(self.key.unified_key_store()) else {
+            let Ok(fvk) = D::unified_key_store_to_fvk(&self.key.unified_key_store) else {
                 // skip scanning if wallet has no viewing capability
                 return;
             };

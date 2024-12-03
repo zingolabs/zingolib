@@ -17,6 +17,7 @@ sapling-crypto.workspace = true
 orchard.workspace = true
 incrementalmerkletree.workspace = true
 shardtree.workspace = true
+zip32.workspace = true
 
 # Async
 futures.workspace = true

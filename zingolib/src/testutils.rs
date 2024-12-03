@@ -47,11 +47,11 @@ pub mod regtest;
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey =
-        wallet_capability.unified_key_store().try_into().unwrap();
+        (&wallet_capability.unified_key_store).try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
-        wallet_capability.unified_key_store().try_into().unwrap();
+        (&wallet_capability.unified_key_store).try_into().unwrap();
     let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
-        wallet_capability.unified_key_store().try_into().unwrap();
+        (&wallet_capability.unified_key_store).try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];
     transparent_vk_bytes.copy_from_slice(&transparent_vk.serialize());

@@ -51,7 +51,6 @@ dirs.workspace = true
 enum_dispatch = { workspace = true }
 ff = { workspace = true }
 futures = { workspace = true }
-getset = { workspace = true }
 group = { workspace = true }
 hex = { workspace = true }
 http.workspace = true

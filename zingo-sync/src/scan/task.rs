@@ -13,11 +13,15 @@ use tokio::{
 
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{consensus, zip32::AccountId};
+use zcash_primitives::{
+    consensus::{self},
+    zip32::AccountId,
+};
 
 use crate::{
     client::FetchRequest,
-    primitives::WalletBlock,
+    keys::transparent::TransparentAddressId,
+    primitives::{Locator, WalletBlock},
     sync,
     traits::{SyncBlocks, SyncWallet},
 };
@@ -64,9 +68,9 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
 {
     pub(crate) fn new(
+        consensus_parameters: P,
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        consensus_parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     ) -> Self {
         let workers: Vec<ScanWorker<P>> = Vec::with_capacity(MAX_WORKER_POOLSIZE);
@@ -75,9 +79,9 @@ where
             state: ScannerState::Verification,
             workers,
             unique_id: 0,
+            consensus_parameters,
             scan_results_sender,
             fetch_request_sender,
-            consensus_parameters,
             ufvks,
         }
     }
@@ -97,10 +101,10 @@ where
         tracing::info!("Spawning worker {}", self.unique_id);
         let mut worker = ScanWorker::new(
             self.unique_id,
+            self.consensus_parameters.clone(),
             None,
             self.scan_results_sender.clone(),
             self.fetch_request_sender.clone(),
-            self.consensus_parameters.clone(),
             self.ufvks.clone(),
         );
         worker.run().unwrap();
@@ -170,7 +174,7 @@ where
 
                 // scan the range with `Verify` priority
                 if let Some(worker) = self.idle_worker() {
-                    let scan_task = ScanTask::create(wallet)
+                    let scan_task = sync::state::create_scan_task(wallet)
                         .unwrap()
                         .expect("scan range with `Verify` priority must exist!");
 
@@ -181,7 +185,7 @@ where
             ScannerState::Scan => {
                 // create scan tasks until all ranges are scanned or currently scanning
                 if let Some(worker) = self.idle_worker() {
-                    if let Some(scan_task) = ScanTask::create(wallet).unwrap() {
+                    if let Some(scan_task) = sync::state::create_scan_task(wallet).unwrap() {
                         worker.add_scan_task(scan_task).unwrap();
                     } else {
                         self.state.shutdown();
@@ -198,7 +202,7 @@ where
             }
         }
 
-        if !wallet.get_sync_state().unwrap().fully_scanned() && self.worker_poolsize() == 0 {
+        if !wallet.get_sync_state().unwrap().scan_complete() && self.worker_poolsize() == 0 {
             panic!("worker pool should not be empty with unscanned ranges!")
         }
     }
@@ -208,10 +212,10 @@ struct ScanWorker<P> {
     id: usize,
     handle: Option<JoinHandle<()>>,
     is_scanning: Arc<AtomicBool>,
+    consensus_parameters: P,
     scan_task_sender: Option<mpsc::UnboundedSender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
@@ -221,20 +225,20 @@ where
 {
     fn new(
         id: usize,
+        consensus_parameters: P,
         scan_task_sender: Option<mpsc::UnboundedSender<ScanTask>>,
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        consensus_parameters: P,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     ) -> Self {
         Self {
             id,
             handle: None,
             is_scanning: Arc::new(AtomicBool::new(false)),
+            consensus_parameters,
             scan_task_sender,
             scan_results_sender,
             fetch_request_sender,
-            consensus_parameters,
             ufvks,
         }
     }
@@ -261,6 +265,8 @@ where
                     &ufvks,
                     scan_task.scan_range.clone(),
                     scan_task.previous_wallet_block,
+                    scan_task.locators,
+                    scan_task.transparent_addresses,
                 )
                 .await;
 
@@ -311,34 +317,25 @@ where
 }
 
 #[derive(Debug)]
-struct ScanTask {
+pub(crate) struct ScanTask {
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
+    locators: Vec<Locator>,
+    transparent_addresses: HashMap<String, TransparentAddressId>,
 }
 
 impl ScanTask {
-    fn from_parts(scan_range: ScanRange, previous_wallet_block: Option<WalletBlock>) -> Self {
+    pub(crate) fn from_parts(
+        scan_range: ScanRange,
+        previous_wallet_block: Option<WalletBlock>,
+        locators: Vec<Locator>,
+        transparent_addresses: HashMap<String, TransparentAddressId>,
+    ) -> Self {
         Self {
             scan_range,
             previous_wallet_block,
-        }
-    }
-
-    fn create<W>(wallet: &mut W) -> Result<Option<ScanTask>, ()>
-    where
-        W: SyncWallet + SyncBlocks,
-    {
-        if let Some(scan_range) = sync::select_scan_range(wallet.get_sync_state_mut().unwrap()) {
-            let previous_wallet_block = wallet
-                .get_wallet_block(scan_range.block_range().start - 1)
-                .ok();
-
-            Ok(Some(ScanTask::from_parts(
-                scan_range,
-                previous_wallet_block,
-            )))
-        } else {
-            Ok(None)
+            locators,
+            transparent_addresses,
         }
     }
 }

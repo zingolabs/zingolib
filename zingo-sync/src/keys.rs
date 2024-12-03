@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use getset::Getters;
 use incrementalmerkletree::Position;
 use orchard::{
-    keys::{FullViewingKey, IncomingViewingKey, Scope},
+    keys::{FullViewingKey, IncomingViewingKey},
     note_encryption::OrchardDomain,
 };
 use sapling_crypto::{
@@ -13,15 +13,22 @@ use sapling_crypto::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
+use zip32::Scope;
 
+/// Child index for the `address_index` path level in the BIP44 hierarchy.
+pub type AddressIndex = u32;
+
+/// Unique ID for shielded keys.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct KeyId {
     account_id: zcash_primitives::zip32::AccountId,
     scope: Scope,
 }
 
+pub mod transparent;
+
 impl KeyId {
-    pub fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
+    pub(crate) fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
         Self { account_id, scope }
     }
 }
@@ -37,7 +44,7 @@ impl memuse::DynamicUsage for KeyId {
 }
 
 /// A key that can be used to perform trial decryption and nullifier
-/// computation for a [`CompactSaplingOutput`] or [`CompactOrchardAction`].
+/// computation for a CompactSaplingOutput or CompactOrchardAction.
 pub trait ScanningKeyOps<D: Domain, Nf> {
     /// Prepare the key for use in batch trial decryption.
     fn prepare(&self) -> D::IncomingViewingKey;

@@ -254,10 +254,10 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wc = wallet.wallet_capability();
 
-    let UnifiedKeyStore::Spend(usk) = wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
         panic!("should be spending key!")
     };
-    let UnifiedKeyStore::Spend(expected_usk) = expected_wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(expected_usk) = &expected_wc.unified_key_store else {
         panic!("should be spending key!")
     };
 
@@ -289,7 +289,7 @@ async fn reload_wallet_from_buffer() {
     )
     .unwrap();
     let v_wc = view_wallet.wallet_capability();
-    let UnifiedKeyStore::View(v_ufvk) = v_wc.unified_key_store() else {
+    let UnifiedKeyStore::View(v_ufvk) = &v_wc.unified_key_store else {
         panic!("should be viewing key!");
     };
     let v_ufvk_string = v_ufvk.encode(&wallet.transaction_context.config.chain);

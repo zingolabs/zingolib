@@ -1,20 +1,28 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::data_api::scanning::ScanRange;
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkConstants, Parameters},
+    legacy::Script,
     memo::Memo,
-    transaction::TxId,
+    transaction::{components::amount::NonNegativeAmount, TxId},
 };
 
-use crate::{keys::KeyId, utils};
+use crate::{
+    keys::{transparent::TransparentAddressId, KeyId},
+    utils,
+};
+
+/// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to spend
+/// detections or transparent output discovery.
+pub type Locator = (BlockHeight, TxId);
 
 /// Encapsulates the current state of sync
 #[derive(Debug, Getters, MutGetters)]
@@ -23,8 +31,8 @@ pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
     scan_ranges: Vec<ScanRange>,
-    /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
-    spend_locations: Vec<(BlockHeight, TxId)>,
+    /// Locators for relevent transactions to the wallet.
+    locators: BTreeSet<Locator>,
 }
 
 impl SyncState {
@@ -32,17 +40,32 @@ impl SyncState {
     pub fn new() -> Self {
         SyncState {
             scan_ranges: Vec::new(),
-            spend_locations: Vec::new(),
+            locators: BTreeSet::new(),
         }
     }
 
-    pub fn fully_scanned(&self) -> bool {
-        self.scan_ranges().iter().all(|scan_range| {
-            matches!(
-                scan_range.priority(),
-                zcash_client_backend::data_api::scanning::ScanPriority::Scanned
-            )
-        })
+    /// Returns true if all scan ranges are scanned.
+    pub(crate) fn scan_complete(&self) -> bool {
+        self.scan_ranges()
+            .iter()
+            .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+    }
+
+    /// Returns the block height at which all blocks equal to and below this height are scanned.
+    pub fn fully_scanned_height(&self) -> BlockHeight {
+        if let Some(scan_range) = self
+            .scan_ranges()
+            .iter()
+            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        {
+            scan_range.block_range().start - 1
+        } else {
+            self.scan_ranges()
+                .last()
+                .expect("scan ranges always non-empty")
+                .block_range()
+                .end
+        }
     }
 }
 
@@ -53,7 +76,7 @@ impl Default for SyncState {
 }
 
 /// Output ID for a given pool type
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, CopyGetters)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct OutputId {
     /// ID of associated transaction
@@ -73,8 +96,8 @@ impl OutputId {
 #[derive(Debug, Getters, MutGetters)]
 #[getset(get = "pub", get_mut = "pub")]
 pub struct NullifierMap {
-    sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
-    orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
+    sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    orchard: BTreeMap<orchard::note::Nullifier, Locator>,
 }
 
 impl NullifierMap {
@@ -87,6 +110,30 @@ impl NullifierMap {
 }
 
 impl Default for NullifierMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Binary tree map of out points (transparent spends)
+#[derive(Debug)]
+pub struct OutPointMap(BTreeMap<OutputId, Locator>);
+
+impl OutPointMap {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn inner(&self) -> &BTreeMap<OutputId, Locator> {
+        &self.0
+    }
+
+    pub fn inner_mut(&mut self) -> &mut BTreeMap<OutputId, Locator> {
+        &mut self.0
+    }
+}
+
+impl Default for OutPointMap {
     fn default() -> Self {
         Self::new()
     }
@@ -133,7 +180,7 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Debug, Getters, CopyGetters)]
+#[derive(Getters, CopyGetters)]
 pub struct WalletTransaction {
     #[getset(get = "pub")]
     transaction: zcash_primitives::transaction::Transaction,
@@ -147,6 +194,8 @@ pub struct WalletTransaction {
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
     #[getset(skip)]
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    #[getset(skip)]
+    transparent_coins: Vec<TransparentCoin>,
 }
 
 impl WalletTransaction {
@@ -157,6 +206,7 @@ impl WalletTransaction {
         orchard_notes: Vec<OrchardNote>,
         outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
         outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+        transparent_coins: Vec<TransparentCoin>,
     ) -> Self {
         Self {
             transaction,
@@ -165,6 +215,7 @@ impl WalletTransaction {
             orchard_notes,
             outgoing_sapling_notes,
             outgoing_orchard_notes,
+            transparent_coins,
         }
     }
 
@@ -191,8 +242,28 @@ impl WalletTransaction {
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
     }
+
+    pub fn transparent_coins(&self) -> &[TransparentCoin] {
+        &self.transparent_coins
+    }
+
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+        self.transparent_coins.iter_mut().collect()
+    }
 }
 
+impl std::fmt::Debug for WalletTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("WalletTransaction")
+            .field("block_height", &self.block_height)
+            .field("sapling_notes", &self.sapling_notes)
+            .field("orchard_notes", &self.orchard_notes)
+            .field("outgoing_sapling_notes", &self.outgoing_sapling_notes)
+            .field("outgoing_orchard_notes", &self.outgoing_orchard_notes)
+            .field("transparent_coins", &self.transparent_coins)
+            .finish()
+    }
+}
 pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
@@ -310,4 +381,47 @@ pub(crate) trait SyncOutgoingNotes {
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
         P: Parameters + NetworkConstants;
+}
+
+///  Transparent coin (output) with metadata relevant to the wallet
+#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+pub struct TransparentCoin {
+    /// Output ID
+    #[getset(get_copy = "pub")]
+    output_id: OutputId,
+    /// Identifier for key used to derive address
+    #[getset(get_copy = "pub")]
+    key_id: TransparentAddressId,
+    /// Encoded transparent address
+    #[getset(get = "pub")]
+    address: String,
+    /// Script
+    #[getset(get = "pub")]
+    script: Script,
+    /// Coin value
+    #[getset(get_copy = "pub")]
+    value: NonNegativeAmount,
+    /// Spend status
+    #[getset(get = "pub", set = "pub")]
+    spending_transaction: Option<TxId>,
+}
+
+impl TransparentCoin {
+    pub fn from_parts(
+        output_id: OutputId,
+        key_id: TransparentAddressId,
+        address: String,
+        script: Script,
+        value: NonNegativeAmount,
+        spending_transaction: Option<TxId>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id,
+            address,
+            script,
+            value,
+            spending_transaction,
+        }
+    }
 }

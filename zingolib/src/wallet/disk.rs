@@ -223,7 +223,7 @@ impl LightWallet {
         // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
         if external_version < 29 {
             if let Some(mnemonic) = mnemonic.as_ref() {
-                wallet_capability.set_unified_key_store(UnifiedKeyStore::Spend(Box::new(
+                wallet_capability.unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
                         &config.chain,
                         &mnemonic.0.to_seed(""),
@@ -238,8 +238,8 @@ impl LightWallet {
                             ),
                         )
                     })?,
-                )));
-            } else if let UnifiedKeyStore::Spend(_) = wallet_capability.unified_key_store() {
+                ));
+            } else if let UnifiedKeyStore::Spend(_) = &wallet_capability.unified_key_store {
                 return Err(io::Error::new(
                     ErrorKind::Other,
                     "loading from legacy spending keys with no seed phrase to recover",
@@ -248,7 +248,7 @@ impl LightWallet {
         }
 
         info!("Keys in this wallet:");
-        match wallet_capability.unified_key_store() {
+        match &wallet_capability.unified_key_store {
             UnifiedKeyStore::Spend(_) => {
                 info!("  - orchard spending key");
                 info!("  - sapling extended spending key");
@@ -298,9 +298,13 @@ impl LightWallet {
             #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
             #[cfg(feature = "sync")]
+            outpoint_map: zingo_sync::primitives::OutPointMap::new(),
+            #[cfg(feature = "sync")]
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
+            #[cfg(feature = "sync")]
+            transparent_addresses: BTreeMap::new(),
         };
 
         Ok(lw)

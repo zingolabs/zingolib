@@ -43,9 +43,9 @@ async fn sync_mainnet_test() {
         .await
         .unwrap();
 
-    dbg!(lightclient.wallet.wallet_blocks());
-    dbg!(lightclient.wallet.nullifier_map());
-    dbg!(lightclient.wallet.sync_state());
+    dbg!(lightclient.wallet.wallet_blocks);
+    dbg!(lightclient.wallet.nullifier_map);
+    dbg!(lightclient.wallet.sync_state);
 }
 
 #[tokio::test]
@@ -55,16 +55,29 @@ async fn sync_test() {
     let (regtest_manager, _cph, faucet, mut recipient, _txid) =
         scenarios::orchard_funded_recipient(5_000_000).await;
     from_inputs::quick_send(
-        &recipient,
+        &faucet,
         vec![(
-            &get_base_address_macro!(&faucet, "unified"),
+            &get_base_address_macro!(&recipient, "transparent"),
             100_000,
-            Some("Outgoing decrypt test"),
+            None,
         )],
     )
     .await
     .unwrap();
+    // from_inputs::quick_send(
+    //     &recipient,
+    //     vec![(
+    //         &get_base_address_macro!(&faucet, "unified"),
+    //         100_000,
+    //         Some("Outgoing decrypt test"),
+    //     )],
+    // )
+    // .await
+    // .unwrap();
 
+    increase_server_height(&regtest_manager, 1).await;
+    recipient.do_sync(false).await.unwrap();
+    recipient.quick_shield().await.unwrap();
     increase_server_height(&regtest_manager, 1).await;
 
     let uri = recipient.config().lightwalletd_uri.read().unwrap().clone();
@@ -77,8 +90,9 @@ async fn sync_test() {
     .await
     .unwrap();
 
-    // dbg!(recipient.wallet.wallet_transactions());
+    dbg!(&recipient.wallet.wallet_transactions);
     // dbg!(recipient.wallet.wallet_blocks());
     // dbg!(recipient.wallet.nullifier_map());
+    // dbg!(recipient.wallet.outpoint_map());
     // dbg!(recipient.wallet.sync_state());
 }

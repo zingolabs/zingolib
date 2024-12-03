@@ -18,7 +18,7 @@ use zcash_keys::{
 };
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkConstants, Parameters},
+    consensus::{self, BlockHeight, NetworkConstants},
     memo::Memo,
     transaction::{Transaction, TxId},
     zip32::AccountId,
@@ -27,10 +27,11 @@ use zingo_memo::ParsedMemo;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::KeyId,
+    keys::{self, transparent::TransparentAddressId, KeyId},
     primitives::{
-        OrchardNote, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
-        SyncOutgoingNotes, WalletBlock, WalletNote, WalletTransaction,
+        OrchardNote, OutPointMap, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote, OutputId,
+        SaplingNote, SyncOutgoingNotes, TransparentCoin, WalletBlock, WalletNote,
+        WalletTransaction,
     },
     utils,
 };
@@ -63,13 +64,16 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
     }
 }
 
-pub(crate) async fn scan_transactions<P: Parameters>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     relevant_txids: HashSet<TxId>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+    outpoint_map: &mut OutPointMap,
+    transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ()> {
     let mut wallet_transactions = HashMap::with_capacity(relevant_txids.len());
 
@@ -98,6 +102,8 @@ pub(crate) async fn scan_transactions<P: Parameters>(
             transaction,
             block_height,
             &decrypted_note_data,
+            outpoint_map,
+            &transparent_addresses,
         )
         .unwrap();
         wallet_transactions.insert(txid, wallet_transaction);
@@ -106,18 +112,21 @@ pub(crate) async fn scan_transactions<P: Parameters>(
     Ok(wallet_transactions)
 }
 
-fn scan_transaction<P: Parameters>(
+fn scan_transaction<P: consensus::Parameters>(
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transaction: Transaction,
     block_height: BlockHeight,
     decrypted_note_data: &DecryptedNoteData,
+    outpoint_map: &mut OutPointMap,
+    transparent_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<WalletTransaction, ()> {
     // TODO: price?
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         parameters,
         block_height,
     );
+    let mut transparent_coins: Vec<TransparentCoin> = Vec::new();
     let mut sapling_notes: Vec<SaplingNote> = Vec::new();
     let mut orchard_notes: Vec<OrchardNote> = Vec::new();
     let mut outgoing_sapling_notes: Vec<OutgoingSaplingNote> = Vec::new();
@@ -154,7 +163,18 @@ fn scan_transaction<P: Parameters>(
         }
     }
 
-    // TODO: scan transparent bundle
+    if let Some(bundle) = transaction.transparent_bundle() {
+        let transparent_outputs = &bundle.vout;
+        scan_incoming_coins(
+            parameters,
+            &mut transparent_coins,
+            transaction.txid(),
+            transparent_addresses,
+            transparent_outputs,
+        );
+
+        collect_outpoints(outpoint_map, transaction.txid(), block_height, bundle);
+    }
 
     if let Some(bundle) = transaction.sapling_bundle() {
         let sapling_outputs: Vec<(SaplingDomain, OutputDescription<GrothProofBytes>)> = bundle
@@ -240,6 +260,9 @@ fn scan_transaction<P: Parameters>(
             ),
         }
     }
+
+    // TODO: consider adding nullifiers and transparent txin data for efficiency
+
     Ok(WalletTransaction::from_parts(
         transaction,
         block_height,
@@ -247,7 +270,34 @@ fn scan_transaction<P: Parameters>(
         orchard_notes,
         outgoing_sapling_notes,
         outgoing_orchard_notes,
+        transparent_coins,
     ))
+}
+
+fn scan_incoming_coins<P: consensus::Parameters>(
+    consensus_parameters: &P,
+    transparent_coins: &mut Vec<TransparentCoin>,
+    txid: TxId,
+    transparent_addresses: &HashMap<String, TransparentAddressId>,
+    transparent_outputs: &[zcash_primitives::transaction::components::TxOut],
+) {
+    for (output_index, output) in transparent_outputs.iter().enumerate() {
+        if let Some(address) = output.recipient_address() {
+            let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
+            if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
+                let output_id = OutputId::from_parts(txid, output_index);
+
+                transparent_coins.push(TransparentCoin::from_parts(
+                    output_id,
+                    *key_id,
+                    address.clone(),
+                    output.script_pubkey.clone(),
+                    output.value,
+                    None,
+                ));
+            }
+        }
+    }
 }
 
 fn scan_incoming_notes<D, Op, N, Nf>(
@@ -366,7 +416,7 @@ fn add_recipient_unified_address<P, Nz>(
     unified_addresses: Vec<UnifiedAddress>,
     outgoing_notes: &mut [OutgoingNote<Nz>],
 ) where
-    P: Parameters + NetworkConstants,
+    P: consensus::Parameters + NetworkConstants,
     OutgoingNote<Nz>: SyncOutgoingNotes,
 {
     for ua in unified_addresses {
@@ -386,4 +436,23 @@ fn add_recipient_unified_address<P, Nz>(
                 note.set_recipient_ua(Some(ua.clone()));
             });
     }
+}
+
+/// Adds the outpoints from a transparent bundle to the outpoint map.
+fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
+    outpoint_map: &mut OutPointMap,
+    txid: TxId,
+    block_height: BlockHeight,
+    transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
+) {
+    transparent_bundle
+        .vin
+        .iter()
+        .map(|txin| &txin.prevout)
+        .for_each(|outpoint| {
+            outpoint_map.inner_mut().insert(
+                OutputId::from_parts(*outpoint.txid(), outpoint.n() as usize),
+                (block_height, txid),
+            );
+        });
 }

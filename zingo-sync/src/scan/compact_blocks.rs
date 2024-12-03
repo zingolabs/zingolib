@@ -149,8 +149,6 @@ fn trial_decrypt<P>(
 where
     P: Parameters + Send + 'static,
 {
-    // TODO: add outgoing decryption
-
     let mut runners = BatchRunners::<(), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();

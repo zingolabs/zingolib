@@ -139,11 +139,7 @@ impl LightWallet {
             .transaction_metadata_set
             .write()
             .await;
-        let usk = &self
-            .transaction_context
-            .key
-            .unified_key_store()
-            .try_into()?;
+        let usk = &(&self.transaction_context.key.unified_key_store).try_into()?;
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             wallet_db.deref_mut(),
             &self.transaction_context.config.chain,

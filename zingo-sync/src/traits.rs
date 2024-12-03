@@ -8,27 +8,40 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
-use crate::primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction};
+use crate::keys::transparent::TransparentAddressId;
+use crate::primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction};
 use crate::witness::{ShardTreeData, ShardTrees};
+
+// TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
 /// Temporary dump for all neccessary wallet functionality for PoC
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
     type Error: Debug;
 
-    /// Returns block height wallet was created
+    /// Returns the block height wallet was created.
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error>;
 
-    /// Returns reference to wallet sync state
+    /// Returns a reference to wallet sync state.
     fn get_sync_state(&self) -> Result<&SyncState, Self::Error>;
 
-    /// Returns mutable reference to wallet sync state
+    /// Returns a mutable reference to wallet sync state.
     fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error>;
 
     /// Returns all unified full viewing keys known to this wallet.
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error>;
+
+    /// Returns a reference to all the transparent addresses known to this wallet.
+    fn get_transparent_addresses(
+        &self,
+    ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error>;
+
+    /// Returns a mutable reference to all the transparent addresses known to this wallet.
+    fn get_transparent_addresses_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
 }
 
 /// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
@@ -132,8 +145,8 @@ pub trait SyncTransactions: SyncWallet {
 
 /// Trait for interfacing nullifiers with wallet data
 pub trait SyncNullifiers: SyncWallet {
-    // /// Get wallet nullifier map
-    // fn get_nullifiers(&self) -> Result<&NullifierMap, Self::Error>;
+    /// Get wallet nullifier map
+    fn get_nullifiers(&self) -> Result<&NullifierMap, Self::Error>;
 
     /// Get mutable reference to wallet nullifier map
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;
@@ -158,6 +171,33 @@ pub trait SyncNullifiers: SyncWallet {
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
         nullifier_map
             .orchard_mut()
+            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+
+        Ok(())
+    }
+}
+
+/// Trait for interfacing outpoints with wallet data
+pub trait SyncOutPoints: SyncWallet {
+    /// Get wallet outpoint map
+    fn get_outpoints(&self) -> Result<&OutPointMap, Self::Error>;
+
+    /// Get mutable reference to wallet outpoint map
+    fn get_outpoints_mut(&mut self) -> Result<&mut OutPointMap, Self::Error>;
+
+    /// Append outpoints to wallet outpoint map
+    fn append_outpoints(&mut self, mut outpoint_map: OutPointMap) -> Result<(), Self::Error> {
+        self.get_outpoints_mut()?
+            .inner_mut()
+            .append(outpoint_map.inner_mut());
+
+        Ok(())
+    }
+
+    /// Removes all mapped outpoints above the given `block_height`.
+    fn truncate_outpoints(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
+        self.get_outpoints_mut()?
+            .inner_mut()
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
 
         Ok(())

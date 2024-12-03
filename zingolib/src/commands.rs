@@ -144,7 +144,7 @@ impl Command for WalletKindCommand {
                 }
                 .pretty(4)
             } else {
-                match lightclient.wallet.wallet_capability().unified_key_store() {
+                match &lightclient.wallet.wallet_capability().unified_key_store {
                     UnifiedKeyStore::Spend(_) => object! {
                         "kind" => "Loaded from unified spending key",
                         "transparent" => true,
@@ -746,15 +746,11 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk: UnifiedFullViewingKey = match lightclient
-            .wallet
-            .wallet_capability()
-            .unified_key_store()
-            .try_into()
-        {
-            Ok(ufvk) => ufvk,
-            Err(e) => return e.to_string(),
-        };
+        let ufvk: UnifiedFullViewingKey =
+            match (&lightclient.wallet.wallet_capability().unified_key_store).try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
         object! {
             "ufvk" => ufvk.encode(&lightclient.config().chain),
             "birthday" => RT.block_on(lightclient.wallet.get_birthday())
