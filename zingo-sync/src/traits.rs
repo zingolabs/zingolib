@@ -1,16 +1,32 @@
 //! Traits for interfacing a wallet with the sync engine
 
-use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::Hash,
+};
 
-use zcash_client_backend::keys::UnifiedFullViewingKey;
+use incrementalmerkletree::{Hashable, Level, Position, Retention};
+use memuse::DynamicUsage;
+use shardtree::LocatedPrunableTree;
+use zcash_client_backend::{data_api::ORCHARD_SHARD_HEIGHT, keys::UnifiedFullViewingKey};
+use zcash_note_encryption::{BatchDomain, Domain};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
-use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction};
-use crate::witness::{ShardTreeData, ShardTrees};
+use crate::{
+    keys::transparent::TransparentAddressId,
+    scan::compact_blocks::runners::{BatchRunner, TaggedShardTreeUpdateOrchardBatchRunner},
+};
+use crate::{
+    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction},
+    scan::compact_blocks::runners::ShardTreeUpdateBatchRunners,
+};
+use crate::{
+    scan::compact_blocks::runners::TaggedShardTreeUpdateSaplingBatchRunner,
+    witness::{ShardTreeData, ShardTrees},
+};
 
 // TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
@@ -204,12 +220,176 @@ pub trait SyncOutPoints: SyncWallet {
     }
 }
 
+/// A batch scanning task.
+pub(crate) trait Task: Send + 'static {
+    fn run(self);
+}
+
+pub(crate) trait Batch<D>: Task + Sized
+where
+    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
+{
+    /// The data needed to create the batch
+    type Initial;
+
+    /// The items to be processed, in the batch
+    type Input;
+
+    /// The result of processing the items
+    type ResultVal: Send;
+
+    /// As we may return more than one result, we want a unique
+    /// identifier for each
+    type ResultKey: Hash + Eq;
+
+    /// The key used to identify a batch
+    type BatchKey: Hash + Eq + DynamicUsage;
+
+    fn new(init: Self::Initial) -> Self;
+
+    fn inputs(&self) -> &Vec<Self::Input>;
+    fn inputs_mut(&mut self) -> &mut Vec<Self::Input>;
+
+    fn repliers_mut(
+        &mut self,
+    ) -> &mut Vec<(usize, crossbeam_channel::Sender<(usize, Self::ResultVal)>)>;
+
+    fn is_empty(&self) -> bool {
+        self.inputs().is_empty()
+    }
+
+    /// Adds the given inputs to this batch.
+    ///
+    /// `replier` will be called with the result of every output.
+    fn add_widgets(
+        &mut self,
+        widgets: impl ExactSizeIterator<Item = Self::Input>,
+        replier: crossbeam_channel::Sender<(usize, Self::ResultVal)>,
+    ) {
+        let widget_len = widgets.len();
+        self.inputs_mut().extend(widgets);
+        self.repliers_mut()
+            .extend((0..widget_len).map(|output_index| (output_index, replier.clone())));
+    }
+    fn init_from_runner<T: Tasks<Self>>(
+        runner: &crate::scan::compact_blocks::runners::BatchRunner<D, Self, T>,
+    ) -> Self::Initial;
+
+    fn reskey_from_batchkeyval(batchkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey;
+}
+
+/// A tracker for the batch scanning tasks that are currently running.
+///
+/// This enables a [`BatchRunner`] to be optionally configured to track heap memory usage.
+pub(crate) trait Tasks<Item> {
+    type Task: Task;
+    fn new() -> Self;
+    fn add_task(&self, item: Item) -> Self::Task;
+    fn run_task(&self, item: Item) {
+        let task = self.add_task(item);
+        rayon::spawn_fifo(|| task.run());
+    }
+}
+
+impl<Item: Task> Tasks<Item> for () {
+    type Task = Item;
+    fn new() -> Self {}
+    fn add_task(&self, item: Item) -> Self::Task {
+        // Return the item itself as the task; we aren't tracking anything about it, so
+        // there is no need to wrap it in a newtype.
+        item
+    }
+}
+
+impl<Node> Task for ShardTreeUpdateBatch<Node>
+where
+    Node: PartialEq + Eq + Hashable + Send + Sync + Clone + 'static,
+{
+    fn run(self) {
+        let tree = LocatedPrunableTree::from_iter(
+            self.initial_pos..self.initial_pos + self.leaves_and_retentions.len() as u64,
+            // This should be tied to domain. Currently orchard
+            // and sapling use the same height.
+            Level::new(ORCHARD_SHARD_HEIGHT),
+            self.leaves_and_retentions.into_iter(),
+        )
+        .unwrap();
+        match self.repliers.first() {
+            Some((index, sender)) => sender.send((*index, tree.subtree)).unwrap(),
+            None => panic!("no sender"),
+        }
+    }
+}
+
+pub(crate) struct ShardTreeUpdateBatch<Node> {
+    initial_pos: Position,
+    leaves_and_retentions: Vec<(Node, Retention<BlockHeight>)>,
+    repliers: Vec<(
+        usize,
+        crossbeam_channel::Sender<(usize, LocatedPrunableTree<Node>)>,
+    )>,
+}
+
+impl<Node> ShardTreeUpdateBatch<Node> {}
+
+impl<D, Node> Batch<D> for ShardTreeUpdateBatch<Node>
+where
+    D: BatchDomain + 'static,
+    <D as Domain>::Memo: Send,
+    <D as Domain>::Recipient: Send,
+    <D as Domain>::IncomingViewingKey: Send,
+    Node: Send + Sync + PartialEq + Eq + Hashable + Clone + 'static,
+{
+    type Initial = Position;
+
+    type Input = (Node, Retention<BlockHeight>);
+
+    type ResultVal = LocatedPrunableTree<Node>;
+
+    type ResultKey = ();
+
+    type BatchKey = u64;
+
+    fn new(init: Self::Initial) -> Self {
+        Self {
+            initial_pos: init,
+            leaves_and_retentions: vec![],
+            repliers: vec![],
+        }
+    }
+
+    fn inputs(&self) -> &Vec<Self::Input> {
+        &self.leaves_and_retentions
+    }
+
+    fn inputs_mut(&mut self) -> &mut Vec<Self::Input> {
+        &mut self.leaves_and_retentions
+    }
+
+    fn repliers_mut(
+        &mut self,
+    ) -> &mut Vec<(usize, crossbeam_channel::Sender<(usize, Self::ResultVal)>)> {
+        &mut self.repliers
+    }
+
+    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<D, Self, T>) -> Self::Initial {
+        runner.accumulating_batch.initial_pos
+    }
+
+    fn reskey_from_batchkeyval(_batchkey: &Self::BatchKey, _reply_index: usize) -> Self::ResultKey {
+    }
+}
+
 /// Trait for interfacing shard tree data with wallet data
 pub trait SyncShardTrees: SyncWallet {
     /// Get mutable reference to shard trees
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
 
     /// Update wallet shard trees with new shard tree data
+    // TODO: The batch interface supports streaming leaves and
+    // retentions, with a new batch starting whenever full
+    // Currently, we collect all shardtreedata before starting
+    // the update process.
     fn update_shard_trees(&mut self, shard_tree_data: ShardTreeData) -> Result<(), Self::Error> {
         let ShardTreeData {
             sapling_initial_position,
@@ -217,21 +397,62 @@ pub trait SyncShardTrees: SyncWallet {
             sapling_leaves_and_retentions,
             orchard_leaves_and_retentions,
         } = shard_tree_data;
-
-        self.get_shard_trees_mut()?
-            .sapling_mut()
-            .batch_insert(
+        let mut runners = ShardTreeUpdateBatchRunners {
+            sapling: TaggedShardTreeUpdateSaplingBatchRunner::<()>::new(
+                128,
                 sapling_initial_position,
-                sapling_leaves_and_retentions.into_iter(),
-            )
-            .unwrap();
-        self.get_shard_trees_mut()?
-            .orchard_mut()
-            .batch_insert(
+            ),
+            orchard: TaggedShardTreeUpdateOrchardBatchRunner::<()>::new(
+                128,
                 orchard_initial_position,
-                orchard_leaves_and_retentions.into_iter(),
-            )
-            .unwrap();
+            ),
+        };
+
+        for (i, sapling_chunk) in sapling_leaves_and_retentions.chunks(128).enumerate() {
+            runners.sapling.add_widgets(
+                (sapling_initial_position + (128 * i as u64)).into(),
+                sapling_chunk.iter().cloned(),
+            );
+            runners.sapling.flush();
+        }
+        for (i, orchard_chunk) in orchard_leaves_and_retentions.chunks(128).enumerate() {
+            runners.orchard.add_widgets(
+                (orchard_initial_position + (128 * i as u64)).into(),
+                orchard_chunk.iter().cloned(),
+            );
+            runners.orchard.flush();
+        }
+
+        let trees = self.get_shard_trees_mut()?;
+
+        for i in (u64::from(sapling_initial_position)
+            ..u64::from(sapling_initial_position + sapling_leaves_and_retentions.len() as u64))
+            .into_iter()
+            .step_by(128)
+        {
+            trees
+                .sapling_mut()
+                .insert_tree(
+                    runners.sapling.collect_results(&i).remove(&()).unwrap(),
+                    // TODO: This is the checkpoints to insert.
+                    BTreeMap::new(),
+                )
+                .unwrap();
+        }
+        for i in (u64::from(orchard_initial_position)
+            ..u64::from(orchard_initial_position + orchard_leaves_and_retentions.len() as u64))
+            .into_iter()
+            .step_by(128)
+        {
+            trees
+                .orchard_mut()
+                .insert_tree(
+                    runners.orchard.collect_results(&i).remove(&()).unwrap(),
+                    // TODO: This is the checkpoints to insert.
+                    BTreeMap::new(),
+                )
+                .unwrap();
+        }
 
         Ok(())
     }

@@ -21,14 +21,14 @@ use crate::{
     witness::ShardTreeData,
 };
 
-use self::runners::{BatchRunners, DecryptedOutput};
+use self::runners::{DecryptedOutput, TrialDecryptBatchRunners};
 
 use super::{
     error::{ContinuityError, ScanError},
     DecryptedNoteData, InitialScanData, ScanData,
 };
 
-mod runners;
+pub(crate) mod runners;
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -145,11 +145,11 @@ fn trial_decrypt<P>(
     parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-) -> Result<BatchRunners<(), ()>, ()>
+) -> Result<TrialDecryptBatchRunners<(), ()>, ()>
 where
     P: Parameters + Send + 'static,
 {
-    let mut runners = BatchRunners::<(), ()>::for_keys(100, scanning_keys);
+    let mut runners = TrialDecryptBatchRunners::<(), ()>::for_keys(100, scanning_keys);
     for block in compact_blocks {
         runners.add_block(parameters, block.clone()).unwrap();
     }

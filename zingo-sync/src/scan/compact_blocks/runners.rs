@@ -7,8 +7,9 @@ use std::{collections::HashMap, hash::Hash};
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::CompactAction;
+use incrementalmerkletree::Position;
 use orchard::note_encryption::OrchardDomain;
+use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::note_encryption::CompactOutputDescription;
 use sapling_crypto::note_encryption::SaplingDomain;
 
@@ -22,17 +23,17 @@ use zcash_primitives::{block::BlockHash, transaction::TxId};
 
 use memuse::DynamicUsage;
 
-use crate::keys::KeyId;
-use crate::keys::ScanningKeyOps as _;
-use crate::keys::ScanningKeys;
-use crate::primitives::OutputId;
+use crate::{keys::KeyId, traits::Tasks, witness::ShardTreeData};
+use crate::{keys::ScanningKeyOps as _, traits::Batch};
+use crate::{keys::ScanningKeys, traits::Task};
+use crate::{primitives::OutputId, traits::ShardTreeUpdateBatch};
 
-type TaggedSaplingBatch = TrialDecryptBatch<
+type TaggedTrialDecryptSaplingBatch = TrialDecryptBatch<
     SaplingDomain,
     sapling_crypto::note_encryption::CompactOutputDescription,
     CompactDecryptor,
 >;
-type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
+type TaggedTrialDecryptSaplingBatchRunner<Tasks> = BatchRunner<
     SaplingDomain,
     TrialDecryptBatch<
         SaplingDomain,
@@ -42,32 +43,61 @@ type TaggedSaplingBatchRunner<Tasks> = BatchRunner<
     Tasks,
 >;
 
-type TaggedOrchardBatch =
+type TaggedTrialDecryptOrchardBatch =
     TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>;
-type TaggedOrchardBatchRunner<Tasks> = BatchRunner<
+type TaggedTrialDecryptOrchardBatchRunner<Tasks> = BatchRunner<
     OrchardDomain,
     TrialDecryptBatch<OrchardDomain, orchard::note_encryption::CompactAction, CompactDecryptor>,
     Tasks,
 >;
+type TaggedShardTreeUpdateSaplingBatch = ShardTreeUpdateBatch<sapling_crypto::Node>;
+pub(crate) type TaggedShardTreeUpdateSaplingBatchRunner<Tasks> =
+    BatchRunner<SaplingDomain, TaggedShardTreeUpdateSaplingBatch, Tasks>;
+type TaggedShardTreeUpdateOrchardBatch = ShardTreeUpdateBatch<MerkleHashOrchard>;
 
-pub(crate) trait SaplingTasks: Tasks<TaggedSaplingBatch> {}
-impl<T: Tasks<TaggedSaplingBatch>> SaplingTasks for T {}
+pub(crate) type TaggedShardTreeUpdateOrchardBatchRunner<Tasks> =
+    BatchRunner<OrchardDomain, TaggedShardTreeUpdateOrchardBatch, Tasks>;
 
-pub(crate) trait OrchardTasks: Tasks<TaggedOrchardBatch> {}
-impl<T: Tasks<TaggedOrchardBatch>> OrchardTasks for T {}
+pub(crate) trait SaplingTrialDecryptTasks: Tasks<TaggedTrialDecryptSaplingBatch> {}
+impl<T: Tasks<TaggedTrialDecryptSaplingBatch>> SaplingTrialDecryptTasks for T {}
 
-pub(crate) struct BatchRunners<TS: SaplingTasks, TO: OrchardTasks> {
-    pub(crate) sapling: TaggedSaplingBatchRunner<TS>,
-    pub(crate) orchard: TaggedOrchardBatchRunner<TO>,
+pub(crate) trait OrchardTrialDecryptTasks: Tasks<TaggedTrialDecryptOrchardBatch> {}
+impl<T: Tasks<TaggedTrialDecryptOrchardBatch>> OrchardTrialDecryptTasks for T {}
+pub(crate) trait SaplingShardTreeUpdateTasks:
+    Tasks<TaggedShardTreeUpdateSaplingBatch>
+{
+}
+impl<T: Tasks<TaggedShardTreeUpdateSaplingBatch>> SaplingShardTreeUpdateTasks for T {}
+
+pub(crate) trait OrchardShardTreeUpdateTasks:
+    Tasks<TaggedShardTreeUpdateOrchardBatch>
+{
+}
+impl<T: Tasks<TaggedShardTreeUpdateOrchardBatch>> OrchardShardTreeUpdateTasks for T {}
+
+pub(crate) struct TrialDecryptBatchRunners<
+    TS: SaplingTrialDecryptTasks,
+    TO: OrchardTrialDecryptTasks,
+> {
+    pub(crate) sapling: TaggedTrialDecryptSaplingBatchRunner<TS>,
+    pub(crate) orchard: TaggedTrialDecryptOrchardBatchRunner<TO>,
 }
 
-impl<TS, TO> BatchRunners<TS, TO>
+pub(crate) struct ShardTreeUpdateBatchRunners<
+    TS: SaplingShardTreeUpdateTasks,
+    TO: OrchardShardTreeUpdateTasks,
+> {
+    pub(crate) sapling: TaggedShardTreeUpdateSaplingBatchRunner<TS>,
+    pub(crate) orchard: TaggedShardTreeUpdateOrchardBatchRunner<TO>,
+}
+
+impl<TS, TO> TrialDecryptBatchRunners<TS, TO>
 where
-    TS: SaplingTasks,
-    TO: OrchardTasks,
+    TS: SaplingTrialDecryptTasks,
+    TO: OrchardTrialDecryptTasks,
 {
     pub(crate) fn for_keys(batch_size_threshold: usize, scanning_keys: &ScanningKeys) -> Self {
-        BatchRunners {
+        TrialDecryptBatchRunners {
             sapling: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
@@ -250,34 +280,6 @@ impl<T> DynamicUsage for BatchReceiver<T> {
     }
 }
 
-/// A tracker for the batch scanning tasks that are currently running.
-///
-/// This enables a [`BatchRunner`] to be optionally configured to track heap memory usage.
-pub(crate) trait Tasks<Item> {
-    type Task: Task;
-    fn new() -> Self;
-    fn add_task(&self, item: Item) -> Self::Task;
-    fn run_task(&self, item: Item) {
-        let task = self.add_task(item);
-        rayon::spawn_fifo(|| task.run());
-    }
-}
-
-/// A batch scanning task.
-pub(crate) trait Task: Send + 'static {
-    fn run(self);
-}
-
-impl<Item: Task> Tasks<Item> for () {
-    type Task = Item;
-    fn new() -> Self {}
-    fn add_task(&self, item: Item) -> Self::Task {
-        // Return the item itself as the task; we aren't tracking anything about it, so
-        // there is no need to wrap it in a newtype.
-        item
-    }
-}
-
 /// A batch of outputs to trial decrypt.
 pub(crate) struct TrialDecryptBatch<D: BatchDomain, Output, Dec: Decryptor<D, Output>> {
     tags: Vec<KeyId>,
@@ -323,55 +325,6 @@ where
             },
         )
     }
-}
-
-pub(crate) trait Batch<D>: Task + Sized
-where
-    D: BatchDomain<IncomingViewingKey: Send, Recipient: Send, Memo: Send>,
-{
-    /// The data needed to create the batch
-    type Initial;
-
-    /// The items to be processed, in the batch
-    type Input;
-
-    /// The result of processing the items
-    type ResultVal: Send;
-
-    /// As we may return more than one result, we want a unique
-    /// identifier for each
-    type ResultKey: Hash + Eq;
-
-    /// The key used to identify a batch
-    type BatchKey: Hash + Eq + DynamicUsage;
-
-    fn new(init: Self::Initial) -> Self;
-
-    fn inputs(&self) -> &Vec<Self::Input>;
-    fn inputs_mut(&mut self) -> &mut Vec<Self::Input>;
-
-    fn repliers_mut(&mut self) -> &mut Vec<(usize, channel::Sender<(usize, Self::ResultVal)>)>;
-
-    fn is_empty(&self) -> bool {
-        self.inputs().is_empty()
-    }
-
-    /// Adds the given inputs to this batch.
-    ///
-    /// `replier` will be called with the result of every output.
-    fn add_widgets(
-        &mut self,
-        widgets: impl ExactSizeIterator<Item = Self::Input>,
-        replier: channel::Sender<(usize, Self::ResultVal)>,
-    ) {
-        let widget_len = widgets.len();
-        self.inputs_mut().extend(widgets);
-        self.repliers_mut()
-            .extend((0..widget_len).map(|output_index| (output_index, replier.clone())));
-    }
-    fn init_from_runner<T: Tasks<Self>>(runner: &BatchRunner<D, Self, T>) -> Self::Initial;
-
-    fn reskey_from_batchkeyval(batchkey: &Self::BatchKey, reply_index: usize) -> Self::ResultKey;
 }
 
 impl<D, Output, Dec> Batch<D> for TrialDecryptBatch<D, Output, Dec>
@@ -489,9 +442,9 @@ where
     B: Batch<D>,
     T: Tasks<B>,
 {
-    batch_size_threshold: usize,
+    pub(crate) batch_size_threshold: usize,
     // The batch currently being accumulated.
-    accumulating_batch: B,
+    pub(crate) accumulating_batch: B,
     // The running batches.
     running_tasks: T,
     // Receivers for the results of the running batches.
@@ -555,7 +508,7 @@ where
     D::Memo: Send,
     D::Note: Send,
     D::Recipient: Send,
-    B: Batch<D, Initial = (Vec<KeyId>, Vec<D::IncomingViewingKey>)>,
+    B: Batch<D>,
     T: Tasks<B>,
 {
     /// Batches the given inputs.
