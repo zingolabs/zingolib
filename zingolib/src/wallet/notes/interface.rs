@@ -70,9 +70,9 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note has one of the spend statuses enumerated by the query
     fn spend_status_query(&self, query: OutputSpendStatusQuery) -> bool {
-        (*query.unspent() && !self.is_spent_confirmed() && !self.is_pending_spent())
-            || (*query.pending_spent() && self.is_pending_spent())
-            || (*query.spent() && self.is_spent_confirmed())
+        (query.unspent && !self.is_spent_confirmed() && !self.is_pending_spent())
+            || (query.pending_spent && self.is_pending_spent())
+            || (query.spent && self.is_spent_confirmed())
     }
 
     /// Returns true if the note is unspent (spendable).
@@ -82,16 +82,14 @@ pub trait OutputInterface: Sized {
 
     /// Returns true if the note is one of the pools enumerated by the query.
     fn pool_query(&self, query: OutputPoolQuery) -> bool {
-        (*query.transparent() && self.pool_type() == PoolType::Transparent)
-            || (*query.sapling()
-                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
-            || (*query.orchard()
-                && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Orchard))
+        (query.transparent && self.pool_type() == PoolType::Transparent)
+            || (query.sapling && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Sapling))
+            || (query.orchard && self.pool_type() == PoolType::Shielded(ShieldedProtocol::Orchard))
     }
 
     /// Returns true if the note is one of the spend statuses enumerated by the query AND one of the pools enumerated by the query.
     fn query(&self, query: OutputQuery) -> bool {
-        self.spend_status_query(*query.spend_status()) && self.pool_query(*query.pools())
+        self.spend_status_query(query.spend_status) && self.pool_query(query.pools)
     }
 }
 

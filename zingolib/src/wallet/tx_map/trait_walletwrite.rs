@@ -64,9 +64,9 @@ impl WalletWrite for TxMap {
             tx.write(&mut raw_tx)
                 .map_err(TxMapTraitError::TransactionWrite)?;
 
-            if let Some(spending_data) = self.spending_data_mut() {
+            if let Some(spending_data) = &mut self.spending_data {
                 spending_data
-                    .cached_raw_transactions_mut()
+                    .cached_raw_transactions
                     .push((tx.txid(), raw_tx));
             } else {
                 return Err(TxMapTraitError::NoSpendCapability);
@@ -119,13 +119,13 @@ impl WalletWrite for TxMap {
         )>,
         Self::Error,
     > {
-        self.spending_data()
+        self.spending_data
             .as_ref()
             .map(|spending_data| {
                 iter::repeat_with(|| {
                     crate::wallet::data::new_rejection_address(
                         &self.rejection_addresses,
-                        spending_data.rejection_ivk(),
+                        &spending_data.rejection_ivk,
                     )
                     .map_err(TxMapTraitError::TexSendError)
                 })

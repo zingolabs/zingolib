@@ -55,7 +55,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
     {
         // For the moment we encode lack of view capability as None
-        match self.wallet_capability().unified_key_store() {
+        match &self.wallet_capability().unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => {
@@ -100,7 +100,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        if let UnifiedKeyStore::Spend(_) = self.wallet_capability().unified_key_store() {
+        if let UnifiedKeyStore::Spend(_) = self.wallet_capability().unified_key_store {
             self.confirmed_balance::<D>().await
         } else {
             None
@@ -108,7 +108,7 @@ impl LightWallet {
     }
     /// Sums the transparent balance (unspent)
     pub async fn get_transparent_balance(&self) -> Option<u64> {
-        match self.wallet_capability().unified_key_store() {
+        match &self.wallet_capability().unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => {
                 ufvk.transparent()?;
@@ -195,7 +195,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::unified_key_store_to_fvk(wallet_capability.unified_key_store()).expect("to get fvk from the unified key store")
+        D::unified_key_store_to_fvk(&wallet_capability.unified_key_store).expect("to get fvk from the unified key store")
         .diversified_address(*note.diversifier())
         .and_then(|address| {
             D::ua_from_contained_receiver(wallet_capability, &address)

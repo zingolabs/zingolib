@@ -266,17 +266,21 @@ where
         .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
-    let nullifier_map = &mut wallet.nullifiers;
-    let sapling_spend_locators: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)> =
-        sapling_nullifiers
-            .iter()
-            .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
-            .collect();
-    let orchard_spend_locators: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)> =
-        orchard_nullifiers
-            .iter()
-            .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
-            .collect();
+    let nullifier_map = &mut wallet.get_nullifiers_mut().unwrap();
+    let sapling_spend_locators: BTreeMap<
+        sapling_crypto::Nullifier,
+        (BlockHeight, zcash_primitives::transaction::TxId),
+    > = sapling_nullifiers
+        .iter()
+        .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
+        .collect();
+    let orchard_spend_locators: BTreeMap<
+        orchard::note::Nullifier,
+        (BlockHeight, zcash_primitives::transaction::TxId),
+    > = orchard_nullifiers
+        .iter()
+        .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
+        .collect();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
     let mut spending_txids = HashSet::new();
@@ -353,7 +357,7 @@ where
     let transparent_output_ids = wallet_transactions
         .values()
         .flat_map(|tx| tx.transparent_coins())
-        .map(|coin| coin.output_id())
+        .map(|coin| coin.output_id)
         .collect::<Vec<_>>();
     let outpoint_map = wallet.get_outpoints_mut().unwrap();
     let transparent_spend_locators: BTreeMap<OutputId, Locator> = transparent_output_ids
@@ -366,10 +370,10 @@ where
     wallet_transactions
         .values_mut()
         .flat_map(|tx| tx.transparent_coins_mut())
-        .filter(|coin| coin.spending_transaction().is_none())
+        .filter(|coin| coin.spending_transaction.is_none())
         .for_each(|coin| {
-            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id()) {
-                coin.set_spending_transaction(Some(*txid));
+            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id) {
+                coin.spending_transaction = Some(*txid);
             }
         });
 
@@ -408,12 +412,12 @@ where
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .sapling_mut()
+        .sapling
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .orchard_mut()
+        .orchard
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
 
     Ok(())

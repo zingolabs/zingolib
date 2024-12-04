@@ -4557,6 +4557,7 @@ dependencies = [
  "zcash_primitives",
  "zingo-memo",
  "zingo-netutils",
+ "zip32",
 ]
 
 [[package]]
@@ -4580,7 +4581,6 @@ dependencies = [
  "enum_dispatch",
  "ff",
  "futures",
- "getset",
  "group",
  "hex",
  "http",

@@ -330,7 +330,7 @@ mod tests {
             .spending_data
             .as_mut()
             .unwrap()
-            .witness_trees_mut()
+            .witness_trees
             .witness_tree_orchard
             .checkpoint(8421.into())
             .unwrap();

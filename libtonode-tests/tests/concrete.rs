@@ -70,7 +70,7 @@ fn check_view_capability_bounds(
     sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
-    let UnifiedKeyStore::View(ufvk) = watch_wc.unified_key_store() else {
+    let UnifiedKeyStore::View(ufvk) = &watch_wc.unified_key_store else {
         panic!("should be viewing key!")
     };
     //Orchard

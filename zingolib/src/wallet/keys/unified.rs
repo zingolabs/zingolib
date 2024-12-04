@@ -11,7 +11,6 @@ use std::{marker::PhantomData, sync::Arc};
 use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use getset::{Getters, Setters};
 
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
@@ -218,11 +217,9 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 /// loaded from a [`zcash_keys::keys::UnifiedSpendingKey`] <br>
 /// or a [`zcash_keys::keys::UnifiedFullViewingKey`]. <br><br>
 /// In addition to fundamental spending and viewing keys, the type caches generated addresses.
-#[derive(Debug, Getters, Setters)]
 pub struct WalletCapability {
     /// Unified key store
-    #[getset(get = "pub", set = "pub(crate)")]
-    unified_key_store: UnifiedKeyStore,
+    pub unified_key_store: UnifiedKeyStore,
     /// Cache of transparent addresses that the user has created.
     /// Receipts to a single address are correlated on chain.
     /// TODO:  Is there any reason to have this field, apart from the
@@ -344,7 +341,7 @@ impl WalletCapability {
 
         let previous_num_addresses = self.unified_addresses.len();
         let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = match self.unified_key_store().try_into() {
+            let fvk: orchard::keys::FullViewingKey = match (&self.unified_key_store).try_into() {
                 Ok(viewkey) => viewkey,
                 Err(e) => {
                     self.addresses_write_lock
@@ -363,7 +360,7 @@ impl WalletCapability {
             let mut address;
             let mut count = 0;
             let fvk: sapling_crypto::zip32::DiversifiableFullViewingKey =
-                match self.unified_key_store().try_into() {
+                match (&self.unified_key_store).try_into() {
                     Ok(viewkey) => viewkey,
                     Err(e) => {
                         self.addresses_write_lock
@@ -446,7 +443,7 @@ impl WalletCapability {
         };
         let child_index = NonHardenedChildIndex::from_index(self.addresses().len() as u32)
             .expect("hardened bit should not be set for non-hardened child indexes");
-        let transparent_receiver = match self.unified_key_store() {
+        let transparent_receiver = match &self.unified_key_store {
             UnifiedKeyStore::Spend(usk) => {
                 derive_address(&usk.transparent().to_account_pubkey(), child_index)
                     .map(Option::Some)
@@ -467,7 +464,7 @@ impl WalletCapability {
         &self,
         chain: &ChainType,
     ) -> Result<HashMap<String, secp256k1::SecretKey>, KeyError> {
-        if let UnifiedKeyStore::Spend(usk) = self.unified_key_store() {
+        if let UnifiedKeyStore::Spend(usk) = &self.unified_key_store {
             self.transparent_child_addresses()
                 .iter()
                 .map(|(i, taddr)| -> Result<_, KeyError> {
@@ -594,7 +591,7 @@ impl WalletCapability {
     /// TODO: Add Doc Comment Here!
     //TODO: NAME?????!!
     pub fn get_trees_witness_trees(&self) -> Option<crate::data::witness_trees::WitnessTrees> {
-        if self.unified_key_store().is_spending_key() {
+        if self.unified_key_store.is_spending_key() {
             Some(crate::data::witness_trees::WitnessTrees::default())
         } else {
             None
@@ -603,7 +600,7 @@ impl WalletCapability {
 
     /// Returns a selection of pools where the wallet can view funds.
     pub fn can_view(&self) -> ReceiverSelection {
-        match self.unified_key_store() {
+        match &self.unified_key_store {
             UnifiedKeyStore::Spend(_) => ReceiverSelection {
                 orchard: true,
                 sapling: true,
@@ -789,7 +786,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u32::<LittleEndian>(self.rejection_addresses.len() as u32)?;
-        self.unified_key_store().write(&mut writer, input)?;
+        self.unified_key_store.write(&mut writer, input)?;
         Vector::write(
             &mut writer,
             &self.unified_addresses.iter().collect::<Vec<_>>(),
@@ -914,7 +911,7 @@ mod rejection {
         pub(crate) fn rejection_ivk(
             &self,
         ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
-            AccountPubKey::try_from(self.unified_key_store())?
+            AccountPubKey::try_from(&self.unified_key_store)?
                 .derive_ephemeral_ivk()
                 .map_err(DerivationError::Transparent)
                 .map_err(KeyError::KeyDerivationError)

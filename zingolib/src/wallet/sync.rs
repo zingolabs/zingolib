@@ -8,8 +8,11 @@ use std::{
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
-    primitives::{NullifierMap, SyncState, WalletBlock},
-    traits::{SyncBlocks, SyncNullifiers, SyncShardTrees, SyncTransactions, SyncWallet},
+    keys::transparent::TransparentAddressId,
+    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock},
+    traits::{
+        SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+    },
     witness::ShardTrees,
 };
 use zip32::AccountId;
@@ -25,11 +28,11 @@ impl SyncWallet for LightWallet {
     }
 
     fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
-        Ok(self.sync_state())
+        Ok(&self.sync_state)
     }
 
     fn get_sync_state_mut(&mut self) -> Result<&mut SyncState, Self::Error> {
-        Ok(self.sync_state_mut())
+        Ok(&mut self.sync_state)
     }
 
     fn get_unified_full_viewing_keys(
@@ -53,6 +56,18 @@ impl SyncWallet for LightWallet {
 
         Ok(ufvk_map)
     }
+
+    fn get_transparent_addresses(
+        &self,
+    ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error> {
+        Ok(&self.transparent_addresses)
+    }
+
+    fn get_transparent_addresses_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error> {
+        Ok(&mut self.transparent_addresses)
+    }
 }
 
 impl SyncBlocks for LightWallet {
@@ -63,7 +78,7 @@ impl SyncBlocks for LightWallet {
     fn get_wallet_blocks_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<BlockHeight, WalletBlock>, Self::Error> {
-        Ok(self.wallet_blocks_mut())
+        Ok(&mut self.wallet_blocks)
     }
 }
 
@@ -74,7 +89,7 @@ impl SyncTransactions for LightWallet {
         &HashMap<zcash_primitives::transaction::TxId, zingo_sync::primitives::WalletTransaction>,
         Self::Error,
     > {
-        Ok(self.wallet_transactions())
+        Ok(&self.wallet_transactions)
     }
 
     fn get_wallet_transactions_mut(
@@ -86,18 +101,32 @@ impl SyncTransactions for LightWallet {
         >,
         Self::Error,
     > {
-        Ok(self.wallet_transactions_mut())
+        Ok(&mut self.wallet_transactions)
     }
 }
 
 impl SyncNullifiers for LightWallet {
+    fn get_nullifiers(&self) -> Result<&NullifierMap, Self::Error> {
+        Ok(&self.nullifier_map)
+    }
+
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, ()> {
-        Ok(self.nullifier_map_mut())
+        Ok(&mut self.nullifier_map)
+    }
+}
+
+impl SyncOutPoints for LightWallet {
+    fn get_outpoints(&self) -> Result<&OutPointMap, Self::Error> {
+        Ok(&self.outpoint_map)
+    }
+
+    fn get_outpoints_mut(&mut self) -> Result<&mut OutPointMap, Self::Error> {
+        Ok(&mut self.outpoint_map)
     }
 }
 
 impl SyncShardTrees for LightWallet {
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
-        Ok(self.shard_trees_mut())
+        Ok(&mut self.shard_trees)
     }
 }

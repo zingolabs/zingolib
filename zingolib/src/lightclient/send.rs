@@ -142,8 +142,8 @@ pub mod send_with_proposal {
                 .await
                 .map_err(RecordCachedTransactionsError::Height)?;
             let mut transactions_to_record = vec![];
-            if let Some(spending_data) = tx_map.spending_data_mut() {
-                for (_txid, raw_tx) in spending_data.cached_raw_transactions().iter() {
+            if let Some(spending_data) = &mut tx_map.spending_data {
+                for (_txid, raw_tx) in spending_data.cached_raw_transactions.iter() {
                     transactions_to_record.push(Transaction::read(
                         raw_tx.as_slice(),
                         zcash_primitives::consensus::BranchId::for_height(
@@ -206,12 +206,12 @@ pub mod send_with_proposal {
                 .await
                 .map_err(BroadcastCachedTransactionsError::Height)?;
             let calculated_tx_cache = tx_map
-                .spending_data()
+                .spending_data
                 .as_ref()
                 .ok_or(BroadcastCachedTransactionsError::Cache(
                     TransactionCacheError::NoSpendCapability,
                 ))?
-                .cached_raw_transactions()
+                .cached_raw_transactions
                 .clone();
             let mut txids = vec![];
             for (txid, raw_tx) in calculated_tx_cache {
@@ -251,12 +251,12 @@ pub mod send_with_proposal {
             }
 
             tx_map
-                .spending_data_mut()
+                .spending_data
                 .as_mut()
                 .ok_or(BroadcastCachedTransactionsError::Cache(
                     TransactionCacheError::NoSpendCapability,
                 ))?
-                .cached_raw_transactions_mut()
+                .cached_raw_transactions
                 .clear();
 
             Ok(txids)

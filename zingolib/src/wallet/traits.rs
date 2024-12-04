@@ -1003,7 +1003,7 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
 
         Ok(
             <SaplingDomain as DomainWalletExt>::unified_key_store_to_fvk(
-                wallet_capability.unified_key_store(),
+                &wallet_capability.unified_key_store,
             )
             .expect("to get an fvk from the unified key store")
             .fvk()
@@ -1048,7 +1048,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         ))?;
 
         let fvk = <OrchardDomain as DomainWalletExt>::unified_key_store_to_fvk(
-            wallet_capability.unified_key_store(),
+            &wallet_capability.unified_key_store,
         )
         .expect("to get an fvk from the unified key store");
         Option::from(orchard::note::Note::from_parts(
@@ -1341,7 +1341,7 @@ mod test {
             0,
         )
         .unwrap();
-        let recipient = orchard::keys::FullViewingKey::try_from(wc.unified_key_store())
+        let recipient = orchard::keys::FullViewingKey::try_from(&wc.unified_key_store)
             .unwrap()
             .address(Diversifier::from_bytes([0; 11]), zip32::Scope::External);
 

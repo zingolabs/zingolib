@@ -81,12 +81,12 @@ pub async fn assert_wallet_capability_matches_seed(
     let wc = wallet.wallet_capability();
 
     // Compare USK
-    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
         panic!("Expected Unified Spending Key");
     };
     assert_eq!(
         usk.to_bytes(Era::Orchard),
-        UnifiedSpendingKey::try_from(expected_wc.unified_key_store())
+        UnifiedSpendingKey::try_from(&expected_wc.unified_key_store)
             .unwrap()
             .to_bytes(Era::Orchard)
     );

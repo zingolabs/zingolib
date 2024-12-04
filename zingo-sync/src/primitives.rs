@@ -30,6 +30,8 @@ pub struct SyncState {
     /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
     #[allow(dead_code)]
     pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
+    /// Locators for relevent transactions to the wallet.
+    pub(crate) locators: BTreeSet<Locator>,
 }
 
 impl SyncState {
@@ -38,12 +40,13 @@ impl SyncState {
         SyncState {
             scan_ranges: Vec::new(),
             locators: BTreeSet::new(),
+            spend_locations: Vec::new(),
         }
     }
 
     /// Returns true if all scan ranges are scanned.
     pub(crate) fn scan_complete(&self) -> bool {
-        self.scan_ranges()
+        self.scan_ranges
             .iter()
             .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
     }
@@ -51,13 +54,13 @@ impl SyncState {
     /// Returns the block height at which all blocks equal to and below this height are scanned.
     pub fn fully_scanned_height(&self) -> BlockHeight {
         if let Some(scan_range) = self
-            .scan_ranges()
+            .scan_ranges
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
             scan_range.block_range().start - 1
         } else {
-            self.scan_ranges()
+            self.scan_ranges
                 .last()
                 .expect("scan ranges always non-empty")
                 .block_range()
@@ -73,7 +76,7 @@ impl Default for SyncState {
 }
 
 /// Output ID for a given pool type
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct OutputId {
     /// ID of associated transaction
     pub(crate) txid: TxId,
@@ -174,7 +177,6 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Debug)]
 pub struct WalletTransaction {
     pub(crate) transaction: zcash_primitives::transaction::Transaction,
     pub(crate) block_height: BlockHeight,
@@ -182,6 +184,7 @@ pub struct WalletTransaction {
     pub(crate) orchard_notes: Vec<OrchardNote>,
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    transparent_coins: Vec<TransparentCoin>,
 }
 
 impl WalletTransaction {
@@ -228,8 +231,28 @@ impl WalletTransaction {
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
     }
+
+    pub fn transparent_coins(&self) -> &[TransparentCoin] {
+        &self.transparent_coins
+    }
+
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+        self.transparent_coins.iter_mut().collect()
+    }
 }
 
+impl std::fmt::Debug for WalletTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("WalletTransaction")
+            .field("block_height", &self.block_height)
+            .field("sapling_notes", &self.sapling_notes)
+            .field("orchard_notes", &self.orchard_notes)
+            .field("outgoing_sapling_notes", &self.outgoing_sapling_notes)
+            .field("outgoing_orchard_notes", &self.outgoing_orchard_notes)
+            .field("transparent_coins", &self.transparent_coins)
+            .finish()
+    }
+}
 pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
@@ -345,20 +368,24 @@ pub(crate) trait SyncOutgoingNotes {
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TransparentCoin {
     /// Output ID
-    output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to derive address
+    #[allow(dead_code)]
     key_id: TransparentAddressId,
     /// Encoded transparent address
+    #[allow(dead_code)]
     address: String,
     /// Script
+    #[allow(dead_code)]
     script: Script,
     /// Coin value
+    #[allow(dead_code)]
     value: NonNegativeAmount,
     /// Spend status
-    spending_transaction: Option<TxId>,
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl TransparentCoin {
