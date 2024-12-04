@@ -1,18 +1,26 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::data_api::scanning::ScanRange;
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkConstants, Parameters},
+    legacy::Script,
     memo::Memo,
-    transaction::TxId,
+    transaction::{components::amount::NonNegativeAmount, TxId},
 };
 
-use crate::{keys::KeyId, utils};
+use crate::{
+    keys::{transparent::TransparentAddressId, KeyId},
+    utils,
+};
+
+/// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to spend
+/// detections or transparent output discovery.
+pub type Locator = (BlockHeight, TxId);
 
 /// Encapsulates the current state of sync
 pub struct SyncState {
@@ -29,17 +37,32 @@ impl SyncState {
     pub fn new() -> Self {
         SyncState {
             scan_ranges: Vec::new(),
-            spend_locations: Vec::new(),
+            locators: BTreeSet::new(),
         }
     }
 
-    pub fn fully_scanned(&self) -> bool {
-        self.scan_ranges.iter().all(|scan_range| {
-            matches!(
-                scan_range.priority(),
-                zcash_client_backend::data_api::scanning::ScanPriority::Scanned
-            )
-        })
+    /// Returns true if all scan ranges are scanned.
+    pub(crate) fn scan_complete(&self) -> bool {
+        self.scan_ranges()
+            .iter()
+            .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+    }
+
+    /// Returns the block height at which all blocks equal to and below this height are scanned.
+    pub fn fully_scanned_height(&self) -> BlockHeight {
+        if let Some(scan_range) = self
+            .scan_ranges()
+            .iter()
+            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        {
+            scan_range.block_range().start - 1
+        } else {
+            self.scan_ranges()
+                .last()
+                .expect("scan ranges always non-empty")
+                .block_range()
+                .end
+        }
     }
 }
 
@@ -81,6 +104,30 @@ impl NullifierMap {
 }
 
 impl Default for NullifierMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Binary tree map of out points (transparent spends)
+#[derive(Debug)]
+pub struct OutPointMap(BTreeMap<OutputId, Locator>);
+
+impl OutPointMap {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn inner(&self) -> &BTreeMap<OutputId, Locator> {
+        &self.0
+    }
+
+    pub fn inner_mut(&mut self) -> &mut BTreeMap<OutputId, Locator> {
+        &mut self.0
+    }
+}
+
+impl Default for OutPointMap {
     fn default() -> Self {
         Self::new()
     }
@@ -145,6 +192,7 @@ impl WalletTransaction {
         orchard_notes: Vec<OrchardNote>,
         outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
         outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+        transparent_coins: Vec<TransparentCoin>,
     ) -> Self {
         Self {
             transaction,
@@ -153,6 +201,7 @@ impl WalletTransaction {
             orchard_notes,
             outgoing_sapling_notes,
             outgoing_orchard_notes,
+            transparent_coins,
         }
     }
 
@@ -293,4 +342,41 @@ pub(crate) trait SyncOutgoingNotes {
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
         P: Parameters + NetworkConstants;
+}
+
+///  Transparent coin (output) with metadata relevant to the wallet
+#[derive(Debug, Clone)]
+pub struct TransparentCoin {
+    /// Output ID
+    output_id: OutputId,
+    /// Identifier for key used to derive address
+    key_id: TransparentAddressId,
+    /// Encoded transparent address
+    address: String,
+    /// Script
+    script: Script,
+    /// Coin value
+    value: NonNegativeAmount,
+    /// Spend status
+    spending_transaction: Option<TxId>,
+}
+
+impl TransparentCoin {
+    pub fn from_parts(
+        output_id: OutputId,
+        key_id: TransparentAddressId,
+        address: String,
+        script: Script,
+        value: NonNegativeAmount,
+        spending_transaction: Option<TxId>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id,
+            address,
+            script,
+            value,
+            spending_transaction,
+        }
+    }
 }
