@@ -131,9 +131,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.93"
+version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c95c10ba0b00a02636238b814946408b1322d5ac4760326e6fb8ec956d85775"
+checksum = "c1fd03a028ef38ba2276dce7e33fcd6369c158a1bca17946c4b1b701891c1ff7"
 
 [[package]]
 name = "append-only-vec"
@@ -594,7 +594,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 
 [[package]]
 name = "bumpalo"
@@ -891,7 +891,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "futures-util",
  "hex",
@@ -1449,9 +1449,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
+checksum = "f16ca2af56261c99fba8bac40a10251ce8188205a4c448fbb745a2e4daa76fea"
 dependencies = [
  "bytes",
  "fnv",
@@ -2572,7 +2572,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c1318b19085f08681016926435853bbf7858f9c082d0999b80550ff5d9abe15"
 dependencies = [
  "bytes",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.13.0",
  "log",
  "multimap",
@@ -3590,9 +3590,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.36"
+version = "0.3.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885"
+checksum = "35e7868883861bd0e56d9ac6efcaaca0d6d5d82a2a7ec8209ff492c07cf37b21"
 dependencies = [
  "deranged",
  "itoa",
@@ -3611,9 +3611,9 @@ checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "time-macros"
-version = "0.2.18"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f252a68540fde3a3877aeea552b832b40ab9a69e318efd078774a01ddee1ccf"
+checksum = "2834e6017e3e5e4b9834939793b282bc03b37a3336245fa820e35e233e2a85de"
 dependencies = [
  "num-conv",
  "time-core",
@@ -3646,9 +3646,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.41.1"
+version = "1.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cfb5bee7a6a52939ca9224d6ac897bb669134078daa8735560897f69de4d33"
+checksum = "5cec9b21b0450273377fc97bd4c33a8acffc8c996c987a7c5b319a0083707551"
 dependencies = [
  "backtrace",
  "bytes",
@@ -3707,9 +3707,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.12"
+version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61e7c3654c13bcd040d4a03abee2c75b1d14a37b423cf5a813ceae1cc903ec6a"
+checksum = "d7fcaa8d55a2bdd6b83ace262b016eca0d79ee02818c5c1bcdf0305114081078"
 dependencies = [
  "bytes",
  "futures-core",
@@ -4863,7 +4863,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4875,7 +4875,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "http",
  "http-body",
@@ -4895,7 +4895,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4903,7 +4903,7 @@ dependencies = [
 [[package]]
 name = "zingo-sync"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "base58",
  "crossbeam-channel",
@@ -4927,12 +4927,13 @@ dependencies = [
  "zcash_primitives",
  "zingo-memo",
  "zingo-netutils",
+ "zip32",
 ]
 
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#6cf31795222cc3ee8b7da7f9523a3fd051438885"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#6b630983dd079f825f3dfdeb3e93b132d4932972"
 dependencies = [
  "append-only-vec",
  "base58",
@@ -4950,7 +4951,6 @@ dependencies = [
  "enum_dispatch",
  "ff",
  "futures",
- "getset",
  "group",
  "hex",
  "http",
