@@ -301,7 +301,7 @@ fn scan_incoming_coins<P: consensus::Parameters>(
 }
 
 fn scan_incoming_notes<D, Op, N, Nf>(
-    wallet_notes: &mut Vec<WalletNote<N, Nf>>,
+    wallet_notes: &mut Vec<WalletNote<Nf>>,
     txid: TxId,
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
@@ -313,21 +313,17 @@ where
     Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
     Nf: Copy,
 {
-    let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
+    let (_key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
 
     for (output_index, output) in zcash_note_encryption::batch::try_note_decryption(&ivks, outputs)
         .into_iter()
         .enumerate()
     {
-        if let Some(((note, _, memo_bytes), key_index)) = output {
+        if let Some(((_note, _, memo_bytes), _key_index)) = output {
             let output_id = OutputId::from_parts(txid, output_index);
-            let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
+            let (nullifier, _position) = nullifiers_and_positions.get(&output_id).unwrap();
             wallet_notes.push(WalletNote::from_parts(
-                output_id,
-                key_ids[key_index],
-                note,
                 Some(*nullifier),
-                *position,
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
                 None,
             ));
@@ -393,9 +389,7 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
     None
 }
 
-fn parse_encoded_memos<N, Nf: Copy>(
-    wallet_notes: &[WalletNote<N, Nf>],
-) -> Result<Vec<ParsedMemo>, ()> {
+fn parse_encoded_memos<Nf: Copy>(wallet_notes: &[WalletNote<Nf>]) -> Result<Vec<ParsedMemo>, ()> {
     let encoded_memos = wallet_notes
         .iter()
         .flat_map(|note| {

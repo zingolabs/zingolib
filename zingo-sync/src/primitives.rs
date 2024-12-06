@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
