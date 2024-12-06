@@ -204,13 +204,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         )
         .unwrap();
 
-        scan_outgoing_notes(
-            &mut outgoing_sapling_notes,
-            transaction.txid(),
-            sapling_ovks,
-            &sapling_outputs,
-        )
-        .unwrap();
+        scan_outgoing_notes(&mut outgoing_sapling_notes, sapling_ovks, &sapling_outputs).unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
     }
@@ -236,13 +230,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         )
         .unwrap();
 
-        scan_outgoing_notes(
-            &mut outgoing_orchard_notes,
-            transaction.txid(),
-            orchard_ovks,
-            &orchard_actions,
-        )
-        .unwrap();
+        scan_outgoing_notes(&mut outgoing_orchard_notes, orchard_ovks, &orchard_actions).unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
     }
@@ -331,7 +319,7 @@ fn scan_incoming_coins<P: consensus::Parameters>(
 }
 
 fn scan_incoming_notes<D, Op, N, Nf>(
-    wallet_notes: &mut Vec<WalletNote<N, Nf>>,
+    wallet_notes: &mut Vec<WalletNote<Nf>>,
     txid: TxId,
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
@@ -343,21 +331,17 @@ where
     Op: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
     Nf: Copy,
 {
-    let (key_ids, ivks): (Vec<_>, Vec<_>) = ivks.into_iter().unzip();
+    let ivks: Vec<_> = ivks.into_iter().map(|x| x.1).collect();
 
     for (output_index, output) in zcash_note_encryption::batch::try_note_decryption(&ivks, outputs)
         .into_iter()
         .enumerate()
     {
-        if let Some(((note, _, memo_bytes), key_index)) = output {
+        if let Some(((_note, _, memo_bytes), _key_index)) = output {
             let output_id = OutputId::from_parts(txid, output_index);
-            let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
+            let (nullifier, _position) = nullifiers_and_positions.get(&output_id).unwrap();
             wallet_notes.push(WalletNote::from_parts(
-                output_id,
-                key_ids[key_index],
-                note,
                 Some(*nullifier),
-                Some(*position),
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
                 None,
             ));
@@ -369,7 +353,6 @@ where
 
 fn scan_outgoing_notes<D, Op, N>(
     outgoing_notes: &mut Vec<OutgoingNote<N>>,
-    txid: TxId,
     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
 ) -> Result<(), ()>
@@ -378,23 +361,17 @@ where
     D::Memo: AsRef<[u8]>,
     Op: ShieldedOutputExt<D>,
 {
-    let (key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
+    let (_key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
 
-    for (output_index, (domain, output)) in outputs.iter().enumerate() {
-        if let Some(((note, _, memo_bytes), key_index)) = try_output_recovery_with_ovks(
+    for (domain, output) in outputs {
+        if let Some(((note, _, _memo_bytes), _key_index)) = try_output_recovery_with_ovks(
             domain,
             &ovks,
             output,
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote::from_parts(
-                OutputId::from_parts(txid, output_index),
-                key_ids[key_index],
-                note,
-                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                None,
-            ));
+            outgoing_notes.push(OutgoingNote::from_parts(note, None));
         }
     }
 
@@ -423,9 +400,7 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
     None
 }
 
-fn parse_encoded_memos<N, Nf: Copy>(
-    wallet_notes: &[WalletNote<N, Nf>],
-) -> Result<Vec<ParsedMemo>, ()> {
+fn parse_encoded_memos<Nf: Copy>(wallet_notes: &[WalletNote<Nf>]) -> Result<Vec<ParsedMemo>, ()> {
     let encoded_memos = wallet_notes
         .iter()
         .flat_map(|note| {
