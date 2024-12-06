@@ -259,7 +259,7 @@ async fn process_mempool_stream_response<W>(
                 .unwrap()
                 .get(&transaction.txid())
             {
-                if tx.confirmation_status().is_confirmed() {
+                if tx.confirmation_status.is_confirmed() {
                     return;
                 }
             }
@@ -380,22 +380,28 @@ where
     let sapling_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.sapling_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let orchard_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.orchard_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
-    let nullifier_map = wallet.get_nullifiers_mut().unwrap();
-    let sapling_spend_locators: BTreeMap<sapling_crypto::Nullifier, Locator> = sapling_nullifiers
+    let nullifier_map = &mut wallet.get_nullifiers_mut().unwrap();
+    let sapling_spend_locators: BTreeMap<
+        sapling_crypto::Nullifier,
+        (BlockHeight, zcash_primitives::transaction::TxId),
+    > = sapling_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.sapling_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
         .collect();
-    let orchard_spend_locators: BTreeMap<orchard::note::Nullifier, Locator> = orchard_nullifiers
+    let orchard_spend_locators: BTreeMap<
+        orchard::note::Nullifier,
+        (BlockHeight, zcash_primitives::transaction::TxId),
+    > = orchard_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.orchard_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
         .collect();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
@@ -438,24 +444,26 @@ where
     let wallet_transactions = wallet.get_wallet_transactions_mut().unwrap();
     wallet_transactions
         .values_mut()
-        .flat_map(|tx| tx.sapling_notes_mut())
+        .flat_map(|tx| tx.sapling_notes.iter_mut())
+        .filter(|note| note.spending_transaction.is_none())
         .for_each(|note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| sapling_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
     wallet_transactions
         .values_mut()
-        .flat_map(|tx| tx.orchard_notes_mut())
+        .flat_map(|tx| tx.orchard_notes.iter_mut())
+        .filter(|note| note.spending_transaction.is_none())
         .for_each(|note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| orchard_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
 
@@ -471,7 +479,7 @@ where
     let transparent_output_ids = wallet_transactions
         .values()
         .flat_map(|tx| tx.transparent_coins())
-        .map(|coin| coin.output_id())
+        .map(|coin| coin.output_id)
         .collect::<Vec<_>>();
     let outpoint_map = wallet.get_outpoints_mut().unwrap();
     let transparent_spend_locators: BTreeMap<OutputId, Locator> = transparent_output_ids
@@ -484,9 +492,10 @@ where
     wallet_transactions
         .values_mut()
         .flat_map(|tx| tx.transparent_coins_mut())
+        .filter(|coin| coin.spending_transaction.is_none())
         .for_each(|coin| {
-            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id()) {
-                coin.set_spending_transaction(Some(*txid));
+            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id) {
+                coin.spending_transaction = Some(*txid);
             }
         });
 
@@ -505,7 +514,7 @@ where
     let wallet_height = wallet
         .get_sync_state()
         .unwrap()
-        .scan_ranges()
+        .scan_ranges
         .last()
         .expect("wallet should always have scan ranges after sync has started")
         .block_range()
@@ -515,7 +524,7 @@ where
         .get_wallet_transactions()
         .unwrap()
         .values()
-        .filter_map(|tx| tx.confirmation_status().get_confirmed_height())
+        .filter_map(|tx| tx.confirmation_status.get_confirmed_height())
         .collect::<Vec<_>>();
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
         *height >= scan_range.block_range().end - 1
@@ -525,12 +534,12 @@ where
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .sapling_mut()
+        .sapling
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .orchard_mut()
+        .orchard
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
 
     Ok(())

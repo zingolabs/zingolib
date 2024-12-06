@@ -69,10 +69,10 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                relevant_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid);
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                relevant_txids.insert(output_id.txid());
+                relevant_txids.insert(output_id.txid);
             });
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
@@ -98,13 +98,13 @@ where
 
             calculate_nullifiers_and_positions(
                 sapling_tree_size,
-                scanning_keys.sapling(),
+                &scanning_keys.sapling,
                 &incoming_sapling_outputs,
                 &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_tree_size,
-                scanning_keys.orchard(),
+                &scanning_keys.orchard,
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
@@ -127,7 +127,7 @@ where
 
         check_tree_size(block, &wallet_block).unwrap();
 
-        wallet_blocks.insert(wallet_block.block_height(), wallet_block);
+        wallet_blocks.insert(wallet_block.block_height, wallet_block);
     }
 
     Ok(ScanData {
@@ -166,8 +166,8 @@ fn check_continuity(
     let mut prev_hash: Option<BlockHash> = None;
 
     if let Some(prev) = previous_compact_block {
-        prev_height = Some(prev.block_height());
-        prev_hash = Some(prev.block_hash());
+        prev_height = Some(prev.block_height);
+        prev_hash = Some(prev.block_hash);
     }
 
     for block in compact_blocks {
@@ -199,13 +199,11 @@ fn check_continuity(
 
 fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
-        if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.sapling_commitment_tree_size()
+        if chain_metadata.sapling_commitment_tree_size != wallet_block.sapling_commitment_tree_size
         {
             panic!("sapling tree size is incorrect!")
         }
-        if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.orchard_commitment_tree_size()
+        if chain_metadata.orchard_commitment_tree_size != wallet_block.orchard_commitment_tree_size
         {
             panic!("orchard tree size is incorrect!")
         }
@@ -230,7 +228,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
         .iter()
         .for_each(|(output_id, incoming_output)| {
             let position = Position::from(u64::from(
-                tree_size + u32::try_from(output_id.output_index()).unwrap(),
+                tree_size + u32::try_from(output_id.output_index).unwrap(),
             ));
             let key = keys
                 .get(&incoming_output.ivk_tag)
@@ -253,7 +251,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()
         .copied()
-        .map(|output_id| output_id.output_index())
+        .map(|output_id| output_id.output_index)
         .collect();
 
     if outputs.is_empty() {
@@ -301,7 +299,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
         .keys()
         .copied()
-        .map(|output_id| output_id.output_index())
+        .map(|output_id| output_id.output_index)
         .collect();
 
     if actions.is_empty() {
@@ -352,7 +350,7 @@ fn collect_nullifiers(
         .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()).unwrap())
         .for_each(|nullifier| {
             nullifier_map
-                .sapling_mut()
+                .sapling
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     transaction
@@ -364,7 +362,7 @@ fn collect_nullifiers(
         })
         .for_each(|nullifier| {
             nullifier_map
-                .orchard_mut()
+                .orchard
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     Ok(())

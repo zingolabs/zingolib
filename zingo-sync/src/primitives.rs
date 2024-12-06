@@ -2,8 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use getset::{CopyGetters, Getters, MutGetters, Setters};
-
 use incrementalmerkletree::Position;
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
@@ -26,14 +24,15 @@ use crate::{
 pub type Locator = (BlockHeight, TxId);
 
 /// Encapsulates the current state of sync
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
 pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
-    scan_ranges: Vec<ScanRange>,
+    pub(crate) scan_ranges: Vec<ScanRange>,
+    /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
+    #[allow(dead_code)]
+    pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
     /// Locators for relevent transactions to the wallet.
-    locators: BTreeSet<Locator>,
+    pub(crate) locators: BTreeSet<Locator>,
 }
 
 impl SyncState {
@@ -42,12 +41,13 @@ impl SyncState {
         SyncState {
             scan_ranges: Vec::new(),
             locators: BTreeSet::new(),
+            spend_locations: Vec::new(),
         }
     }
 
     /// Returns true if all scan ranges are scanned.
     pub(crate) fn scan_complete(&self) -> bool {
-        self.scan_ranges()
+        self.scan_ranges
             .iter()
             .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
     }
@@ -55,13 +55,13 @@ impl SyncState {
     /// Returns the block height at which all blocks equal to and below this height are scanned.
     pub fn fully_scanned_height(&self) -> BlockHeight {
         if let Some(scan_range) = self
-            .scan_ranges()
+            .scan_ranges
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
             scan_range.block_range().start - 1
         } else {
-            self.scan_ranges()
+            self.scan_ranges
                 .last()
                 .expect("scan ranges always non-empty")
                 .block_range()
@@ -77,13 +77,12 @@ impl Default for SyncState {
 }
 
 /// Output ID for a given pool type
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct OutputId {
     /// ID of associated transaction
-    txid: TxId,
+    pub(crate) txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
-    output_index: usize,
+    pub(crate) output_index: usize,
 }
 
 impl OutputId {
@@ -94,11 +93,9 @@ impl OutputId {
 }
 
 /// Binary tree map of nullifiers from transaction spends or actions
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
 pub struct NullifierMap {
-    sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
-    orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    pub(crate) sapling: BTreeMap<sapling_crypto::Nullifier, (BlockHeight, TxId)>,
+    pub(crate) orchard: BTreeMap<orchard::note::Nullifier, (BlockHeight, TxId)>,
 }
 
 impl NullifierMap {
@@ -141,17 +138,17 @@ impl Default for OutPointMap {
 }
 
 /// Wallet block data
-#[derive(Debug, Clone, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Clone, Debug)]
 pub struct WalletBlock {
-    block_height: BlockHeight,
-    block_hash: BlockHash,
+    pub(crate) block_height: BlockHeight,
+    pub(crate) block_hash: BlockHash,
+    #[allow(dead_code)]
     prev_hash: BlockHash,
+    #[allow(dead_code)]
     time: u32,
-    #[getset(skip)]
     txids: Vec<TxId>,
-    sapling_commitment_tree_size: u32,
-    orchard_commitment_tree_size: u32,
+    pub(crate) sapling_commitment_tree_size: u32,
+    pub(crate) orchard_commitment_tree_size: u32,
 }
 
 impl WalletBlock {
@@ -181,23 +178,14 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Getters, CopyGetters)]
 pub struct WalletTransaction {
-    #[getset(get_copy = "pub")]
-    txid: TxId,
-    #[getset(get = "pub")]
-    transaction: zcash_primitives::transaction::Transaction,
-    #[getset(get_copy = "pub")]
-    confirmation_status: ConfirmationStatus,
-    #[getset(skip)]
-    sapling_notes: Vec<SaplingNote>,
-    #[getset(skip)]
-    orchard_notes: Vec<OrchardNote>,
-    #[getset(skip)]
+    pub(crate) txid: TxId,
+    pub(crate) confirmation_status: ConfirmationStatus,
+    pub(crate) transaction: zcash_primitives::transaction::Transaction,
+    pub(crate) sapling_notes: Vec<SaplingNote>,
+    pub(crate) orchard_notes: Vec<OrchardNote>,
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-    #[getset(skip)]
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-    #[getset(skip)]
     transparent_coins: Vec<TransparentCoin>,
 }
 
@@ -274,28 +262,25 @@ pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifie
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 /// Wallet note, shielded output with metadata relevant to the wallet
-#[derive(Debug, Getters, CopyGetters, Setters)]
+#[derive(Debug)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
+    #[allow(dead_code)]
     note: N,
     /// Derived nullifier
-    #[getset(get_copy = "pub")]
-    nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
     /// Commitment tree leaf position
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     position: Option<Position>,
     /// Memo
-    #[getset(get = "pub")]
-    memo: Memo,
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
+    pub(crate) memo: Memo,
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -324,23 +309,21 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 /// Note sent from this capability to a recipient
-#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+#[derive(Debug, Clone)]
 pub struct OutgoingNote<N> {
     /// Output ID
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
     note: N,
     /// Memo
-    #[getset(get = "pub")]
+    #[allow(dead_code)]
     memo: Memo,
     /// Recipient's full unified address from encoded memo
-    #[getset(get = "pub", set = "pub")]
-    recipient_ua: Option<UnifiedAddress>,
+    pub(crate) recipient_ua: Option<UnifiedAddress>,
 }
 
 impl<N> OutgoingNote<N> {
@@ -368,7 +351,7 @@ impl SyncOutgoingNotes for OutgoingNote<sapling_crypto::Note> {
     {
         encode_payment_address(
             parameters.hrp_sapling_payment_address(),
-            &self.note().recipient(),
+            &self.note.recipient(),
         )
     }
 }
@@ -378,7 +361,7 @@ impl SyncOutgoingNotes for OutgoingNote<orchard::Note> {
     where
         P: Parameters + NetworkConstants,
     {
-        utils::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
+        utils::encode_orchard_receiver(parameters, &self.note.recipient()).unwrap()
     }
 }
 
@@ -390,26 +373,24 @@ pub(crate) trait SyncOutgoingNotes {
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet
-#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+#[derive(Debug)]
 pub struct TransparentCoin {
     /// Output ID
-    #[getset(get_copy = "pub")]
-    output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to derive address
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     key_id: TransparentAddressId,
     /// Encoded transparent address
-    #[getset(get = "pub")]
+    #[allow(dead_code)]
     address: String,
     /// Script
-    #[getset(get = "pub")]
+    #[allow(dead_code)]
     script: Script,
     /// Coin value
-    #[getset(get_copy = "pub")]
+    #[allow(dead_code)]
     value: NonNegativeAmount,
     /// Spend status
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl TransparentCoin {

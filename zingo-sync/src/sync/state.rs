@@ -30,7 +30,7 @@ where
     W: SyncWallet,
 {
     let wallet_height =
-        if let Some(highest_range) = wallet.get_sync_state().unwrap().scan_ranges().last() {
+        if let Some(highest_range) = wallet.get_sync_state().unwrap().scan_ranges.last() {
             highest_range.block_range().end - 1
         } else {
             let wallet_birthday = wallet.get_birthday().unwrap();
@@ -52,7 +52,7 @@ where
 // TODO: unit test high priority
 fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> Vec<Locator> {
     sync_state
-        .locators()
+        .locators
         .range(
             (block_range.start, TxId::from_bytes([0; 32]))
                 ..(block_range.end, TxId::from_bytes([0; 32])),
@@ -87,7 +87,7 @@ async fn create_scan_range(
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
+    let scan_ranges = &mut sync_state.scan_ranges;
 
     let new_scan_range = ScanRange::from_parts(
         Range {
@@ -106,7 +106,7 @@ async fn create_scan_range(
 }
 
 fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
+    let scan_ranges = &mut sync_state.scan_ranges;
     let stale_verify_scan_ranges = scan_ranges
         .iter()
         .filter(|range| range.priority() == ScanPriority::Verify)
@@ -135,7 +135,7 @@ fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
 }
 
 fn set_verification_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
+    let scan_ranges = &mut sync_state.scan_ranges;
     // FIXME: this is incorrect, we should verify the start of the newly created range
     if let Some((index, lowest_unscanned_range)) =
         scan_ranges.iter().enumerate().find(|(_, scan_range)| {
@@ -156,9 +156,7 @@ fn set_verification_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
             ScanPriority::Verify,
         );
 
-        sync_state
-            .scan_ranges_mut()
-            .splice(index..=index, split_ranges);
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
     }
 
     Ok(())
@@ -166,7 +164,7 @@ fn set_verification_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
 
 fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
     let locator_heights: Vec<BlockHeight> = sync_state
-        .locators()
+        .locators
         .iter()
         .map(|(block_height, _)| *block_height)
         .collect();
@@ -185,7 +183,7 @@ pub(super) fn set_scan_priority(
     block_range: &Range<BlockHeight>,
     scan_priority: ScanPriority,
 ) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
+    let scan_ranges = &mut sync_state.scan_ranges;
 
     if let Some((index, range)) = scan_ranges
         .iter()
@@ -207,7 +205,7 @@ fn update_scan_priority(
     scan_priority: ScanPriority,
 ) {
     let (index, scan_range) = sync_state
-        .scan_ranges()
+        .scan_ranges
         .iter()
         .enumerate()
         .find(|(_, range)| range.block_range().contains(&block_height))
@@ -222,9 +220,7 @@ fn update_scan_priority(
 
     let new_block_range = determine_block_range(block_height);
     let split_ranges = split_out_scan_range(scan_range, new_block_range, scan_priority);
-    sync_state
-        .scan_ranges_mut()
-        .splice(index..=index, split_ranges);
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
 }
 
 /// Determines which range of blocks should be scanned for a given `block_height`
@@ -289,7 +285,7 @@ fn split_out_scan_range(
 /// Sets the range for scanning to `Ignored` priority in the wallet `sync_state` but returns the scan range with its initial priority.
 /// Returns `None` if there are no more ranges to scan.
 fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
-    let scan_ranges = sync_state.scan_ranges_mut();
+    let scan_ranges = &mut sync_state.scan_ranges;
 
     let mut scan_ranges_priority_sorted: Vec<&ScanRange> = scan_ranges.iter().collect();
     scan_ranges_priority_sorted.sort_by(|a, b| b.block_range().start.cmp(&a.block_range().start));
@@ -347,7 +343,7 @@ pub(super) fn verify_scan_range_tip(
     block_height: BlockHeight,
 ) -> ScanRange {
     let (index, scan_range) = sync_state
-        .scan_ranges()
+        .scan_ranges
         .iter()
         .enumerate()
         .find(|(_, range)| range.block_range().contains(&block_height))
@@ -369,9 +365,7 @@ pub(super) fn verify_scan_range_tip(
         .expect("vec should always be non-empty")
         .clone();
 
-    sync_state
-        .scan_ranges_mut()
-        .splice(index..=index, split_ranges);
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
 
     scan_range_to_verify
 }

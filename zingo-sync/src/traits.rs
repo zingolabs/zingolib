@@ -90,7 +90,7 @@ pub trait SyncTransactions: SyncWallet {
         wallet_transaction: WalletTransaction,
     ) -> Result<(), Self::Error> {
         self.get_wallet_transactions_mut()?
-            .insert(wallet_transaction.txid(), wallet_transaction);
+            .insert(wallet_transaction.txid, wallet_transaction);
 
         Ok(())
     }
@@ -116,11 +116,8 @@ pub trait SyncTransactions: SyncWallet {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
-            .filter(|tx| {
-                tx.confirmation_status()
-                    .is_confirmed_after(&truncate_height)
-            })
-            .map(|tx| tx.transaction().txid())
+            .filter(|tx| tx.confirmation_status.is_confirmed_after(&truncate_height))
+            .map(|tx| tx.transaction.txid())
             .collect();
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;
@@ -128,25 +125,25 @@ pub trait SyncTransactions: SyncWallet {
             .values_mut()
             .flat_map(|tx| tx.sapling_notes_mut())
             .filter(|note| {
-                note.spending_transaction().map_or_else(
+                note.spending_transaction.map_or_else(
                     || false,
                     |spending_txid| invalid_txids.contains(&spending_txid),
                 )
             })
             .for_each(|note| {
-                note.set_spending_transaction(None);
+                note.spending_transaction = None;
             });
         wallet_transactions
             .values_mut()
             .flat_map(|tx| tx.orchard_notes_mut())
             .filter(|note| {
-                note.spending_transaction().map_or_else(
+                note.spending_transaction.map_or_else(
                     || false,
                     |spending_txid| invalid_txids.contains(&spending_txid),
                 )
             })
             .for_each(|note| {
-                note.set_spending_transaction(None);
+                note.spending_transaction = None;
             });
 
         invalid_txids.iter().for_each(|invalid_txid| {
@@ -168,11 +165,11 @@ pub trait SyncNullifiers: SyncWallet {
     /// Append nullifiers to wallet nullifier map
     fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
-            .sapling_mut()
-            .append(nullifier_map.sapling_mut());
+            .sapling
+            .append(&mut nullifier_map.sapling);
         self.get_nullifiers_mut()?
-            .orchard_mut()
-            .append(nullifier_map.orchard_mut());
+            .orchard
+            .append(&mut nullifier_map.orchard);
 
         Ok(())
     }
@@ -181,10 +178,10 @@ pub trait SyncNullifiers: SyncWallet {
     fn truncate_nullifiers(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
-            .sapling_mut()
+            .sapling
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
         nullifier_map
-            .orchard_mut()
+            .orchard
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
 
         Ok(())
@@ -233,14 +230,14 @@ pub trait SyncShardTrees: SyncWallet {
         } = shard_tree_data;
 
         self.get_shard_trees_mut()?
-            .sapling_mut()
+            .sapling
             .batch_insert(
                 sapling_initial_position,
                 sapling_leaves_and_retentions.into_iter(),
             )
             .unwrap();
         self.get_shard_trees_mut()?
-            .orchard_mut()
+            .orchard
             .batch_insert(
                 orchard_initial_position,
                 orchard_leaves_and_retentions.into_iter(),
@@ -255,7 +252,7 @@ pub trait SyncShardTrees: SyncWallet {
         // TODO: investigate resetting the shard completely when truncate height is 0
         if !self
             .get_shard_trees_mut()?
-            .sapling_mut()
+            .sapling
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
@@ -263,7 +260,7 @@ pub trait SyncShardTrees: SyncWallet {
         }
         if !self
             .get_shard_trees_mut()?
-            .orchard_mut()
+            .orchard
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {

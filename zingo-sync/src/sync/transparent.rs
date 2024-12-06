@@ -133,7 +133,7 @@ pub(crate) async fn update_addresses_and_locators<P, W>(
     wallet
         .get_sync_state_mut()
         .unwrap()
-        .locators_mut()
+        .locators
         .append(&mut locators);
 }
 

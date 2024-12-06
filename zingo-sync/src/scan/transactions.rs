@@ -429,7 +429,7 @@ fn parse_encoded_memos<N, Nf: Copy>(
     let encoded_memos = wallet_notes
         .iter()
         .flat_map(|note| {
-            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo() {
+            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo {
                 Some(zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()).unwrap())
             } else {
                 None
@@ -463,7 +463,7 @@ fn add_recipient_unified_address<P, Nz>(
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.set_recipient_ua(Some(ua.clone()));
+                note.recipient_ua = Some(ua.clone());
             });
     }
 }
@@ -481,7 +481,7 @@ fn collect_nullifiers(
             .map(|spend| spend.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .sapling_mut()
+                    .sapling
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }
@@ -492,7 +492,7 @@ fn collect_nullifiers(
             .map(|action| action.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .orchard_mut()
+                    .orchard
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }

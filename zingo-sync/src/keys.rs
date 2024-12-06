@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use getset::Getters;
 use incrementalmerkletree::Position;
 use orchard::{
     keys::{FullViewingKey, IncomingViewingKey},
@@ -133,11 +132,9 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
 }
 
 /// A set of keys to be used in scanning for decryptable transaction outputs.
-#[derive(Getters)]
-#[getset(get = "pub(crate)")]
 pub(crate) struct ScanningKeys {
-    sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
-    orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
+    pub(crate) sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
+    pub(crate) orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
 }
 
 impl ScanningKeys {
