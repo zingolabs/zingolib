@@ -16,7 +16,6 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    keys::transparent::TransparentAddressId,
     primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletBlock, WalletTransaction},
     witness::ShardTreeData,
 };
@@ -150,7 +149,6 @@ pub(crate) async fn scan<P>(
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
     locators: Vec<Locator>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<ScanResults, ScanError>
 where
     P: Parameters + Sync + Send + 'static,
@@ -196,7 +194,6 @@ where
         decrypted_note_data,
         &wallet_blocks,
         &mut outpoints,
-        transparent_addresses,
     )
     .await
     .unwrap();
