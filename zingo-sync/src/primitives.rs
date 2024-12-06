@@ -7,13 +7,12 @@ use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, NetworkConstants, Parameters},
-    legacy::Script,
     memo::Memo,
-    transaction::{components::amount::NonNegativeAmount, TxId},
+    transaction::TxId,
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::{keys::transparent::TransparentAddressId, utils};
+use crate::utils;
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to spend
 /// detections or transparent output discovery.
@@ -321,33 +320,14 @@ pub(crate) trait SyncOutgoingNotes {
 pub struct TransparentCoin {
     /// Output ID
     pub(crate) output_id: OutputId,
-    /// Identifier for key used to derive address
-    key_id: TransparentAddressId,
-    /// Encoded transparent address
-    address: String,
-    /// Script
-    script: Script,
-    /// Coin value
-    value: NonNegativeAmount,
     /// Spend status
     pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl TransparentCoin {
-    pub fn from_parts(
-        output_id: OutputId,
-        key_id: TransparentAddressId,
-        address: String,
-        script: Script,
-        value: NonNegativeAmount,
-        spending_transaction: Option<TxId>,
-    ) -> Self {
+    pub fn from_parts(output_id: OutputId, spending_transaction: Option<TxId>) -> Self {
         Self {
             output_id,
-            key_id,
-            address,
-            script,
-            value,
             spending_transaction,
         }
     }

@@ -20,7 +20,6 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
-    keys::transparent::TransparentAddressId,
     primitives::{Locator, WalletBlock},
     sync,
     traits::{SyncBlocks, SyncWallet},
@@ -266,7 +265,6 @@ where
                     scan_task.scan_range.clone(),
                     scan_task.previous_wallet_block,
                     scan_task.locators,
-                    scan_task.transparent_addresses,
                 )
                 .await;
 
@@ -321,7 +319,6 @@ pub(crate) struct ScanTask {
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
     locators: Vec<Locator>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
 }
 
 impl ScanTask {
@@ -329,13 +326,11 @@ impl ScanTask {
         scan_range: ScanRange,
         previous_wallet_block: Option<WalletBlock>,
         locators: Vec<Locator>,
-        transparent_addresses: HashMap<String, TransparentAddressId>,
     ) -> Self {
         Self {
             scan_range,
             previous_wallet_block,
             locators,
-            transparent_addresses,
         }
     }
 }

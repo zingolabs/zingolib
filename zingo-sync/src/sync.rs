@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
-use crate::keys::transparent::TransparentAddressId;
 use crate::primitives::{Locator, NullifierMap, OutPointMap, OutputId};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::{Scanner, ScannerState};
@@ -267,12 +266,6 @@ async fn process_mempool_stream_response<W>(
             let confirmation_status = ConfirmationStatus::Mempool(block_height);
             let mut nullifiers = NullifierMap::new();
             let mut outpoints = OutPointMap::new();
-            let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
-                .get_transparent_addresses()
-                .unwrap()
-                .iter()
-                .map(|(id, address)| (address.clone(), *id))
-                .collect();
             let mempool_transaction = scan_transaction(
                 consensus_parameters,
                 ufvks,
@@ -281,7 +274,6 @@ async fn process_mempool_stream_response<W>(
                 &DecryptedNoteData::new(),
                 &mut nullifiers,
                 &mut outpoints,
-                &transparent_addresses,
             )
             .unwrap();
 
@@ -432,7 +424,6 @@ where
         DecryptedNoteData::new(),
         &wallet_blocks,
         &mut outpoint_map,
-        HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
     )
     .await
     .unwrap();

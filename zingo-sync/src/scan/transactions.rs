@@ -28,7 +28,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::KeyId,
     primitives::{
         NullifierMap, OrchardNote, OutPointMap, OutgoingNote, OutgoingOrchardNote,
         OutgoingSaplingNote, OutputId, SaplingNote, SyncOutgoingNotes, TransparentCoin,
@@ -74,7 +74,6 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut OutPointMap,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ()> {
     let mut wallet_transactions = HashMap::with_capacity(relevant_txids.len());
 
@@ -106,7 +105,6 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             &decrypted_note_data,
             &mut NullifierMap::new(),
             outpoint_map,
-            &transparent_addresses,
         )
         .unwrap();
         wallet_transactions.insert(txid, wallet_transaction);
@@ -124,7 +122,6 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     decrypted_note_data: &DecryptedNoteData,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut OutPointMap,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<WalletTransaction, ()> {
     // TODO: condsider splitting into seperate fns for pending and confirmed etc.
     // TODO: price? save in wallet block as its relative to time mined?
@@ -173,10 +170,8 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     if let Some(bundle) = transaction.transparent_bundle() {
         let transparent_outputs = &bundle.vout;
         scan_incoming_coins(
-            consensus_parameters,
             &mut transparent_coins,
             transaction.txid(),
-            transparent_addresses,
             transparent_outputs,
         );
 
@@ -292,29 +287,14 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     ))
 }
 
-fn scan_incoming_coins<P: consensus::Parameters>(
-    consensus_parameters: &P,
+fn scan_incoming_coins(
     transparent_coins: &mut Vec<TransparentCoin>,
     txid: TxId,
-    transparent_addresses: &HashMap<String, TransparentAddressId>,
     transparent_outputs: &[zcash_primitives::transaction::components::TxOut],
 ) {
-    for (output_index, output) in transparent_outputs.iter().enumerate() {
-        if let Some(address) = output.recipient_address() {
-            let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
-            if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::from_parts(txid, output_index);
-
-                transparent_coins.push(TransparentCoin::from_parts(
-                    output_id,
-                    *key_id,
-                    address.clone(),
-                    output.script_pubkey.clone(),
-                    output.value,
-                    None,
-                ));
-            }
-        }
+    for output_index in 0..transparent_outputs.len() {
+        let output_id = OutputId::from_parts(txid, output_index);
+        transparent_coins.push(TransparentCoin::from_parts(output_id, None));
     }
 }
 
