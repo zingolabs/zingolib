@@ -253,47 +253,27 @@ impl std::fmt::Debug for WalletTransaction {
             .finish()
     }
 }
-pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
-pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
+pub type SaplingNote = WalletNote<sapling_crypto::Nullifier>;
+pub type OrchardNote = WalletNote<orchard::note::Nullifier>;
 
 /// Wallet note, shielded output with metadata relevant to the wallet
 #[derive(Debug)]
-pub struct WalletNote<N, Nf: Copy> {
-    /// Output ID
-    #[allow(dead_code)]
-    output_id: OutputId,
-    /// Identifier for key used to decrypt output
-    #[allow(dead_code)]
-    key_id: KeyId,
-    /// Decrypted note with recipient and value
-    #[allow(dead_code)]
-    note: N,
+pub struct WalletNote<Nf: Copy> {
     /// Derived nullifier
     pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
-    /// Commitment tree leaf position
-    #[allow(dead_code)]
-    position: Position,
     /// Memo
     pub(crate) memo: Memo,
     pub(crate) spending_transaction: Option<TxId>,
 }
 
-impl<N, Nf: Copy> WalletNote<N, Nf> {
+impl<Nf: Copy> WalletNote<Nf> {
     pub fn from_parts(
-        output_id: OutputId,
-        key_id: KeyId,
-        note: N,
         nullifier: Option<Nf>,
-        position: Position,
         memo: Memo,
         spending_transaction: Option<TxId>,
     ) -> Self {
         Self {
-            output_id,
-            key_id,
-            note,
             nullifier,
-            position,
             memo,
             spending_transaction,
         }
