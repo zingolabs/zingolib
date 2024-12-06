@@ -27,8 +27,6 @@ pub struct SyncState {
     /// In block height order with no overlaps or gaps.
     pub(crate) scan_ranges: Vec<ScanRange>,
     /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
-    #[allow(dead_code)]
-    pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
     /// Locators for relevent transactions to the wallet.
     pub(crate) locators: BTreeSet<Locator>,
 }
@@ -39,7 +37,6 @@ impl SyncState {
         SyncState {
             scan_ranges: Vec::new(),
             locators: BTreeSet::new(),
-            spend_locations: Vec::new(),
         }
     }
 
