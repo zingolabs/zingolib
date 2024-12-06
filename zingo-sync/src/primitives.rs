@@ -29,7 +29,6 @@ pub struct SyncState {
     /// In block height order with no overlaps or gaps.
     pub(crate) scan_ranges: Vec<ScanRange>,
     /// Block height and txid of known spends which are awaiting the scanning of the range it belongs to for transaction decryption.
-    #[allow(dead_code)]
     pub(crate) spend_locations: Vec<(BlockHeight, TxId)>,
     /// Locators for relevent transactions to the wallet.
     pub(crate) locators: BTreeSet<Locator>,
@@ -142,9 +141,9 @@ impl Default for OutPointMap {
 pub struct WalletBlock {
     pub(crate) block_height: BlockHeight,
     pub(crate) block_hash: BlockHash,
-    #[allow(dead_code)]
+
     prev_hash: BlockHash,
-    #[allow(dead_code)]
+
     time: u32,
     txids: Vec<TxId>,
     pub(crate) sapling_commitment_tree_size: u32,
@@ -265,18 +264,14 @@ pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 #[derive(Debug)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[allow(dead_code)]
     note: N,
     /// Derived nullifier
     pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
     /// Commitment tree leaf position
-    #[allow(dead_code)]
     position: Option<Position>,
     /// Memo
     pub(crate) memo: Memo,
@@ -312,15 +307,12 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 #[derive(Debug, Clone)]
 pub struct OutgoingNote<N> {
     /// Output ID
-    #[allow(dead_code)]
     output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[allow(dead_code)]
     key_id: KeyId,
     /// Decrypted note with recipient and value
     note: N,
     /// Memo
-    #[allow(dead_code)]
     memo: Memo,
     /// Recipient's full unified address from encoded memo
     pub(crate) recipient_ua: Option<UnifiedAddress>,
@@ -378,16 +370,12 @@ pub struct TransparentCoin {
     /// Output ID
     pub(crate) output_id: OutputId,
     /// Identifier for key used to derive address
-    #[allow(dead_code)]
     key_id: TransparentAddressId,
     /// Encoded transparent address
-    #[allow(dead_code)]
     address: String,
     /// Script
-    #[allow(dead_code)]
     script: Script,
     /// Coin value
-    #[allow(dead_code)]
     value: NonNegativeAmount,
     /// Spend status
     pub(crate) spending_transaction: Option<TxId>,
