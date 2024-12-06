@@ -119,8 +119,6 @@ where
         let wallet_block = WalletBlock::from_parts(
             block.height(),
             block.hash(),
-            block.prev_hash(),
-            block.time,
             block.vtx.iter().map(|tx| tx.txid()).collect(),
             sapling_tree_size,
             orchard_tree_size,

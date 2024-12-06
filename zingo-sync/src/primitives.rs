@@ -137,10 +137,6 @@ impl Default for OutPointMap {
 pub struct WalletBlock {
     pub(crate) block_height: BlockHeight,
     pub(crate) block_hash: BlockHash,
-    #[allow(dead_code)]
-    prev_hash: BlockHash,
-    #[allow(dead_code)]
-    time: u32,
     txids: Vec<TxId>,
     pub(crate) sapling_commitment_tree_size: u32,
     pub(crate) orchard_commitment_tree_size: u32,
@@ -150,8 +146,6 @@ impl WalletBlock {
     pub fn from_parts(
         block_height: BlockHeight,
         block_hash: BlockHash,
-        prev_hash: BlockHash,
-        time: u32,
         txids: Vec<TxId>,
         sapling_commitment_tree_size: u32,
         orchard_commitment_tree_size: u32,
@@ -159,8 +153,6 @@ impl WalletBlock {
         Self {
             block_height,
             block_hash,
-            prev_hash,
-            time,
             txids,
             sapling_commitment_tree_size,
             orchard_commitment_tree_size,
