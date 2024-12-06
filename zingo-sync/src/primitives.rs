@@ -12,10 +12,7 @@ use zcash_primitives::{
     transaction::{components::amount::NonNegativeAmount, TxId},
 };
 
-use crate::{
-    keys::{transparent::TransparentAddressId, KeyId},
-    utils,
-};
+use crate::{keys::transparent::TransparentAddressId, utils};
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to spend
 /// detections or transparent output discovery.
@@ -274,36 +271,15 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 /// Note sent from this capability to a recipient
 #[derive(Debug, Clone)]
 pub struct OutgoingNote<N> {
-    /// Output ID
-    #[allow(dead_code)]
-    output_id: OutputId,
-    /// Identifier for key used to decrypt output
-    #[allow(dead_code)]
-    key_id: KeyId,
     /// Decrypted note with recipient and value
     note: N,
-    /// Memo
-    #[allow(dead_code)]
-    memo: Memo,
     /// Recipient's full unified address from encoded memo
     pub(crate) recipient_ua: Option<UnifiedAddress>,
 }
 
 impl<N> OutgoingNote<N> {
-    pub fn from_parts(
-        output_id: OutputId,
-        key_id: KeyId,
-        note: N,
-        memo: Memo,
-        recipient_ua: Option<UnifiedAddress>,
-    ) -> Self {
-        Self {
-            output_id,
-            key_id,
-            note,
-            memo,
-            recipient_ua,
-        }
+    pub fn from_parts(note: N, recipient_ua: Option<UnifiedAddress>) -> Self {
+        Self { note, recipient_ua }
     }
 }
 

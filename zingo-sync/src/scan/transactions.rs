@@ -197,13 +197,7 @@ fn scan_transaction<P: consensus::Parameters>(
         )
         .unwrap();
 
-        scan_outgoing_notes(
-            &mut outgoing_sapling_notes,
-            transaction.txid(),
-            sapling_ovks,
-            &sapling_outputs,
-        )
-        .unwrap();
+        scan_outgoing_notes(&mut outgoing_sapling_notes, sapling_ovks, &sapling_outputs).unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
     }
@@ -229,13 +223,7 @@ fn scan_transaction<P: consensus::Parameters>(
         )
         .unwrap();
 
-        scan_outgoing_notes(
-            &mut outgoing_orchard_notes,
-            transaction.txid(),
-            orchard_ovks,
-            &orchard_actions,
-        )
-        .unwrap();
+        scan_outgoing_notes(&mut outgoing_orchard_notes, orchard_ovks, &orchard_actions).unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
     }
@@ -335,7 +323,6 @@ where
 
 fn scan_outgoing_notes<D, Op, N>(
     outgoing_notes: &mut Vec<OutgoingNote<N>>,
-    txid: TxId,
     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
 ) -> Result<(), ()>
@@ -344,23 +331,17 @@ where
     D::Memo: AsRef<[u8]>,
     Op: ShieldedOutputExt<D>,
 {
-    let (key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
+    let (_key_ids, ovks): (Vec<_>, Vec<_>) = ovks.into_iter().unzip();
 
-    for (output_index, (domain, output)) in outputs.iter().enumerate() {
-        if let Some(((note, _, memo_bytes), key_index)) = try_output_recovery_with_ovks(
+    for (_output_index, (domain, output)) in outputs.iter().enumerate() {
+        if let Some(((note, _, _memo_bytes), _key_index)) = try_output_recovery_with_ovks(
             domain,
             &ovks,
             output,
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote::from_parts(
-                OutputId::from_parts(txid, output_index),
-                key_ids[key_index],
-                note,
-                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                None,
-            ));
+            outgoing_notes.push(OutgoingNote::from_parts(note, None));
         }
     }
 
