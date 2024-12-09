@@ -48,6 +48,7 @@ fn construct_uri_load_config(
     chain_hint: String,
     monitor_mempool: bool,
 ) -> Result<(ZingoConfig, http::Uri), String> {
+    // if uri is empty -> Offline Mode.
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
 
     let chaintype = match chain_hint.as_str() {
