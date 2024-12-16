@@ -301,7 +301,10 @@ pub struct LightClient {
     // pub(crate) server_uri: Arc<RwLock<Uri>>,
     pub(crate) config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub wallet: LightWallet,
+    #[cfg(feature = "sync")]
+    pub wallet: Arc<Mutex<LightWallet>>,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 

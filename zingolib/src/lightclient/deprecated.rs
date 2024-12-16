@@ -1,3 +1,4 @@
+#[cfg(not(feature = "sync"))]
 use std::cmp;
 
 use crate::wallet::transaction_record::TransactionRecord;
@@ -114,6 +115,7 @@ impl LightClient {
     #[allow(deprecated)]
     //TODO: add this flag and address warnings
     //#[deprecated = "please use transaction_summaries"]
+    #[cfg(not(feature = "sync"))]
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self

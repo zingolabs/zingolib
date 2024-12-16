@@ -3,6 +3,7 @@
 
 use crate::data::proposal;
 use crate::wallet::keys::unified::UnifiedKeyStore;
+#[cfg(not(feature = "sync"))]
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -125,8 +126,21 @@ impl Command for GetBirthdayCommand {
         "Get wallet birthday."
     }
 
+    #[cfg(not(feature = "sync"))]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move { lightclient.wallet.get_birthday().await.to_string() })
+    }
+    #[cfg(feature = "sync")]
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            lightclient
+                .wallet
+                .lock()
+                .await
+                .get_birthday()
+                .await
+                .to_string()
+        })
     }
 }
 
@@ -144,6 +158,7 @@ impl Command for WalletKindCommand {
         "Displays the kind of wallet currently loaded"
     }
 
+    #[cfg(not(feature = "sync"))]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             if lightclient.do_seed_phrase().await.is_ok() {
@@ -155,6 +170,49 @@ impl Command for WalletKindCommand {
                 .pretty(4)
             } else {
                 match &lightclient.wallet.wallet_capability().unified_key_store {
+                    UnifiedKeyStore::Spend(_) => object! {
+                        "kind" => "Loaded from unified spending key",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::View(ufvk) => object! {
+                        "kind" => "Loaded from unified full viewing key",
+                        "transparent" => ufvk.transparent().is_some(),
+                        "sapling" => ufvk.sapling().is_some(),
+                        "orchard" => ufvk.orchard().is_some(),
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::Empty => object! {
+                        "kind" => "No keys found",
+                        "transparent" => false,
+                        "sapling" => false,
+                        "orchard" => false,
+                    }
+                    .pretty(4),
+                }
+            }
+        })
+    }
+    #[cfg(feature = "sync")]
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            if lightclient.do_seed_phrase().await.is_ok() {
+                object! {"kind" => "Loaded from seed phrase",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                }
+                .pretty(4)
+            } else {
+                match &lightclient
+                    .wallet
+                    .lock()
+                    .await
+                    .wallet_capability()
+                    .unified_key_store
+                {
                     UnifiedKeyStore::Spend(_) => object! {
                         "kind" => "Loaded from unified spending key",
                         "transparent" => true,
@@ -755,6 +813,7 @@ impl Command for ExportUfvkCommand {
         "Export full viewing key for wallet addresses"
     }
 
+    #[cfg(not(feature = "sync"))]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         let ufvk: UnifiedFullViewingKey =
             match (&lightclient.wallet.wallet_capability().unified_key_store).try_into() {
@@ -766,6 +825,27 @@ impl Command for ExportUfvkCommand {
             "birthday" => RT.block_on(lightclient.wallet.get_birthday())
         }
         .pretty(2)
+    }
+    #[cfg(feature = "sync")]
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            let ufvk: UnifiedFullViewingKey = match (&lightclient
+                .wallet
+                .lock()
+                .await
+                .wallet_capability()
+                .unified_key_store)
+                .try_into()
+            {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
+            object! {
+                "ufvk" => ufvk.encode(&lightclient.config().chain),
+                "birthday" => lightclient.wallet.lock().await.get_birthday().await
+            }
+            .pretty(2)
+        })
     }
 }
 
@@ -1459,7 +1539,9 @@ impl Command for SendsToAddressCommand {
     }
 }
 
+#[cfg(not(feature = "sync"))]
 struct SetOptionCommand {}
+#[cfg(not(feature = "sync"))]
 impl Command for SetOptionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1542,7 +1624,9 @@ impl Command for SetOptionCommand {
     }
 }
 
+#[cfg(not(feature = "sync"))]
 struct GetOptionCommand {}
+#[cfg(not(feature = "sync"))]
 impl Command for GetOptionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1685,7 +1769,10 @@ impl Command for NewAddressCommand {
     }
 }
 
+// TODO: implement notes command for sync feature
+#[cfg(not(feature = "sync"))]
 struct NotesCommand {}
+#[cfg(not(feature = "sync"))]
 impl Command for NotesCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1822,6 +1909,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
+        #[cfg(not(feature = "sync"))]
         ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
@@ -1836,6 +1924,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
+        #[cfg(not(feature = "sync"))]
         ("getoption", Box::new(GetOptionCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
@@ -1844,6 +1933,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
+        #[cfg(not(feature = "sync"))]
         ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),

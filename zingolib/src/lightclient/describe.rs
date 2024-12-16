@@ -41,8 +41,22 @@ fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
 }
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
+    #[cfg(not(feature = "sync"))]
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .query_sum_value(include_notes)
+    }
+    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    #[cfg(feature = "sync")]
+    pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
+        self.wallet
+            .lock()
+            .await
             .transaction_context
             .transaction_metadata_set
             .read()
@@ -53,6 +67,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     // todo use helpers
+    #[cfg(not(feature = "sync"))]
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().addresses().iter() {
@@ -71,9 +86,38 @@ impl LightClient {
         }
         JsonValue::Array(objectified_addresses)
     }
+    /// TODO: Add Doc Comment Here!
+    // todo use helpers
+    #[cfg(feature = "sync")]
+    pub async fn do_addresses(&self) -> JsonValue {
+        let mut objectified_addresses = Vec::new();
+        for address in self
+            .wallet
+            .lock()
+            .await
+            .wallet_capability()
+            .addresses()
+            .iter()
+        {
+            let encoded_ua = address.encode(&self.config.chain);
+            let transparent = address
+                .transparent()
+                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
+            objectified_addresses.push(object! {
+        "address" => encoded_ua,
+        "receivers" => object!(
+            "transparent" => transparent,
+            "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
+            "orchard_exists" => address.orchard().is_some(),
+            )
+        })
+        }
+        JsonValue::Array(objectified_addresses)
+    }
 
     /// TODO: Redefine the wallet balance functions as non-generics that take a
     /// PoolType variant as an argument, and iterate over a `Vec<Output>`
+    #[cfg(not(feature = "sync"))]
     pub async fn do_balance(&self) -> PoolBalances {
         let verified_sapling_balance = self.wallet.confirmed_balance::<SaplingDomain>().await;
         let unverified_sapling_balance = self.wallet.pending_balance::<SaplingDomain>().await;
@@ -98,12 +142,41 @@ impl LightClient {
             transparent_balance: self.wallet.get_transparent_balance().await,
         }
     }
+    /// TODO: Redefine the wallet balance functions as non-generics that take a
+    /// PoolType variant as an argument, and iterate over a `Vec<Output>`
+    #[cfg(feature = "sync")]
+    pub async fn do_balance(&self) -> PoolBalances {
+        let wallet = self.wallet.lock().await;
+        let verified_sapling_balance = wallet.confirmed_balance::<SaplingDomain>().await;
+        let unverified_sapling_balance = wallet.pending_balance::<SaplingDomain>().await;
+        let spendable_sapling_balance = wallet.spendable_balance::<SaplingDomain>().await;
+        let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
+
+        let verified_orchard_balance = wallet.confirmed_balance::<OrchardDomain>().await;
+        let unverified_orchard_balance = wallet.pending_balance::<OrchardDomain>().await;
+        let spendable_orchard_balance = wallet.spendable_balance::<OrchardDomain>().await;
+        let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
+        PoolBalances {
+            sapling_balance,
+            verified_sapling_balance,
+            spendable_sapling_balance,
+            unverified_sapling_balance,
+
+            orchard_balance,
+            verified_orchard_balance,
+            spendable_orchard_balance,
+            unverified_orchard_balance,
+
+            transparent_balance: wallet.get_transparent_balance().await,
+        }
+    }
 
     /// Returns the wallet balance, broken out into several figures that are expected to be meaningful to the user.
     /// # Parameters
     /// * `auto_shielding` - if true, UTXOs will be considered immature rather than spendable.
     #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated functions")]
+    #[cfg(not(feature = "sync"))]
     pub async fn get_user_balances(
         &self,
         auto_shielding: bool,
@@ -566,6 +639,7 @@ impl LightClient {
     }
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
+    #[cfg(not(feature = "sync"))]
     pub async fn transaction_summaries(&self) -> TransactionSummaries {
         let transaction_map = self
             .wallet
@@ -618,6 +692,63 @@ impl LightClient {
 
         TransactionSummaries::new(transaction_summaries)
     }
+    /// Provides a list of transaction summaries related to this wallet in order of blockheight
+    #[cfg(feature = "sync")]
+    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+        let wallet = self.wallet.lock().await;
+        let transaction_map = wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_records = &transaction_map.transaction_records_by_id;
+
+        let mut transaction_summaries = transaction_records
+            .values()
+            .map(|tx| {
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records, &self.config().chain);
+
+                TransactionSummaryBuilder::new()
+                    .txid(tx.txid)
+                    .datetime(tx.datetime)
+                    .blockheight(tx.status.get_height())
+                    .kind(kind)
+                    .value(value)
+                    .fee(fee)
+                    .status(tx.status)
+                    .zec_price(tx.price)
+                    .orchard_notes(orchard_notes)
+                    .sapling_notes(sapling_notes)
+                    .transparent_coins(transparent_coins)
+                    .outgoing_tx_data(tx.outgoing_tx_data.clone())
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+        drop(transaction_map);
+        drop(wallet);
+
+        transaction_summaries.sort_by(|sum1, sum2| {
+            match sum1.blockheight().cmp(&sum2.blockheight()) {
+                Ordering::Equal => {
+                    let starts_with_tex = |summary: &TransactionSummary| {
+                        summary.outgoing_tx_data().iter().any(|outgoing_txdata| {
+                            outgoing_txdata.recipient_address.starts_with("tex")
+                        })
+                    };
+                    match (starts_with_tex(sum1), starts_with_tex(sum2)) {
+                        (true, false) => Ordering::Greater,
+                        (false, true) => Ordering::Less,
+                        (false, false) | (true, true) => Ordering::Equal,
+                    }
+                }
+                otherwise => otherwise,
+            }
+        });
+
+        TransactionSummaries::new(transaction_summaries)
+    }
 
     /// TODO: doc comment
     pub async fn transaction_summaries_json_string(&self) -> String {
@@ -625,6 +756,7 @@ impl LightClient {
     }
 
     /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
+    #[cfg(not(feature = "sync"))]
     pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
         let transaction_map = self
             .wallet
@@ -673,6 +805,59 @@ impl LightClient {
 
         DetailedTransactionSummaries::new(transaction_summaries)
     }
+    /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
+    #[cfg(feature = "sync")]
+    pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
+        let wallet = self.wallet.lock().await;
+        let transaction_map = wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let transaction_records = &transaction_map.transaction_records_by_id;
+
+        let mut transaction_summaries = transaction_records
+            .values()
+            .map(|tx| {
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    basic_transaction_summary_parts(tx, transaction_records, &self.config().chain);
+                let orchard_nullifiers: Vec<String> = tx
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .map(|nullifier| hex::encode(nullifier.to_bytes()))
+                    .collect();
+                let sapling_nullifiers: Vec<String> = tx
+                    .spent_sapling_nullifiers
+                    .iter()
+                    .map(hex::encode)
+                    .collect();
+
+                DetailedTransactionSummaryBuilder::new()
+                    .txid(tx.txid)
+                    .datetime(tx.datetime)
+                    .blockheight(tx.status.get_height())
+                    .kind(kind)
+                    .value(value)
+                    .fee(fee)
+                    .status(tx.status)
+                    .zec_price(tx.price)
+                    .orchard_notes(orchard_notes)
+                    .sapling_notes(sapling_notes)
+                    .transparent_coins(transparent_coins)
+                    .outgoing_tx_data(tx.outgoing_tx_data.clone())
+                    .orchard_nullifiers(orchard_nullifiers)
+                    .sapling_nullifiers(sapling_nullifiers)
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+        drop(transaction_map);
+        drop(wallet);
+
+        transaction_summaries.sort_by_key(|tx| tx.blockheight());
+
+        DetailedTransactionSummaries::new(transaction_summaries)
+    }
 
     /// TODO: doc comment
     pub async fn detailed_transaction_summaries_json_string(&self) -> String {
@@ -680,11 +865,25 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
         match self.wallet.mnemonic() {
             Some(m) => Ok(AccountBackupInfo {
                 seed_phrase: m.0.phrase().to_string(),
                 birthday: self.wallet.get_birthday().await,
+                account_index: m.1,
+            }),
+            None => Err("This wallet is watch-only or was created without a mnemonic."),
+        }
+    }
+    /// TODO: Add Doc Comment Here!
+    #[cfg(feature = "sync")]
+    pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
+        let wallet = self.wallet.lock().await;
+        match wallet.mnemonic() {
+            Some(m) => Ok(AccountBackupInfo {
+                seed_phrase: m.0.phrase().to_string(),
+                birthday: wallet.get_birthday().await,
                 account_index: m.1,
             }),
             None => Err("This wallet is watch-only or was created without a mnemonic."),
@@ -744,8 +943,14 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
         json::JsonValue::from(self.wallet.last_synced_height().await)
+    }
+    /// TODO: Add Doc Comment Here!
+    #[cfg(feature = "sync")]
+    pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
+        json::JsonValue::from(self.wallet.lock().await.last_synced_height().await)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -758,6 +963,7 @@ impl LightClient {
         self.config.get_lightwalletd_uri()
     }
 
+    #[cfg(not(feature = "sync"))]
     async fn list_sapling_notes(
         &self,
         all_notes: bool,
@@ -802,6 +1008,7 @@ impl LightClient {
         )
     }
 
+    #[cfg(not(feature = "sync"))]
     async fn list_orchard_notes(
         &self,
         all_notes: bool,
@@ -844,6 +1051,7 @@ impl LightClient {
         )
     }
 
+    #[cfg(not(feature = "sync"))]
     async fn list_transparent_outputs(
         &self,
         all_notes: bool,
@@ -894,6 +1102,7 @@ impl LightClient {
 
     /// Get all the outputs packed into an Output vector
     ///  This method will replace do_list_notes
+    #[cfg(not(feature = "sync"))]
     pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
         self.wallet
             .transaction_context
@@ -915,6 +1124,7 @@ impl LightClient {
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
     ///  * TODO:  DEPRECATE in favor of list_outputs
     #[cfg(any(test, feature = "test-elevation"))]
+    #[cfg(not(feature = "sync"))]
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
             self.list_sapling_notes(all_notes).await;

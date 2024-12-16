@@ -25,7 +25,7 @@ use zcash_client_backend::{
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{self, BlockHeight};
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use zcash_primitives::zip32::AccountId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -43,7 +43,7 @@ const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond th
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>, // TODO: change underlying service for generic
     consensus_parameters: &P,
-    wallet: &mut W,
+    wallet: Arc<Mutex<W>>,
 ) -> Result<(), SyncError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -64,7 +64,8 @@ where
         .await
     });
 
-    let wallet_height = state::get_wallet_height(consensus_parameters, wallet).unwrap();
+    let mut wallet_lock = wallet.lock().await;
+    let wallet_height = state::get_wallet_height(consensus_parameters, &mut *wallet_lock).unwrap();
     let chain_height = client::get_chain_height(fetch_request_sender.clone())
         .await
         .unwrap();
@@ -75,9 +76,9 @@ where
                 MAX_VERIFICATION_WINDOW
             );
         }
-        truncate_wallet_data(wallet, chain_height).unwrap();
+        truncate_wallet_data(&mut *wallet_lock, chain_height).unwrap();
     }
-    let ufvks = wallet.get_unified_full_viewing_keys().unwrap();
+    let ufvks = wallet_lock.get_unified_full_viewing_keys().unwrap();
 
     // create channel for receiving mempool transactions and launch mempool monitor
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(10);
@@ -89,7 +90,7 @@ where
 
     transparent::update_addresses_and_locators(
         consensus_parameters,
-        wallet,
+        &mut *wallet_lock,
         fetch_request_sender.clone(),
         &ufvks,
         wallet_height,
@@ -100,10 +101,11 @@ where
     state::update_scan_ranges(
         wallet_height,
         chain_height,
-        wallet.get_sync_state_mut().unwrap(),
+        wallet_lock.get_sync_state_mut().unwrap(),
     )
     .await
     .unwrap();
+    drop(wallet_lock);
 
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
@@ -119,13 +121,14 @@ where
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
+    let mut wallet_lock = wallet.lock().await;
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
                 process_scan_results(
                     consensus_parameters,
-                    wallet,
+                    &mut *wallet_lock,
                     fetch_request_sender.clone(),
                     &ufvks,
                     scan_range,
@@ -133,22 +136,26 @@ where
                 )
                 .await
                 .unwrap();
+
+                // allow tasks outside the sync engine access to the wallet data
+                drop(wallet_lock);
+                wallet_lock = wallet.lock().await;
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
-                    wallet,
+                    &mut *wallet_lock,
                     raw_transaction,
                 )
                 .await;
             }
 
             _update_scanner = interval.tick() => {
-                scanner.update(wallet, shutdown_mempool.clone()).await;
+                scanner.update(&mut *wallet_lock, shutdown_mempool.clone()).await;
 
-                if sync_complete(&scanner, &scan_results_receiver, wallet) {
+                if sync_complete(&scanner, &scan_results_receiver, &*wallet_lock) {
                     tracing::info!("Sync complete.");
                     break;
                 }
@@ -156,6 +163,7 @@ where
         }
     }
 
+    drop(wallet_lock);
     drop(scanner);
     drop(fetch_request_sender);
     mempool_handle.await.unwrap().unwrap();
