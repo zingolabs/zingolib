@@ -352,6 +352,7 @@ pub struct TxActionsCount {
 }
 
 /// Returns number of notes used as inputs for txid as TxNotesCount (transparent_notes, sapling_notes, orchard_notes).
+#[cfg(not(feature = "sync"))]
 pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -412,6 +413,7 @@ pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
 }
 
 /// Returns number of notes created in txid as TxNotesCount (transparent_notes, sapling_notes, orchard_notes).
+#[cfg(not(feature = "sync"))]
 pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
     let notes = client.do_list_notes(true).await;
 
@@ -475,6 +477,7 @@ pub async fn tx_outputs(client: &LightClient, txid: &str) -> TxNotesCount {
 }
 
 /// Returns total actions for txid as TxActionsCount.
+#[cfg(not(feature = "sync"))]
 pub async fn tx_actions(
     sender: &LightClient,
     recipient: Option<&LightClient>,
@@ -523,6 +526,7 @@ pub async fn tx_actions(
 }
 
 /// Returns the total transfer value of txid.
+#[cfg(not(feature = "sync"))]
 pub async fn total_tx_value(client: &LightClient, txid: &str) -> u64 {
     let notes = client.do_list_notes(true).await;
 

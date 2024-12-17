@@ -5,7 +5,6 @@ use darkside_tests::utils::update_tree_states_for_transaction;
 use darkside_tests::utils::DarksideHandler;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use tokio::time::sleep;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::ShieldedProtocol::Orchard;
@@ -19,6 +18,9 @@ use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
 use zingolib::testvectors::seeds::DARKSIDE_SEED;
+
+#[cfg(not(feature = "sync"))]
+use std::sync::Arc;
 
 #[tokio::test]
 async fn simple_sync() {
@@ -60,12 +62,14 @@ async fn simple_sync() {
 }
 
 #[tokio::test]
+#[cfg(not(feature = "sync"))]
 async fn reorg_away_receipt_blaze() {
     reorg_receipt_sync_generic(|lc| Box::pin(async { lc.do_sync(true).await.map(|_| ()) })).await;
 }
 
 #[ignore = "attempts to unwrap failed checked_sub on sapling output count"]
 #[tokio::test]
+#[cfg(feature = "sync")]
 async fn reorg_away_receipt_pepper() {
     reorg_receipt_sync_generic(|lc| {
         Box::pin(async {
@@ -74,7 +78,7 @@ async fn reorg_away_receipt_pepper() {
                 .get_client()
                 .await
                 .unwrap();
-            zingo_sync::sync::sync(client, &lc.config().chain.clone(), &mut lc.wallet)
+            zingo_sync::sync::sync(client, &lc.config().chain.clone(), lc.wallet.clone())
                 .await
                 .map_err(|e| e.to_string())
         })
@@ -331,6 +335,8 @@ async fn evicted_transaction_is_rebroadcast() {
             );
         });
 
+    #[cfg(not(feature = "sync"))]
     let ref_primary: Arc<LightClient> = Arc::new(primary);
+    #[cfg(not(feature = "sync"))]
     LightClient::start_mempool_monitor(ref_primary).unwrap();
 }

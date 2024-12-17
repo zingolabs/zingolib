@@ -61,6 +61,7 @@ pub enum StartMempoolMonitorError {
 
 impl LightClient {
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
@@ -110,8 +111,13 @@ impl LightClient {
         self.bsync_data.read().await.finish().await;
         sync_result
     }
+    #[cfg(feature = "sync")]
+    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+        todo!();
+    }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn do_sync_status(&self) -> BatchSyncStatus {
         self.bsync_data
             .read()
@@ -124,6 +130,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn download_initial_tree_state_from_lightwalletd(
         &self,
         height: u64,
@@ -149,11 +156,13 @@ impl LightClient {
         }
     }
 
+    #[cfg(not(feature = "sync"))]
     pub(crate) async fn get_sync_interrupt(&self) -> bool {
         *self.interrupt_sync.read().await
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
         LOG_INIT.call_once(tracing_subscriber::fmt::init);
@@ -162,6 +171,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
@@ -170,6 +180,7 @@ impl LightClient {
     /// the mempool includes transactions waiting to be accepted to the chain
     /// we query it through lightwalletd
     /// and record any new data, using ConfirmationStatus::Mempool
+    #[cfg(not(feature = "sync"))]
     pub fn start_mempool_monitor(lc: Arc<LightClient>) -> Result<(), StartMempoolMonitorError> {
         if !lc.config.monitor_mempool {
             return Err(StartMempoolMonitorError::Disabled);
@@ -309,6 +320,7 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
+    #[cfg(not(feature = "sync"))]
     async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
@@ -420,6 +432,7 @@ impl LightClient {
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
     /// get the status of the sync
+    #[cfg(not(feature = "sync"))]
     async fn sync_nth_batch(
         &self,
         start_block: u64,
@@ -694,6 +707,7 @@ impl LightClient {
 }
 
 #[cfg(all(test, feature = "testvectors"))]
+#[cfg(not(feature = "sync"))]
 pub mod test {
     use crate::{lightclient::LightClient, wallet::disk::testing::examples};
 

@@ -1115,6 +1115,21 @@ impl LightClient {
             .flat_map(Output::get_record_outputs)
             .collect()
     }
+    #[cfg(feature = "sync")]
+    pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
+        self.wallet
+            .lock()
+            .await
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .0
+            .values()
+            .flat_map(Output::get_record_outputs)
+            .collect()
+    }
 
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
     ///  * TODO:  This fn does not handle failure it must be promoted to return a Result

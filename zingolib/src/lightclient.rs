@@ -14,12 +14,14 @@ use zcash_primitives::{
 
 use crate::config::ZingoConfig;
 
-use crate::{
-    blaze::syncdata::BlazeSyncData,
-    wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
+use crate::wallet::{
+    keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
 };
 
 use crate::data::proposal::ZingoProposal;
+
+#[cfg(not(feature = "sync"))]
+use crate::blaze::syncdata::BlazeSyncData;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, Debug, Default)]
@@ -306,10 +308,13 @@ pub struct LightClient {
     #[cfg(feature = "sync")]
     pub wallet: Arc<Mutex<LightWallet>>,
 
+    #[cfg(not(feature = "sync"))]
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 
+    #[cfg(not(feature = "sync"))]
     sync_lock: Mutex<()>,
 
+    #[cfg(not(feature = "sync"))]
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 
@@ -333,15 +338,16 @@ pub mod instantiation {
     use crate::config::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
-    use crate::{
-        blaze::syncdata::BlazeSyncData,
-        wallet::{LightWallet, WalletBase},
-    };
+    use crate::wallet::{LightWallet, WalletBase};
+
+    #[cfg(not(feature = "sync"))]
+    use crate::blaze::syncdata::BlazeSyncData;
 
     impl LightClient {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
+        #[cfg(not(feature = "sync"))]
         pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
@@ -351,6 +357,26 @@ pub mod instantiation {
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
+                interrupt_sync: Arc::new(RwLock::new(false)),
+                latest_proposal: Arc::new(RwLock::new(None)),
+                save_buffer: ZingoSaveBuffer::new(buffer),
+            })
+        }
+        /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
+        #[cfg(feature = "sync")]
+        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
+            let mut buffer: Vec<u8> = vec![];
+            wallet.write(&mut buffer).await?;
+            let config = wallet.transaction_context.config.clone();
+            Ok(LightClient {
+                wallet: Arc::new(Mutex::new(wallet)),
+                config: config.clone(),
+                #[cfg(not(feature = "sync"))]
+                mempool_monitor: std::sync::RwLock::new(None),
+                #[cfg(not(feature = "sync"))]
+                sync_lock: Mutex::new(()),
+                #[cfg(not(feature = "sync"))]
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
                 interrupt_sync: Arc::new(RwLock::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
@@ -400,6 +426,7 @@ pub mod instantiation {
             )?)
             .await?;
 
+            #[cfg(not(feature = "sync"))]
             lightclient.set_wallet_initial_state(birthday).await;
             lightclient
                 .save_internal_rust()
@@ -430,6 +457,7 @@ pub mod instantiation {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
                     .await?;
+                #[cfg(not(feature = "sync"))]
                 l.set_wallet_initial_state(height).await;
 
                 debug!("Created new wallet with a new seed!");
@@ -477,12 +505,26 @@ pub mod propose;
 // other functions
 impl LightClient {
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
 
         // Then set the initial block
         let birthday = self.wallet.get_birthday().await;
+        self.set_wallet_initial_state(birthday).await;
+        debug!("Cleared wallet state, with birthday at {}", birthday);
+    }
+    #[cfg(feature = "sync")]
+    pub async fn clear_state(&self) {
+        let wallet = self.wallet.lock().await;
+
+        // First, clear the state from the wallet
+        wallet.clear_all().await;
+
+        // Then set the initial block
+        let birthday = wallet.get_birthday().await;
+        #[cfg(not(feature = "sync"))]
         self.set_wallet_initial_state(birthday).await;
         debug!("Cleared wallet state, with birthday at {}", birthday);
     }
@@ -493,6 +535,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
         let data = match base64::decode(enc_base64) {
             Ok(v) => v,
@@ -502,6 +545,27 @@ impl LightClient {
         };
 
         match self.wallet.decrypt_message(data).await {
+            Ok(m) => {
+                let memo_bytes: MemoBytes = m.memo.clone().into();
+                object! {
+                    "to" => encode_payment_address(self.config.chain.hrp_sapling_payment_address(), &m.to),
+                    "memo" => LightWallet::memo_str(Some(m.memo)),
+                    "memohex" => hex::encode(memo_bytes.as_slice())
+                }
+            }
+            Err(_) => object! { "error" => "Couldn't decrypt with any of the wallet's keys"},
+        }
+    }
+    #[cfg(feature = "sync")]
+    pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
+        let data = match base64::decode(enc_base64) {
+            Ok(v) => v,
+            Err(e) => {
+                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
+            }
+        };
+
+        match self.wallet.lock().await.decrypt_message(data).await {
             Ok(m) => {
                 let memo_bytes: MemoBytes = m.memo.clone().into();
                 object! {
@@ -537,6 +601,7 @@ impl LightClient {
     }
 
     /// Create a new address, deriving it from the seed.
+    #[cfg(not(feature = "sync"))]
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
@@ -554,6 +619,26 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
+    #[cfg(feature = "sync")]
+    pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
+        //TODO: Placeholder interface
+        let desired_receivers = ReceiverSelection {
+            sapling: addr_type.contains('z'),
+            orchard: addr_type.contains('o'),
+            transparent: addr_type.contains('t'),
+        };
+
+        let new_address = self
+            .wallet
+            .lock()
+            .await
+            .wallet_capability()
+            .new_address(desired_receivers, false)?;
+
+        // self.save_internal_rust().await?;
+
+        Ok(array![new_address.encode(&self.config.chain)])
+    }
 
     /// TODO: Add Doc Comment Here!
     pub fn set_server(&self, server: http::Uri) {
@@ -561,6 +646,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub async fn set_wallet_initial_state(&self, height: u64) {
         let state = self
             .download_initial_tree_state_from_lightwalletd(height)
@@ -574,6 +660,7 @@ impl LightClient {
         }
     }
 
+    #[cfg(not(feature = "sync"))]
     pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
         match get_recent_median_price_from_gemini().await {
@@ -587,11 +674,26 @@ impl LightClient {
             }
         }
     }
+    #[cfg(feature = "sync")]
+    pub(crate) async fn update_current_price(&self) -> String {
+        // Get the zec price from the server
+        match get_recent_median_price_from_gemini().await {
+            Ok(price) => {
+                self.wallet.lock().await.set_latest_zec_price(price).await;
+                price.to_string()
+            }
+            Err(s) => {
+                error!("Error fetching latest price: {}", s);
+                s.to_string()
+            }
+        }
+    }
 
     /// This function sorts notes into
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
+    #[cfg(not(feature = "sync"))]
     fn unspent_pending_spent(
         &self,
         note: JsonValue,

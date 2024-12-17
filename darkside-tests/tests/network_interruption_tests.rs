@@ -130,6 +130,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
 }
 #[ignore]
 #[tokio::test]
+#[cfg(not(feature = "sync"))]
 async fn shielded_note_marked_as_change_test() {
     const BLOCKCHAIN_HEIGHT: u64 = 20_000;
     let transaction_set = load_chainbuild_file("shielded_note_marked_as_change");

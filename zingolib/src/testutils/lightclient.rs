@@ -98,6 +98,7 @@ pub mod from_inputs {
 }
 
 /// gets stati for a vec of txids
+#[cfg(not(feature = "sync"))]
 pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
@@ -116,11 +117,43 @@ pub async fn lookup_statuses(
             .map(|transaction_record| transaction_record.status)
     })
 }
+#[cfg(feature = "sync")]
+pub async fn lookup_statuses(
+    client: &LightClient,
+    txids: nonempty::NonEmpty<TxId>,
+) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
+    let wallet = client.wallet.lock().await;
+    let records = &wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    txids.map(|txid| {
+        records
+            .get(&txid)
+            .map(|transaction_record| transaction_record.status)
+    })
+}
 
 /// gets stati for a vec of txids
+#[cfg(not(feature = "sync"))]
 pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
     let records = &client
         .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    records.keys().cloned().collect()
+}
+#[cfg(feature = "sync")]
+pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
+    let wallet = client.wallet.lock().await;
+    let records = &wallet
         .transaction_context
         .transaction_metadata_set
         .read()

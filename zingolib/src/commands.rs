@@ -240,7 +240,9 @@ impl Command for WalletKindCommand {
     }
 }
 
+#[cfg(not(feature = "sync"))]
 struct InterruptCommand {}
+#[cfg(not(feature = "sync"))]
 impl Command for InterruptCommand {
     fn help(&self) -> &'static str {
         "Toggle the sync interrupt after batch flag."
@@ -461,6 +463,7 @@ impl Command for SyncStatusCommand {
         "Get the sync status of the wallet"
     }
 
+    #[cfg(not(feature = "sync"))]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             let status = lightclient.do_sync_status().await;
@@ -491,6 +494,10 @@ impl Command for SyncStatusCommand {
             };
             o.pretty(2)
         })
+    }
+    #[cfg(feature = "sync")]
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        todo!()
     }
 }
 
@@ -535,6 +542,7 @@ impl Command for RescanCommand {
         "Rescan the wallet, downloading and scanning all blocks and transactions"
     }
 
+    #[cfg(not(feature = "sync"))]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_rescan().await {
@@ -542,6 +550,10 @@ impl Command for RescanCommand {
                 Err(e) => e,
             }
         })
+    }
+    #[cfg(feature = "sync")]
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        todo!()
     }
 }
 
@@ -1899,6 +1911,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("decryptmessage", Box::new(DecryptMessageCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
+        #[cfg(not(feature = "sync"))]
         ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
         ("rescan", Box::new(RescanCommand {})),

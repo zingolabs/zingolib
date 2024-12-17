@@ -145,6 +145,7 @@ mod fast {
     use super::*;
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
             json::object! {
@@ -542,6 +543,7 @@ mod fast {
     /// After the messages are sent, the test checks that the `messages_containing` method
     /// returns the expected messages for each party in the correct order.
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn message_thread() {
         // Begin test setup
         let (regtest_manager, _cph, faucet, recipient, _txid) =
@@ -698,6 +700,7 @@ mod fast {
     /// Tests that value transfers are properly sorted by block height and index.
     /// It also tests that retrieving the value transfers multiple times in a row returns the same results.
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn value_transfers() {
         let mut environment = LibtonodeEnvironment::setup().await;
 
@@ -759,6 +762,7 @@ mod fast {
 
     pub mod tex {
         use super::*;
+        #[cfg(not(feature = "sync"))]
         fn first_taddr_to_tex(client: &LightClient) -> ZcashAddress {
             let taddr = ZcashAddress::try_from_encoded(
                 &client
@@ -778,6 +782,7 @@ mod fast {
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
         #[tokio::test]
+        #[cfg(not(feature = "sync"))]
         async fn send_to_tex() {
             let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
                 scenarios::orchard_funded_recipient(5_000_000).await;
@@ -825,6 +830,7 @@ mod fast {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn targeted_rescan() {
         let (regtest_manager, _cph, _faucet, recipient, txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -853,6 +859,7 @@ mod fast {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -899,6 +906,7 @@ mod fast {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn utxos_are_not_prematurely_confirmed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
@@ -1316,6 +1324,7 @@ mod slow {
     use super::*;
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn zero_value_receipts() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -1356,6 +1365,7 @@ mod slow {
         );
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn zero_value_change() {
         // 1. Send an incoming transaction to fill the wallet
         let value = 100_000;
@@ -1402,6 +1412,7 @@ mod slow {
         check_client_balances!(recipient, o: 0 s: 0 t: 0);
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn witness_clearing() {
         let (regtest_manager, _cph, faucet, recipient, txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -1575,6 +1586,7 @@ mod slow {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn test_scanning_in_watch_only_mode() {
         // # Scenario:
         // 3. reset wallet
@@ -1697,6 +1709,7 @@ mod slow {
         }
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn t_incoming_t_outgoing_disallowed() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
@@ -3905,6 +3918,7 @@ mod basic_transactions {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn standard_send_fees() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
