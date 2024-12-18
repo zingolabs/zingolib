@@ -3,19 +3,15 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 
-use incrementalmerkletree::Level;
-use shardtree::LocatedPrunableTree;
-use zcash_client_backend::{
-    data_api::{ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT},
-    keys::UnifiedFullViewingKey,
-};
+use orchard::tree::MerkleHashOrchard;
+use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
 use crate::keys::transparent::TransparentAddressId;
 use crate::primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction};
-use crate::witness::{ShardTreeData, ShardTrees};
+use crate::witness::{LocatedTreeData, ShardTrees};
 
 // TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
@@ -249,66 +245,21 @@ pub trait SyncShardTrees: SyncWallet {
     fn get_shard_trees(&self) -> Result<&ShardTrees, Self::Error>;
 
     /// Update wallet shard trees with new shard tree data
-    fn update_shard_trees(&mut self, shard_tree_data: ShardTreeData) -> Result<(), Self::Error> {
-        let ShardTreeData {
-            sapling_initial_position,
-            orchard_initial_position,
-            sapling_leaves_and_retentions,
-            orchard_leaves_and_retentions,
-        } = shard_tree_data;
-        //TODO: Play with numbers. Is it more efficient to
-        // build larger trees to allow for more pruning to
-        // happen in parallel before insertion?
-        // Is it better to build smaller trees so that more
-        // trees can be built in parallel at the same time?
-        // Is inserting trees more efficient if trees are
-        // a power of 2 size? Is it more efficient if they
-        // are 'aligned' so that the initial_position is
-        // a multiple of tree size? All unanswered questions
-        // that want to be benchmarked.
+    fn update_shard_trees(
+        &mut self,
+        sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
+        orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    ) -> Result<(), Self::Error> {
+        let shard_trees = self.get_shard_trees_mut()?;
 
-        let (sapling_sender, sapling_receiver) = crossbeam_channel::unbounded();
-        let (orchard_sender, orchard_receiver) = crossbeam_channel::unbounded();
-        rayon::scope_fifo(|scope| {
-            for (i, sapling_chunk) in sapling_leaves_and_retentions.chunks(128).enumerate() {
-                let sapling_sender = sapling_sender.clone();
-                scope.spawn_fifo(move |_scope| {
-                    let start_position = sapling_initial_position + (i as u64 * 128);
-                    let tree = LocatedPrunableTree::from_iter(
-                        start_position..(start_position + sapling_chunk.len() as u64),
-                        Level::from(SAPLING_SHARD_HEIGHT),
-                        sapling_chunk.iter().copied(),
-                    );
-                    sapling_sender.send(tree).unwrap();
-                })
-            }
-
-            for (i, orchard_chunk) in orchard_leaves_and_retentions.chunks(128).enumerate() {
-                let orchard_sender = orchard_sender.clone();
-                scope.spawn_fifo(move |_scope| {
-                    let start_position = orchard_initial_position + (i as u64 * 128);
-                    let tree = LocatedPrunableTree::from_iter(
-                        start_position..(start_position + orchard_chunk.len() as u64),
-                        Level::from(ORCHARD_SHARD_HEIGHT),
-                        orchard_chunk.iter().copied(),
-                    );
-                    orchard_sender.send(tree).unwrap();
-                })
-            }
-        });
-        drop((orchard_sender, sapling_sender));
-
-        let trees = self.get_shard_trees_mut()?;
-        for tree in sapling_receiver.iter() {
-            let tree = tree.unwrap();
-            trees
+        for tree in sapling_located_trees.into_iter() {
+            shard_trees
                 .sapling_mut()
                 .insert_tree(tree.subtree, tree.checkpoints)
                 .unwrap();
         }
-        for tree in orchard_receiver {
-            let tree = tree.unwrap();
-            trees
+        for tree in orchard_located_trees.into_iter() {
+            shard_trees
                 .orchard_mut()
                 .insert_tree(tree.subtree, tree.checkpoints)
                 .unwrap();

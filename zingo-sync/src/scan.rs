@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
+use orchard::tree::MerkleHashOrchard;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
@@ -18,7 +19,7 @@ use crate::{
     client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
     primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletBlock, WalletTransaction},
-    witness::ShardTreeData,
+    witness::{self, LocatedTreeData, WitnessData},
 };
 
 use self::{
@@ -39,7 +40,7 @@ struct InitialScanData {
 impl InitialScanData {
     async fn new<P>(
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        parameters: &P,
+        consensus_parameters: &P,
         first_block: &CompactBlock,
         previous_wallet_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
@@ -83,7 +84,7 @@ impl InitialScanData {
                         .unwrap(),
                 )
             } else {
-                let sapling_activation_height = parameters
+                let sapling_activation_height = consensus_parameters
                     .activation_height(NetworkUpgrade::Sapling)
                     .expect("should have some sapling activation height");
 
@@ -116,7 +117,7 @@ struct ScanData {
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     relevant_txids: HashSet<TxId>,
     decrypted_note_data: DecryptedNoteData,
-    shard_tree_data: ShardTreeData,
+    witness_data: WitnessData,
 }
 
 pub(crate) struct ScanResults {
@@ -124,7 +125,8 @@ pub(crate) struct ScanResults {
     pub(crate) outpoints: OutPointMap,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
-    pub(crate) shard_tree_data: ShardTreeData,
+    pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
+    pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -173,14 +175,25 @@ where
     .await
     .unwrap();
 
-    let scan_data = scan_compact_blocks(compact_blocks, parameters, ufvks, initial_scan_data)?;
+    let consensus_parameters_clone = parameters.clone();
+    let ufvks_clone = ufvks.clone();
+    let scan_data = tokio::task::spawn_blocking(move || {
+        scan_compact_blocks(
+            compact_blocks,
+            &consensus_parameters_clone,
+            &ufvks_clone,
+            initial_scan_data,
+        )
+    })
+    .await
+    .unwrap()?;
 
     let ScanData {
         nullifiers,
         wallet_blocks,
         mut relevant_txids,
         decrypted_note_data,
-        shard_tree_data,
+        witness_data,
     } = scan_data;
 
     locators.into_iter().map(|(_, txid)| txid).for_each(|txid| {
@@ -201,11 +214,32 @@ where
     .await
     .unwrap();
 
+    let WitnessData {
+        sapling_initial_position,
+        orchard_initial_position,
+        sapling_leaves_and_retentions,
+        orchard_leaves_and_retentions,
+    } = witness_data;
+
+    let sapling_located_trees = tokio::task::spawn_blocking(move || {
+        witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions)
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    let orchard_located_trees = tokio::task::spawn_blocking(move || {
+        witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions)
+            .unwrap()
+    })
+    .await
+    .unwrap();
+
     Ok(ScanResults {
         nullifiers,
         outpoints,
         wallet_blocks,
         wallet_transactions,
-        shard_tree_data,
+        sapling_located_trees,
+        orchard_located_trees,
     })
 }

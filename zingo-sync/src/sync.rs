@@ -108,6 +108,7 @@ where
 
     // TODO: consider what happens when there is no verification range i.e. all ranges already scanned
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
+    // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
     update_subtree_roots(fetch_request_sender.clone(), wallet).await;
 
@@ -137,10 +138,6 @@ where
                     mempool_stream_response,
                     &mut mempool_stream)
                 .await;
-
-                // reset interval to ensure all mempool transactions have been scanned before sync completes.
-                // if a full interval passes without receiving a transaction from the mempool we can safely finish sync.
-                interval.reset();
             }
 
             _update_scanner = interval.tick() => {
@@ -332,7 +329,8 @@ async fn process_mempool_stream_response<W>(
 ) where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
-    match mempool_stream_response.unwrap() {
+    // TODO: replace this unwrap_or_else with proper error handling
+    match mempool_stream_response.unwrap_or(None) {
         Some(raw_transaction) => {
             let block_height =
                 BlockHeight::from_u32(u32::try_from(raw_transaction.height).unwrap());
@@ -426,6 +424,7 @@ async fn process_mempool_stream_response<W>(
             *mempool_stream = client::get_mempool_transaction_stream(fetch_request_sender.clone())
                 .await
                 .unwrap();
+            tokio::time::sleep(Duration::from_millis(1000)).await;
         }
     }
 }
@@ -452,10 +451,11 @@ where
 {
     let ScanResults {
         nullifiers,
+        outpoints,
         wallet_blocks,
         wallet_transactions,
-        shard_tree_data,
-        outpoints,
+        sapling_located_trees,
+        orchard_located_trees,
     } = scan_results;
 
     wallet.append_wallet_blocks(wallet_blocks).unwrap();
@@ -464,7 +464,9 @@ where
         .unwrap();
     wallet.append_nullifiers(nullifiers).unwrap();
     wallet.append_outpoints(outpoints).unwrap();
-    wallet.update_shard_trees(shard_tree_data).unwrap();
+    wallet
+        .update_shard_trees(sapling_located_trees, orchard_located_trees)
+        .unwrap();
     // TODO: add trait to save wallet data to persistance for in-memory wallets
 
     Ok(())
