@@ -3,6 +3,7 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+#[cfg(not(feature = "sync"))]
 use incrementalmerkletree::frontier::NonEmptyFrontier;
 use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
@@ -26,7 +27,9 @@ pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
 
+#[cfg(not(feature = "sync"))]
 use crate::error::{ZingoLibError, ZingoLibResult};
+#[cfg(not(feature = "sync"))]
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     notes,
@@ -179,6 +182,7 @@ impl WitnessTrees {
         write_shardtree(&mut self.witness_tree_orchard, &mut writer)
     }
 
+    #[cfg(not(feature = "sync"))]
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
         non_empty_sapling_frontier: Option<NonEmptyFrontier<Node>>,
@@ -188,6 +192,7 @@ impl WitnessTrees {
         self.insert_domain_frontier_nodes::<OrchardDomain>(non_empty_orchard_frontier);
     }
 
+    #[cfg(not(feature = "sync"))]
     fn insert_domain_frontier_nodes<D: DomainWalletExt>(
         &mut self,
         non_empty_frontier: Option<

@@ -1,6 +1,8 @@
 //! contains associated methods for modifying and updating TxMap
 
+#[cfg(not(feature = "sync"))]
 use incrementalmerkletree::Position;
+
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
@@ -203,6 +205,7 @@ impl crate::wallet::tx_map::TxMap {
         Ok(())
     }
 
+    #[cfg(not(feature = "sync"))]
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,

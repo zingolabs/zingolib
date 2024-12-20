@@ -693,7 +693,6 @@ impl LightClient {
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
-    #[cfg(not(feature = "sync"))]
     fn unspent_pending_spent(
         &self,
         note: JsonValue,

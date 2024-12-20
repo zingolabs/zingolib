@@ -117,6 +117,7 @@ pub async fn lookup_statuses(
             .map(|transaction_record| transaction_record.status)
     })
 }
+/// gets stati for a vec of txids
 #[cfg(feature = "sync")]
 pub async fn lookup_statuses(
     client: &LightClient,
@@ -150,6 +151,7 @@ pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
 
     records.keys().cloned().collect()
 }
+/// gets stati for a vec of txids
 #[cfg(feature = "sync")]
 pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
     let wallet = client.wallet.lock().await;

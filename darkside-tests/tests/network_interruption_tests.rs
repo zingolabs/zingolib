@@ -1,25 +1,30 @@
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
-    time::Duration,
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
+#[cfg(not(feature = "sync"))]
+use std::{sync::atomic::Ordering, time::Duration};
 
 use darkside_tests::{
     constants::DARKSIDE_SEED,
     utils::{
-        create_chainbuild_file, load_chainbuild_file, prepare_darksidewalletd,
+        create_chainbuild_file, prepare_darksidewalletd,
         scenarios::{DarksideEnvironment, DarksideSender},
         DarksideHandler,
     },
 };
+
+#[cfg(not(feature = "sync"))]
+use darkside_tests::utils::load_chainbuild_file;
+
+#[cfg(not(feature = "sync"))]
 use tokio::time::sleep;
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
 use zingolib::testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient};
+
+#[cfg(not(feature = "sync"))]
 use zingolib::{
     lightclient::PoolBalances,
     wallet::{

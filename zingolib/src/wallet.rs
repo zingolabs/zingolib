@@ -13,20 +13,18 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use zingo_sync::primitives::OutPointMap;
 #[cfg(feature = "sync")]
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
+    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
 use bip0039::Mnemonic;
 #[cfg(feature = "sync")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{
     cmp,
-    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,

@@ -300,6 +300,7 @@ async fn reload_wallet_from_buffer() {
     let balance = client.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(10342837));
 }
+#[tokio::test]
 #[cfg(feature = "sync")]
 async fn reload_wallet_from_buffer() {
     use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;

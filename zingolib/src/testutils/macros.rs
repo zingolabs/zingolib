@@ -71,10 +71,31 @@ macro_rules! check_client_balances {
 }
 /// Given a client and txid, get the outgoing metadata from the tr
 #[macro_export]
+#[cfg(not(feature = "sync"))]
 macro_rules! get_otd {
     ($client:ident, $txid:ident) => {
         $client
             .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .transaction_records_by_id
+            .get($txid)
+            .unwrap()
+            .outgoing_tx_data
+            .clone()
+    };
+}
+/// Given a client and txid, get the outgoing metadata from the tr
+#[macro_export]
+#[cfg(feature = "sync")]
+macro_rules! get_otd {
+    ($client:ident, $txid:ident) => {
+        $client
+            .wallet
+            .lock()
+            .await
             .transaction_context
             .transaction_metadata_set
             .read()

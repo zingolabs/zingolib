@@ -9,9 +9,7 @@ use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedP
 use zcash_primitives::consensus::NetworkConstants;
 
 use crate::{
-    config::margin_fee,
-    error::ZingoLibError,
-    lightclient::{AccountBackupInfo, LightClient, PoolBalances, UserBalances},
+    lightclient::{AccountBackupInfo, LightClient, PoolBalances},
     wallet::{
         data::{
             finsight,
@@ -29,6 +27,9 @@ use crate::{
         LightWallet,
     },
 };
+
+#[cfg(not(feature = "sync"))]
+use crate::{config::margin_fee, error::ZingoLibError, lightclient::UserBalances};
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
@@ -1007,6 +1008,52 @@ impl LightClient {
             pending_spent_sapling_notes,
         )
     }
+    #[cfg(feature = "sync")]
+    async fn list_sapling_notes(
+        &self,
+        all_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
+        let wallet = self.wallet.lock().await;
+
+        // Collect Sapling notes
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+            .flat_map( |(transaction_id, transaction_metadata)| {
+                transaction_metadata.sapling_notes.iter().cloned().filter_map( |note_metadata|
+                    if !all_notes && note_metadata.spending_tx_status().is_some() {
+                        None
+                    } else {
+                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, &note_metadata, &wallet.wallet_capability());
+                        let spendable = transaction_metadata.status.is_confirmed() && note_metadata.spending_tx_status().is_none();
+
+                        let created_block:u32 = transaction_metadata.status.get_height().into();
+                        // this object should be created by the DomainOuput trait if this doesnt get deprecated
+                        Some(object!{
+                            "created_in_block"   => created_block,
+                            "datetime"           => transaction_metadata.datetime,
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
+                            "value"              => note_metadata.sapling_crypto_note.value().inner(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
+                            "address"            => address,
+                            "spendable"          => spendable,
+                            "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
+                        })
+                    }
+                )
+            })
+            .for_each( |note| {
+                self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_spent_sapling_notes, &mut spent_sapling_notes)
+            });
+        (
+            unspent_sapling_notes,
+            spent_sapling_notes,
+            pending_spent_sapling_notes,
+        )
+    }
 
     #[cfg(not(feature = "sync"))]
     async fn list_orchard_notes(
@@ -1030,6 +1077,50 @@ impl LightClient {
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,
                             "created_in_txid"    => format!("{}", transaction_id),
+                            "value"              => note_metadata.orchard_crypto_note.value().inner(),
+                            "pending"        => !transaction_metadata.status.is_confirmed(),
+                            "address"            => address,
+                            "spendable"          => spendable,
+                            "spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => note_metadata.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => note_metadata.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
+                        })
+                    }
+                )
+            })
+            .for_each( |note| {
+                self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_spent_orchard_notes, &mut spent_orchard_notes)
+            });
+        (
+            unspent_orchard_notes,
+            spent_orchard_notes,
+            pending_spent_orchard_notes,
+        )
+    }
+    #[cfg(feature = "sync")]
+    async fn list_orchard_notes(
+        &self,
+        all_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
+        let wallet = self.wallet.lock().await;
+
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+            .flat_map( |(transaction_id, transaction_metadata)| {
+                transaction_metadata.orchard_notes.iter().cloned().filter_map(|note_metadata|
+                    if !all_notes && note_metadata.is_spent_confirmed() {
+                        None
+                    } else {
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, &note_metadata, &wallet.wallet_capability());
+                        let spendable = transaction_metadata.status.is_confirmed() && note_metadata.spending_tx_status().is_none();
+
+                        let created_block:u32 = transaction_metadata.status.get_height().into();
+                        Some(object!{
+                            "created_in_block"   => created_block,
+                            "datetime"           => transaction_metadata.datetime,
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.orchard_crypto_note.value().inner(),
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
@@ -1099,6 +1190,55 @@ impl LightClient {
             pending_spent_transparent_note,
         )
     }
+    #[cfg(feature = "sync")]
+    async fn list_transparent_outputs(
+        &self,
+        all_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
+        let mut pending_spent_transparent_note: Vec<JsonValue> = vec![];
+        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
+        let wallet = self.wallet.lock().await;
+
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+            .flat_map( |(transaction_id, transaction_record)| {
+                transaction_record.transparent_outputs.iter().cloned().filter_map(|utxo|
+                    if !all_notes && utxo.is_spent_confirmed() {
+                        None
+                    } else {
+                        let created_block:u32 = transaction_record.status.get_height().into();
+                        let recipient = zcash_client_backend::address::Address::decode(&self.config.chain, &utxo.address);
+                        let taddr = match recipient {
+                        Some(zcash_client_backend::address::Address::Transparent(taddr)) => taddr,
+                            _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
+                        };
+
+                        let spendable = transaction_record.status.is_confirmed() && utxo.spending_tx_status().is_none();
+                        Some(object!{
+                            "created_in_block"   => created_block,
+                            "datetime"           => transaction_record.datetime,
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
+                            "value"              => utxo.value,
+                            "scriptkey"          => hex::encode(utxo.script.clone()),
+                            "address"            => wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                            "spendable"          => spendable,
+                            "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
+                            "spent_at_height"    => utxo.spending_tx_status().map(|(_, status)| u32::from(status.get_height())),
+                        })
+                    }
+                )
+            })
+            .for_each( |note| {
+                self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_spent_transparent_note, &mut spent_transparent_notes)
+            });
+
+        (
+            unspent_transparent_notes,
+            spent_transparent_notes,
+            pending_spent_transparent_note,
+        )
+    }
 
     /// Get all the outputs packed into an Output vector
     ///  This method will replace do_list_notes
@@ -1140,6 +1280,45 @@ impl LightClient {
     ///  * TODO:  DEPRECATE in favor of list_outputs
     #[cfg(any(test, feature = "test-elevation"))]
     #[cfg(not(feature = "sync"))]
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
+            self.list_sapling_notes(all_notes).await;
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_spent_orchard_notes) =
+            self.list_orchard_notes(all_notes).await;
+        let (
+            mut unspent_transparent_notes,
+            mut spent_transparent_notes,
+            mut pending_spent_transparent_notes,
+        ) = self.list_transparent_outputs(all_notes).await;
+
+        unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+
+        let mut res = object! {
+            "unspent_sapling_notes" => unspent_sapling_notes,
+            "pending_sapling_notes" => pending_spent_sapling_notes,
+            "unspent_orchard_notes" => unspent_orchard_notes,
+            "pending_orchard_notes" => pending_spent_orchard_notes,
+            "utxos"         => unspent_transparent_notes,
+            "pending_utxos" => pending_spent_transparent_notes,
+        };
+
+        if all_notes {
+            res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
+            res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
+            res["spent_utxos"] = JsonValue::Array(spent_transparent_notes);
+        }
+
+        res
+    }
+    #[cfg(feature = "sync")]
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
             self.list_sapling_notes(all_notes).await;

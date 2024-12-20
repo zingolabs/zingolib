@@ -7,7 +7,9 @@
 #[macro_use]
 extern crate rust_embed;
 
+#[cfg(not(feature = "sync"))]
 pub mod blaze;
+
 pub mod commands;
 pub mod config;
 pub mod data;

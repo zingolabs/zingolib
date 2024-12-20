@@ -2,16 +2,22 @@
 //! LightClient sync stuff.
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
+#[cfg(not(feature = "sync"))]
 use futures::future::join_all;
 
-use log::{debug, error, warn};
+use log::{debug, error};
 
+#[cfg(not(feature = "sync"))]
+use log::warn;
+
+#[cfg(not(feature = "sync"))]
 use std::{
     cmp::{self},
     io::{self},
     sync::Arc,
     time::Duration,
 };
+#[cfg(not(feature = "sync"))]
 use tokio::{
     join,
     runtime::Runtime,
@@ -20,20 +26,27 @@ use tokio::{
     time::sleep,
 };
 
+#[cfg(not(feature = "sync"))]
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+#[cfg(not(feature = "sync"))]
 use zcash_client_backend::proto::service::RawTransaction;
+#[cfg(not(feature = "sync"))]
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId},
     transaction::Transaction,
 };
 
+#[cfg(not(feature = "sync"))]
 use crate::config::MAX_REORG;
 
+#[cfg(not(feature = "sync"))]
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 use super::LightClient;
 use super::SyncResult;
+
+#[cfg(not(feature = "sync"))]
 use crate::{
     blaze::{
         block_management_reorg_detection::BlockManagementData,
@@ -112,7 +125,7 @@ impl LightClient {
         sync_result
     }
     #[cfg(feature = "sync")]
-    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+    pub async fn do_sync(&self, _print_updates: bool) -> Result<SyncResult, String> {
         todo!();
     }
 
@@ -707,7 +720,6 @@ impl LightClient {
 }
 
 #[cfg(all(test, feature = "testvectors"))]
-#[cfg(not(feature = "sync"))]
 pub mod test {
     use crate::{lightclient::LightClient, wallet::disk::testing::examples};
 

@@ -1,4 +1,5 @@
 //! TODO: Add Mod Description Here!
+#[cfg(not(feature = "sync"))]
 use zcash_client_backend::proto::service::TreeState;
 
 use zcash_primitives::consensus::BlockHeight;
@@ -7,6 +8,7 @@ use super::LightWallet;
 
 impl LightWallet {
     /// TODO: Add Doc Comment Here!
+    #[cfg(not(feature = "sync"))]
     pub(crate) async fn initiate_witness_trees(&self, trees: TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
             crate::data::witness_trees::get_legacy_frontiers(trees);

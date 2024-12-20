@@ -1,35 +1,40 @@
 #![forbid(unsafe_code)]
 
 use json::JsonValue;
-use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
-use sapling_crypto::note_encryption::SaplingDomain;
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
-use std::{path::Path, time::Duration};
-use zcash_address::unified::Fvk;
-use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMUM_FEE};
+use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::{build_fvk_client, increase_height_and_wait_for_client, scenarios};
+use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
-use zingolib::wallet::data::summaries::TransactionSummaryInterface;
-use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::propose::ProposeSendError;
 use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
 
-use zingolib::config::{ChainType, RegtestNetwork, MAX_REORG};
+use zingolib::config::RegtestNetwork;
+use zingolib::lightclient::PoolBalances;
 use zingolib::testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-use zingolib::{
-    lightclient::{LightClient, PoolBalances},
-    utils,
-    wallet::{
-        data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
-        keys::unified::WalletCapability,
-    },
+
+#[cfg(not(feature = "sync"))]
+use {
+    orchard::note_encryption::OrchardDomain,
+    orchard::tree::MerkleHashOrchard,
+    sapling_crypto::note_encryption::SaplingDomain,
+    shardtree::store::memory::MemoryShardStore,
+    shardtree::ShardTree,
+    std::{path::Path, time::Duration},
+    zcash_address::unified::Fvk,
+    zcash_client_backend::encoding::encode_payment_address,
+    zcash_primitives::consensus::BlockHeight,
+    zingolib::config::{ChainType, MAX_REORG},
+    zingolib::lightclient::LightClient,
+    zingolib::testutils::build_fvk_client,
+    zingolib::utils,
+    zingolib::wallet::data::summaries::TransactionSummaryInterface,
+    zingolib::wallet::data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
+    zingolib::wallet::keys::unified::UnifiedKeyStore,
+    zingolib::wallet::keys::unified::WalletCapability,
 };
 
+#[cfg(not(feature = "sync"))]
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
     balance: PoolBalances,
@@ -58,6 +63,7 @@ fn check_expected_balance_with_fvks(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(feature = "sync"))]
 fn check_view_capability_bounds(
     balance: &PoolBalances,
     watch_wc: &WalletCapability,
@@ -115,28 +121,28 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
-    use std::str::FromStr;
-
     use bip0039::Mnemonic;
-    use zcash_address::{AddressKind, ZcashAddress};
-    use zcash_client_backend::{
-        zip321::{Payment, TransactionRequest},
-        PoolType, ShieldedProtocol,
-    };
-    use zcash_primitives::{
-        memo::Memo,
-        transaction::{components::amount::NonNegativeAmount, TxId},
-    };
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
-            lightclient::{from_inputs, get_base_address},
+            lightclient::from_inputs,
         },
-        utils::conversion::txid_from_hex_encoded_str,
-        wallet::{
-            data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+        wallet::data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+    };
+
+    #[cfg(not(feature = "sync"))]
+    use {
+        std::str::FromStr,
+        zcash_address::{AddressKind, ZcashAddress},
+        zcash_client_backend::zip321::{Payment, TransactionRequest},
+        zcash_primitives::{memo::Memo, transaction::TxId},
+        zingo_status::confirmation_status::ConfirmationStatus,
+        zingolib::testutils::lightclient::get_base_address,
+        zingolib::utils::conversion::txid_from_hex_encoded_str,
+        zingolib::wallet::{
             keys::unified::ReceiverSelection,
             notes::{OutputInterface as _, ShieldedNoteInterface},
         },
@@ -761,6 +767,7 @@ mod fast {
     }
 
     pub mod tex {
+        #[cfg(not(feature = "sync"))]
         use super::*;
         #[cfg(not(feature = "sync"))]
         fn first_taddr_to_tex(client: &LightClient) -> ZcashAddress {
@@ -1297,20 +1304,22 @@ mod fast {
 }
 mod slow {
     use bip0039::Mnemonic;
-    use orchard::note_encryption::OrchardDomain;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::{
-        consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
-    };
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::testutils::{
-        assert_transaction_summary_equality, assert_transaction_summary_exists,
+        assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
-    use zingolib::testvectors::TEST_TXID;
-    use zingolib::{
-        lightclient::send::send_with_proposal::QuickSendError,
-        wallet::{
+
+    #[cfg(not(feature = "sync"))]
+    use {
+        orchard::note_encryption::OrchardDomain,
+        zcash_primitives::{consensus::NetworkConstants, memo::Memo},
+        zingo_status::confirmation_status::ConfirmationStatus,
+        zingolib::testutils::assert_transaction_summary_equality,
+        zingolib::testvectors::TEST_TXID,
+        zingolib::wallet::{
             data::{
                 summaries::{OrchardNoteSummary, SpendSummary, TransactionSummaryBuilder},
                 OutgoingTxData,
@@ -1844,6 +1853,7 @@ mod slow {
         );
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn send_to_transparent_and_sapling_maintain_balance() {
         // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
@@ -2482,6 +2492,7 @@ mod slow {
         );
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn sapling_incoming_sapling_outgoing() {
         // TODO:  Add assertions about Sapling change note.
         let (regtest_manager, _cph, faucet, recipient) =
@@ -2686,6 +2697,7 @@ mod slow {
         check_client_balances!(recipient, o: remaining_orchard s: for_sapling t: 0);
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn sandblast_filter_preserves_trees() {
         let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -3613,6 +3625,7 @@ mod slow {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn zero_value_change_to_orchard_created() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(100_000).await;
@@ -3667,6 +3680,7 @@ mod slow {
     }
     #[tokio::test]
     #[ignore = "test does not correspond to real-world case"]
+    #[cfg(not(feature = "sync"))]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(500_000).await;
@@ -3776,6 +3790,7 @@ mod slow {
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
             scenarios::orchard_funded_recipient(1_000_000).await;
@@ -3807,6 +3822,7 @@ mod slow {
     }
     #[ignore]
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn timed_sync_interrupt() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
@@ -3872,6 +3888,7 @@ mod slow {
 }
 
 mod basic_transactions {
+    #[cfg(not(feature = "sync"))]
     use std::cmp;
 
     use zingolib::get_base_address_macro;
@@ -4119,6 +4136,7 @@ mod basic_transactions {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn dust_send_fees() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
@@ -4177,6 +4195,7 @@ mod basic_transactions {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn shield_send_fees() {
         let (regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
@@ -4341,6 +4360,7 @@ mod send_all {
         );
     }
     #[tokio::test]
+    #[cfg(not(feature = "sync"))]
     async fn ptfm_general() {
         let (regtest_manager, _cph, faucet, recipient, _) =
             scenarios::orchard_funded_recipient(100_000).await;

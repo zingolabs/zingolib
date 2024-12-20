@@ -6,11 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 chain_generic_tests = []
-sync = []
+sync = ["dep:zingo-sync"]
 
 [dependencies]
 zingolib = { path = "../zingolib", features = ["darkside_tests", "testvectors"] }
-zingo-sync = { path = "../zingo-sync" }
+zingo-sync = { path = "../zingo-sync", optional = true }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-status = { path = "../zingo-status" }
 

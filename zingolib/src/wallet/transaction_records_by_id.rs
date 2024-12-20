@@ -465,6 +465,7 @@ impl TransactionRecordsById {
     }
 
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
+    #[cfg(not(feature = "sync"))]
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         // Pending window: How long to wait past the chain tip before clearing a pending
         let pending_window = 2;
@@ -699,6 +700,7 @@ impl TransactionRecordsById {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(not(feature = "sync"))]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,

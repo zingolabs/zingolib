@@ -13,7 +13,6 @@ use crate::wallet::keys::unified::WalletCapability;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
-use std::cmp;
 use std::collections::HashMap;
 use std::io::Read;
 use std::string::String;
@@ -30,6 +29,9 @@ use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
+
+#[cfg(not(feature = "sync"))]
+use std::cmp;
 
 pub mod assertions;
 pub mod chain_generics;

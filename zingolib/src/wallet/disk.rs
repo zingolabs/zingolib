@@ -6,13 +6,12 @@ use zcash_keys::keys::UnifiedSpendingKey;
 use zip32::AccountId;
 
 use std::{
-    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
 };
 
 #[cfg(feature = "sync")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;

@@ -609,14 +609,12 @@ pub mod send_with_proposal {
         use zcash_client_backend::{PoolType, ShieldedProtocol};
 
         use crate::{
+            lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
             wallet::disk::testing::examples,
         };
-
-        #[cfg(not(feature = "sync"))]
-        use crate::lightclient::sync::test::sync_example_wallet;
 
         // all tests below (and in this mod) use example wallets, which describe real-world chains.
 
@@ -647,7 +645,6 @@ pub mod send_with_proposal {
             /// requires 1 confirmation: expect 3 minute runtime
             #[ignore = "live testnet: testnet relies on NU6"]
             #[tokio::test]
-            #[cfg(not(feature = "sync"))]
             async fn glory_goddess_simple_send() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,

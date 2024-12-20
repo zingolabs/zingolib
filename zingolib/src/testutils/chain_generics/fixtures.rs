@@ -385,6 +385,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
         )
     );
 }
+/// the simplest test that sends from a specific shielded pool to another specific pool. error variant.
 #[cfg(feature = "sync")]
 pub async fn shpool_to_pool_insufficient_error<CC>(
     shpool: ShieldedProtocol,
@@ -482,6 +483,7 @@ where
         )
     );
 }
+/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
 #[cfg(feature = "sync")]
 pub async fn to_pool_unfunded_error<CC>(pool: PoolType, try_amount: u64)
 where

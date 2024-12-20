@@ -9,7 +9,6 @@ edition = "2021"
 [features]
 ci = []
 darkside_tests = []
-default = ["sync"]
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 tempfile = ["dep:tempfile"]
