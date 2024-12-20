@@ -219,7 +219,7 @@ impl LightClient {
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let wallet = self.wallet.lock().await;
-        let mut consumer_ui_notes = 
+        let mut consumer_ui_notes =
             wallet
             .transaction_context.transaction_metadata_set
             .read()

@@ -65,7 +65,7 @@ where
     });
 
     let mut wallet_lock = wallet.lock().await;
-    let wallet_height = state::get_wallet_height(consensus_parameters, &mut *wallet_lock).unwrap();
+    let wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_lock).unwrap();
     let chain_height = client::get_chain_height(fetch_request_sender.clone())
         .await
         .unwrap();
