@@ -177,7 +177,7 @@ impl LightWallet {
     }
 }
 
-#[cfg(all(test, feature = "testvectors"))]
+#[cfg(test)]
 mod test {
     use zcash_client_backend::PoolType;
 

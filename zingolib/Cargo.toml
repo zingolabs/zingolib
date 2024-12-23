@@ -13,7 +13,6 @@ deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 tempfile = ["dep:tempfile"]
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
-testvectors = []
 sync = ['dep:zingo-sync']
 zaino-test = ['test-elevation']
 
@@ -22,6 +21,7 @@ zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync", optional = true }
+testvectors = { path = "../testvectors", optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }

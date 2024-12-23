@@ -84,7 +84,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
 
     loaded_wallet_assert(
         wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
         0,
         3,
     )
@@ -101,7 +101,7 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
 
     loaded_wallet_assert(
         wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
         10177826,
         1,
     )
@@ -222,9 +222,9 @@ async fn loaded_wallet_assert(
 #[tokio::test]
 #[cfg(not(feature = "sync"))]
 async fn reload_wallet_from_buffer() {
-    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
+    use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
     let mid_wallet =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))

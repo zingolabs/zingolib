@@ -9,10 +9,11 @@ chain_generic_tests = []
 sync = ["dep:zingo-sync"]
 
 [dependencies]
-zingolib = { path = "../zingolib", features = ["darkside_tests", "testvectors"] }
+zingolib = { path = "../zingolib", features = ["darkside_tests"] }
 zingo-sync = { path = "../zingo-sync", optional = true }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-status = { path = "../zingo-status" }
+testvectors = { path = "../testvectors" }
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }

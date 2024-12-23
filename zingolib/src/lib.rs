@@ -23,8 +23,6 @@ pub mod wallet;
 pub mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;
-#[cfg(any(test, feature = "testvectors"))]
-pub mod testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

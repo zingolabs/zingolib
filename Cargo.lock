@@ -766,6 +766,7 @@ dependencies = [
  "sapling-crypto",
  "serde_json",
  "tempdir",
+ "testvectors",
  "tokio",
  "tonic",
  "tonic-build",
@@ -1806,6 +1807,7 @@ dependencies = [
  "serde_json",
  "shardtree",
  "tempfile",
+ "testvectors",
  "tokio",
  "tracing-subscriber",
  "zcash_address",
@@ -3339,6 +3341,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "testvectors"
+version = "0.1.0"
+dependencies = [
+ "bip0039",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4615,6 +4625,7 @@ dependencies = [
  "tempdir",
  "tempfile",
  "test-case",
+ "testvectors",
  "thiserror",
  "tokio",
  "tonic",

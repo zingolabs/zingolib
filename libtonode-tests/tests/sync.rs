@@ -1,6 +1,7 @@
 #![cfg(feature = "sync")]
 
 use tempfile::TempDir;
+use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingo_netutils::GrpcConnector;
 use zingo_sync::sync::sync;
 use zingolib::{
@@ -8,7 +9,6 @@ use zingolib::{
     get_base_address_macro,
     lightclient::LightClient,
     testutils::{lightclient::from_inputs, scenarios},
-    testvectors::seeds::HOSPITAL_MUSEUM_SEED,
     wallet::WalletBase,
 };
 

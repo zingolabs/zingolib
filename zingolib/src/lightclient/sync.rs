@@ -719,7 +719,7 @@ impl LightClient {
     }
 }
 
-#[cfg(all(test, feature = "testvectors"))]
+#[cfg(test)]
 pub mod test {
     use crate::{lightclient::LightClient, wallet::disk::testing::examples};
 

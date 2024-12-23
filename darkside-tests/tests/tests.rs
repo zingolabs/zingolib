@@ -5,6 +5,7 @@ use darkside_tests::utils::update_tree_states_for_transaction;
 use darkside_tests::utils::DarksideHandler;
 use std::future::Future;
 use std::pin::Pin;
+use testvectors::seeds::DARKSIDE_SEED;
 use tokio::time::sleep;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::ShieldedProtocol::Orchard;
@@ -17,7 +18,6 @@ use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
-use zingolib::testvectors::seeds::DARKSIDE_SEED;
 
 #[cfg(not(feature = "sync"))]
 use std::sync::Arc;
@@ -160,7 +160,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
             regtest_network,

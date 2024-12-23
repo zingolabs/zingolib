@@ -604,7 +604,7 @@ pub mod send_with_proposal {
         }
     }
 
-    #[cfg(all(test, feature = "testvectors"))]
+    #[cfg(test)]
     mod test {
         use zcash_client_backend::{PoolType, ShieldedProtocol};
 
@@ -622,8 +622,9 @@ pub mod send_with_proposal {
         async fn complete_and_broadcast_unconnected_error() {
             use crate::{
                 config::ZingoConfigBuilder, lightclient::LightClient,
-                mocks::proposal::ProposalBuilder, testvectors::seeds::ABANDON_ART_SEED,
+                mocks::proposal::ProposalBuilder,
             };
+            use testvectors::seeds::ABANDON_ART_SEED;
             let lc = LightClient::create_unconnected(
                 &ZingoConfigBuilder::default().create(),
                 crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),

@@ -1,17 +1,16 @@
 #![forbid(unsafe_code)]
 
 use json::JsonValue;
+use testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+use zingolib::config::RegtestNetwork;
+use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::propose::ProposeSendError;
 use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
-
-use zingolib::config::RegtestNetwork;
-use zingolib::lightclient::PoolBalances;
-use zingolib::testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 
 #[cfg(not(feature = "sync"))]
 use {
@@ -1315,10 +1314,10 @@ mod slow {
     #[cfg(not(feature = "sync"))]
     use {
         orchard::note_encryption::OrchardDomain,
+        testvectors::TEST_TXID,
         zcash_primitives::{consensus::NetworkConstants, memo::Memo},
         zingo_status::confirmation_status::ConfirmationStatus,
         zingolib::testutils::assert_transaction_summary_equality,
-        zingolib::testvectors::TEST_TXID,
         zingolib::wallet::{
             data::{
                 summaries::{OrchardNoteSummary, SpendSummary, TransactionSummaryBuilder},
@@ -1704,11 +1703,8 @@ mod slow {
 
             watch_client.do_rescan().await.unwrap();
             assert!(matches!(
-                from_inputs::quick_send(
-                    &watch_client,
-                    vec![(zingolib::testvectors::EXT_TADDR, 1000, None)]
-                )
-                .await,
+                from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
+                    .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
                     zcash_client_backend::data_api::error::Error::DataSource(
                         TxMapTraitError::NoSpendCapability
@@ -1747,12 +1743,10 @@ mod slow {
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
-        let sent_transaction_error = from_inputs::quick_send(
-            &recipient,
-            vec![(zingolib::testvectors::EXT_TADDR, sent_value, None)],
-        )
-        .await
-        .unwrap_err();
+        let sent_transaction_error =
+            from_inputs::quick_send(&recipient, vec![(testvectors::EXT_TADDR, sent_value, None)])
+                .await
+                .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
             QuickSendError::ProposeSend(ProposeSendError::Proposal(

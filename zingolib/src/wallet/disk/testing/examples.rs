@@ -238,10 +238,10 @@ impl NetworkSeedVersion {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(_) => {
-                    crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()
+                    testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()
                 },
                 RegtestSeedVersion::AbandonAbandon(_) => {
-                    crate::testvectors::seeds::ABANDON_ART_SEED.to_string()
+                    testvectors::seeds::ABANDON_ART_SEED.to_string()
                 },
                 RegtestSeedVersion::AbsurdAmount(_) => {
                     "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string()
@@ -250,7 +250,7 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(
                     _,
-                ) => crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ) => testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
                 TestnetSeedVersion::MobileShuffle(
                     _,
                 ) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),

@@ -379,12 +379,12 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
+    use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::setup::ClientBuilder;
-    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use super::{
         init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
@@ -446,7 +446,7 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
+                        testvectors::seeds::DARKSIDE_SEED.to_string(),
                         0,
                         true,
                         self.regtest_network,

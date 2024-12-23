@@ -1310,12 +1310,12 @@ mod test {
     use crate::{
         config::ZingoConfig,
         mocks::orchard_note::OrchardCryptoNoteBuilder,
-        testvectors::seeds::ABANDON_ART_SEED,
         wallet::{
             keys::unified::WalletCapability,
             notes::{orchard::mocks::OrchardNoteBuilder, OrchardNote},
         },
     };
+    use testvectors::seeds::ABANDON_ART_SEED;
 
     use super::ReadableWriteable;
 
