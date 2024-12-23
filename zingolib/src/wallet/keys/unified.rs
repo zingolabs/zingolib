@@ -41,7 +41,7 @@ pub(crate) const KEY_TYPE_VIEW: u8 = 1;
 pub(crate) const KEY_TYPE_SPEND: u8 = 2;
 
 /// In-memory store for wallet spending or viewing keys
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnifiedKeyStore {
     /// Wallet with spend capability
     Spend(Box<UnifiedSpendingKey>),
@@ -90,7 +90,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
         match self {
             UnifiedKeyStore::Spend(usk) => {
                 writer.write_u8(KEY_TYPE_SPEND)?;
-                usk.write(&mut writer)
+                usk.write(&mut writer, ())
             }
             UnifiedKeyStore::View(ufvk) => {
                 writer.write_u8(KEY_TYPE_VIEW)?;
@@ -221,7 +221,7 @@ pub struct WalletCapability {
     #[cfg(feature = "ledger-support")]
     pub(crate) ledger: Option<LedgerKeys>,
     /// Unified key store
-    pub unified_key_store: UnifiedKeyStore,
+    pub (crate) unified_key_store: UnifiedKeyStore,
     /// Cache of transparent addresses that the user has created.
     /// Receipts to a single address are correlated on chain.
     /// TODO:  Is there any reason to have this field, apart from the
@@ -312,6 +312,10 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
+    /// returns reference of Unified Key Store
+    pub fn unified_key_store(&self) -> &UnifiedKeyStore {
+        &self.unified_key_store
+    }
     #[cfg(feature = "ledger-support")]
     /// checks whether this WalletCapability is a Ledger device or not
     pub fn is_ledger(&self) -> bool {
@@ -464,7 +468,23 @@ impl WalletCapability {
 
     /// Returns a selection of pools where the wallet can view funds.
     pub fn can_view(&self) -> ReceiverSelection {
-        self.capability.can_view(&self)
+        match &self.unified_key_store {
+            UnifiedKeyStore::Spend(_) => ReceiverSelection {
+                orchard: true,
+                sapling: true,
+                transparent: true,
+            },
+            UnifiedKeyStore::View(ufvk) => ReceiverSelection {
+                orchard: ufvk.orchard().is_some(),
+                sapling: ufvk.sapling().is_some(),
+                transparent: ufvk.transparent().is_some(),
+            },
+            UnifiedKeyStore::Empty => ReceiverSelection {
+                orchard: false,
+                sapling: false,
+                transparent: false,
+            },
+        }
     }
 }
 

@@ -312,7 +312,7 @@ impl InternalCapability for InMemoryWallet {
         &self,
         capability: &WalletCapability,
     ) -> ReceiverSelection {
-        match capability.unified_key_store() {
+        match &capability.unified_key_store {
             UnifiedKeyStore::Spend(_) => ReceiverSelection {
                 orchard: true,
                 sapling: true,
