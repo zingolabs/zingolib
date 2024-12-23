@@ -31,7 +31,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: tarpaulin
-          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --release --timeout 3000 --out xml
+          args: --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --release --timeout 3000 --out xml
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
