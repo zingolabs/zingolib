@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap};
+use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -65,7 +65,7 @@ where
     });
 
     let mut wallet_lock = wallet.lock().await;
-    let wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_lock).unwrap();
+    let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_lock).unwrap();
     let chain_height = client::get_chain_height(fetch_request_sender.clone())
         .await
         .unwrap();
@@ -77,6 +77,7 @@ where
             );
         }
         truncate_wallet_data(&mut *wallet_lock, chain_height).unwrap();
+        wallet_height = chain_height;
     }
     let ufvks = wallet_lock.get_unified_full_viewing_keys().unwrap();
 
@@ -105,6 +106,20 @@ where
     )
     .await
     .unwrap();
+
+    let sync_state = wallet_lock.get_sync_state_mut().unwrap();
+    let total_blocks_to_scan = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        .map(|scan_range| scan_range.block_range())
+        .fold(0, |acc, block_range| {
+            acc + u32::from(block_range.end - block_range.start)
+        });
+    sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
+    let sync_start_height = sync_state.fully_scanned_height() + 1;
+    sync_state.set_sync_start_height(sync_start_height);
+
     drop(wallet_lock);
 
     // create channel for receiving scan results and launch scanner
@@ -163,6 +178,8 @@ where
         }
     }
 
+    // TODO: clear locators
+
     drop(wallet_lock);
     drop(scanner);
     drop(fetch_request_sender);
@@ -172,22 +189,34 @@ where
     Ok(())
 }
 
-/// TODO
-pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> Result<(), SyncError>
+/// Obtains the mutex guard to the wallet and creates a [`crate::primitives::SyncStatus`] from the wallet's current
+/// [`crate::primitives::SyncState`].
+///
+/// Designed to be called during the sync process with minimal interruption.
+pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
 where
     W: SyncWallet,
 {
-    let scan_ranges = wallet
-        .lock()
-        .await
-        .get_sync_state()
-        .unwrap()
+    let sync_state: SyncState = wallet.lock().await.get_sync_state().unwrap().clone();
+
+    let unscanned_blocks = sync_state
         .scan_ranges()
-        .clone();
+        .iter()
+        .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        .map(|scan_range| scan_range.block_range())
+        .fold(0, |acc, block_range| {
+            acc + u32::from(block_range.end - block_range.start)
+        });
+    let scanned_blocks = sync_state.total_blocks_to_scan() - unscanned_blocks;
+    let percentage_blocks_complete =
+        (scanned_blocks as f32 / sync_state.total_blocks_to_scan() as f32) * 100.0;
 
-    dbg!(scan_ranges);
-
-    Ok(())
+    SyncStatus {
+        scan_ranges: sync_state.scan_ranges().clone(),
+        unscanned_blocks,
+        scanned_blocks,
+        percentage_blocks_complete,
+    }
 }
 
 /// Returns true if sync is complete.
@@ -242,7 +271,7 @@ where
                 ScanPriority::Scanned,
             )
             .unwrap();
-            tracing::info!("Scan results processed.");
+            tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
             tracing::info!("Re-org detected.");
@@ -289,7 +318,7 @@ async fn process_mempool_transaction<W>(
     )
     .unwrap();
 
-    tracing::info!(
+    tracing::debug!(
         "mempool received txid {} at height {}",
         transaction.txid(),
         block_height

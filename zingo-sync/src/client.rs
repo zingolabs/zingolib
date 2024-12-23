@@ -158,7 +158,7 @@ pub async fn get_transparent_address_transactions(
 pub async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
 ) -> Result<tonic::Streaming<RawTransaction>, ()> {
-    tracing::info!("Fetching mempool stream");
+    tracing::debug!("Fetching mempool stream");
     let mempool_stream = fetch::get_mempool_stream(client).await.unwrap();
 
     Ok(mempool_stream)

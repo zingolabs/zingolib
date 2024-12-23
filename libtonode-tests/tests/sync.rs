@@ -1,5 +1,7 @@
 #![cfg(feature = "sync")]
 
+use std::time::Duration;
+
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingo_netutils::GrpcConnector;
@@ -89,7 +91,9 @@ async fn sync_status() {
     tokio::spawn(async move {
         loop {
             let wallet = wallet.clone();
-            sync::sync_status(wallet).await.unwrap();
+            let sync_status = sync::sync_status(wallet).await;
+            dbg!(sync_status);
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 

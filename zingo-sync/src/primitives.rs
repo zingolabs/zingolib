@@ -26,7 +26,7 @@ use crate::{
 pub type Locator = (BlockHeight, TxId);
 
 /// Encapsulates the current state of sync
-#[derive(Debug, Getters, MutGetters)]
+#[derive(Debug, Clone, Getters, MutGetters, CopyGetters, Setters)]
 #[getset(get = "pub", get_mut = "pub")]
 pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
@@ -34,6 +34,16 @@ pub struct SyncState {
     scan_ranges: Vec<ScanRange>,
     /// Locators for relevent transactions to the wallet.
     locators: BTreeSet<Locator>,
+    /// Fully scanned wallet height at start of sync.
+    /// Reset when sync starts.
+    #[getset(skip)]
+    #[getset(get_copy = "pub", set = "pub")]
+    sync_start_height: BlockHeight,
+    /// Total number of blocks to scan this session
+    /// Reset when sync starts.
+    #[getset(skip)]
+    #[getset(get_copy = "pub", set = "pub")]
+    total_blocks_to_scan: u32,
 }
 
 impl SyncState {
@@ -42,6 +52,8 @@ impl SyncState {
         SyncState {
             scan_ranges: Vec::new(),
             locators: BTreeSet::new(),
+            sync_start_height: 0.into(),
+            total_blocks_to_scan: 0,
         }
     }
 
@@ -70,10 +82,13 @@ impl SyncState {
     }
 }
 
-impl Default for SyncState {
-    fn default() -> Self {
-        Self::new()
-    }
+/// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
+#[derive(Debug, Clone, Getters)]
+pub struct SyncStatus {
+    pub scan_ranges: Vec<ScanRange>,
+    pub scanned_blocks: u32,
+    pub unscanned_blocks: u32,
+    pub percentage_blocks_complete: f32,
 }
 
 /// Output ID for a given pool type
