@@ -172,6 +172,24 @@ where
     Ok(())
 }
 
+/// TODO
+pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> Result<(), SyncError>
+where
+    W: SyncWallet,
+{
+    let scan_ranges = wallet
+        .lock()
+        .await
+        .get_sync_state()
+        .unwrap()
+        .scan_ranges()
+        .clone();
+
+    dbg!(scan_ranges);
+
+    Ok(())
+}
+
 /// Returns true if sync is complete.
 ///
 /// Sync is complete when:
