@@ -166,6 +166,7 @@ mod fast {
                 None,
                 PoolType::Shielded(ShieldedProtocol::Sapling),
                 regtest_network,
+                true,
             )
             .await;
         let orig_transaction_id = orig_transaction_id.unwrap();
@@ -1162,7 +1163,7 @@ mod fast {
     async fn sync_all_epochs_from_sapling() {
         let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9, 11);
         let (regtest_manager, _cph, lightclient) =
-            scenarios::unfunded_client(regtest_network).await;
+            scenarios::unfunded_client(regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
@@ -1174,6 +1175,7 @@ mod fast {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
@@ -1189,6 +1191,7 @@ mod fast {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
@@ -1202,7 +1205,7 @@ mod fast {
     async fn mine_to_transparent() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -1217,7 +1220,7 @@ mod fast {
     async fn sync_all_epochs() {
         let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11, 13);
         let (regtest_manager, _cph, lightclient) =
-            scenarios::unfunded_client(regtest_network).await;
+            scenarios::unfunded_client(regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
@@ -1229,7 +1232,7 @@ mod fast {
     async fn mine_to_transparent_and_shield() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
@@ -1239,7 +1242,7 @@ mod fast {
     async fn mine_to_transparent_and_propose_shielding() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1271,7 +1274,7 @@ mod fast {
     async fn mine_to_transparent_and_propose_shielding_with_div_addr() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -2269,6 +2272,7 @@ mod slow {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         let amount_to_send = 5_000;
@@ -2300,6 +2304,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
@@ -2339,6 +2344,7 @@ mod slow {
             Some(100_000),
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);

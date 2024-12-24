@@ -27,6 +27,7 @@ impl ConductChain for LibtonodeEnvironment {
             None,
             None,
             &regtest_network,
+            true,
         )
         .await;
         LibtonodeEnvironment {

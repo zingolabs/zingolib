@@ -14,11 +14,12 @@
 //! most cases by removing the need for configuration.
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
+use crate::testutils::increase_height_and_wait_for_client;
 use crate::testutils::regtest::{ChildProcessHandler, RegtestManager};
-use crate::testutils::{increase_height_and_wait_for_client, lightclient};
 use setup::ClientBuilder;
 use testvectors::{seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
+
 mod config_templaters;
 
 /// TODO: Add Doc Comment Here!
@@ -80,6 +81,7 @@ pub mod setup {
             &mut self,
             mine_to_pool: Option<PoolType>,
             regtest_network: &crate::config::RegtestNetwork,
+            lightwalletd_feature: bool,
         ) {
             let mine_to_address = match mine_to_pool {
                 Some(PoolType::Shielded(ShieldedProtocol::Orchard)) => {
@@ -92,14 +94,14 @@ pub mod setup {
                 None => None,
             };
             self.test_env
-                .create_zcash_conf(mine_to_address, regtest_network);
+                .create_zcash_conf(mine_to_address, regtest_network, lightwalletd_feature);
             self.test_env.create_lightwalletd_conf();
         }
 
         async fn launch_scenario(&mut self, clean: bool) {
             self.child_process_handler = Some(self.regtest_manager.launch(clean).unwrap_or_else(
                 |e| match e {
-                    crate::testutils::regtest::LaunchChildProcessError::ZcashdState {
+                    super::super::regtest::LaunchChildProcessError::ZcashdState {
                         errorcode,
                         stdout,
                         stderr,
@@ -137,6 +139,7 @@ pub mod setup {
             sb.configure_scenario(
                 Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
                 regtest_network,
+                false,
             );
             sb.launch_scenario(false).await;
             sb
@@ -148,13 +151,14 @@ pub mod setup {
             zingo_wallet_dir: Option<PathBuf>,
             set_lightwalletd_port: Option<portpicker::Port>,
             regtest_network: &crate::config::RegtestNetwork,
+            lightwalletd_feature: bool,
         ) -> Self {
             let mut sb = if let Some(conf) = zingo_wallet_dir {
                 ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
             } else {
                 ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
             };
-            sb.configure_scenario(mine_to_pool, regtest_network);
+            sb.configure_scenario(mine_to_pool, regtest_network, lightwalletd_feature);
             sb.launch_scenario(true).await;
             sb
         }
@@ -280,16 +284,19 @@ pub mod setup {
             &self,
             mine_to_address: Option<&str>,
             regtest_network: &crate::config::RegtestNetwork,
+            lightwalletd_feature: bool,
         ) -> PathBuf {
             let config = match mine_to_address {
                 Some(address) => super::config_templaters::zcashd::funded(
                     address,
                     &self.zcashd_rpcservice_port,
                     regtest_network,
+                    lightwalletd_feature,
                 ),
                 None => super::config_templaters::zcashd::basic(
                     &self.zcashd_rpcservice_port,
                     regtest_network,
+                    lightwalletd_feature,
                     "",
                 ),
             };
@@ -340,9 +347,16 @@ pub mod setup {
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
     regtest_network: crate::config::RegtestNetwork,
+    lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let mut scenario_builder =
-        setup::ScenarioBuilder::build_configure_launch(None, None, None, &regtest_network).await;
+    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+        None,
+        None,
+        None,
+        &regtest_network,
+        lightwalletd_feature,
+    )
+    .await;
     (
         scenario_builder.regtest_manager,
         scenario_builder.child_process_handler.unwrap(),
@@ -356,7 +370,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-    unfunded_client(regtest_network).await
+    unfunded_client(regtest_network, true).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -372,12 +386,14 @@ pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, 
 pub async fn faucet(
     mine_to_pool: PoolType,
     regtest_network: crate::config::RegtestNetwork,
+    lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
     let mut sb = setup::ScenarioBuilder::build_configure_launch(
         Some(mine_to_pool),
         None,
         None,
         &regtest_network,
+        lightwalletd_feature,
     )
     .await;
     let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
@@ -395,6 +411,7 @@ pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClie
     faucet(
         PoolType::Shielded(ShieldedProtocol::Orchard),
         regtest_network,
+        true,
     )
     .await
 }
@@ -403,6 +420,7 @@ pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClie
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
     regtest_network: crate::config::RegtestNetwork,
+    lightwalletd_feature: bool,
 ) -> (
     RegtestManager,
     ChildProcessHandler,
@@ -414,6 +432,7 @@ pub async fn faucet_recipient(
         None,
         None,
         &regtest_network,
+        lightwalletd_feature,
     )
     .await;
     let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
@@ -447,6 +466,7 @@ pub async fn faucet_recipient_default() -> (
     faucet_recipient(
         PoolType::Shielded(ShieldedProtocol::Orchard),
         regtest_network,
+        true,
     )
     .await
 }
@@ -458,6 +478,7 @@ pub async fn faucet_funded_recipient(
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
     regtest_network: crate::config::RegtestNetwork,
+    lightwalletd_feature: bool,
 ) -> (
     RegtestManager,
     ChildProcessHandler,
@@ -468,13 +489,13 @@ pub async fn faucet_funded_recipient(
     Option<String>,
 ) {
     let (regtest_manager, child_process_handler, faucet, recipient) =
-        faucet_recipient(mine_to_pool, regtest_network).await;
+        faucet_recipient(mine_to_pool, regtest_network, lightwalletd_feature).await;
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
-            lightclient::from_inputs::quick_send(
+            super::lightclient::from_inputs::quick_send(
                 &faucet,
                 vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
             )
@@ -488,7 +509,7 @@ pub async fn faucet_funded_recipient(
     };
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
-            crate::testutils::lightclient::from_inputs::quick_send(
+            super::lightclient::from_inputs::quick_send(
                 &faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
             )
@@ -502,7 +523,7 @@ pub async fn faucet_funded_recipient(
     };
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
-            crate::testutils::lightclient::from_inputs::quick_send(
+            super::lightclient::from_inputs::quick_send(
                 &faucet,
                 vec![(
                     &get_base_address_macro!(recipient, "transparent"),
@@ -551,6 +572,7 @@ pub async fn orchard_funded_recipient(
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            true,
         )
         .await;
     (
@@ -566,12 +588,14 @@ pub async fn orchard_funded_recipient(
 pub async fn custom_clients(
     mine_to_pool: PoolType,
     regtest_network: crate::config::RegtestNetwork,
+    lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
     let sb = setup::ScenarioBuilder::build_configure_launch(
         Some(mine_to_pool),
         None,
         None,
         &regtest_network,
+        lightwalletd_feature,
     )
     .await;
     (
@@ -592,6 +616,7 @@ pub async fn custom_clients_default() -> (
     let (regtest_manager, cph, client_builder) = custom_clients(
         PoolType::Shielded(ShieldedProtocol::Orchard),
         regtest_network,
+        true,
     )
     .await;
     (regtest_manager, cph, client_builder, regtest_network)
@@ -600,9 +625,14 @@ pub async fn custom_clients_default() -> (
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-    let scenario_builder =
-        setup::ScenarioBuilder::build_configure_launch(None, None, Some(20_000), &regtest_network)
-            .await;
+    let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+        None,
+        None,
+        Some(20_000),
+        &regtest_network,
+        true,
+    )
+    .await;
     (
         scenario_builder.regtest_manager,
         scenario_builder.child_process_handler.unwrap(),
@@ -617,6 +647,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
         None,
         Some(20_000),
         &regtest_network,
+        true,
     )
     .await;
     let faucet = scenario_builder
@@ -628,7 +659,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     faucet.do_sync(false).await.unwrap();
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -654,6 +685,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         None,
         Some(20_000),
         &regtest_network,
+        true,
     )
     .await;
     let faucet = scenario_builder
@@ -668,7 +700,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     // received from a faucet
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -678,7 +710,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     // send to a faucet
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -692,7 +724,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     // send to self sapling
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -720,6 +752,7 @@ pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, Chi
         None,
         Some(20_000),
         &regtest_network,
+        true,
     )
     .await;
     let faucet = scenario_builder
@@ -735,7 +768,7 @@ pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, Chi
         .unwrap();
 
     // received from a faucet to transparent
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -770,6 +803,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         None,
         Some(20_000),
         &regtest_network,
+        true,
     )
     .await;
     let faucet = scenario_builder
@@ -784,7 +818,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // received from a faucet to orchard
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
@@ -798,7 +832,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // received from a faucet to sapling
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -812,7 +846,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // received from a faucet to transparent
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -826,7 +860,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to a faucet
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -840,7 +874,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self orchard
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
@@ -854,7 +888,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self sapling
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -868,7 +902,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self transparent
-    crate::testutils::lightclient::from_inputs::quick_send(
+    super::lightclient::from_inputs::quick_send(
         &recipient,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -899,17 +933,12 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
 /// TODO: Add Doc Comment Here!
 pub mod chainload {
-    use regtest::ChildProcessHandler;
-    use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-
-    use crate::testutils::*;
-
-    use super::setup;
+    use super::*;
 
     /// TODO: Add Doc Comment Here!
     pub async fn unsynced_basic() -> ChildProcessHandler {
         let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-        super::setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
+        setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
             .await
             .child_process_handler
             .unwrap()
@@ -924,8 +953,7 @@ pub mod chainload {
     ) {
         let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut sb =
-            super::setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
-                .await;
+            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
         let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
         let recipient = sb

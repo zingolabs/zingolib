@@ -8,8 +8,8 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
         compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec, Empty,
-        GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction, TransparentAddressBlockFilter,
-        TreeState, TxFilter,
+        GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction, SubtreeRoot,
+        TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
 use zcash_primitives::{
@@ -112,6 +112,17 @@ async fn fetch_from_server(
             let compact_blocks = get_block_range(client, block_range).await.unwrap();
             sender.send(compact_blocks).unwrap();
         }
+        FetchRequest::GetSubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
+            tracing::info!(
+                "Fetching subtree roots. start index: {}. shielded protocol: {}",
+                start_index,
+                shielded_protocol
+            );
+            let shards = get_subtree_roots(client, start_index, shielded_protocol, max_entries)
+                .await
+                .unwrap();
+            sender.send(shards).unwrap();
+        }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::info!("Fetching tree state. {:?}", &block_height);
             let tree_state = get_tree_state(client, block_height).await.unwrap();
@@ -182,6 +193,24 @@ async fn get_block_range(
     }
 
     Ok(compact_blocks)
+}
+
+async fn get_subtree_roots(
+    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    start_index: u32,
+    shielded_protocol: i32,
+    max_entries: u32,
+) -> Result<tonic::Streaming<SubtreeRoot>, ()> {
+    let request = GetSubtreeRootsArg {
+        start_index,
+        shielded_protocol,
+        max_entries,
+    };
+    Ok(client
+        .get_subtree_roots(request)
+        .await
+        .unwrap()
+        .into_inner())
 }
 async fn get_tree_state(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,

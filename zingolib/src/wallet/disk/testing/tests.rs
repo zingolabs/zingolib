@@ -303,9 +303,9 @@ async fn reload_wallet_from_buffer() {
 #[tokio::test]
 #[cfg(feature = "sync")]
 async fn reload_wallet_from_buffer() {
-    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
+    use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
     let mid_wallet =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
