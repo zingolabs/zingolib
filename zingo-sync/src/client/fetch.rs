@@ -113,7 +113,7 @@ async fn fetch_from_server(
             sender.send(compact_blocks).unwrap();
         }
         FetchRequest::GetSubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
-            tracing::info!(
+            tracing::debug!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
                 start_index,
                 shielded_protocol
