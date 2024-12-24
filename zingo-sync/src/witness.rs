@@ -34,6 +34,17 @@ impl ShardTrees {
             orchard: ShardTree::new(MemoryShardStore::empty(), MAX_CHECKPOINTS),
         }
     }
+
+    // This lets us 'split the borrow' to operate
+    // on both trees concurrently.
+    pub(crate) fn both_mut(
+        &mut self,
+    ) -> (
+        &mut ShardTree<SaplingShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
+        &mut ShardTree<OrchardShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
+    ) {
+        (&mut self.sapling, &mut self.orchard)
+    }
 }
 
 impl Default for ShardTrees {

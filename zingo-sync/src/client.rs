@@ -10,7 +10,7 @@ use zcash_client_backend::{
         compact_formats::CompactBlock,
         service::{
             compact_tx_streamer_client::CompactTxStreamerClient, BlockId, GetAddressUtxosReply,
-            RawTransaction, TreeState,
+            RawTransaction, SubtreeRoot, TreeState,
         },
     },
 };
@@ -44,6 +44,13 @@ pub enum FetchRequest {
         oneshot::Sender<Vec<(BlockHeight, Transaction)>>,
         (String, Range<BlockHeight>),
     ),
+    /// Get a stream of shards.
+    GetSubtreeRoots(
+        oneshot::Sender<tonic::Streaming<SubtreeRoot>>,
+        u32,
+        i32,
+        u32,
+    ),
 }
 
 /// Gets the height of the blockchain from the server.
@@ -75,6 +82,29 @@ pub async fn get_compact_block_range(
     let compact_blocks = reply_receiver.await.unwrap();
 
     Ok(compact_blocks)
+}
+
+/// Gets the stream of shards (subtree roots)
+/// from the server.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub async fn get_subtree_roots(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    start_index: u32,
+    shielded_protocol: i32,
+    max_entries: u32,
+) -> Result<tonic::Streaming<SubtreeRoot>, ()> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::GetSubtreeRoots(
+            reply_sender,
+            start_index,
+            shielded_protocol,
+            max_entries,
+        ))
+        .unwrap();
+    let shards = reply_receiver.await.unwrap();
+    Ok(shards)
 }
 
 /// Gets the frontiers for a specified block height.

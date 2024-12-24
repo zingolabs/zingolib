@@ -6,6 +6,7 @@ pub mod zcashd {
     pub fn basic(
         rpcport: &str,
         regtest_network: &crate::config::RegtestNetwork,
+        lightwalletd_feature: bool,
         extra: &str,
     ) -> String {
         let overwinter_activation_height = regtest_network
@@ -30,6 +31,12 @@ pub mod zcashd {
             .activation_height(NetworkUpgrade::Nu6)
             .unwrap();
 
+        let lightwalletd = if lightwalletd_feature {
+            "lightwalletd=1"
+        } else {
+            ""
+        };
+
         format!("\
 ### Blockchain Configuration
 regtest=1
@@ -49,6 +56,7 @@ txindex=1
 # https://zcash.readthedocs.io/en/latest/rtd_pages/insight_explorer.html?highlight=insightexplorer#additional-getrawtransaction-fields
 insightexplorer=1
 experimentalfeatures=1
+{lightwalletd}
 
 ### RPC Server Interface Options:
 # https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#json-rpc-options
@@ -70,8 +78,9 @@ listen=0
         mineraddress: &str,
         rpcport: &str,
         regtest_network: &crate::config::RegtestNetwork,
+        lightwalletd_feature: bool,
     ) -> String {
-        basic(rpcport, regtest_network,
+        basic(rpcport, regtest_network, lightwalletd_feature,
                 &format!("\
 ### Zcashd Help provides documentation of the following:
 mineraddress={mineraddress}
@@ -84,12 +93,13 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
     fn funded_zcashd_conf() {
         let regtest_network = crate::config::RegtestNetwork::new(1, 2, 3, 4, 5, 6, 7);
         assert_eq!(
-                        funded(
-                            testvectors::REG_Z_ADDR_FROM_ABANDONART,
-                            "1234",
-                            &regtest_network
-                        ),
-                        format!("\
+                funded(
+                    testvectors::REG_Z_ADDR_FROM_ABANDONART,
+                    "1234",
+                    &regtest_network,
+                    true,
+                ),
+                format!("\
 ### Blockchain Configuration
 regtest=1
 nuparams=5ba81b19:1 # Overwinter
@@ -108,6 +118,7 @@ txindex=1
 # https://zcash.readthedocs.io/en/latest/rtd_pages/insight_explorer.html?highlight=insightexplorer#additional-getrawtransaction-fields
 insightexplorer=1
 experimentalfeatures=1
+lightwalletd=1
 
 ### RPC Server Interface Options:
 # https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#json-rpc-options
@@ -123,8 +134,8 @@ listen=0
 ### Zcashd Help provides documentation of the following:
 mineraddress=zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p
 minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."
-                        )
-                    );
+                )
+            );
     }
 }
 

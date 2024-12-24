@@ -427,3 +427,18 @@ where
         Ok(None)
     }
 }
+
+/// Sets the `total_blocks_to_scan` and `sync_start_height` fields at the start of the sync process
+pub(super) fn set_initial_state(sync_state: &mut SyncState) {
+    let total_blocks_to_scan = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        .map(|scan_range| scan_range.block_range())
+        .fold(0, |acc, block_range| {
+            acc + u32::from(block_range.end - block_range.start)
+        });
+    sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
+    let sync_start_height = sync_state.fully_scanned_height() + 1;
+    sync_state.set_sync_start_height(sync_start_height);
+}

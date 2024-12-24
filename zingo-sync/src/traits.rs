@@ -45,6 +45,24 @@ pub trait SyncWallet {
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
 }
 
+/// Helper to allow generic construction of a
+/// shardtree Node from raw byte representaiton
+pub(crate) trait FromBytes<const N: usize> {
+    fn from_bytes(array: [u8; N]) -> Self;
+}
+
+impl FromBytes<32> for orchard::tree::MerkleHashOrchard {
+    fn from_bytes(array: [u8; 32]) -> Self {
+        Self::from_bytes(&array).unwrap()
+    }
+}
+
+impl FromBytes<32> for sapling_crypto::Node {
+    fn from_bytes(array: [u8; 32]) -> Self {
+        Self::from_bytes(array).unwrap()
+    }
+}
+
 /// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
 pub trait SyncBlocks: SyncWallet {
     /// Get a stored wallet compact block from wallet data by block height
@@ -223,6 +241,8 @@ pub trait SyncOutPoints: SyncWallet {
 pub trait SyncShardTrees: SyncWallet {
     /// Get mutable reference to shard trees
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
+    /// Get reference to shard trees
+    fn get_shard_trees(&self) -> Result<&ShardTrees, Self::Error>;
 
     /// Update wallet shard trees with new shard tree data
     fn update_shard_trees(

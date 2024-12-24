@@ -27,6 +27,7 @@ mod load_wallet {
         let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            false,
         )
         .await;
         println!("Shutting down initial zcd/lwd unneeded processes");
