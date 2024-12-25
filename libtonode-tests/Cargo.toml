@@ -14,6 +14,7 @@ zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync" }
 testvectors = { path = "../testvectors" }
+zcash_local_net = { git = "https://github.com/zancas/zcash-local-net.git", branch = "remove_zingo_lib_dep" }
 
 bip0039.workspace = true
 zcash_primitives = { workspace = true }
