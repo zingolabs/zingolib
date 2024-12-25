@@ -18,6 +18,7 @@ zcash_local_net = { git = "https://github.com/zancas/zcash-local-net.git", branc
 
 bip0039.workspace = true
 zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }

@@ -8,6 +8,7 @@ members = [
     "darkside-tests",
     "zingocli",
     "zingolib",
+    "testvectors",
     "zingo-netutils",
     "zingo-memo",
     "zingo-sync",
