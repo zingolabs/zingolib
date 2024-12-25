@@ -14,7 +14,7 @@ zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync" }
 testvectors = { path = "../testvectors" }
-zcash_local_net = { git = "https://github.com/zancas/zcash-local-net.git", branch = "remove_zingo_lib_dep" }
+zcash_local_net = { workspace = true }
 
 bip0039.workspace = true
 zcash_primitives = { workspace = true }
@@ -24,6 +24,10 @@ sapling-crypto = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
+
+# zln introduced dependencies
+portpicker = { workspace = true }
+tonic = { workspace = true }
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
@@ -36,6 +40,7 @@ tempfile.workspace = true
 tracing-subscriber.workspace = true
 proptest.workspace = true
 bech32 = { workspace = true }
+tokio-stream = { workspace = true }
 
 [dev-dependencies]
 rustls.workspace = true

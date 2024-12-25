@@ -103,6 +103,8 @@ rayon = "1"
 bip32 = { version = "0.5", default-features = false }
 bs58 = "0.5"
 bech32 = "0.11.0"
+tokio-stream = "0.1.17"
+zcash_local_net = { git = "https://github.com/zancas/zcash-local-net.git", branch = "remove_zingo_lib_dep" }
 
 [profile.release]
 debug = false
