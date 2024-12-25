@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 chain_generic_tests = []
 ci = ["zingolib/ci"]
+zln_tests = ["portpicker", "tonic"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -26,8 +27,8 @@ zcash_client_backend = { workspace = true }
 shardtree = { workspace = true }
 
 # zln introduced dependencies
-portpicker = { workspace = true }
-tonic = { workspace = true }
+portpicker = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }

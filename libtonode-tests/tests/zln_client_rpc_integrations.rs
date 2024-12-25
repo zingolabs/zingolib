@@ -1,3 +1,5 @@
+#![cfg(feature = "zln_tests")]
+
 use std::path::PathBuf;
 
 use zcash_local_net::network::Network;
