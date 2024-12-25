@@ -420,6 +420,7 @@ mod test_fixtures {
         config::{ChainType, RegtestNetwork},
         lightclient::LightClient,
         testutils::lightclient::{from_inputs, get_base_address},
+        wallet::data::summaries::TransactionSummaryInterface as _,
     };
 
     use zcash_local_net::{
@@ -3158,7 +3159,10 @@ mod test_fixtures {
         let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
             lightwalletd_bin,
             listen_port: None,
-            zcashd_conf: zebrad.config_dir().path().join(config::ZCASHD_FILENAME),
+            zcashd_conf: zebrad
+                .config_dir()
+                .path()
+                .join(zcash_local_net::config::ZCASHD_FILENAME),
         })
         .unwrap();
 
@@ -3257,7 +3261,10 @@ mod test_fixtures {
         let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
             lightwalletd_bin,
             listen_port: None,
-            zcashd_conf: zebrad.config_dir().path().join(config::ZCASHD_FILENAME),
+            zcashd_conf: zebrad
+                .config_dir()
+                .path()
+                .join(zcash_local_net::config::ZCASHD_FILENAME),
         })
         .unwrap();
 
