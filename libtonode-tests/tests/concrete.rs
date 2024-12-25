@@ -422,7 +422,7 @@ mod fast {
             )
             .unwrap();
         // This height doesn't matter, all we need is any arbitrary checkpoint ID
-        // as witness_at_checkpoint_depth requres a checkpoint to function now
+        // as witness_at_checkpoint_depth requires a checkpoint to function now
         server_orchard_shardtree
             .checkpoint(BlockHeight::from_u32(0))
             .unwrap();

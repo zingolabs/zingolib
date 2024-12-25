@@ -115,7 +115,7 @@ async fn create_scan_range(
 
 /// Resets scan ranges to recover from previous sync interruptions.
 ///
-/// A range that was previously scanning when sync was last interupted should be set to `Verify` in the case that
+/// A range that was previously scanning when sync was last interrupted should be set to `Verify` in the case that
 /// the scanner may have been in the verification state.
 fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
     let scan_ranges = sync_state.scan_ranges_mut();
@@ -128,7 +128,7 @@ fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
         set_scan_priority(sync_state, scan_range.block_range(), ScanPriority::Verify).unwrap();
     }
 
-    // TODO: detemine OpenAdjacent priority ranges from the end block of previous ChainTip ranges
+    // TODO: determine OpenAdjacent priority ranges from the end block of previous ChainTip ranges
 
     Ok(())
 }
@@ -391,7 +391,7 @@ fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
 
     scan_ranges.splice(index..=index, split_ranges);
 
-    // TODO: when this library has its own version of ScanRange this can be simpified and more readable
+    // TODO: when this library has its own version of ScanRange this can be simplified and more readable
     Some(ScanRange::from_parts(
         trimmed_block_range,
         highest_priority_scan_range.priority(),

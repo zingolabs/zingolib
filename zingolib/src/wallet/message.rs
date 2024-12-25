@@ -1,4 +1,4 @@
-//! TODO: Add Crate Discription Here!
+//! TODO: Add Crate Description Here!
 use crate::config::ChainType;
 use byteorder::ReadBytesExt;
 use bytes::Bytes;
@@ -60,7 +60,7 @@ impl Message {
         // 0-value note with the rseed
         let note = self.to.create_note(value, rseed);
 
-        // CMU is used in the out_cuphertext. Technically this is not needed to recover the note
+        // CMU is used in the out_ciphertext. Technically this is not needed to recover the note
         // by the receiver, but it is needed to recover the note by the sender.
         let cmu = note.cmu();
 
@@ -109,7 +109,7 @@ impl Message {
         if data.len() != 1 + Message::magic_word().len() + 32 + 32 + ENC_CIPHERTEXT_SIZE {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                "Incorrect encrypred payload size".to_string(),
+                "Incorrect encrypted payload size".to_string(),
             ));
         }
 
@@ -219,7 +219,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_encrpyt_decrypt() {
+    fn test_encrypt_decrypt() {
         let (_, ivk, to) = random_zaddr();
 
         let msg = Memo::from_bytes("Hello World with some value!".to_string().as_bytes()).unwrap();

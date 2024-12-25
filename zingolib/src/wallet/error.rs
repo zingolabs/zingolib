@@ -45,7 +45,7 @@ pub enum BalanceError {
 /// Errors associated with balance key derivation
 #[derive(Debug, thiserror::Error)]
 pub enum KeyError {
-    /// Error asociated with standard IO
+    /// Error associated with standard IO
     #[error("{0}")]
     IoError(#[from] std::io::Error),
     /// Invalid account ID

@@ -127,7 +127,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     outpoint_map: &mut OutPointMap,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<WalletTransaction, ()> {
-    // TODO: condsider splitting into seperate fns for pending and confirmed etc.
+    // TODO: consider splitting into separate fns for pending and confirmed etc.
     // TODO: price? save in wallet block as its relative to time mined?
     let block_height = confirmation_status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(

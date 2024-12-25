@@ -123,7 +123,7 @@ pub mod send_with_proposal {
         /// This overwrites confirmation status to Calculated (not Broadcast)
         /// so only call this immediately after creating the transaction
         ///
-        /// With the introduction of multistep transacations to support ZIP320
+        /// With the introduction of multistep transactions to support ZIP320
         /// we begin ordering transactions in the "spending_data" cache such
         /// that any output that's used to fund a subsequent transaction is
         /// added prior to that fund-requiring transaction.
@@ -241,7 +241,7 @@ pub mod send_with_proposal {
                                     Ok(reported_txid) => {
                                         if txid != reported_txid {
                                             println!(
-                                                "served txid {} does not match calulated txid {}",
+                                                "served txid {} does not match calculated txid {}",
                                                 reported_txid, txid,
                                             );
                                             // during darkside tests, the server may generate a new txid.

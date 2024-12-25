@@ -32,7 +32,7 @@ pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
     scan_ranges: Vec<ScanRange>,
-    /// Locators for relevent transactions to the wallet.
+    /// Locators for relevant transactions to the wallet.
     locators: BTreeSet<Locator>,
 }
 
@@ -287,7 +287,7 @@ pub struct WalletNote<N, Nf: Copy> {
     note: N,
     /// Derived nullifier
     #[getset(get_copy = "pub")]
-    nullifier: Option<Nf>, //TODO: syncing without nullfiier deriving key
+    nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
     /// Commitment tree leaf position
     #[getset(get_copy = "pub")]
     position: Option<Position>,
@@ -382,7 +382,7 @@ impl SyncOutgoingNotes for OutgoingNote<orchard::Note> {
     }
 }
 
-// TODO: condsider replacing with address enum instead of encoding to string
+// TODO: consider replacing with address enum instead of encoding to string
 pub(crate) trait SyncOutgoingNotes {
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where

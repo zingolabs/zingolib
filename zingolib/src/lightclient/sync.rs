@@ -218,7 +218,7 @@ impl LightClient {
                             let status = ConfirmationStatus::Mempool(BlockHeight::from_u32(
                                 // The mempool transaction's height field is the height
                                 // it entered the mempool. Making it one above that height,
-                                // i.e. the target height, keeps this value consistant with
+                                // i.e. the target height, keeps this value consistent with
                                 // the transmitted height, which we record as the target height.
                                 rtransaction.height as u32 + 1,
                             ));
@@ -475,7 +475,7 @@ impl LightClient {
             .read()
             .await
             .block_data
-            .handle_reorgs_and_populate_block_mangement_data(
+            .handle_reorgs_and_populate_block_management_data(
                 start_block,
                 end_block,
                 self.wallet.transactions(),
@@ -579,8 +579,8 @@ impl LightClient {
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
 
-        // 3. Targetted rescan to update transactions with missing information
-        let targetted_rescan_handle = crate::blaze::targetted_rescan::start(
+        // 3. Targeted rescan to update transactions with missing information
+        let targeted_rescan_handle = crate::blaze::targeted_rescan::start(
             self.wallet.last_100_blocks.clone(),
             transaction_context,
             full_transaction_fetcher_transmitter,
@@ -609,7 +609,7 @@ impl LightClient {
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
-            targetted_rescan_handle,
+            targeted_rescan_handle,
             r1,
         ])
         .await

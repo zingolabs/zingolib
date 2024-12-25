@@ -50,8 +50,8 @@ pub(crate) async fn update_addresses_and_locators<P, W>(
 
         // The transaction is not scanned here, instead the locator is stored to be later sent to a scan task for these reasons:
         // - We must search for all relevant transactions MAX_VERIFICATION_WINDOW blocks below wallet height in case of re-org.
-        // These woud be scanned again which would be inefficient
-        // - In case of re-org, any scanned transactons with heights within the re-org range would be wrongly invalidated
+        // These would be scanned again which would be inefficient
+        // - In case of re-org, any scanned transactions with heights within the re-org range would be wrongly invalidated
         // - The locator will cause the surrounding range to be set to high priority which will often also contain shielded notes
         // relevant to the wallet
         // - Scanning a transaction without scanning the surrounding range of compact blocks in the context of a scan task creates

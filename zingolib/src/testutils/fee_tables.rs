@@ -59,6 +59,6 @@ pub fn one_to_one(
             GRACE_ACTIONS,
         );
     total_fee
-        .expect("actions expected to be in numberical range")
+        .expect("actions expected to be in numerical range")
         .into_u64()
 }

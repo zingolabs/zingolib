@@ -1308,7 +1308,7 @@ impl Command for MessagesFilterCommand {
             List memo-containing value transfers sent to/from wallet. If an address is provided,
             only messages to/from that address will be provided. If a string is provided,
             messages containing that string are displayed. Otherwise, all memos are displayed.
-            Currently, for recieved messages, this relies on the reply-to address contained in the memo.
+            Currently, for received messages, this relies on the reply-to address contained in the memo.
             A value transfer is a group of all notes to a specific receiver in a transaction.
 
             Usage:

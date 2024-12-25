@@ -338,7 +338,7 @@ pub mod instantiation {
     impl LightClient {
         // toDo rework ZingoConfig.
 
-        /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
+        /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
         pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;

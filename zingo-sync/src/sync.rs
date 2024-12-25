@@ -322,7 +322,7 @@ where
 
 /// Processes mempool transaction.
 ///
-/// Scan the transaction and add to the wallet if relavent.
+/// Scan the transaction and add to the wallet if relevant.
 async fn process_mempool_transaction<W>(
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -389,7 +389,7 @@ async fn process_mempool_transaction<W>(
         orchard_derived_nullifiers,
     );
 
-    // return if transaction is not relavent to the wallet
+    // return if transaction is not relevant to the wallet
     if mempool_transaction.transparent_coins().is_empty()
         && mempool_transaction.sapling_notes().is_empty()
         && mempool_transaction.orchard_notes().is_empty()
@@ -457,7 +457,7 @@ where
     wallet
         .update_shard_trees(sapling_located_trees, orchard_located_trees)
         .unwrap();
-    // TODO: add trait to save wallet data to persistance for in-memory wallets
+    // TODO: add trait to save wallet data to persistence for in-memory wallets
 
     Ok(())
 }
@@ -508,7 +508,7 @@ where
 /// Sets up mempool stream.
 ///
 /// If there is some raw transaction, send to be scanned.
-/// If the response is `None` (a block was mined) or a timeout error occured, setup a new mempool stream.
+/// If the response is `None` (a block was mined) or a timeout error occurred, setup a new mempool stream.
 async fn mempool_monitor(
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,

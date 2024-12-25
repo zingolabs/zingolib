@@ -476,7 +476,7 @@ impl LightClient {
                     value_transfers.append(&mut ValueTransfers::create_send_value_transfers(tx));
                 }
                 TransactionKind::Received => {
-                    // create 1 received value tansfer for each pool received to
+                    // create 1 received value transfer for each pool received to
                     if !tx.orchard_notes().is_empty() {
                         let value: u64 =
                             tx.orchard_notes().iter().map(|output| output.value()).sum();
@@ -776,7 +776,7 @@ impl LightClient {
                         let spendable = transaction_metadata.status.is_confirmed() && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
-                        // this object should be created by the DomainOuput trait if this doesnt get deprecated
+                        // this object should be created by the DomainOutput trait if this doesnt get deprecated
                         Some(object!{
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,

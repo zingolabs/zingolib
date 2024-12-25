@@ -216,7 +216,7 @@ impl LightWallet {
             None
         };
 
-        // Derive unified spending key from seed and overide temporary USK if wallet is pre v29.
+        // Derive unified spending key from seed and override temporary USK if wallet is pre v29.
         //
         // UnifiedSpendingKey is initially incomplete for old wallet versions.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
