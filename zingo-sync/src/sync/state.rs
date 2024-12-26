@@ -436,7 +436,7 @@ pub(super) fn set_initial_state(sync_state: &mut SyncState) {
         .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         .map(|scan_range| scan_range.block_range())
         .fold(0, |acc, block_range| {
-            acc + u32::from(block_range.end - block_range.start)
+            acc + (block_range.end - block_range.start)
         });
     sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
     let sync_start_height = sync_state.fully_scanned_height() + 1;

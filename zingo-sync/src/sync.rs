@@ -201,7 +201,7 @@ where
         .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         .map(|scan_range| scan_range.block_range())
         .fold(0, |acc, block_range| {
-            acc + u32::from(block_range.end - block_range.start)
+            acc + (block_range.end - block_range.start)
         });
     let scanned_blocks = sync_state.total_blocks_to_scan() - unscanned_blocks;
     let percentage_blocks_complete =

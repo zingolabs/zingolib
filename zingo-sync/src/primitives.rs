@@ -82,6 +82,12 @@ impl SyncState {
     }
 }
 
+impl Default for SyncState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 #[derive(Debug, Clone, Getters)]
 pub struct SyncStatus {
