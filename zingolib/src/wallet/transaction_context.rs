@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! TODO: Add Mod Description Here!
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -251,7 +251,7 @@ mod decrypt_transaction {
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 // Collect our t-addresses for easy checking
-                // the get_taddres method includes epehemeral 320 taddrs
+                // the get_taddrs method includes ephemeral 320 taddrs
                 let taddrs_set = self.key.get_taddrs(&self.config.chain);
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
@@ -295,7 +295,7 @@ mod decrypt_transaction {
                 None
             }
         }
-        // Za has ds-integration with the name "ephermal" address.
+        // Za has ds-integration with the name "ephemeral" address.
         fn identify_rejection_address(&self, spent_utxo: TransparentOutput) -> Option<String> {
             if self
                 .key

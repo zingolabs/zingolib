@@ -36,7 +36,7 @@ pub async fn to_clients_proposal(
     from_inputs::propose(sender, raw_receivers).await.unwrap()
 }
 
-/// sends to any combo of recipient clients checks that each recipient also recieved the expected balances
+/// sends to any combo of recipient clients checks that each recipient also received the expected balances
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
 /// test_mempool can be enabled when the test harness supports it

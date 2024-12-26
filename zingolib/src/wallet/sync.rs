@@ -1,4 +1,4 @@
-//! Trait implmentations for sync interface
+//! Trait implementations for sync interface
 
 use std::{
     collections::{BTreeMap, HashMap},

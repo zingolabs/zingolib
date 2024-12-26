@@ -213,7 +213,7 @@ impl InputSource for TransactionRecordsById {
                 }
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
-                    // add the biggest note and reset the iteraton
+                    // add the biggest note and reset the iteration
                     selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
                     index_of_unselected = 0;
                 }

@@ -1,5 +1,5 @@
 //! Zingo-Status
-//! TODO: Add Crate Discription Here!
+//! TODO: Add Crate Description Here!
 
 #![warn(missing_docs)]
 #[forbid(unsafe_code)]
