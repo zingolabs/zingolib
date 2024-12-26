@@ -555,7 +555,7 @@ pub async fn faucet_funded_recipient(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn orchard_funded_recipient(
+pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
 ) -> (
     RegtestManager,

@@ -1,4 +1,4 @@
-//! Module for stucts and types associated with witness construction
+//! Module for structs and types associated with witness construction
 
 use std::collections::BTreeMap;
 
