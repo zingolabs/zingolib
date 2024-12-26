@@ -34,7 +34,7 @@ pub struct SyncState {
     scan_ranges: Vec<ScanRange>,
     /// Locators for relevent transactions to the wallet.
     locators: BTreeSet<Locator>,
-    /// Fully scanned wallet height at start of sync.
+    /// The block above the fully scanned wallet height at start of sync.
     /// Reset when sync starts.
     #[getset(skip)]
     #[getset(get_copy = "pub", set = "pub")]
@@ -82,7 +82,9 @@ impl SyncState {
     }
 }
 
-/// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
+/// A snapshot of the current state of sync.
+///
+/// Useful for displaying the status of sync to a user / consumer.
 #[derive(Debug, Clone, Getters)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
