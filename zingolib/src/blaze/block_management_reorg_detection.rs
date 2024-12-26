@@ -339,7 +339,7 @@ impl BlockManagementData {
     }
 
     /// Ingest the incoming blocks, handle any reorgs, then populate the block data
-    pub(crate) async fn handle_reorgs_and_populate_block_mangement_data(
+    pub(crate) async fn handle_reorgs_and_populate_block_management_data(
         &self,
         start_block: u64,
         end_block: u64,
@@ -573,7 +573,7 @@ impl BlockManagementData {
     }
 }
 
-/// The components of a BlockMangementData we need to pass to the worker thread
+/// The components of a BlockManagementData we need to pass to the worker thread
 struct BlockManagementThreadData {
     /// List of all downloaded blocks in the current batch and
     /// their hashes/commitment trees. Stored with the tallest
@@ -834,7 +834,7 @@ mod tests {
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .handle_reorgs_and_populate_block_mangement_data(
+            .handle_reorgs_and_populate_block_management_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),
@@ -883,7 +883,7 @@ mod tests {
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .handle_reorgs_and_populate_block_mangement_data(
+            .handle_reorgs_and_populate_block_management_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),
@@ -979,7 +979,7 @@ mod tests {
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .handle_reorgs_and_populate_block_mangement_data(
+            .handle_reorgs_and_populate_block_management_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TxMap::new_with_witness_trees_address_free())),

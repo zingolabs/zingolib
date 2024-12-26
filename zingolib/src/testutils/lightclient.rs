@@ -1,5 +1,5 @@
-//! This mod is mostly to take inputs, raw data amd comvert it into lightclient actions
-//! (obvisouly) in a test environment.
+//! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
+//! (obviously) in a test environment.
 use crate::{error::ZingoLibError, lightclient::LightClient};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::transaction::TxId;

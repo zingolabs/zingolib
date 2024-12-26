@@ -434,7 +434,7 @@ impl OutgoingTxData {
     }
 }
 
-/// Wraps a vec of outgoing transaction datas for the implementation of std::fmt::Display
+/// Wraps a vec of outgoing transaction data for the implementation of std::fmt::Display
 pub struct OutgoingTxDataSummaries(Vec<OutgoingTxData>);
 
 impl std::fmt::Display for OutgoingTxDataSummaries {
@@ -678,7 +678,7 @@ pub mod summaries {
         }
     }
 
-    /// A wrapper struct for implementing display and json on a vec of value trasnfers
+    /// A wrapper struct for implementing display and json on a vec of value transfers
     #[derive(PartialEq, Debug)]
     pub struct ValueTransfers(Vec<ValueTransfer>);
     impl<'a> std::iter::IntoIterator for &'a ValueTransfers {
@@ -1449,12 +1449,12 @@ pub mod summaries {
         }
     }
 
-    /// Wraps a vec of detailed  transaction summaries for the implementation of std::fmt::Display
+    /// Wraps a vec of detailed transaction summaries for the implementation of std::fmt::Display
     #[derive(PartialEq, Debug)]
     pub struct DetailedTransactionSummaries(pub Vec<DetailedTransactionSummary>);
 
     impl DetailedTransactionSummaries {
-        /// Creates a new Detailedtransactionsummaries struct
+        /// Creates a new DetailedTransactionSummaries struct
         pub fn new(transaction_summaries: Vec<DetailedTransactionSummary>) -> Self {
             DetailedTransactionSummaries(transaction_summaries)
         }

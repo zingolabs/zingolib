@@ -15,7 +15,7 @@ use crate::witness::{LocatedTreeData, ShardTrees};
 
 // TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
-/// Temporary dump for all neccessary wallet functionality for PoC
+/// Temporary dump for all necessary wallet functionality for PoC
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
     type Error: Debug;
@@ -46,7 +46,7 @@ pub trait SyncWallet {
 }
 
 /// Helper to allow generic construction of a
-/// shardtree Node from raw byte representaiton
+/// shardtree Node from raw byte representation
 pub(crate) trait FromBytes<const N: usize> {
     fn from_bytes(array: [u8; N]) -> Self;
 }

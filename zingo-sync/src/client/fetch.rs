@@ -84,7 +84,7 @@ async fn receive_fetch_requests(
     false
 }
 
-// TODO: placeholder for algorythm that selects the next fetch request to be processed
+// TODO: placeholder for algorithm that selects the next fetch request to be processed
 // return `None` if a fetch request could not be selected
 fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
     // TODO: improve priority logic
