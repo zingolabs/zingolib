@@ -93,7 +93,7 @@ pub async fn get_subtree_roots(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<tonic::Streaming<SubtreeRoot>, ()> {
+) -> Result<Vec<SubtreeRoot>, ()> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::GetSubtreeRoots(
@@ -103,8 +103,13 @@ pub async fn get_subtree_roots(
             max_entries,
         ))
         .unwrap();
-    let shards = reply_receiver.await.unwrap();
-    Ok(shards)
+    let mut subtree_root_stream = reply_receiver.await.unwrap();
+    let mut subtree_roots = Vec::new();
+    while let Some(subtree_root) = subtree_root_stream.message().await.unwrap() {
+        subtree_roots.push(subtree_root);
+    }
+
+    Ok(subtree_roots)
 }
 
 /// Gets the frontiers for a specified block height.

@@ -16,9 +16,9 @@ use crate::scan::{DecryptedNoteData, ScanResults};
 use crate::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
+use crate::witness;
 
-use futures::StreamExt;
-use shardtree::{store::ShardStore, LocatedPrunableTree, RetentionFlags};
+use shardtree::store::ShardStore;
 use state::set_initial_state;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::{
@@ -213,77 +213,6 @@ where
         scanned_blocks,
         percentage_blocks_complete,
     }
-}
-
-async fn update_subtree_roots<W>(
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    wallet: &mut W,
-) where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
-{
-    let sapling_start_index = wallet
-        .get_shard_trees()
-        .unwrap()
-        .sapling()
-        .store()
-        .get_shard_roots()
-        .unwrap()
-        .len() as u32;
-    let orchard_start_index = wallet
-        .get_shard_trees()
-        .unwrap()
-        .orchard()
-        .store()
-        .get_shard_roots()
-        .unwrap()
-        .len() as u32;
-    let (sapling_shards, orchard_shards) = futures::join!(
-        client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
-        client::get_subtree_roots(fetch_request_sender, orchard_start_index, 1, 0)
-    );
-
-    let trees = wallet.get_shard_trees_mut().unwrap();
-
-    let (sapling_tree, orchard_tree) = trees.both_mut();
-    futures::join!(
-        update_tree_with_shards(sapling_shards, sapling_tree),
-        update_tree_with_shards(orchard_shards, orchard_tree)
-    );
-}
-
-async fn update_tree_with_shards<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
-    shards: Result<tonic::Streaming<zcash_client_backend::proto::service::SubtreeRoot>, ()>,
-    tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
-) where
-    S: ShardStore<
-        H: incrementalmerkletree::Hashable + Clone + PartialEq + crate::traits::FromBytes<32>,
-        CheckpointId: Clone + Ord + std::fmt::Debug,
-        Error = std::convert::Infallible,
-    >,
-{
-    let shards = shards
-        .unwrap()
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    shards
-        .into_iter()
-        .enumerate()
-        .for_each(|(index, tree_root)| {
-            let node = <S::H as crate::traits::FromBytes<32>>::from_bytes(
-                tree_root.root_hash.try_into().unwrap(),
-            );
-            let shard = LocatedPrunableTree::with_root_value(
-                incrementalmerkletree::Address::from_parts(
-                    incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                    index as u64,
-                ),
-                (node, RetentionFlags::EPHEMERAL),
-            );
-            tree.store_mut().put_shard(shard).unwrap();
-        });
 }
 
 /// Returns true if sync is complete.
@@ -550,6 +479,41 @@ where
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
 
     Ok(())
+}
+
+async fn update_subtree_roots<W>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+) where
+    W: SyncShardTrees,
+{
+    let sapling_start_index = wallet
+        .get_shard_trees()
+        .unwrap()
+        .sapling()
+        .store()
+        .get_shard_roots()
+        .unwrap()
+        .len() as u32;
+    let orchard_start_index = wallet
+        .get_shard_trees()
+        .unwrap()
+        .orchard()
+        .store()
+        .get_shard_roots()
+        .unwrap()
+        .len() as u32;
+    let (sapling_subtree_roots, orchard_subtree_roots) = futures::join!(
+        client::get_subtree_roots(fetch_request_sender.clone(), sapling_start_index, 0, 0),
+        client::get_subtree_roots(fetch_request_sender, orchard_start_index, 1, 0)
+    );
+
+    let sapling_subtree_roots = sapling_subtree_roots.unwrap();
+    let orchard_subtree_roots = orchard_subtree_roots.unwrap();
+
+    let shard_trees = wallet.get_shard_trees_mut().unwrap();
+    witness::add_subtree_roots(sapling_subtree_roots, shard_trees.sapling_mut());
+    witness::add_subtree_roots(orchard_subtree_roots, shard_trees.orchard_mut());
 }
 
 /// Sets up mempool stream.
