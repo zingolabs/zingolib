@@ -21,6 +21,7 @@ use crate::witness;
 use shardtree::store::ShardStore;
 use state::set_initial_state;
 use zcash_client_backend::proto::service::RawTransaction;
+use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
@@ -37,8 +38,6 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 // TODO: move parameters to config module
-// TODO; replace fixed batches with orchard shard ranges (block ranges containing all note commitments to an orchard shard or fragment of a shard)
-const BATCH_SIZE: u32 = 5_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond this window
 
@@ -115,7 +114,12 @@ where
 
     set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
 
-    update_subtree_roots(fetch_request_sender.clone(), &mut *wallet_guard).await;
+    update_subtree_roots(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+    )
+    .await;
 
     drop(wallet_guard);
 
@@ -482,10 +486,11 @@ where
 }
 
 async fn update_subtree_roots<W>(
+    consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
 ) where
-    W: SyncShardTrees,
+    W: SyncWallet + SyncShardTrees,
 {
     let sapling_start_index = wallet
         .get_shard_trees()
@@ -510,6 +515,20 @@ async fn update_subtree_roots<W>(
 
     let sapling_subtree_roots = sapling_subtree_roots.unwrap();
     let orchard_subtree_roots = orchard_subtree_roots.unwrap();
+
+    let sync_state = wallet.get_sync_state_mut().unwrap();
+    state::add_shard_ranges(
+        consensus_parameters,
+        ShieldedProtocol::Sapling,
+        sync_state,
+        &sapling_subtree_roots,
+    );
+    state::add_shard_ranges(
+        consensus_parameters,
+        ShieldedProtocol::Orchard,
+        sync_state,
+        &orchard_subtree_roots,
+    );
 
     let shard_trees = wallet.get_shard_trees_mut().unwrap();
     witness::add_subtree_roots(sapling_subtree_roots, shard_trees.sapling_mut());

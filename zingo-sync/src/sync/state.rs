@@ -2,7 +2,11 @@
 
 use std::{cmp, collections::HashMap, ops::Range};
 
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::{
+    data_api::scanning::{ScanPriority, ScanRange},
+    proto::service::SubtreeRoot,
+    ShieldedProtocol,
+};
 use zcash_primitives::{
     consensus::{self, BlockHeight},
     transaction::TxId,
@@ -15,7 +19,7 @@ use crate::{
     traits::{SyncBlocks, SyncWallet},
 };
 
-use super::{BATCH_SIZE, VERIFY_BLOCK_RANGE_SIZE};
+use super::VERIFY_BLOCK_RANGE_SIZE;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -159,8 +163,11 @@ pub(super) fn set_verify_scan_range(
         },
     };
 
-    let split_ranges =
-        split_out_scan_range(scan_range, &block_range_to_verify, ScanPriority::Verify);
+    let split_ranges = split_out_scan_range(
+        scan_range.clone(),
+        block_range_to_verify,
+        ScanPriority::Verify,
+    );
 
     let scan_range_to_verify = match verify_end {
         VerifyEnd::VerifyHighest => split_ranges
@@ -180,7 +187,7 @@ pub(super) fn set_verify_scan_range(
     scan_range_to_verify
 }
 
-/// Punches in the shard block ranges surrounding each locator with `ScanPriority::FoundNote` (TODO).
+/// Punches in the shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
 fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
     let locator_heights: Vec<BlockHeight> = sync_state
         .locators()
@@ -189,7 +196,8 @@ fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
         .collect();
     locator_heights.into_iter().for_each(|block_height| {
         // TODO: add protocol info to locators to determine whether the orchard or sapling shard should be scanned
-        let block_range = determine_block_range(block_height);
+        let block_range =
+            determine_block_range(sync_state, block_height, ShieldedProtocol::Orchard);
         punch_scan_priority(sync_state, &block_range, ScanPriority::FoundNote).unwrap();
     });
 
@@ -198,14 +206,21 @@ fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
 
 /// Punches in the chain tip block range with `ScanPriority::ChainTip`.
 ///
-/// Determines the chain tip block range by finding the lowest height of the latest completed shard for each shielded
-/// protocol (TODO).
+/// Determines the chain tip block range by finding the lowest start height of the latest incomplete shard for each
+/// shielded protocol.
 fn set_chain_tip_scan_range(
     sync_state: &mut SyncState,
     chain_height: BlockHeight,
 ) -> Result<(), ()> {
-    // TODO: when batching by shards, determine the lowest height that covers both orchard and sapling incomplete shards
-    let chain_tip = determine_block_range(chain_height);
+    let sapling_incomplete_shard =
+        determine_block_range(sync_state, chain_height, ShieldedProtocol::Sapling);
+    let orchard_incomplete_shard =
+        determine_block_range(sync_state, chain_height, ShieldedProtocol::Orchard);
+    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
+        sapling_incomplete_shard
+    } else {
+        orchard_incomplete_shard
+    };
 
     punch_scan_priority(sync_state, &chain_tip, ScanPriority::ChainTip).unwrap();
 
@@ -277,7 +292,7 @@ fn punch_scan_priority(
 
     // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
     for (index, scan_range) in overlapping_scan_ranges.into_iter().rev() {
-        let split_ranges = split_out_scan_range(&scan_range, block_range, scan_priority);
+        let split_ranges = split_out_scan_range(scan_range, block_range.clone(), scan_priority);
         sync_state
             .scan_ranges_mut()
             .splice(index..=index, split_ranges);
@@ -286,23 +301,56 @@ fn punch_scan_priority(
     Ok(())
 }
 
-/// Determines which range of blocks should be scanned for a given `block_height`
-fn determine_block_range(block_height: BlockHeight) -> Range<BlockHeight> {
-    let start = block_height - (u32::from(block_height) % BATCH_SIZE); // TODO: will be replaced with first block of associated orchard shard
-    let end = start + BATCH_SIZE; // TODO: will be replaced with last block of associated orchard shard
-    Range { start, end }
+/// Determines the block range which contains all the outputs for the shard of a given `shielded_protocol` surrounding
+/// the specified `block_height`.
+///
+/// If no shard range exists for the given `block_height`, return the range of the incomplete shard at the chain tip.
+fn determine_block_range(
+    sync_state: &SyncState,
+    block_height: BlockHeight,
+    shielded_protocol: ShieldedProtocol,
+) -> Range<BlockHeight> {
+    let shard_ranges = match shielded_protocol {
+        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges(),
+        ShieldedProtocol::Orchard => sync_state.sapling_shard_ranges(),
+    };
+
+    shard_ranges
+        .iter()
+        .find(|range| range.contains(&block_height))
+        .map_or_else(
+            || {
+                let start = if let Some(range) = shard_ranges.last() {
+                    range.end - 1
+                } else {
+                    sync_state.wallet_birthday()
+                };
+                let end = sync_state.wallet_height() + 1;
+
+                let range = Range { start, end };
+
+                if !range.contains(&block_height) {
+                    panic!(
+                        "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
+                    );
+                }
+
+                range
+            },
+            |range| range.clone(),
+        )
 }
 
-/// Takes a scan range and splits it at `block_range.start` and `block_range.end`, returning a vec of scan ranges where
-/// the scan range with the specified `block_range` has the given `scan_priority`.
+/// Takes a `scan_range` and splits it at `block_range.start` and `block_range.end`, returning a vec of scan ranges where
+/// the scan range contained within the specified `block_range` has the given `scan_priority`.
 ///
 /// If `block_range` goes beyond the bounds of `scan_range.block_range()` no splitting will occur at the upper and/or
-/// lower bound but the priority will still be updated
+/// lower bound but the priority will still be updated.
 ///
-/// Panics if no blocks in `block_range` are contained within `scan_range.block_range()`
+/// Panics if no blocks in `block_range` are contained within `scan_range.block_range()`.
 fn split_out_scan_range(
-    scan_range: &ScanRange,
-    block_range: &Range<BlockHeight>,
+    scan_range: ScanRange,
+    block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
 ) -> Vec<ScanRange> {
     let mut split_ranges = Vec::new();
@@ -351,50 +399,48 @@ fn split_out_scan_range(
 fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     let scan_ranges = sync_state.scan_ranges_mut();
 
-    let mut scan_ranges_priority_sorted: Vec<&ScanRange> = scan_ranges.iter().collect();
-    scan_ranges_priority_sorted.sort_by(|a, b| b.block_range().start.cmp(&a.block_range().start));
-    scan_ranges_priority_sorted.sort_by_key(|scan_range| scan_range.priority());
-    let highest_priority_scan_range = scan_ranges_priority_sorted
+    // scan ranges are sorted from lowest to highest priority
+    // scan ranges with the same priority are sorted in reverse block height order
+    // the highest priority scan range is the last in the list, the highest priority with lowest starting block height
+    let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
+        scan_ranges.iter().cloned().enumerate().collect();
+    scan_ranges_priority_sorted
+        .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
+    scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
+    let (index, highest_priority_scan_range) = scan_ranges_priority_sorted
         .pop()
-        .expect("scan ranges should be non-empty after setup")
-        .clone();
+        .expect("scan ranges should be non-empty after pre-scan initialisation");
     if highest_priority_scan_range.priority() == ScanPriority::Scanned
         || highest_priority_scan_range.priority() == ScanPriority::Ignored
     {
         return None;
     }
 
-    let (index, selected_scan_range) = scan_ranges
-        .iter_mut()
-        .enumerate()
-        .find(|(_, scan_range)| {
-            scan_range.block_range() == highest_priority_scan_range.block_range()
-        })
-        .expect("scan range should exist");
-
-    // TODO: batch by shards
-    let batch_block_range = Range {
-        start: selected_scan_range.block_range().start,
-        end: selected_scan_range.block_range().start + BATCH_SIZE,
-    };
+    let selected_priority = highest_priority_scan_range.priority();
+    let shard_range = determine_block_range(
+        sync_state,
+        highest_priority_scan_range.block_range().start,
+        ShieldedProtocol::Orchard,
+    );
     let split_ranges = split_out_scan_range(
-        selected_scan_range,
-        &batch_block_range,
+        highest_priority_scan_range,
+        shard_range,
         ScanPriority::Ignored,
     );
-
-    let trimmed_block_range = split_ranges
+    let selected_block_range = split_ranges
         .first()
-        .expect("vec should always be non-empty")
+        .expect("split ranges should always be non-empty")
         .block_range()
         .clone();
 
-    scan_ranges.splice(index..=index, split_ranges);
+    sync_state
+        .scan_ranges_mut()
+        .splice(index..=index, split_ranges);
 
     // TODO: when this library has its own version of ScanRange this can be simplified and more readable
     Some(ScanRange::from_parts(
-        trimmed_block_range,
-        highest_priority_scan_range.priority(),
+        selected_block_range,
+        selected_priority,
     ))
 }
 
@@ -441,4 +487,64 @@ pub(super) fn set_initial_state(sync_state: &mut SyncState) {
     sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
     let sync_start_height = sync_state.fully_scanned_height() + 1;
     sync_state.set_sync_start_height(sync_start_height);
+}
+
+/// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds the to
+/// `sync_state`.
+///
+/// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
+/// where shard ranges in `sync_state` are empty.  
+pub(super) fn add_shard_ranges(
+    consensus_parameters: &impl consensus::Parameters,
+    shielded_protocol: ShieldedProtocol,
+    sync_state: &mut SyncState,
+    subtree_roots: &[SubtreeRoot],
+) {
+    let network_upgrade_activation_height = match shielded_protocol {
+        ShieldedProtocol::Sapling => consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Sapling)
+            .expect("activation height should exist for this network upgrade!"),
+        ShieldedProtocol::Orchard => consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Nu5)
+            .expect("activation height should exist for this network upgrade!"),
+    };
+
+    let shard_ranges = match shielded_protocol {
+        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges_mut(),
+        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges_mut(),
+    };
+
+    let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {
+        shard_range.end - 1
+    } else {
+        network_upgrade_activation_height
+    };
+
+    subtree_roots
+        .iter()
+        .map(|subtree_root| {
+            BlockHeight::from_u32(
+                subtree_root
+                    .completing_block_height
+                    .try_into()
+                    .expect("overflow should never occur"),
+            )
+        })
+        .fold(
+            highest_subtree_completing_height,
+            |previous_subtree_completing_height, subtree_completing_height| {
+                shard_ranges.push(Range {
+                    start: previous_subtree_completing_height,
+                    end: subtree_completing_height + 1,
+                });
+
+                tracing::debug!(
+                    "{:?} subtree root height: {}",
+                    shielded_protocol,
+                    subtree_completing_height
+                );
+
+                subtree_completing_height
+            },
+        );
 }

@@ -1,6 +1,9 @@
 //! Module for primitive structs associated with the sync engine
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Range,
+};
 
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 
@@ -32,6 +35,16 @@ pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
     scan_ranges: Vec<ScanRange>,
+    /// The block ranges that contain all sapling outputs of complete sapling shards.
+    ///
+    /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
+    /// shards are already scanned so the trimming will be handled by [`crate::sync::state::determine_block_range`].
+    sapling_shard_ranges: Vec<Range<BlockHeight>>,
+    /// The block ranges that contain all orchard outputs of complete orchard shards.
+    ///
+    /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
+    /// shards are already scanned so the trimming will be handled by [`crate::sync::state::determine_block_range`].
+    orchard_shard_ranges: Vec<Range<BlockHeight>>,
     /// Locators for relevant transactions to the wallet.
     locators: BTreeSet<Locator>,
     /// The block above the fully scanned wallet height at start of sync.
@@ -51,6 +64,8 @@ impl SyncState {
     pub fn new() -> Self {
         SyncState {
             scan_ranges: Vec::new(),
+            sapling_shard_ranges: Vec::new(),
+            orchard_shard_ranges: Vec::new(),
             locators: BTreeSet::new(),
             sync_start_height: 0.into(),
             total_blocks_to_scan: 0,
@@ -65,6 +80,8 @@ impl SyncState {
     }
 
     /// Returns the block height at which all blocks equal to and below this height are scanned.
+    ///
+    /// Will panic if called before scan ranges are updated for the first time.
     pub fn fully_scanned_height(&self) -> BlockHeight {
         if let Some(scan_range) = self
             .scan_ranges()
@@ -79,6 +96,29 @@ impl SyncState {
                 .block_range()
                 .end
         }
+    }
+
+    /// Returns the wallet birthday.
+    ///
+    /// Will panic if called before scan ranges are updated for the first time.
+    pub fn wallet_birthday(&self) -> BlockHeight {
+        self.scan_ranges()
+            .first()
+            .expect("scan ranges always non-empty")
+            .block_range()
+            .start
+    }
+
+    /// Returns the last known chain height to the wallet.
+    ///
+    /// Will panic if called before scan ranges are updated for the first time.
+    pub fn wallet_height(&self) -> BlockHeight {
+        self.scan_ranges()
+            .last()
+            .expect("scan ranges always non-empty")
+            .block_range()
+            .end
+            - 1
     }
 }
 
