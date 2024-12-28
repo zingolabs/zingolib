@@ -38,6 +38,8 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 // TODO: move parameters to config module
+// TODO; replace fixed batches with variable batches with fixed memory size
+const BATCH_SIZE: u32 = 5_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond this window
 
@@ -104,6 +106,13 @@ where
     )
     .await;
 
+    update_subtree_roots(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+    )
+    .await;
+
     state::update_scan_ranges(
         wallet_height,
         chain_height,
@@ -113,13 +122,6 @@ where
     .unwrap();
 
     set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
-
-    update_subtree_roots(
-        consensus_parameters,
-        fetch_request_sender.clone(),
-        &mut *wallet_guard,
-    )
-    .await;
 
     drop(wallet_guard);
 

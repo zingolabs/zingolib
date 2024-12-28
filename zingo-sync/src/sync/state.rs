@@ -19,7 +19,7 @@ use crate::{
     traits::{SyncBlocks, SyncWallet},
 };
 
-use super::VERIFY_BLOCK_RANGE_SIZE;
+use super::{BATCH_SIZE, VERIFY_BLOCK_RANGE_SIZE};
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -198,7 +198,7 @@ fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
         // TODO: add protocol info to locators to determine whether the orchard or sapling shard should be scanned
         let block_range =
             determine_block_range(sync_state, block_height, ShieldedProtocol::Orchard);
-        punch_scan_priority(sync_state, &block_range, ScanPriority::FoundNote).unwrap();
+        punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
     });
 
     Ok(())
@@ -216,13 +216,14 @@ fn set_chain_tip_scan_range(
         determine_block_range(sync_state, chain_height, ShieldedProtocol::Sapling);
     let orchard_incomplete_shard =
         determine_block_range(sync_state, chain_height, ShieldedProtocol::Orchard);
+
     let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
         sapling_incomplete_shard
     } else {
         orchard_incomplete_shard
     };
 
-    punch_scan_priority(sync_state, &chain_tip, ScanPriority::ChainTip).unwrap();
+    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip).unwrap();
 
     Ok(())
 }
@@ -250,21 +251,22 @@ pub(super) fn set_scan_priority(
     Ok(())
 }
 
-/// Punches in a `scan_priority` for given `block_range`.
+/// Punches in a `scan_priority` for a given `block_range`.
 ///
 /// This function will set all scan ranges in `sync_state` with block range boundaries contained by `block_range` to
 /// the given `scan_priority`.
-/// Any scan ranges with `Ignored` (Scanning) or `Scanned` priority or with higher (or equal) priority than
-/// `scan_priority` will be ignored.
 /// If any scan ranges in `sync_state` are found to overlap with the given `block_range`, they will be split at the
 /// boundary and the new scan ranges contained by `block_range` will be set to `scan_priority`.
+/// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
+/// Any scan ranges with `Ignored` (Scanning) or `Scanned` priority or with higher (or equal) priority than
+/// `scan_priority` will be ignored.
 fn punch_scan_priority(
     sync_state: &mut SyncState,
-    block_range: &Range<BlockHeight>,
+    block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
 ) -> Result<(), ()> {
-    let mut fully_contained_scan_ranges = Vec::new();
-    let mut overlapping_scan_ranges = Vec::new();
+    let mut scan_ranges_contained_by_block_range = Vec::new();
+    let mut scan_ranges_for_splitting = Vec::new();
 
     for (index, scan_range) in sync_state.scan_ranges().iter().enumerate() {
         if scan_range.priority() == ScanPriority::Scanned
@@ -277,21 +279,23 @@ fn punch_scan_priority(
         match (
             block_range.contains(&scan_range.block_range().start),
             block_range.contains(&scan_range.block_range().end),
+            scan_range.block_range().contains(&block_range.start),
         ) {
-            (true, true) => fully_contained_scan_ranges.push(scan_range.clone()),
-            (true, false) | (false, true) => {
-                overlapping_scan_ranges.push((index, scan_range.clone()))
+            (true, true, _) => scan_ranges_contained_by_block_range.push(scan_range.clone()),
+            (true, false, _) | (false, true, _) => {
+                scan_ranges_for_splitting.push((index, scan_range.clone()))
             }
-            (false, false) => (),
+            (false, false, true) => scan_ranges_for_splitting.push((index, scan_range.clone())),
+            (false, false, false) => {}
         }
     }
 
-    for scan_range in fully_contained_scan_ranges {
+    for scan_range in scan_ranges_contained_by_block_range {
         set_scan_priority(sync_state, scan_range.block_range(), scan_priority).unwrap();
     }
 
     // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
-    for (index, scan_range) in overlapping_scan_ranges.into_iter().rev() {
+    for (index, scan_range) in scan_ranges_for_splitting.into_iter().rev() {
         let split_ranges = split_out_scan_range(scan_range, block_range.clone(), scan_priority);
         sync_state
             .scan_ranges_mut()
@@ -417,14 +421,14 @@ fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     }
 
     let selected_priority = highest_priority_scan_range.priority();
-    let shard_range = determine_block_range(
-        sync_state,
-        highest_priority_scan_range.block_range().start,
-        ShieldedProtocol::Orchard,
-    );
+    // TODO: fixed memory batching
+    let batch_block_range = Range {
+        start: highest_priority_scan_range.block_range().start,
+        end: highest_priority_scan_range.block_range().start + BATCH_SIZE,
+    };
     let split_ranges = split_out_scan_range(
         highest_priority_scan_range,
-        shard_range,
+        batch_block_range,
         ScanPriority::Ignored,
     );
     let selected_block_range = split_ranges
