@@ -38,12 +38,12 @@ pub struct SyncState {
     /// The block ranges that contain all sapling outputs of complete sapling shards.
     ///
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
-    /// shards are already scanned so the trimming will be handled by [`crate::sync::state::determine_block_range`].
+    /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
     sapling_shard_ranges: Vec<Range<BlockHeight>>,
     /// The block ranges that contain all orchard outputs of complete orchard shards.
     ///
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
-    /// shards are already scanned so the trimming will be handled by [`crate::sync::state::determine_block_range`].
+    /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
     orchard_shard_ranges: Vec<Range<BlockHeight>>,
     /// Locators for relevant transactions to the wallet.
     locators: BTreeSet<Locator>,
