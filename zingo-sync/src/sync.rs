@@ -112,14 +112,6 @@ where
     )
     .await;
 
-    tracing::info!(
-        "SHARD RANGES: {:#?}",
-        wallet_guard
-            .get_sync_state()
-            .unwrap()
-            .orchard_shard_ranges()
-    );
-
     state::update_scan_ranges(
         wallet_height,
         chain_height,
