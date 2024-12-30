@@ -497,7 +497,7 @@ pub(super) fn set_initial_state(sync_state: &mut SyncState) {
 /// `sync_state`.
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
-/// where shard ranges in `sync_state` are empty.  
+/// where shard ranges in `sync_state` are empty.
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedProtocol,
