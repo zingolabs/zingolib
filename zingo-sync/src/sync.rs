@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus};
+use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus, WalletTransaction};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -36,9 +36,10 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
+// TODO: a single block height can be associated with two shards of a single protocol!
 // TODO: move parameters to config module
 // TODO; replace fixed batches with variable batches with fixed memory size
-const BATCH_SIZE: u32 = 5_000;
+const BATCH_SIZE: u32 = 10_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond this window
 
@@ -428,6 +429,12 @@ where
         sapling_located_trees,
         orchard_located_trees,
     } = scan_results;
+
+    let sync_state = wallet.get_sync_state_mut().unwrap();
+    for transaction in wallet_transactions.values() {
+        state::update_found_note_shard_priority(sync_state, ShieldedProtocol::Sapling, transaction);
+        state::update_found_note_shard_priority(sync_state, ShieldedProtocol::Orchard, transaction);
+    }
 
     wallet.append_wallet_blocks(wallet_blocks).unwrap();
     wallet

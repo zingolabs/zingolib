@@ -1,6 +1,10 @@
 //! Module for reading and updating the fields of [`crate::primitives::SyncState`] which tracks the wallet's state of sync.
 
-use std::{cmp, collections::HashMap, ops::Range};
+use std::{
+    cmp,
+    collections::{BTreeSet, HashMap},
+    ops::Range,
+};
 
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
@@ -14,7 +18,7 @@ use zcash_primitives::{
 
 use crate::{
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, SyncState},
+    primitives::{Locator, SyncState, WalletTransaction},
     scan::task::ScanTask,
     traits::{SyncBlocks, SyncWallet},
 };
@@ -58,7 +62,7 @@ where
 
 /// Returns the locators for a given `block_range` from the wallet's [`crate::primitives::SyncState`]
 // TODO: unit test high priority
-fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> Vec<Locator> {
+fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BTreeSet<Locator> {
     sync_state
         .locators()
         .range(
@@ -80,7 +84,7 @@ pub(super) async fn update_scan_ranges(
     reset_scan_ranges(sync_state)?;
     create_scan_range(wallet_height, chain_height, sync_state).await?;
     let locators = sync_state.locators().clone();
-    set_found_note_scan_range(sync_state, ShieldedProtocol::Orchard, locators.into_iter())?;
+    set_found_note_scan_ranges(sync_state, ShieldedProtocol::Orchard, locators.into_iter())?;
     set_chain_tip_scan_range(sync_state, chain_height)?;
 
     // TODO: add logic to merge scan ranges
@@ -188,17 +192,27 @@ pub(super) fn set_verify_scan_range(
 }
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
-pub(super) fn set_found_note_scan_range<L: Iterator<Item = Locator>>(
+pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     locators: L,
 ) -> Result<(), ()> {
-    locators
-        .map(|(block_height, _)| block_height)
-        .for_each(|block_height| {
-            let block_range = determine_block_range(sync_state, block_height, shielded_protocol);
-            punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
-        });
+    for locator in locators {
+        set_found_note_scan_range(sync_state, shielded_protocol, locator)?;
+    }
+
+    Ok(())
+}
+
+/// Punches in the `shielded_protocol` shard block range surrounding the `locator` with `ScanPriority::FoundNote`.
+pub(super) fn set_found_note_scan_range(
+    sync_state: &mut SyncState,
+    shielded_protocol: ShieldedProtocol,
+    locator: Locator,
+) -> Result<(), ()> {
+    let block_height = locator.0;
+    let block_range = determine_block_range(sync_state, block_height, shielded_protocol);
+    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
 
     Ok(())
 }
@@ -550,4 +564,28 @@ pub(super) fn add_shard_ranges(
                 subtree_completing_height
             },
         );
+}
+
+/// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
+/// a note from the corresponding `shielded_protocol`.
+pub(super) fn update_found_note_shard_priority<'a>(
+    sync_state: &mut SyncState,
+    shielded_protocol: ShieldedProtocol,
+    wallet_transaction: &'a WalletTransaction,
+) {
+    let found_note = match shielded_protocol {
+        ShieldedProtocol::Sapling => !wallet_transaction.sapling_notes().is_empty(),
+        ShieldedProtocol::Orchard => !wallet_transaction.orchard_notes().is_empty(),
+    };
+    if found_note {
+        set_found_note_scan_range(
+            sync_state,
+            shielded_protocol,
+            (
+                wallet_transaction.confirmation_status().get_height(),
+                wallet_transaction.txid(),
+            ),
+        )
+        .unwrap();
+    }
 }

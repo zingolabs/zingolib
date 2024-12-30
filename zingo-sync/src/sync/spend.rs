@@ -47,13 +47,13 @@ where
     );
 
     let sync_state = wallet.get_sync_state_mut().unwrap();
-    state::set_found_note_scan_range(
+    state::set_found_note_scan_ranges(
         sync_state,
         ShieldedProtocol::Sapling,
         sapling_spend_locators.values().cloned(),
     )
     .unwrap();
-    state::set_found_note_scan_range(
+    state::set_found_note_scan_ranges(
         sync_state,
         ShieldedProtocol::Orchard,
         orchard_spend_locators.values().cloned(),
