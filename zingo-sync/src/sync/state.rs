@@ -318,10 +318,11 @@ fn punch_scan_priority(
     Ok(())
 }
 
-/// Determines the block range which contains all the outputs for the shard of a given `shielded_protocol` surrounding
+/// Determines the block range which contains all the note commitments for the shard of a given `shielded_protocol` surrounding
 /// the specified `block_height`.
 ///
 /// If no shard range exists for the given `block_height`, return the range of the incomplete shard at the chain tip.
+/// If `block_height` contains note commitments from multiple shards, return the block range of all of those shards combined.
 fn determine_block_range(
     sync_state: &SyncState,
     block_height: BlockHeight,
@@ -329,33 +330,49 @@ fn determine_block_range(
 ) -> Range<BlockHeight> {
     let shard_ranges = match shielded_protocol {
         ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges(),
-        ShieldedProtocol::Orchard => sync_state.sapling_shard_ranges(),
+        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges(),
     };
 
-    shard_ranges
+    let target_ranges = shard_ranges
         .iter()
-        .find(|range| range.contains(&block_height))
-        .map_or_else(
-            || {
-                let start = if let Some(range) = shard_ranges.last() {
-                    range.end - 1
-                } else {
-                    sync_state.wallet_birthday().expect("scan range should not be empty")
-                };
-                let end = sync_state.wallet_height().expect("scan range should not be empty") + 1;
+        .filter(|range| range.contains(&block_height))
+        .cloned()
+        .collect::<Vec<_>>();
 
-                let range = Range { start, end };
+    if target_ranges.is_empty() {
+        let start = if let Some(range) = shard_ranges.last() {
+            range.end - 1
+        } else {
+            sync_state
+                .wallet_birthday()
+                .expect("scan range should not be empty")
+        };
+        let end = sync_state
+            .wallet_height()
+            .expect("scan range should not be empty")
+            + 1;
 
-                if !range.contains(&block_height) {
-                    panic!(
-                        "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
-                    );
-                }
+        let range = Range { start, end };
 
-                range
-            },
-            |range| range.clone(),
-        )
+        if !range.contains(&block_height) {
+            panic!(
+                "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
+            );
+        }
+
+        range
+    } else {
+        Range {
+            start: target_ranges
+                .first()
+                .expect("should not be empty in this closure")
+                .start,
+            end: target_ranges
+                .last()
+                .expect("should not be empty in this closure")
+                .end,
+        }
+    }
 }
 
 /// Takes a `scan_range` and splits it at `block_range.start` and `block_range.end`, returning a vec of scan ranges where

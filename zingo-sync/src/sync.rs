@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus, WalletTransaction};
+use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -36,7 +36,6 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-// TODO: a single block height can be associated with two shards of a single protocol!
 // TODO: move parameters to config module
 // TODO; replace fixed batches with variable batches with fixed memory size
 const BATCH_SIZE: u32 = 10_000;
@@ -112,6 +111,14 @@ where
         &mut *wallet_guard,
     )
     .await;
+
+    tracing::info!(
+        "SHARD RANGES: {:#?}",
+        wallet_guard
+            .get_sync_state()
+            .unwrap()
+            .orchard_shard_ranges()
+    );
 
     state::update_scan_ranges(
         wallet_height,
