@@ -519,9 +519,6 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
 }
 
 /// For each `locator`, fetch the transaction and then scan and append to the wallet transactions.
-///
-/// This is not intended to be used outside of the context of processing scan results of a scanned range.
-/// This function will panic if the wallet block for a given locator does not exist in the wallet.
 pub(crate) async fn scan_located_transactions<L, P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
@@ -545,10 +542,12 @@ where
         }
 
         spending_txids.insert(txid);
+        // TODO: fetch block from server if not in wallet so wallet blocks added to wallet while scanning out of order
+        // don't need to be held in memory
         wallet_blocks.insert(
             block_height,
             wallet.get_wallet_block(block_height).expect(
-                "wallet block should be in the wallet due to the context of this functions purpose",
+                "wallet block should be in the wallet as nullifiers are mapped during scanning",
             ),
         );
     }

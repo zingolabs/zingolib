@@ -19,7 +19,6 @@ use crate::traits::{
 use crate::witness;
 
 use shardtree::store::ShardStore;
-use state::set_initial_state;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
@@ -121,7 +120,7 @@ where
     .await
     .unwrap();
 
-    set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
+    state::set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
 
     drop(wallet_guard);
 

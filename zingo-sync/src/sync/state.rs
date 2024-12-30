@@ -38,21 +38,20 @@ where
     P: consensus::Parameters,
     W: SyncWallet,
 {
-    let wallet_height =
-        if let Some(highest_range) = wallet.get_sync_state().unwrap().scan_ranges().last() {
-            highest_range.block_range().end - 1
-        } else {
-            let wallet_birthday = wallet.get_birthday().unwrap();
-            let sapling_activation_height = consensus_parameters
-                .activation_height(consensus::NetworkUpgrade::Sapling)
-                .expect("sapling activation height should always return Some");
+    let wallet_height = if let Some(height) = wallet.get_sync_state().unwrap().wallet_height() {
+        height
+    } else {
+        let wallet_birthday = wallet.get_birthday().unwrap();
+        let sapling_activation_height = consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Sapling)
+            .expect("sapling activation height should always return Some");
 
-            let highest = match wallet_birthday.cmp(&sapling_activation_height) {
-                cmp::Ordering::Greater | cmp::Ordering::Equal => wallet_birthday,
-                cmp::Ordering::Less => sapling_activation_height,
-            };
-            highest - 1
+        let highest = match wallet_birthday.cmp(&sapling_activation_height) {
+            cmp::Ordering::Greater | cmp::Ordering::Equal => wallet_birthday,
+            cmp::Ordering::Less => sapling_activation_height,
         };
+        highest - 1
+    };
 
     Ok(wallet_height)
 }
@@ -80,7 +79,8 @@ pub(super) async fn update_scan_ranges(
 ) -> Result<(), ()> {
     reset_scan_ranges(sync_state)?;
     create_scan_range(wallet_height, chain_height, sync_state).await?;
-    set_found_note_scan_range(sync_state)?;
+    let locators = sync_state.locators().clone();
+    set_found_note_scan_range(sync_state, ShieldedProtocol::Orchard, locators.into_iter())?;
     set_chain_tip_scan_range(sync_state, chain_height)?;
 
     // TODO: add logic to merge scan ranges
@@ -187,19 +187,18 @@ pub(super) fn set_verify_scan_range(
     scan_range_to_verify
 }
 
-/// Punches in the shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
-fn set_found_note_scan_range(sync_state: &mut SyncState) -> Result<(), ()> {
-    let locator_heights: Vec<BlockHeight> = sync_state
-        .locators()
-        .iter()
-        .map(|(block_height, _)| *block_height)
-        .collect();
-    locator_heights.into_iter().for_each(|block_height| {
-        // TODO: add protocol info to locators to determine whether the orchard or sapling shard should be scanned
-        let block_range =
-            determine_block_range(sync_state, block_height, ShieldedProtocol::Orchard);
-        punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
-    });
+/// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
+pub(super) fn set_found_note_scan_range<L: Iterator<Item = Locator>>(
+    sync_state: &mut SyncState,
+    shielded_protocol: ShieldedProtocol,
+    locators: L,
+) -> Result<(), ()> {
+    locators
+        .map(|(block_height, _)| block_height)
+        .for_each(|block_height| {
+            let block_range = determine_block_range(sync_state, block_height, shielded_protocol);
+            punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
+        });
 
     Ok(())
 }
@@ -327,9 +326,9 @@ fn determine_block_range(
                 let start = if let Some(range) = shard_ranges.last() {
                     range.end - 1
                 } else {
-                    sync_state.wallet_birthday()
+                    sync_state.wallet_birthday().expect("scan range should not be empty")
                 };
-                let end = sync_state.wallet_height() + 1;
+                let end = sync_state.wallet_height().expect("scan range should not be empty") + 1;
 
                 let range = Range { start, end };
 
