@@ -585,10 +585,10 @@ pub(super) fn add_shard_ranges(
 
 /// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
 /// a note from the corresponding `shielded_protocol`.
-pub(super) fn update_found_note_shard_priority<'a>(
+pub(super) fn update_found_note_shard_priority(
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
-    wallet_transaction: &'a WalletTransaction,
+    wallet_transaction: &WalletTransaction,
 ) {
     let found_note = match shielded_protocol {
         ShieldedProtocol::Sapling => !wallet_transaction.sapling_notes().is_empty(),
