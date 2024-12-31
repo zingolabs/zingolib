@@ -40,7 +40,7 @@ pub(crate) mod transparent;
 // TODO; replace fixed batches with variable batches with fixed memory size
 const BATCH_SIZE: u32 = 10_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
-const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond this window
+const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
