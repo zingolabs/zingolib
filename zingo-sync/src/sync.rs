@@ -138,6 +138,11 @@ where
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
     let mut wallet_guard = wallet.lock().await;
+    let initial_verification_height = wallet_guard
+        .get_sync_state()
+        .unwrap()
+        .highest_scanned_height()
+        + 1;
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
         tokio::select! {
@@ -149,6 +154,7 @@ where
                     &ufvks,
                     scan_range,
                     scan_results,
+                    initial_verification_height,
                 )
                 .await
                 .unwrap();
@@ -246,6 +252,7 @@ async fn process_scan_results<P, W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
+    initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError>
 where
     P: consensus::Parameters,
@@ -289,6 +296,15 @@ where
                     state::VerifyEnd::VerifyHighest,
                 );
                 truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1).unwrap();
+
+                if initial_verification_height - scan_range_to_verify.block_range().start
+                    > MAX_VERIFICATION_WINDOW
+                {
+                    panic!(
+                        "sync failed. re-org of larger than {} blocks detected",
+                        MAX_VERIFICATION_WINDOW
+                    );
+                }
             } else {
                 scan_results?;
             }
