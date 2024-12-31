@@ -152,6 +152,7 @@ impl DecryptedNoteData {
 /// `locators` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
 /// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
 /// then `locators` will start empty.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
@@ -228,15 +229,13 @@ where
         orchard_leaves_and_retentions,
     } = witness_data;
 
-    let sapling_located_trees = tokio::task::spawn_blocking(move || {
-        witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions)
-            .unwrap()
-    })
-    .await
-    .unwrap();
-    let orchard_located_trees = tokio::task::spawn_blocking(move || {
-        witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions)
-            .unwrap()
+    let (sapling_located_trees, orchard_located_trees) = tokio::task::spawn_blocking(move || {
+        (
+            witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions)
+                .unwrap(),
+            witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions)
+                .unwrap(),
+        )
     })
     .await
     .unwrap();

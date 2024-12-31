@@ -52,7 +52,7 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    tracing::info!("Syncing wallet...");
+    tracing::info!("Starting sync...");
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
