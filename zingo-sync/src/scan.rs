@@ -32,7 +32,8 @@ pub(crate) mod task;
 pub(crate) mod transactions;
 
 struct InitialScanData {
-    previous_block: Option<WalletBlock>,
+    start_seam_block: Option<WalletBlock>,
+    end_seam_block: Option<WalletBlock>,
     sapling_initial_tree_size: u32,
     orchard_initial_tree_size: u32,
 }
@@ -42,7 +43,8 @@ impl InitialScanData {
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         consensus_parameters: &P,
         first_block: &CompactBlock,
-        previous_wallet_block: Option<WalletBlock>,
+        start_seam_block: Option<WalletBlock>,
+        end_seam_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
     where
         P: Parameters + Sync + Send + 'static,
@@ -51,7 +53,7 @@ impl InitialScanData {
         // otherwise, from first block if available
         // otherwise, fetches frontiers from server
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
-            if let Some(prev) = &previous_wallet_block {
+            if let Some(prev) = &start_seam_block {
                 (
                     prev.sapling_commitment_tree_size(),
                     prev.orchard_commitment_tree_size(),
@@ -105,7 +107,8 @@ impl InitialScanData {
             };
 
         Ok(InitialScanData {
-            previous_block: previous_wallet_block,
+            start_seam_block,
+            end_seam_block,
             sapling_initial_tree_size,
             orchard_initial_tree_size,
         })
@@ -145,7 +148,7 @@ impl DecryptedNoteData {
 
 /// Scans a given range and returns all data relevant to the specified keys.
 ///
-/// `previous_wallet_block` is the wallet block with height [scan_range.start - 1].
+/// `start_seam_block` and `end_seam_block` are the blocks adjacent to the `scan_range` for verification of continuity.
 /// `locators` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
 /// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
 /// then `locators` will start empty.
@@ -154,7 +157,8 @@ pub(crate) async fn scan<P>(
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
-    previous_wallet_block: Option<WalletBlock>,
+    start_seam_block: Option<WalletBlock>,
+    end_seam_block: Option<WalletBlock>,
     mut locators: BTreeSet<Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<ScanResults, ScanError>
@@ -174,7 +178,8 @@ where
         compact_blocks
             .first()
             .expect("compacts blocks should not be empty"),
-        previous_wallet_block,
+        start_seam_block,
+        end_seam_block,
     )
     .await
     .unwrap();

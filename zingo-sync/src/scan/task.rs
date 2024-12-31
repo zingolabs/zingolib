@@ -139,7 +139,7 @@ where
 
     /// Updates the scanner.
     ///
-    /// If verification is still in progress, do not create scan tasks.
+    /// If verification is still in progress, only create scan tasks with `Verify` scan priority.
     /// If there is an idle worker, create a new scan task and add to worker.
     /// If there are no more range available to scan, shutdown the idle workers.
     pub(crate) async fn update<W>(&mut self, wallet: &mut W, shutdown_mempool: Arc<AtomicBool>)
@@ -261,7 +261,8 @@ where
                     &consensus_parameters,
                     &ufvks,
                     scan_task.scan_range.clone(),
-                    scan_task.previous_wallet_block,
+                    scan_task.start_seam_block,
+                    scan_task.end_seam_block,
                     scan_task.locators,
                     scan_task.transparent_addresses,
                 )
@@ -317,7 +318,8 @@ where
 #[derive(Debug)]
 pub(crate) struct ScanTask {
     scan_range: ScanRange,
-    previous_wallet_block: Option<WalletBlock>,
+    start_seam_block: Option<WalletBlock>,
+    end_seam_block: Option<WalletBlock>,
     locators: BTreeSet<Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 }
@@ -325,13 +327,15 @@ pub(crate) struct ScanTask {
 impl ScanTask {
     pub(crate) fn from_parts(
         scan_range: ScanRange,
-        previous_wallet_block: Option<WalletBlock>,
+        start_seam_block: Option<WalletBlock>,
+        end_seam_block: Option<WalletBlock>,
         locators: BTreeSet<Locator>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
     ) -> Self {
         Self {
             scan_range,
-            previous_wallet_block,
+            start_seam_block,
+            end_seam_block,
             locators,
             transparent_addresses,
         }

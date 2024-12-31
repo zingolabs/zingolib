@@ -87,6 +87,11 @@ pub(super) async fn update_scan_ranges(
     set_found_note_scan_ranges(sync_state, ShieldedProtocol::Orchard, locators.into_iter())?;
     set_chain_tip_scan_range(sync_state, chain_height)?;
 
+    let verification_height = sync_state.highest_scanned_height() + 1;
+    if verification_height <= chain_height {
+        set_verify_scan_range(sync_state, verification_height, VerifyEnd::VerifyLowest);
+    }
+
     // TODO: add logic to merge scan ranges
 
     Ok(())
@@ -115,8 +120,6 @@ async fn create_scan_range(
     if scan_ranges.is_empty() {
         panic!("scan ranges should never be empty after updating");
     }
-
-    set_verify_scan_range(sync_state, wallet_height + 1, VerifyEnd::VerifyLowest);
 
     Ok(())
 }
@@ -484,10 +487,10 @@ where
     W: SyncWallet + SyncBlocks,
 {
     if let Some(scan_range) = select_scan_range(wallet.get_sync_state_mut().unwrap()) {
-        // TODO: disallow scanning without previous wallet block
-        let previous_wallet_block = wallet
+        let start_seam_block = wallet
             .get_wallet_block(scan_range.block_range().start - 1)
             .ok();
+        let end_seam_block = wallet.get_wallet_block(scan_range.block_range().end).ok();
 
         let locators = find_locators(wallet.get_sync_state().unwrap(), scan_range.block_range());
         let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
@@ -499,7 +502,8 @@ where
 
         Ok(Some(ScanTask::from_parts(
             scan_range,
-            previous_wallet_block,
+            start_seam_block,
+            end_seam_block,
             locators,
             transparent_addresses,
         )))
