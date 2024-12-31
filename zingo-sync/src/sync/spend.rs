@@ -14,7 +14,7 @@ use zip32::AccountId;
 use crate::{
     client::FetchRequest,
     primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletTransaction},
-    scan::transactions::scan_located_transactions,
+    scan::transactions::scan_spending_transactions,
     traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
 };
 
@@ -61,7 +61,7 @@ where
     .unwrap();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
-    scan_located_transactions(
+    scan_spending_transactions(
         fetch_request_sender,
         consensus_parameters,
         wallet,

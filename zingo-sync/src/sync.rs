@@ -444,12 +444,10 @@ where
     wallet
         .update_shard_trees(sapling_located_trees, orchard_located_trees)
         .unwrap();
-    // TODO: add trait to save wallet data to persistence for in-memory wallets
 
     Ok(())
 }
 
-// TODO: replace this function with a filter on the data added to wallet
 fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
@@ -458,15 +456,7 @@ where
         return Ok(());
     }
 
-    let wallet_height = wallet
-        .get_sync_state()
-        .unwrap()
-        .scan_ranges()
-        .last()
-        .expect("wallet should always have scan ranges after sync has started")
-        .block_range()
-        .end;
-
+    let highest_scanned_height = wallet.get_sync_state().unwrap().highest_scanned_height();
     let wallet_transaction_heights = wallet
         .get_wallet_transactions()
         .unwrap()
@@ -475,7 +465,7 @@ where
         .collect::<Vec<_>>();
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
         *height >= scan_range.block_range().end - 1
-            || *height >= wallet_height - 100
+            || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
             || wallet_transaction_heights.contains(height)
     });
     wallet
