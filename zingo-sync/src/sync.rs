@@ -179,8 +179,6 @@ where
         }
     }
 
-    // TODO: clear locators
-
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
@@ -478,6 +476,11 @@ where
         .unwrap()
         .orchard_mut()
         .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+    wallet
+        .get_sync_state_mut()
+        .unwrap()
+        .locators_mut()
+        .retain(|(height, _)| *height >= scan_range.block_range().end);
 
     Ok(())
 }
