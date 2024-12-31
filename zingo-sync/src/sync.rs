@@ -263,13 +263,13 @@ where
             )
             .await
             .unwrap();
-            remove_irrelevant_data(wallet, &scan_range).unwrap();
             state::set_scan_priority(
                 wallet.get_sync_state_mut().unwrap(),
                 scan_range.block_range(),
                 ScanPriority::Scanned,
             )
             .unwrap();
+            remove_irrelevant_data(wallet).unwrap();
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
@@ -446,15 +446,13 @@ where
     Ok(())
 }
 
-fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
+fn remove_irrelevant_data<W>(wallet: &mut W) -> Result<(), ()>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
-    if scan_range.priority() != ScanPriority::Historic {
-        return Ok(());
-    }
-
-    let highest_scanned_height = wallet.get_sync_state().unwrap().highest_scanned_height();
+    let sync_state = wallet.get_sync_state().unwrap();
+    let fully_scanned_height = sync_state.fully_scanned_height();
+    let highest_scanned_height = sync_state.highest_scanned_height();
     let wallet_transaction_heights = wallet
         .get_wallet_transactions()
         .unwrap()
@@ -462,7 +460,7 @@ where
         .filter_map(|tx| tx.confirmation_status().get_confirmed_height())
         .collect::<Vec<_>>();
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
-        *height >= scan_range.block_range().end - 1
+        *height >= fully_scanned_height - 1
             || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
             || wallet_transaction_heights.contains(height)
     });
@@ -470,17 +468,17 @@ where
         .get_nullifiers_mut()
         .unwrap()
         .sapling_mut()
-        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+        .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()
         .unwrap()
         .orchard_mut()
-        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+        .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_sync_state_mut()
         .unwrap()
         .locators_mut()
-        .retain(|(height, _)| *height >= scan_range.block_range().end);
+        .retain(|(height, _)| *height > fully_scanned_height);
 
     Ok(())
 }

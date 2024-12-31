@@ -99,6 +99,8 @@ async fn sync_status() {
     });
 
     sync_handle.await.unwrap();
+
+    dbg!(&lightclient.wallet.lock().await.wallet_blocks);
 }
 
 // temporary test for sync development
