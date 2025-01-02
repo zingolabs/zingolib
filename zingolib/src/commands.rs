@@ -3,8 +3,6 @@
 
 use crate::data::proposal;
 use crate::wallet::keys::unified::UnifiedKeyStore;
-#[cfg(not(feature = "sync"))]
-use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
@@ -126,11 +124,6 @@ impl Command for GetBirthdayCommand {
         "Get wallet birthday."
     }
 
-    #[cfg(not(feature = "sync"))]
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.wallet.get_birthday().await.to_string() })
-    }
-    #[cfg(feature = "sync")]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             lightclient
@@ -158,44 +151,6 @@ impl Command for WalletKindCommand {
         "Displays the kind of wallet currently loaded"
     }
 
-    #[cfg(not(feature = "sync"))]
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            if lightclient.do_seed_phrase().await.is_ok() {
-                object! {"kind" => "Loaded from seed phrase",
-                        "transparent" => true,
-                        "sapling" => true,
-                        "orchard" => true,
-                }
-                .pretty(4)
-            } else {
-                match &lightclient.wallet.wallet_capability().unified_key_store {
-                    UnifiedKeyStore::Spend(_) => object! {
-                        "kind" => "Loaded from unified spending key",
-                        "transparent" => true,
-                        "sapling" => true,
-                        "orchard" => true,
-                    }
-                    .pretty(4),
-                    UnifiedKeyStore::View(ufvk) => object! {
-                        "kind" => "Loaded from unified full viewing key",
-                        "transparent" => ufvk.transparent().is_some(),
-                        "sapling" => ufvk.sapling().is_some(),
-                        "orchard" => ufvk.orchard().is_some(),
-                    }
-                    .pretty(4),
-                    UnifiedKeyStore::Empty => object! {
-                        "kind" => "No keys found",
-                        "transparent" => false,
-                        "sapling" => false,
-                        "orchard" => false,
-                    }
-                    .pretty(4),
-                }
-            }
-        })
-    }
-    #[cfg(feature = "sync")]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             if lightclient.do_seed_phrase().await.is_ok() {
@@ -240,35 +195,34 @@ impl Command for WalletKindCommand {
     }
 }
 
-#[cfg(not(feature = "sync"))]
-struct InterruptCommand {}
-#[cfg(not(feature = "sync"))]
-impl Command for InterruptCommand {
-    fn help(&self) -> &'static str {
-        "Toggle the sync interrupt after batch flag."
-    }
-    fn short_help(&self) -> &'static str {
-        "Toggle the sync interrupt after batch flag."
-    }
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        match args.len() {
-            1 => RT.block_on(async move {
-                match args[0] {
-                    "true" => {
-                        lightclient.interrupt_sync_after_batch(true).await;
-                        "true".to_string()
-                    }
-                    "false" => {
-                        lightclient.interrupt_sync_after_batch(false).await;
-                        "false".to_string()
-                    }
-                    _ => self.help().to_string(),
-                }
-            }),
-            _ => self.help().to_string(),
-        }
-    }
-}
+// FIXME:
+// struct InterruptCommand {}
+// impl Command for InterruptCommand {
+//     fn help(&self) -> &'static str {
+//         "Toggle the sync interrupt after batch flag."
+//     }
+//     fn short_help(&self) -> &'static str {
+//         "Toggle the sync interrupt after batch flag."
+//     }
+//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+//         match args.len() {
+//             1 => RT.block_on(async move {
+//                 match args[0] {
+//                     "true" => {
+//                         lightclient.interrupt_sync_after_batch(true).await;
+//                         "true".to_string()
+//                     }
+//                     "false" => {
+//                         lightclient.interrupt_sync_after_batch(false).await;
+//                         "false".to_string()
+//                     }
+//                     _ => self.help().to_string(),
+//                 }
+//             }),
+//             _ => self.help().to_string(),
+//         }
+//     }
+// }
 
 struct ParseAddressCommand {}
 impl Command for ParseAddressCommand {
@@ -463,39 +417,6 @@ impl Command for SyncStatusCommand {
         "Get the sync status of the wallet"
     }
 
-    #[cfg(not(feature = "sync"))]
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            let status = lightclient.do_sync_status().await;
-
-            let o = if status.in_progress {
-                object! {
-                    "sync_id" => status.sync_id,
-                    "in_progress" => status.in_progress,
-                    "last_error" => status.last_error,
-                    "start_block" => status.start_block,
-                    "end_block" => status.end_block,
-                    "synced_blocks" => status.blocks_done,
-                    "trial_decryptions_blocks" => status.trial_dec_done,
-                    "txn_scan_blocks" => status.txn_scan_done,
-                    "witnesses_updated" => *status.witnesses_updated.values().min().unwrap_or(&0),
-                    "total_blocks" => status.blocks_total,
-                    "batch_num" => status.batch_num,
-                    "batch_total" => status.batch_total,
-                    "sync_interrupt" => lightclient.get_sync_interrupt().await
-                }
-            } else {
-                object! {
-                    "sync_id" => status.sync_id,
-                    "in_progress" => status.in_progress,
-                    "last_error" => status.last_error,
-
-                }
-            };
-            o.pretty(2)
-        })
-    }
-    #[cfg(feature = "sync")]
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         todo!()
     }
@@ -542,16 +463,6 @@ impl Command for RescanCommand {
         "Rescan the wallet, downloading and scanning all blocks and transactions"
     }
 
-    #[cfg(not(feature = "sync"))]
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            match lightclient.do_rescan().await {
-                Ok(j) => j.to_json().pretty(2),
-                Err(e) => e,
-            }
-        })
-    }
-    #[cfg(feature = "sync")]
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         todo!()
     }
@@ -825,20 +736,6 @@ impl Command for ExportUfvkCommand {
         "Export full viewing key for wallet addresses"
     }
 
-    #[cfg(not(feature = "sync"))]
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk: UnifiedFullViewingKey =
-            match (&lightclient.wallet.wallet_capability().unified_key_store).try_into() {
-                Ok(ufvk) => ufvk,
-                Err(e) => return e.to_string(),
-            };
-        object! {
-            "ufvk" => ufvk.encode(&lightclient.config().chain),
-            "birthday" => RT.block_on(lightclient.wallet.get_birthday())
-        }
-        .pretty(2)
-    }
-    #[cfg(feature = "sync")]
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             let ufvk: UnifiedFullViewingKey = match (&lightclient
@@ -1551,149 +1448,147 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-#[cfg(not(feature = "sync"))]
-struct SetOptionCommand {}
-#[cfg(not(feature = "sync"))]
-impl Command for SetOptionCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Set a wallet option
-            Usage:
-            setoption <optionname>=<optionvalue>
-            List of available options:
-            download_memos : none | wallet | all
+// FIXME:
+// struct SetOptionCommand {}
+// impl Command for SetOptionCommand {
+//     fn help(&self) -> &'static str {
+//         indoc! {r#"
+//             Set a wallet option
+//             Usage:
+//             setoption <optionname>=<optionvalue>
+//             List of available options:
+//             download_memos : none | wallet | all
 
-        "#}
-    }
+//         "#}
+//     }
 
-    fn short_help(&self) -> &'static str {
-        "Set a wallet option"
-    }
+//     fn short_help(&self) -> &'static str {
+//         "Set a wallet option"
+//     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 1 {
-            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
-        }
+//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+//         if args.len() != 1 {
+//             return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+//         }
 
-        let option = args[0];
-        let values: Vec<&str> = option.split('=').collect();
+//         let option = args[0];
+//         let values: Vec<&str> = option.split('=').collect();
 
-        if values.len() != 2 {
-            return "Error: Please set option value like: <optionname>=<optionvalue>".to_string();
-        }
+//         if values.len() != 2 {
+//             return "Error: Please set option value like: <optionname>=<optionvalue>".to_string();
+//         }
 
-        let option_name = values[0];
-        let option_value = values[1];
+//         let option_name = values[0];
+//         let option_value = values[1];
 
-        RT.block_on(async move {
-            match option_name {
-                "download_memos" => match option_value {
-                    "none" => {
-                        lightclient
-                            .wallet
-                            .set_download_memo(MemoDownloadOption::NoMemos)
-                            .await
-                    }
-                    "wallet" => {
-                        lightclient
-                            .wallet
-                            .set_download_memo(MemoDownloadOption::WalletMemos)
-                            .await
-                    }
-                    "all" => {
-                        lightclient
-                            .wallet
-                            .set_download_memo(MemoDownloadOption::AllMemos)
-                            .await
-                    }
-                    _ => {
-                        return format!(
-                            "Error: Couldn't understand {} value {}",
-                            option_name, option_value
-                        )
-                    }
-                },
-                "transaction_filter_threshold" => match option_value.parse() {
-                    Ok(number) => {
-                        lightclient
-                            .wallet
-                            .wallet_options
-                            .write()
-                            .await
-                            .transaction_size_filter = Some(number)
-                    }
-                    Err(e) => return format!("Error {e}, couldn't parse {option_value} as number"),
-                },
-                _ => return format!("Error: Couldn't understand {}", option_name),
-            }
+//         RT.block_on(async move {
+//             match option_name {
+//                 "download_memos" => match option_value {
+//                     "none" => {
+//                         lightclient
+//                             .wallet
+//                             .set_download_memo(MemoDownloadOption::NoMemos)
+//                             .await
+//                     }
+//                     "wallet" => {
+//                         lightclient
+//                             .wallet
+//                             .set_download_memo(MemoDownloadOption::WalletMemos)
+//                             .await
+//                     }
+//                     "all" => {
+//                         lightclient
+//                             .wallet
+//                             .set_download_memo(MemoDownloadOption::AllMemos)
+//                             .await
+//                     }
+//                     _ => {
+//                         return format!(
+//                             "Error: Couldn't understand {} value {}",
+//                             option_name, option_value
+//                         )
+//                     }
+//                 },
+//                 "transaction_filter_threshold" => match option_value.parse() {
+//                     Ok(number) => {
+//                         lightclient
+//                             .wallet
+//                             .wallet_options
+//                             .write()
+//                             .await
+//                             .transaction_size_filter = Some(number)
+//                     }
+//                     Err(e) => return format!("Error {e}, couldn't parse {option_value} as number"),
+//                 },
+//                 _ => return format!("Error: Couldn't understand {}", option_name),
+//             }
 
-            let r = object! {
-                "success" => true
-            };
+//             let r = object! {
+//                 "success" => true
+//             };
 
-            r.pretty(2)
-        })
-    }
-}
+//             r.pretty(2)
+//         })
+//     }
+// }
 
-#[cfg(not(feature = "sync"))]
-struct GetOptionCommand {}
-#[cfg(not(feature = "sync"))]
-impl Command for GetOptionCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Get a wallet option
-            Argument is either "download_memos" and "transaction_filter_threshold"
+// FIXME:
+// struct GetOptionCommand {}
+// impl Command for GetOptionCommand {
+//     fn help(&self) -> &'static str {
+//         indoc! {r#"
+//             Get a wallet option
+//             Argument is either "download_memos" and "transaction_filter_threshold"
 
-            Usage:
-            getoption <optionname>
+//             Usage:
+//             getoption <optionname>
 
-        "#}
-    }
+//         "#}
+//     }
 
-    fn short_help(&self) -> &'static str {
-        "Get a wallet option"
-    }
+//     fn short_help(&self) -> &'static str {
+//         "Get a wallet option"
+//     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 1 {
-            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
-        }
+//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+//         if args.len() != 1 {
+//             return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+//         }
 
-        let option_name = args[0];
+//         let option_name = args[0];
 
-        RT.block_on(async move {
-            let value = match option_name {
-                "download_memos" => match lightclient
-                    .wallet
-                    .wallet_options
-                    .read()
-                    .await
-                    .download_memos
-                {
-                    MemoDownloadOption::NoMemos => "none".to_string(),
-                    MemoDownloadOption::WalletMemos => "wallet".to_string(),
-                    MemoDownloadOption::AllMemos => "all".to_string(),
-                },
-                "transaction_filter_threshold" => lightclient
-                    .wallet
-                    .wallet_options
-                    .read()
-                    .await
-                    .transaction_size_filter
-                    .map(|filter| filter.to_string())
-                    .unwrap_or("No filter".to_string()),
-                _ => return format!("Error: Couldn't understand {}", option_name),
-            };
+//         RT.block_on(async move {
+//             let value = match option_name {
+//                 "download_memos" => match lightclient
+//                     .wallet
+//                     .wallet_options
+//                     .read()
+//                     .await
+//                     .download_memos
+//                 {
+//                     MemoDownloadOption::NoMemos => "none".to_string(),
+//                     MemoDownloadOption::WalletMemos => "wallet".to_string(),
+//                     MemoDownloadOption::AllMemos => "all".to_string(),
+//                 },
+//                 "transaction_filter_threshold" => lightclient
+//                     .wallet
+//                     .wallet_options
+//                     .read()
+//                     .await
+//                     .transaction_size_filter
+//                     .map(|filter| filter.to_string())
+//                     .unwrap_or("No filter".to_string()),
+//                 _ => return format!("Error: Couldn't understand {}", option_name),
+//             };
 
-            let r = object! {
-                option_name => value
-            };
+//             let r = object! {
+//                 option_name => value
+//             };
 
-            r.pretty(2)
-        })
-    }
-}
+//             r.pretty(2)
+//         })
+//     }
+// }
 
 struct HeightCommand {}
 impl Command for HeightCommand {
@@ -1782,47 +1677,46 @@ impl Command for NewAddressCommand {
 }
 
 // TODO: implement notes command for sync feature
-#[cfg(not(feature = "sync"))]
-struct NotesCommand {}
-#[cfg(not(feature = "sync"))]
-impl Command for NotesCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Show all shielded notes and transparent coins in this wallet
-            Usage:
-            notes [all]
-            If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
-        "#}
-    }
+// FIXME:
+// struct NotesCommand {}
+// impl Command for NotesCommand {
+//     fn help(&self) -> &'static str {
+//         indoc! {r#"
+//             Show all shielded notes and transparent coins in this wallet
+//             Usage:
+//             notes [all]
+//             If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
+//         "#}
+//     }
 
-    fn short_help(&self) -> &'static str {
-        "Show all shielded notes and transparent coins in this wallet"
-    }
+//     fn short_help(&self) -> &'static str {
+//         "Show all shielded notes and transparent coins in this wallet"
+//     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        // Parse the args.
-        if args.len() > 1 {
-            return self.short_help().to_string();
-        }
+//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+//         // Parse the args.
+//         if args.len() > 1 {
+//             return self.short_help().to_string();
+//         }
 
-        // Make sure we can parse the amount
-        let all_notes = if args.len() == 1 {
-            match args[0] {
-                "all" => true,
-                a => {
-                    return format!(
-                        "Invalid argument \"{}\". Specify 'all' to include unspent notes",
-                        a
-                    )
-                }
-            }
-        } else {
-            false
-        };
+//         // Make sure we can parse the amount
+//         let all_notes = if args.len() == 1 {
+//             match args[0] {
+//                 "all" => true,
+//                 a => {
+//                     return format!(
+//                         "Invalid argument \"{}\". Specify 'all' to include unspent notes",
+//                         a
+//                     )
+//                 }
+//             }
+//         } else {
+//             false
+//         };
 
-        RT.block_on(async move { lightclient.do_list_notes(all_notes).await.pretty(2) })
-    }
-}
+//         RT.block_on(async move { lightclient.do_list_notes(all_notes).await.pretty(2) })
+//     }
+// }
 
 struct QuitCommand {}
 impl Command for QuitCommand {
@@ -1911,8 +1805,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("decryptmessage", Box::new(DecryptMessageCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
-        #[cfg(not(feature = "sync"))]
-        ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
+        // ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
         ("rescan", Box::new(RescanCommand {})),
         ("clear", Box::new(ClearCommand {})),
@@ -1922,8 +1815,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
-        #[cfg(not(feature = "sync"))]
-        ("setoption", Box::new(SetOptionCommand {})),
+        // ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         (
@@ -1937,8 +1829,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
-        #[cfg(not(feature = "sync"))]
-        ("getoption", Box::new(GetOptionCommand {})),
+        // ("getoption", Box::new(GetOptionCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
@@ -1946,8 +1837,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
-        #[cfg(not(feature = "sync"))]
-        ("notes", Box::new(NotesCommand {})),
+        // ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),

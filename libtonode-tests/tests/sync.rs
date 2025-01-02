@@ -1,5 +1,3 @@
-#![cfg(feature = "sync")]
-
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingo_netutils::GrpcConnector;
@@ -55,7 +53,7 @@ async fn sync_mainnet_test() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (_regtest_manager, _cph, faucet, mut recipient, _txid) =
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
     from_inputs::quick_send(
         &faucet,

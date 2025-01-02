@@ -464,27 +464,27 @@ impl TransactionRecordsById {
         }
     }
 
-    /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
-    #[cfg(not(feature = "sync"))]
-    pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
-        // Pending window: How long to wait past the chain tip before clearing a pending
-        let pending_window = 2;
-        let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(pending_window)) as u32);
+    // FIXME:
+    // /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
+    // pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
+    //     // Pending window: How long to wait past the chain tip before clearing a pending
+    //     let pending_window = 2;
+    //     let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(pending_window)) as u32);
 
-        let txids_to_remove = self
-            .iter()
-            .filter(|(_, transaction_metadata)| {
-                transaction_metadata.status.is_pending_before(&cutoff)
-            }) // this transaction was submitted to the mempool before the cutoff and has not been confirmed. we deduce that it has expired.
-            .map(|(_, transaction_metadata)| transaction_metadata.txid)
-            .collect::<Vec<_>>();
+    //     let txids_to_remove = self
+    //         .iter()
+    //         .filter(|(_, transaction_metadata)| {
+    //             transaction_metadata.status.is_pending_before(&cutoff)
+    //         }) // this transaction was submitted to the mempool before the cutoff and has not been confirmed. we deduce that it has expired.
+    //         .map(|(_, transaction_metadata)| transaction_metadata.txid)
+    //         .collect::<Vec<_>>();
 
-        txids_to_remove
-            .iter()
-            .for_each(|t| println!("Removing expired mempool tx {}", t));
+    //     txids_to_remove
+    //         .iter()
+    //         .for_each(|t| println!("Removing expired mempool tx {}", t));
 
-        self.invalidate_transactions(txids_to_remove);
-    }
+    //     self.invalidate_transactions(txids_to_remove);
+    // }
 
     /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
     /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
@@ -696,55 +696,6 @@ impl TransactionRecordsById {
                     None,
                 ),
             );
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(not(feature = "sync"))]
-    pub(crate) fn add_new_note<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        status: ConfirmationStatus,
-        timestamp: Option<u32>,
-        note: <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Note,
-        to: D::Recipient,
-        have_spending_key: bool,
-        nullifier: Option<
-            <D::WalletNote as crate::wallet::notes::ShieldedNoteInterface>::Nullifier,
-        >,
-        output_index: u32,
-        position: incrementalmerkletree::Position,
-    ) {
-        let transaction_metadata =
-            self.create_modify_get_transaction_record(&txid, status, timestamp);
-
-        let nd = D::WalletNote::from_parts(
-            D::Recipient::diversifier(&to),
-            note.clone(),
-            Some(position),
-            nullifier,
-            None,
-            None,
-            // if this is change, we'll mark it later in check_notes_mark_change
-            false,
-            have_spending_key,
-            Some(output_index),
-        );
-        match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-            .iter_mut()
-            .find(|n| n.note() == &note)
-        {
-            None => {
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
-
-                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-                    .retain(|n| n.nullifier().is_some());
-            }
-            #[allow(unused_mut)]
-            Some(mut n) => {
-                // An overwrite should be safe here: TODO: test that confirms this
-                *n = nd;
-            }
         }
     }
 

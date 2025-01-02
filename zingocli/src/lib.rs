@@ -248,10 +248,6 @@ pub fn command_loop(
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        #[cfg(not(feature = "sync"))]
-        LightClient::start_mempool_monitor(lightclient.clone())
-            .expect("mempool monitor must start");
-
         while let Ok((cmd, args)) = command_receiver.recv() {
             let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
 
@@ -544,10 +540,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 /// TODO: Add Doc Comment Here!
 pub fn run_cli() {
     // Initialize logging
-    #[cfg(not(feature = "sync"))]
-    if let Err(e) = LightClient::init_logging() {
-        eprintln!("Could not initialize logging: {e}")
-    };
     match ConfigTemplate::fill(build_clap_app()) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {:?}", e),
