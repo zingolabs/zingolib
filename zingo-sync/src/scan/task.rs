@@ -11,7 +11,10 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::{
+    data_api::scanning::{ScanPriority, ScanRange},
+    proto::compact_formats::CompactBlock,
+};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
     consensus::{self},
@@ -19,7 +22,7 @@ use zcash_primitives::{
 };
 
 use crate::{
-    client::FetchRequest,
+    client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
     primitives::{Locator, WalletBlock},
     sync,
@@ -29,6 +32,7 @@ use crate::{
 use super::{error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
+const MAX_BATCH_OUTPUTS: usize = 16384; // 2^14
 
 pub(crate) enum ScannerState {
     Verification,
@@ -256,6 +260,17 @@ where
 
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
+                let mut block_stream = client::get_compact_block_range(
+                    fetch_request_sender.clone(),
+                    scan_task.scan_range.block_range().clone(),
+                )
+                .await
+                .unwrap();
+                let mut compact_blocks: Vec<CompactBlock> = Vec::new();
+                while let Some(compact_block) = block_stream.message().await.unwrap() {
+                    compact_blocks.push(compact_block);
+                }
+
                 let scan_results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
