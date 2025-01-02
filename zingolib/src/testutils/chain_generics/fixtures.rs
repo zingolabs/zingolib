@@ -367,6 +367,8 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
             vec![(
                 ref_tertiary
                     .wallet
+                    .lock()
+                    .await
                     .get_first_address(pool)
                     .unwrap()
                     .as_str(),
@@ -408,6 +410,8 @@ where
             vec![(
                 ref_tertiary
                     .wallet
+                    .lock()
+                    .await
                     .get_first_address(pool)
                     .unwrap()
                     .as_str(),
@@ -444,14 +448,6 @@ pub async fn single_sufficient_send<CC>(
     let ref_primary: Arc<LightClient> = Arc::new(primary);
     let ref_secondary: Arc<LightClient> = Arc::new(secondary);
     let ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
-
-    // mempool monitor
-    if test_mempool {
-        for lightclient in [&ref_primary, &ref_secondary, &ref_tertiary] {
-            assert!(LightClient::start_mempool_monitor(lightclient.clone()).is_ok());
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    }
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 

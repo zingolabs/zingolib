@@ -44,7 +44,12 @@ impl LightClient {
         &self,
         request: TransactionRequest,
     ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
-        let proposal = self.wallet.create_send_proposal(request).await?;
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_send_proposal(request)
+            .await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
@@ -69,7 +74,12 @@ impl LightClient {
         }
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
-        let proposal = self.wallet.create_send_proposal(request).await?;
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_send_proposal(request)
+            .await?;
         self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
             .await;
         Ok(proposal)
@@ -90,10 +100,8 @@ impl LightClient {
         address: ZcashAddress,
         zennies_for_zingo: bool,
     ) -> Result<NonNegativeAmount, ProposeSendError> {
-        let confirmed_shielded_balance = self
-            .wallet
-            .confirmed_shielded_balance_excluding_dust()
-            .await?;
+        let wallet = self.wallet.lock().await;
+        let confirmed_shielded_balance = wallet.confirmed_shielded_balance_excluding_dust().await?;
         let mut receivers = vec![Receiver::new(
             address.clone(),
             confirmed_shielded_balance,
@@ -103,7 +111,8 @@ impl LightClient {
             self.append_zingo_zenny_receiver(&mut receivers);
         }
         let request = transaction_request_from_receivers(receivers)?;
-        let failing_proposal = self.wallet.create_send_proposal(request).await;
+        let failing_proposal = wallet.create_send_proposal(request).await;
+        drop(wallet);
 
         let shortfall = match failing_proposal {
             Err(ProposeSendError::Proposal(
@@ -142,7 +151,7 @@ impl LightClient {
     pub async fn propose_shield(
         &self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let proposal = self.wallet.create_shield_proposal().await?;
+        let proposal = self.wallet.lock().await.create_shield_proposal().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
             .await;
         Ok(proposal)
@@ -167,7 +176,12 @@ mod shielding {
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
         let basic_client = create_basic_client().await;
-        let propose_shield_result = basic_client.wallet.create_shield_proposal().await;
+        let propose_shield_result = basic_client
+            .wallet
+            .lock()
+            .await
+            .create_shield_proposal()
+            .await;
         match propose_shield_result {
             Err(ProposeShieldError::Component(
                 zcash_client_backend::data_api::error::Error::ScanRequired,
@@ -179,7 +193,7 @@ mod shielding {
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client().await;
         assert_eq!(
-            basic_client.wallet.get_transparent_addresses(),
+            basic_client.wallet.lock().await.get_transparent_addresses(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,

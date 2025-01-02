@@ -3,7 +3,6 @@
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::frontier::NonEmptyFrontier;
 use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::SaplingDomain, Node};
@@ -26,8 +25,6 @@ pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
 pub const MAX_SHARD_LEVEL: u8 = 16;
 
-use crate::error::{ZingoLibError, ZingoLibResult};
-use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     notes,
     traits::{self, DomainWalletExt},
@@ -177,38 +174,6 @@ impl WitnessTrees {
         writer.write_u8(Self::VERSION)?;
         write_shardtree(&mut self.witness_tree_sapling, &mut writer)?;
         write_shardtree(&mut self.witness_tree_orchard, &mut writer)
-    }
-
-    pub(crate) fn insert_all_frontier_nodes(
-        &mut self,
-        non_empty_sapling_frontier: Option<NonEmptyFrontier<Node>>,
-        non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
-    ) {
-        self.insert_domain_frontier_nodes::<SaplingDomain>(non_empty_sapling_frontier);
-        self.insert_domain_frontier_nodes::<OrchardDomain>(non_empty_orchard_frontier);
-    }
-
-    fn insert_domain_frontier_nodes<D: DomainWalletExt>(
-        &mut self,
-        non_empty_frontier: Option<
-            NonEmptyFrontier<<D::WalletNote as ShieldedNoteInterface>::Node>,
-        >,
-    ) where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        use incrementalmerkletree::Retention;
-        if let Some(front) = non_empty_frontier {
-            D::get_shardtree_mut(self)
-                .insert_frontier_nodes(front, Retention::Ephemeral)
-                .unwrap_or_else(|e| {
-                    let _: ZingoLibResult<()> = ZingoLibError::Error(format!(
-                        "failed to insert non-empty {} frontier: {e}",
-                        D::NAME
-                    ))
-                    .handle();
-                })
-        }
     }
 
     /// TODO: Add Doc Comment Here!

@@ -5,7 +5,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::KeyError;
 use zcash_keys::keys::UnifiedFullViewingKey;
-#[cfg(feature = "sync")]
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
 
@@ -13,20 +12,16 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use zingo_sync::primitives::OutPointMap;
-#[cfg(feature = "sync")]
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{NullifierMap, SyncState, WalletBlock, WalletTransaction},
+    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
 use bip0039::Mnemonic;
-#[cfg(feature = "sync")]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{
     cmp,
-    collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
     time::SystemTime,
@@ -63,10 +58,8 @@ pub mod describe;
 pub mod disk;
 pub mod propose;
 pub mod send;
-pub mod witnesses;
-
-#[cfg(feature = "sync")]
 pub mod sync;
+pub mod witnesses;
 
 pub(crate) use send::SendProgress;
 
@@ -219,31 +212,24 @@ pub struct LightWallet {
     pub transaction_context: TransactionContext,
 
     /// Wallet compact blocks
-    #[cfg(feature = "sync")]
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
 
     /// Wallet transactions
-    #[cfg(feature = "sync")]
     pub wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
 
     /// Nullifier map
-    #[cfg(feature = "sync")]
     pub nullifier_map: NullifierMap,
 
     /// Outpoint map
-    #[cfg(feature = "sync")]
     outpoint_map: OutPointMap,
 
     /// Shard trees
-    #[cfg(feature = "sync")]
     shard_trees: ShardTrees,
 
     /// Sync state
-    #[cfg(feature = "sync")]
     pub sync_state: SyncState,
 
     /// Transparent addresses
-    #[cfg(feature = "sync")]
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
 }
 
@@ -416,19 +402,12 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            #[cfg(feature = "sync")]
             wallet_blocks: BTreeMap::new(),
-            #[cfg(feature = "sync")]
             wallet_transactions: HashMap::new(),
-            #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
-            #[cfg(feature = "sync")]
             outpoint_map: zingo_sync::primitives::OutPointMap::new(),
-            #[cfg(feature = "sync")]
             shard_trees: zingo_sync::witness::ShardTrees::new(),
-            #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
-            #[cfg(feature = "sync")]
             transparent_addresses: BTreeMap::new(),
         })
     }

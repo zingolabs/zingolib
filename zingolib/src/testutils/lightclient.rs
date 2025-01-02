@@ -102,8 +102,8 @@ pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
-    let records = &client
-        .wallet
+    let wallet = client.wallet.lock().await;
+    let records = &wallet
         .transaction_context
         .transaction_metadata_set
         .read()
@@ -119,8 +119,8 @@ pub async fn lookup_statuses(
 
 /// gets stati for a vec of txids
 pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
-    let records = &client
-        .wallet
+    let wallet = client.wallet.lock().await;
+    let records = &wallet
         .transaction_context
         .transaction_metadata_set
         .read()

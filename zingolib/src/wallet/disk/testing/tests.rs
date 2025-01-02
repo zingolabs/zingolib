@@ -233,21 +233,25 @@ async fn reload_wallet_from_buffer() {
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await
         .unwrap();
+    let mid_client_config = mid_client
+        .wallet
+        .lock()
+        .await
+        .transaction_context
+        .config
+        .clone();
     let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
-    let wallet = LightWallet::read_internal(
-        &mid_buffer[..],
-        &mid_client.wallet.transaction_context.config,
-    )
-    .await
-    .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
-    .unwrap();
+    let wallet = LightWallet::read_internal(&mid_buffer[..], &mid_client_config)
+        .await
+        .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
+        .unwrap();
     let expected_mnemonic = (
         Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
         0,
     );
 
     let expected_wc = WalletCapability::new_from_phrase(
-        &mid_client.wallet.transaction_context.config,
+        &mid_client_config,
         &expected_mnemonic.0,
         expected_mnemonic.1,
     )

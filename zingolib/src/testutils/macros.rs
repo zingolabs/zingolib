@@ -75,6 +75,8 @@ macro_rules! get_otd {
     ($client:ident, $txid:ident) => {
         $client
             .wallet
+            .lock()
+            .await
             .transaction_context
             .transaction_metadata_set
             .read()

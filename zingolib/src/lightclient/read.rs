@@ -24,7 +24,7 @@ impl LightClient {
 
         debug!(
             "Read wallet with birthday {}",
-            lc.wallet.get_birthday().await
+            lc.wallet.lock().await.get_birthday().await
         );
         debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 

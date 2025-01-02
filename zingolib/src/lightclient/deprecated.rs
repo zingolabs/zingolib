@@ -116,8 +116,9 @@ impl LightClient {
     //#[deprecated = "please use transaction_summaries"]
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
-        let mut consumer_ui_notes = self
-            .wallet
+        let wallet = self.wallet.lock().await;
+        let mut consumer_ui_notes =
+            wallet
             .transaction_context.transaction_metadata_set
             .read()
             .await
@@ -134,7 +135,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.wallet_capability()));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &wallet.wallet_capability()));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point

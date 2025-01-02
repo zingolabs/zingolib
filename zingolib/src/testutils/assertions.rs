@@ -78,8 +78,8 @@ pub async fn for_each_proposed_record<NoteId, Res>(
     txids: &NonEmpty<TxId>,
     f: fn(&TransactionRecordsById, &TransactionRecord, &Step<NoteId>) -> Res,
 ) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
-    let records = &client
-        .wallet
+    let wallet = client.wallet.lock().await;
+    let records = &wallet
         .transaction_context
         .transaction_metadata_set
         .read()

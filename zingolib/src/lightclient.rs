@@ -14,9 +14,8 @@ use zcash_primitives::{
 
 use crate::config::ZingoConfig;
 
-use crate::{
-    blaze::syncdata::BlazeSyncData,
-    wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
+use crate::wallet::{
+    keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
 };
 
 use crate::data::proposal::ZingoProposal;
@@ -301,13 +300,8 @@ pub struct LightClient {
     // pub(crate) server_uri: Arc<RwLock<Uri>>,
     pub(crate) config: ZingoConfig,
     /// TODO: Add Doc Comment Here!
-    pub wallet: LightWallet,
+    pub wallet: Arc<Mutex<LightWallet>>,
 
-    mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
-
-    sync_lock: Mutex<()>,
-
-    bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
@@ -330,10 +324,7 @@ pub mod instantiation {
     use crate::config::ZingoConfig;
 
     use super::{LightClient, ZingoSaveBuffer};
-    use crate::{
-        blaze::syncdata::BlazeSyncData,
-        wallet::{LightWallet, WalletBase},
-    };
+    use crate::wallet::{LightWallet, WalletBase};
 
     impl LightClient {
         // toDo rework ZingoConfig.
@@ -344,11 +335,8 @@ pub mod instantiation {
             wallet.write(&mut buffer).await?;
             let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
-                wallet,
+                wallet: Arc::new(Mutex::new(wallet)),
                 config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new())),
                 interrupt_sync: Arc::new(RwLock::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
@@ -397,7 +385,6 @@ pub mod instantiation {
             )?)
             .await?;
 
-            lightclient.set_wallet_initial_state(birthday).await;
             lightclient
                 .save_internal_rust()
                 .await
@@ -427,7 +414,6 @@ pub mod instantiation {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
                     .await?;
-                l.set_wallet_initial_state(height).await;
 
                 debug!("Created new wallet with a new seed!");
                 debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
@@ -475,12 +461,13 @@ pub mod propose;
 impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn clear_state(&self) {
+        let wallet = self.wallet.lock().await;
+
         // First, clear the state from the wallet
-        self.wallet.clear_all().await;
+        wallet.clear_all().await;
 
         // Then set the initial block
-        let birthday = self.wallet.get_birthday().await;
-        self.set_wallet_initial_state(birthday).await;
+        let birthday = wallet.get_birthday().await;
         debug!("Cleared wallet state, with birthday at {}", birthday);
     }
 
@@ -498,7 +485,7 @@ impl LightClient {
             }
         };
 
-        match self.wallet.decrypt_message(data).await {
+        match self.wallet.lock().await.decrypt_message(data).await {
             Ok(m) => {
                 let memo_bytes: MemoBytes = m.memo.clone().into();
                 object! {
@@ -544,6 +531,8 @@ impl LightClient {
 
         let new_address = self
             .wallet
+            .lock()
+            .await
             .wallet_capability()
             .new_address(desired_receivers, false)?;
 
@@ -557,25 +546,11 @@ impl LightClient {
         *self.config.lightwalletd_uri.write().unwrap() = server
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self
-            .download_initial_tree_state_from_lightwalletd(height)
-            .await;
-
-        if let Some((height, hash, tree)) = state {
-            debug!("Setting initial state to height {}, tree {}", height, tree);
-            self.wallet
-                .set_initial_block(height, hash.as_str(), tree.as_str())
-                .await;
-        }
-    }
-
     pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
         match get_recent_median_price_from_gemini().await {
             Ok(price) => {
-                self.wallet.set_latest_zec_price(price).await;
+                self.wallet.lock().await.set_latest_zec_price(price).await;
                 price.to_string()
             }
             Err(s) => {

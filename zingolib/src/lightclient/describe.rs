@@ -9,9 +9,7 @@ use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedP
 use zcash_primitives::consensus::NetworkConstants;
 
 use crate::{
-    config::margin_fee,
-    error::ZingoLibError,
-    lightclient::{AccountBackupInfo, LightClient, PoolBalances, UserBalances},
+    lightclient::{AccountBackupInfo, LightClient, PoolBalances},
     wallet::{
         data::{
             finsight,
@@ -43,6 +41,8 @@ impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         self.wallet
+            .lock()
+            .await
             .transaction_context
             .transaction_metadata_set
             .read()
@@ -55,7 +55,14 @@ impl LightClient {
     // todo use helpers
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.wallet_capability().addresses().iter() {
+        for address in self
+            .wallet
+            .lock()
+            .await
+            .wallet_capability()
+            .addresses()
+            .iter()
+        {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()
@@ -75,14 +82,15 @@ impl LightClient {
     /// TODO: Redefine the wallet balance functions as non-generics that take a
     /// PoolType variant as an argument, and iterate over a `Vec<Output>`
     pub async fn do_balance(&self) -> PoolBalances {
-        let verified_sapling_balance = self.wallet.confirmed_balance::<SaplingDomain>().await;
-        let unverified_sapling_balance = self.wallet.pending_balance::<SaplingDomain>().await;
-        let spendable_sapling_balance = self.wallet.spendable_balance::<SaplingDomain>().await;
+        let wallet = self.wallet.lock().await;
+        let verified_sapling_balance = wallet.confirmed_balance::<SaplingDomain>().await;
+        let unverified_sapling_balance = wallet.pending_balance::<SaplingDomain>().await;
+        let spendable_sapling_balance = wallet.spendable_balance::<SaplingDomain>().await;
         let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
 
-        let verified_orchard_balance = self.wallet.confirmed_balance::<OrchardDomain>().await;
-        let unverified_orchard_balance = self.wallet.pending_balance::<OrchardDomain>().await;
-        let spendable_orchard_balance = self.wallet.spendable_balance::<OrchardDomain>().await;
+        let verified_orchard_balance = wallet.confirmed_balance::<OrchardDomain>().await;
+        let unverified_orchard_balance = wallet.pending_balance::<OrchardDomain>().await;
+        let spendable_orchard_balance = wallet.spendable_balance::<OrchardDomain>().await;
         let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
         PoolBalances {
             sapling_balance,
@@ -95,151 +103,8 @@ impl LightClient {
             spendable_orchard_balance,
             unverified_orchard_balance,
 
-            transparent_balance: self.wallet.get_transparent_balance().await,
+            transparent_balance: wallet.get_transparent_balance().await,
         }
-    }
-
-    /// Returns the wallet balance, broken out into several figures that are expected to be meaningful to the user.
-    /// # Parameters
-    /// * `auto_shielding` - if true, UTXOs will be considered immature rather than spendable.
-    #[allow(deprecated)]
-    #[deprecated(note = "uses unstable deprecated functions")]
-    pub async fn get_user_balances(
-        &self,
-        auto_shielding: bool,
-    ) -> Result<UserBalances, ZingoLibError> {
-        let mut balances = UserBalances {
-            spendable: 0,
-            immature_change: 0,
-            minimum_fees: 0,
-            immature_income: 0,
-            dust: 0,
-            incoming: 0,
-            incoming_dust: 0,
-        };
-
-        // anchor height is the highest block height that contains income that are considered spendable.
-        let current_height = self
-            .get_latest_block_height()
-            .await
-            .map_err(ZingoLibError::Lightwalletd)?;
-
-        self.wallet
-            .transactions()
-            .read()
-            .await
-            .transaction_records_by_id
-            .iter()
-            .for_each(|(_, tx)| {
-                let mature = tx.status.is_confirmed_before_or_at(&current_height);
-                let incoming = tx.is_incoming_transaction();
-
-                let mut change = 0;
-                let mut useful_value = 0;
-                let mut dust_value = 0;
-                let mut utxo_value = 0;
-                let mut inbound_note_count_nodust = 0;
-                let mut inbound_utxo_count_nodust = 0;
-                let mut change_note_count = 0;
-
-                tx.orchard_notes
-                    .iter()
-                    .filter(|n| n.spending_tx_status().is_none())
-                    .for_each(|n| {
-                        let value = n.orchard_crypto_note.value().inner();
-                        if !incoming && n.is_change {
-                            change += value;
-                            change_note_count += 1;
-                        } else if incoming {
-                            if value > margin_fee() {
-                                useful_value += value;
-                                inbound_note_count_nodust += 1;
-                            } else {
-                                dust_value += value;
-                            }
-                        }
-                    });
-
-                tx.sapling_notes
-                    .iter()
-                    .filter(|n| n.spending_tx_status().is_none())
-                    .for_each(|n| {
-                        let value = n.sapling_crypto_note.value().inner();
-                        if !incoming && n.is_change {
-                            change += value;
-                            change_note_count += 1;
-                        } else if incoming {
-                            if value > margin_fee() {
-                                useful_value += value;
-                                inbound_note_count_nodust += 1;
-                            } else {
-                                dust_value += value;
-                            }
-                        }
-                    });
-
-                tx.transparent_outputs
-                    .iter()
-                    .filter(|n| n.spending_tx_status().is_none())
-                    .for_each(|n| {
-                        // UTXOs are never 'change', as change would have been shielded.
-                        if incoming {
-                            if n.value > margin_fee() {
-                                utxo_value += n.value;
-                                inbound_utxo_count_nodust += 1;
-                            } else {
-                                dust_value += n.value;
-                            }
-                        }
-                    });
-
-                // The fee field only tracks mature income and change.
-                balances.minimum_fees += change_note_count * margin_fee();
-                if mature {
-                    balances.minimum_fees += inbound_note_count_nodust * margin_fee();
-                }
-
-                // If auto-shielding, UTXOs are considered immature and do not fall into any of the buckets that
-                // the fee balance covers.
-                if !auto_shielding {
-                    balances.minimum_fees += inbound_utxo_count_nodust * margin_fee();
-                }
-
-                if auto_shielding {
-                    if !tx.status.is_confirmed() {
-                        balances.incoming += utxo_value;
-                    } else {
-                        balances.immature_income += utxo_value;
-                    }
-                } else {
-                    // UTXOs are spendable even without confirmations.
-                    balances.spendable += utxo_value;
-                }
-
-                if mature {
-                    // Spendable
-                    balances.spendable += useful_value + change;
-                    balances.dust += dust_value;
-                } else if tx.status.is_confirmed() {
-                    // Confirmed, but not yet spendable
-                    balances.immature_income += useful_value;
-                    balances.immature_change += change;
-                    balances.dust += dust_value;
-                } else {
-                    // pending
-                    balances.immature_change += change;
-                    balances.incoming += useful_value;
-                    balances.incoming_dust += dust_value;
-                }
-            });
-
-        // Add the minimum fee for the receiving note,
-        // but only if there exists notes to spend in the buckets that are covered by the minimum_fee.
-        if balances.minimum_fees > 0 {
-            balances.minimum_fees += margin_fee(); // The receiving note.
-        }
-
-        Ok(balances)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -567,8 +432,8 @@ impl LightClient {
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     pub async fn transaction_summaries(&self) -> TransactionSummaries {
-        let transaction_map = self
-            .wallet
+        let wallet = self.wallet.lock().await;
+        let transaction_map = wallet
             .transaction_context
             .transaction_metadata_set
             .read()
@@ -598,6 +463,9 @@ impl LightClient {
                     .expect("all fields should be populated")
             })
             .collect::<Vec<_>>();
+        drop(transaction_map);
+        drop(wallet);
+
         transaction_summaries.sort_by(|sum1, sum2| {
             match sum1.blockheight().cmp(&sum2.blockheight()) {
                 Ordering::Equal => {
@@ -626,8 +494,8 @@ impl LightClient {
 
     /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
     pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
-        let transaction_map = self
-            .wallet
+        let wallet = self.wallet.lock().await;
+        let transaction_map = wallet
             .transaction_context
             .transaction_metadata_set
             .read()
@@ -669,6 +537,9 @@ impl LightClient {
                     .expect("all fields should be populated")
             })
             .collect::<Vec<_>>();
+        drop(transaction_map);
+        drop(wallet);
+
         transaction_summaries.sort_by_key(|tx| tx.blockheight());
 
         DetailedTransactionSummaries::new(transaction_summaries)
@@ -681,10 +552,11 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
-        match self.wallet.mnemonic() {
+        let wallet = self.wallet.lock().await;
+        match wallet.mnemonic() {
             Some(m) => Ok(AccountBackupInfo {
                 seed_phrase: m.0.phrase().to_string(),
-                birthday: self.wallet.get_birthday().await,
+                birthday: wallet.get_birthday().await,
                 account_index: m.1,
             }),
             None => Err("This wallet is watch-only or was created without a mnemonic."),
@@ -745,7 +617,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
-        json::JsonValue::from(self.wallet.last_synced_height().await)
+        json::JsonValue::from(self.wallet.lock().await.last_synced_height().await)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -765,22 +637,24 @@ impl LightClient {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
+        let wallet = self.wallet.lock().await;
+
         // Collect Sapling notes
-        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
-                transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
+                transaction_metadata.sapling_notes.iter().cloned().filter_map( |note_metadata|
                     if !all_notes && note_metadata.spending_tx_status().is_some() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<sapling_crypto::note_encryption::SaplingDomain>(&self.config.chain, &note_metadata, &wallet.wallet_capability());
                         let spendable = transaction_metadata.status.is_confirmed() && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
-                        // this object should be created by the DomainOutput trait if this doesnt get deprecated
+                        // this object should be created by the DomainOuput trait if this doesnt get deprecated
                         Some(object!{
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,
-                            "created_in_txid"    => format!("{}", transaction_id),
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.sapling_crypto_note.value().inner(),
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
@@ -809,20 +683,22 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+        let wallet = self.wallet.lock().await;
+
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_metadata)| {
-                transaction_metadata.orchard_notes.iter().filter_map(move |note_metadata|
+                transaction_metadata.orchard_notes.iter().cloned().filter_map(|note_metadata|
                     if !all_notes && note_metadata.is_spent_confirmed() {
                         None
                     } else {
-                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                        let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, &note_metadata, &wallet.wallet_capability());
                         let spendable = transaction_metadata.status.is_confirmed() && note_metadata.spending_tx_status().is_none();
 
                         let created_block:u32 = transaction_metadata.status.get_height().into();
                         Some(object!{
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_metadata.datetime,
-                            "created_in_txid"    => format!("{}", transaction_id),
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => note_metadata.orchard_crypto_note.value().inner(),
                             "pending"        => !transaction_metadata.status.is_confirmed(),
                             "address"            => address,
@@ -851,10 +727,11 @@ impl LightClient {
         let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
         let mut pending_spent_transparent_note: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
+        let wallet = self.wallet.lock().await;
 
-        self.wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
+        wallet.transaction_context.transaction_metadata_set.read().await.transaction_records_by_id.iter()
             .flat_map( |(transaction_id, transaction_record)| {
-                transaction_record.transparent_outputs.iter().filter_map(move |utxo|
+                transaction_record.transparent_outputs.iter().cloned().filter_map(|utxo|
                     if !all_notes && utxo.is_spent_confirmed() {
                         None
                     } else {
@@ -869,10 +746,10 @@ impl LightClient {
                         Some(object!{
                             "created_in_block"   => created_block,
                             "datetime"           => transaction_record.datetime,
-                            "created_in_txid"    => format!("{}", transaction_id),
+                            "created_in_txid"    => format!("{}", transaction_id.clone()),
                             "value"              => utxo.value,
                             "scriptkey"          => hex::encode(utxo.script.clone()),
-                            "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                            "address"            => wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                             "spendable"          => spendable,
                             "spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
                             "pending_spent"    => utxo.spending_tx_status().and_then(|(s_txid, status)| {if !status.is_confirmed() {Some(format!("{}", s_txid))} else {None}}),
@@ -896,6 +773,8 @@ impl LightClient {
     ///  This method will replace do_list_notes
     pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
         self.wallet
+            .lock()
+            .await
             .transaction_context
             .transaction_metadata_set
             .read()

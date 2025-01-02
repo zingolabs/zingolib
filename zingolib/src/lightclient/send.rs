@@ -16,7 +16,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
-        let progress = self.wallet.get_send_progress().await;
+        let progress = self.wallet.lock().await.get_send_progress().await;
         Ok(LightWalletSendProgress {
             progress: progress.clone(),
             interrupt_sync: *self.interrupt_sync.read().await,
@@ -133,8 +133,8 @@ pub mod send_with_proposal {
         async fn record_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
-            let mut tx_map = self
-                .wallet
+            let wallet = self.wallet.lock().await;
+            let mut tx_map = wallet
                 .transaction_context
                 .transaction_metadata_set
                 .write()
@@ -149,7 +149,7 @@ pub mod send_with_proposal {
                     transactions_to_record.push(Transaction::read(
                         raw_tx.as_slice(),
                         zcash_primitives::consensus::BranchId::for_height(
-                            &self.wallet.transaction_context.config.chain,
+                            &wallet.transaction_context.config.chain,
                             current_height + 1,
                         ),
                     )?);
@@ -162,19 +162,16 @@ pub mod send_with_proposal {
             drop(tx_map);
             let mut txids = vec![];
             for transaction in transactions_to_record {
-                self.wallet
+                wallet
                     .transaction_context
                     .scan_full_tx(
                         &transaction,
                         ConfirmationStatus::Calculated(current_height + 1),
                         Some(now() as u32),
-                        crate::wallet::utils::get_price(
-                            now(),
-                            &self.wallet.price.read().await.clone(),
-                        ),
+                        crate::wallet::utils::get_price(now(), &wallet.price.read().await.clone()),
                     )
                     .await;
-                self.wallet
+                wallet
                     .transaction_context
                     .transaction_metadata_set
                     .write()
@@ -197,8 +194,8 @@ pub mod send_with_proposal {
         async fn broadcast_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
-            let mut tx_map = self
-                .wallet
+            let wallet = self.wallet.lock().await;
+            let mut tx_map = wallet
                 .transaction_context
                 .transaction_metadata_set
                 .write()
@@ -241,7 +238,7 @@ pub mod send_with_proposal {
                                     Ok(reported_txid) => {
                                         if txid != reported_txid {
                                             println!(
-                                                "served txid {} does not match calculated txid {}",
+                                                "served txid {} does not match calulated txid {}",
                                                 reported_txid, txid,
                                             );
                                             // during darkside tests, the server may generate a new txid.
@@ -309,13 +306,14 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            self.wallet.create_transaction(proposal).await?;
+            let wallet = self.wallet.lock().await;
+            wallet.create_transaction(proposal).await?;
 
             self.record_created_transactions().await?;
 
             let broadcast_result = self.broadcast_created_transactions().await;
 
-            self.wallet
+            wallet
                 .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
                     |vec_txids| {
                         serde_json::Value::Array(
@@ -360,13 +358,18 @@ pub mod send_with_proposal {
             &self,
             request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            let proposal = self.wallet.create_send_proposal(request).await?;
+            let proposal = self
+                .wallet
+                .lock()
+                .await
+                .create_send_proposal(request)
+                .await?;
             Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
         /// Shields all transparent funds without confirmation.
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self.wallet.create_shield_proposal().await?;
+            let proposal = self.wallet.lock().await.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
         }
     }
@@ -501,6 +504,8 @@ pub mod send_with_proposal {
                     "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
                     client
                         .wallet
+                        .lock()
+                        .await
                         .transaction_context
                         .transaction_metadata_set
                         .read()
@@ -534,6 +539,8 @@ pub mod send_with_proposal {
                     "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
                     client
                         .wallet
+                        .lock()
+                        .await
                         .transaction_context
                         .transaction_metadata_set
                         .read()

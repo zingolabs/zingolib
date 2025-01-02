@@ -28,7 +28,7 @@ async fn sync_mainnet_test() {
         true,
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet_base_async(
+    let lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
         2_650_318,
@@ -39,20 +39,21 @@ async fn sync_mainnet_test() {
 
     let client = GrpcConnector::new(uri).get_client().await.unwrap();
 
-    sync(client, &config.chain, &mut lightclient.wallet)
+    sync(client, &config.chain, lightclient.wallet.clone())
         .await
         .unwrap();
 
-    // dbg!(lightclient.wallet.wallet_blocks);
-    // dbg!(lightclient.wallet.nullifier_map);
-    dbg!(lightclient.wallet.sync_state);
+    let wallet = lightclient.wallet.lock().await;
+    // dbg!(&wallet.wallet_blocks);
+    // dbg!(&wallet.nullifier_map);
+    dbg!(&wallet.sync_state);
 }
 
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (_regtest_manager, _cph, faucet, mut recipient, _txid) =
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
     from_inputs::quick_send(
         &faucet,
@@ -82,13 +83,9 @@ async fn sync_test() {
 
     let uri = recipient.config().lightwalletd_uri.read().unwrap().clone();
     let client = GrpcConnector::new(uri).get_client().await.unwrap();
-    sync(
-        client,
-        &recipient.config().chain.clone(),
-        &mut recipient.wallet,
-    )
-    .await
-    .unwrap();
+    sync(client, &recipient.config().chain.clone(), recipient.wallet)
+        .await
+        .unwrap();
 
     // dbg!(&recipient.wallet.wallet_transactions);
     // dbg!(recipient.wallet.wallet_blocks());
