@@ -132,7 +132,7 @@ where
         fetch_request_sender.clone(),
         ufvks.clone(),
     );
-    scanner.spawn_workers();
+    scanner.launch();
 
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
