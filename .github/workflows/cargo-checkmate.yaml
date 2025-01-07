@@ -7,7 +7,7 @@ jobs:
     name: Cache checkmate
     runs-on: ziserv-2
     container:
-      image: ubuntu-latest
+      image: rust:bullseye
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
