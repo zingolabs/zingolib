@@ -17,7 +17,8 @@ use zcash_client_backend::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
-    consensus::{self},
+    consensus::{self, BlockHeight},
+    transaction::TxId,
     zip32::AccountId,
 };
 
@@ -166,9 +167,12 @@ where
 
     /// Updates the scanner.
     ///
-    /// If verification is still in progress, only create scan tasks with `Verify` scan priority.
-    /// If there are no batches ready and the batcher is idle,
-    /// If there are no more range available to scan, shutdown the batcher, idle workers and mempool.
+    /// Creates a new scan task and sends to batcher if it's idle.
+    /// The batcher will stream compact blocks into the scan task, splitting the scan task when the maximum number of
+    /// outputs is reached. When a scan task is ready is it stored in the batcher ready to be taken by an idle scan
+    /// worker for scanning.
+    /// If verification is still in progress, only scan tasks with `Verify` scan priority are created.
+    /// If there are no more ranges available to scan, the batcher, idle workers and mempool are shutdown.
     pub(crate) async fn update<W>(&mut self, wallet: &mut W, shutdown_mempool: Arc<AtomicBool>)
     where
         W: SyncWallet + SyncBlocks,
@@ -299,7 +303,16 @@ impl Batcher {
         let fetch_request_sender = self.fetch_request_sender.clone();
 
         let handle = tokio::spawn(async move {
+            // save seam blocks between scan tasks for linear scanning continuuity checks
+            // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
+            let mut first_block: Option<CompactBlock> = None;
+            let mut last_block: Option<CompactBlock> = None;
+            // TODO: finish seam block logic
+
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
+                let mut sapling_output_count = 0;
+                let mut orchard_output_count = 0;
+
                 let mut block_stream = client::get_compact_block_range(
                     fetch_request_sender.clone(),
                     scan_task.scan_range.block_range().clone(),
@@ -307,6 +320,45 @@ impl Batcher {
                 .await
                 .unwrap();
                 while let Some(compact_block) = block_stream.message().await.unwrap() {
+                    sapling_output_count += compact_block
+                        .vtx
+                        .iter()
+                        .fold(0, |acc, transaction| acc + transaction.outputs.len());
+                    orchard_output_count += compact_block
+                        .vtx
+                        .iter()
+                        .fold(0, |acc, transaction| acc + transaction.actions.len());
+
+                    if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
+                        let new_batch_first_block = WalletBlock::from_parts(
+                            compact_block.height(),
+                            compact_block.hash(),
+                            compact_block.prev_hash(),
+                            0,
+                            Vec::new(),
+                            0,
+                            0,
+                        );
+
+                        let (full_batch, new_batch) = scan_task
+                            .clone()
+                            .split(
+                                new_batch_first_block.block_height(),
+                                Some(new_batch_first_block),
+                                None,
+                            )
+                            .unwrap();
+
+                        batch_sender
+                            .send(full_batch)
+                            .await
+                            .expect("receiver should never be dropped before sender!");
+
+                        scan_task = new_batch;
+                        sapling_output_count = 0;
+                        orchard_output_count = 0;
+                    }
+
                     scan_task.compact_blocks.push(compact_block);
                 }
 
@@ -499,5 +551,41 @@ impl ScanTask {
             locators,
             transparent_addresses,
         }
+    }
+
+    fn split(
+        self,
+        block_height: BlockHeight,
+        lower_task_end_seam_block: Option<WalletBlock>,
+        upper_task_start_seam_block: Option<WalletBlock>,
+    ) -> Result<(Self, Self), ()> {
+        if block_height > self.scan_range.block_range().start
+            && block_height < self.scan_range.block_range().end
+        {
+            panic!("block height should be within scan tasks block range!");
+        }
+
+        let mut lower_task_locators = self.locators;
+        let upper_task_locators =
+            lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
+
+        Ok((
+            ScanTask {
+                compact_blocks: self.compact_blocks,
+                scan_range: self.scan_range.truncate_end(block_height).unwrap(),
+                start_seam_block: self.start_seam_block,
+                end_seam_block: lower_task_end_seam_block,
+                locators: lower_task_locators,
+                transparent_addresses: self.transparent_addresses.clone(),
+            },
+            ScanTask {
+                compact_blocks: Vec::new(),
+                scan_range: self.scan_range.truncate_start(block_height).unwrap(),
+                start_seam_block: upper_task_start_seam_block,
+                end_seam_block: self.end_seam_block,
+                locators: upper_task_locators,
+                transparent_addresses: self.transparent_addresses,
+            },
+        ))
     }
 }
