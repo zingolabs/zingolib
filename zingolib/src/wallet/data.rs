@@ -84,24 +84,6 @@ impl BlockData {
         Self { ecb, height }
     }
 
-    #[cfg(not(feature = "sync"))]
-    pub(crate) fn new(mut cb: CompactBlock) -> Self {
-        for compact_transaction in &mut cb.vtx {
-            for co in &mut compact_transaction.outputs {
-                co.ciphertext.clear();
-                co.ephemeral_key.clear();
-            }
-        }
-
-        cb.header.clear();
-        let height = cb.height;
-
-        let mut ecb = vec![];
-        cb.encode(&mut ecb).unwrap();
-
-        Self { ecb, height }
-    }
-
     pub(crate) fn cb(&self) -> CompactBlock {
         let b = self.ecb.clone();
         CompactBlock::decode(&b[..]).unwrap()

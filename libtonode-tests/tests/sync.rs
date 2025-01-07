@@ -1,5 +1,3 @@
-#![cfg(feature = "sync")]
-
 use std::time::Duration;
 
 use tempfile::TempDir;
@@ -105,7 +103,7 @@ async fn sync_status() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (_regtest_manager, _cph, faucet, mut recipient, _txid) =
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
     from_inputs::quick_send(
         &faucet,

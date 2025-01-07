@@ -39,18 +39,6 @@ impl LightClient {
     }
 
     /// write down the state of the lightclient as a `Vec<u8>`
-    #[cfg(not(feature = "sync"))]
-    pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
-        let mut buffer: Vec<u8> = vec![];
-        self.wallet
-            .write(&mut buffer)
-            .await
-            .map_err(ZingoLibError::InternalWriteBufferError)?;
-        (self.save_buffer.buffer.write().await).clone_from(&buffer);
-        Ok(buffer)
-    }
-    /// write down the state of the lightclient as a `Vec<u8>`
-    #[cfg(feature = "sync")]
     pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet

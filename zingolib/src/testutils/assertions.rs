@@ -72,39 +72,6 @@ pub enum LookupRecordsPairStepsError {
 }
 
 /// checks the client for record of each of the expected transactions, and does anything to them.
-#[cfg(not(feature = "sync"))]
-pub async fn for_each_proposed_record<NoteId, Res>(
-    client: &LightClient,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
-    txids: &NonEmpty<TxId>,
-    f: fn(&TransactionRecordsById, &TransactionRecord, &Step<NoteId>) -> Res,
-) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
-    let records = &client
-        .wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await
-        .transaction_records_by_id;
-
-    let mut step_results = vec![];
-    for (step_number, step) in proposal.steps().iter().enumerate() {
-        step_results.push({
-            if let Some(txid) = txids.get(step_number) {
-                if let Some(record) = records.get(txid) {
-                    Ok(f(records, record, step))
-                } else {
-                    Err(LookupRecordsPairStepsError::MissingRecord(*txid))
-                }
-            } else {
-                Err(LookupRecordsPairStepsError::MissingFromBroadcast)
-            }
-        });
-    }
-    step_results
-}
-/// checks the client for record of each of the expected transactions, and does anything to them.
-#[cfg(feature = "sync")]
 pub async fn for_each_proposed_record<NoteId, Res>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
