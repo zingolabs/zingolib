@@ -23,7 +23,7 @@ use crate::{
     traits::{SyncBlocks, SyncWallet},
 };
 
-use super::{BATCH_SIZE, VERIFY_BLOCK_RANGE_SIZE};
+use super::VERIFY_BLOCK_RANGE_SIZE;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -194,6 +194,30 @@ pub(super) fn set_verify_scan_range(
     scan_range_to_verify
 }
 
+/// Punches in the chain tip block range with `ScanPriority::ChainTip`.
+///
+/// Determines the chain tip block range by finding the lowest start height of the latest incomplete shard for each
+/// shielded protocol.
+fn set_chain_tip_scan_range(
+    sync_state: &mut SyncState,
+    chain_height: BlockHeight,
+) -> Result<(), ()> {
+    let sapling_incomplete_shard =
+        determine_block_range(sync_state, chain_height, ShieldedProtocol::Sapling);
+    let orchard_incomplete_shard =
+        determine_block_range(sync_state, chain_height, ShieldedProtocol::Orchard);
+
+    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
+        sapling_incomplete_shard
+    } else {
+        orchard_incomplete_shard
+    };
+
+    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip).unwrap();
+
+    Ok(())
+}
+
 /// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
 pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
     sync_state: &mut SyncState,
@@ -220,26 +244,18 @@ pub(super) fn set_found_note_scan_range(
     Ok(())
 }
 
-/// Punches in the chain tip block range with `ScanPriority::ChainTip`.
-///
-/// Determines the chain tip block range by finding the lowest start height of the latest incomplete shard for each
-/// shielded protocol.
-fn set_chain_tip_scan_range(
+pub(super) fn set_scanned_scan_range(
     sync_state: &mut SyncState,
-    chain_height: BlockHeight,
+    scanned_range: Range<BlockHeight>,
 ) -> Result<(), ()> {
-    let sapling_incomplete_shard =
-        determine_block_range(sync_state, chain_height, ShieldedProtocol::Sapling);
-    let orchard_incomplete_shard =
-        determine_block_range(sync_state, chain_height, ShieldedProtocol::Orchard);
+    let scan_ranges = sync_state.scan_ranges_mut();
 
-    let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
-        sapling_incomplete_shard
-    } else {
-        orchard_incomplete_shard
+    let Some((index, scan_range)) = scan_ranges.iter().enumerate().find(|(_, scan_range)| {
+        scan_range.block_range().contains(&scanned_range.start)
+            && scan_range.block_range().contains(&scanned_range.end)
+    }) else {
+        panic!("scan range containing scanned range should exist!");
     };
-
-    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip).unwrap();
 
     Ok(())
 }
@@ -276,7 +292,7 @@ pub(super) fn set_scan_priority(
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
 /// Any scan ranges with `Ignored` (Scanning) or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-fn punch_scan_priority(
+pub(crate) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
@@ -454,25 +470,43 @@ fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     }
 
     let selected_priority = highest_priority_scan_range.priority();
-    // TODO: fixed memory batching
-    let batch_block_range = Range {
-        start: highest_priority_scan_range.block_range().start,
-        end: highest_priority_scan_range.block_range().start + BATCH_SIZE,
-    };
-    let split_ranges = split_out_scan_range(
-        highest_priority_scan_range,
-        batch_block_range,
-        ScanPriority::Ignored,
-    );
-    let selected_block_range = split_ranges
-        .first()
-        .expect("split ranges should always be non-empty")
-        .block_range()
-        .clone();
 
-    sync_state
-        .scan_ranges_mut()
-        .splice(index..=index, split_ranges);
+    // historic scan ranges can be larger than a shard block range so must be split out.
+    // otherwise, just set the scan priority of selected range to `Ignored` (scanning) in sync state.
+    let selected_block_range = if selected_priority == ScanPriority::Historic {
+        let shard_block_range = determine_block_range(
+            &sync_state,
+            highest_priority_scan_range.block_range().start,
+            ShieldedProtocol::Orchard,
+        );
+        let split_ranges = split_out_scan_range(
+            highest_priority_scan_range,
+            shard_block_range,
+            ScanPriority::Ignored,
+        );
+        let selected_block_range = split_ranges
+            .first()
+            .expect("split ranges should always be non-empty")
+            .block_range()
+            .clone();
+        sync_state
+            .scan_ranges_mut()
+            .splice(index..=index, split_ranges);
+
+        selected_block_range
+    } else {
+        let selected_scan_range = sync_state
+            .scan_ranges_mut()
+            .get_mut(index)
+            .expect("scan range should exist due to previous logic");
+
+        *selected_scan_range = ScanRange::from_parts(
+            highest_priority_scan_range.block_range().clone(),
+            ScanPriority::Ignored,
+        );
+
+        selected_scan_range.block_range().clone()
+    };
 
     // TODO: when this library has its own version of ScanRange this can be simplified and more readable
     Some(ScanRange::from_parts(

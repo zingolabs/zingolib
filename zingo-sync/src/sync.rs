@@ -37,8 +37,6 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 // TODO: move parameters to config module
-// TODO; replace fixed batches with variable batches with fixed memory size
-const BATCH_SIZE: u32 = 10_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100;
 
@@ -270,9 +268,9 @@ where
             )
             .await
             .unwrap();
-            state::set_scan_priority(
+            state::punch_scan_priority(
                 wallet.get_sync_state_mut().unwrap(),
-                scan_range.block_range(),
+                scan_range.block_range().clone(),
                 ScanPriority::Scanned,
             )
             .unwrap();

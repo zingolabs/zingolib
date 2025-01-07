@@ -7,7 +7,7 @@ use std::{
 };
 
 use tokio::{
-    sync::mpsc::{self, error::TryRecvError},
+    sync::mpsc,
     task::{JoinError, JoinHandle},
 };
 
@@ -559,8 +559,8 @@ impl ScanTask {
         lower_task_end_seam_block: Option<WalletBlock>,
         upper_task_start_seam_block: Option<WalletBlock>,
     ) -> Result<(Self, Self), ()> {
-        if block_height > self.scan_range.block_range().start
-            && block_height < self.scan_range.block_range().end
+        if block_height < self.scan_range.block_range().start
+            && block_height > self.scan_range.block_range().end - 1
         {
             panic!("block height should be within scan tasks block range!");
         }
