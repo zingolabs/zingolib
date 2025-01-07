@@ -3,9 +3,6 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2021"
 
-[features]
-sync = ["zingolib/sync"]
-
 [dependencies]
 zingolib = { path = "../zingolib/", features = ["deprecations", "test-elevation"] }
 

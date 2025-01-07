@@ -1,5 +1,3 @@
-#![cfg(feature = "sync")]
-
 use std::time::Duration;
 
 use tempfile::TempDir;
