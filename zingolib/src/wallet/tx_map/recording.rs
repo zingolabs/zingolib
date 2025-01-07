@@ -1,8 +1,5 @@
 //! contains associated methods for modifying and updating TxMap
 
-#[cfg(not(feature = "sync"))]
-use incrementalmerkletree::Position;
-
 use orchard::note_encryption::OrchardDomain;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_note_encryption::Domain;
@@ -201,53 +198,6 @@ impl crate::wallet::tx_map::TxMap {
             }
         } else {
             eprintln!("Could not remove node!")
-        }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "sync"))]
-    pub(crate) fn mark_note_position<D: DomainWalletExt>(
-        &mut self,
-        txid: TxId,
-        output_index: Option<u32>,
-        position: Position,
-        fvk: &D::Fvk,
-    ) -> ZingoLibResult<()>
-    where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: Recipient,
-    {
-        if let Some(tmd) = self.transaction_records_by_id.get_mut(&txid) {
-            if let Some(maybe_nnmd) = &mut D::WalletNote::get_record_to_outputs_mut(tmd)
-                .iter_mut()
-                .find_map(|nnmd| {
-                    if nnmd.output_index().is_some() != output_index.is_some() {
-                        return Some(Err(ZingoLibError::MissingOutputIndex(txid)));
-                    }
-                    if *nnmd.output_index() == output_index {
-                        Some(Ok(nnmd))
-                    } else {
-                        None
-                    }
-                })
-            {
-                match maybe_nnmd {
-                    Ok(nnmd) => {
-                        *nnmd.witnessed_position_mut() = Some(position);
-                        *nnmd.nullifier_mut() =
-                            Some(D::get_nullifier_from_note_fvk_and_witness_position(
-                                &nnmd.note().clone(),
-                                fvk,
-                                u64::from(position),
-                            ));
-                    }
-                    Err(_) => return Err(ZingoLibError::MissingOutputIndex(txid)),
-                }
-            } else {
-                println!("Could not update witness position");
-            }
-        } else {
-            println!("Could not update witness position");
         }
         Ok(())
     }

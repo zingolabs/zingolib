@@ -6,12 +6,11 @@ use zcash_keys::keys::UnifiedSpendingKey;
 use zip32::AccountId;
 
 use std::{
+    collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
     sync::{atomic::AtomicU64, Arc},
 };
 
-#[cfg(feature = "sync")]
-use std::collections::{BTreeMap, HashMap};
 use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
@@ -290,19 +289,12 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
-            #[cfg(feature = "sync")]
             wallet_blocks: BTreeMap::new(),
-            #[cfg(feature = "sync")]
             wallet_transactions: HashMap::new(),
-            #[cfg(feature = "sync")]
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
-            #[cfg(feature = "sync")]
             outpoint_map: zingo_sync::primitives::OutPointMap::new(),
-            #[cfg(feature = "sync")]
             shard_trees: zingo_sync::witness::ShardTrees::new(),
-            #[cfg(feature = "sync")]
             sync_state: zingo_sync::primitives::SyncState::new(),
-            #[cfg(feature = "sync")]
             transparent_addresses: BTreeMap::new(),
         };
 
