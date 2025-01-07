@@ -6,14 +6,13 @@ edition = "2021"
 [features]
 chain_generic_tests = []
 ci = ["zingolib/ci"]
-sync = ["dep:zingo-sync"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 zingolib = { path = "../zingolib", features = [ "deprecations", "test-elevation" ] }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
-zingo-sync = { path = "../zingo-sync", optional = true }
+zingo-sync = { path = "../zingo-sync" }
 testvectors = { path = "../testvectors" }
 
 bip0039.workspace = true
