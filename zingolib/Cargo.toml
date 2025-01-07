@@ -12,14 +12,13 @@ darkside_tests = []
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
-sync = ['zingo-sync']
 zaino-test = ['test-elevation']
 
 [dependencies]
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
-zingo-sync = { path = "../zingo-sync", optional = true }
+zingo-sync = { path = "../zingo-sync" }
 testvectors = { path = "../testvectors", optional = true }
 
 orchard = { workspace = true }

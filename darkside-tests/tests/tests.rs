@@ -19,9 +19,6 @@ use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
 
-#[cfg(not(feature = "sync"))]
-use std::sync::Arc;
-
 #[tokio::test]
 async fn simple_sync() {
     let darkside_handler = DarksideHandler::new(None);
@@ -61,15 +58,8 @@ async fn simple_sync() {
     );
 }
 
-#[tokio::test]
-#[cfg(not(feature = "sync"))]
-async fn reorg_away_receipt_blaze() {
-    reorg_receipt_sync_generic(|lc| Box::pin(async { lc.do_sync(true).await.map(|_| ()) })).await;
-}
-
 #[ignore = "attempts to unwrap failed checked_sub on sapling output count"]
 #[tokio::test]
-#[cfg(feature = "sync")]
 async fn reorg_away_receipt_pepper() {
     reorg_receipt_sync_generic(|lc| {
         Box::pin(async {
@@ -335,8 +325,7 @@ async fn evicted_transaction_is_rebroadcast() {
             );
         });
 
-    #[cfg(not(feature = "sync"))]
-    let ref_primary: Arc<LightClient> = Arc::new(primary);
-    #[cfg(not(feature = "sync"))]
-    LightClient::start_mempool_monitor(ref_primary).unwrap();
+    // FIXME:
+    // let ref_primary: Arc<LightClient> = Arc::new(primary);
+    // LightClient::start_mempool_monitor(ref_primary).unwrap();
 }

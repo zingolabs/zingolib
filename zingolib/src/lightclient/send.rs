@@ -15,16 +15,6 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[cfg(not(feature = "sync"))]
-    pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
-        let progress = self.wallet.get_send_progress().await;
-        Ok(LightWalletSendProgress {
-            progress: progress.clone(),
-            interrupt_sync: *self.interrupt_sync.read().await,
-        })
-    }
-    /// TODO: Add Doc Comment Here!
-    #[cfg(feature = "sync")]
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.lock().await.get_send_progress().await;
         Ok(LightWalletSendProgress {
@@ -140,69 +130,6 @@ pub mod send_with_proposal {
         /// After some consideration we don't see why the spending_data should
         /// be stored out-of-order with respect to earlier transactions funding
         /// later ones in the cache, so we implement an in order cache.
-        #[cfg(not(feature = "sync"))]
-        async fn record_created_transactions(
-            &self,
-        ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
-            let mut tx_map = self
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
-            let current_height = self
-                .get_latest_block_height()
-                .await
-                .map_err(RecordCachedTransactionsError::Height)?;
-            let mut transactions_to_record = vec![];
-            if let Some(spending_data) = &mut tx_map.spending_data {
-                for (_txid, raw_tx) in spending_data.cached_raw_transactions.iter() {
-                    transactions_to_record.push(Transaction::read(
-                        raw_tx.as_slice(),
-                        zcash_primitives::consensus::BranchId::for_height(
-                            &self.wallet.transaction_context.config.chain,
-                            current_height + 1,
-                        ),
-                    )?);
-                }
-            } else {
-                return Err(RecordCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ));
-            }
-            drop(tx_map);
-            let mut txids = vec![];
-            for transaction in transactions_to_record {
-                self.wallet
-                    .transaction_context
-                    .scan_full_tx(
-                        &transaction,
-                        ConfirmationStatus::Calculated(current_height + 1),
-                        Some(now() as u32),
-                        crate::wallet::utils::get_price(
-                            now(),
-                            &self.wallet.price.read().await.clone(),
-                        ),
-                    )
-                    .await;
-                self.wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .write()
-                    .await
-                    .transaction_records_by_id
-                    .update_note_spend_statuses(
-                        transaction.txid(),
-                        Some((
-                            transaction.txid(),
-                            ConfirmationStatus::Calculated(current_height + 1),
-                        )),
-                    );
-                txids.push(transaction.txid());
-            }
-            Ok(txids)
-        }
-        #[cfg(feature = "sync")]
         async fn record_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
@@ -264,118 +191,6 @@ pub mod send_with_proposal {
 
         /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
         /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-        #[cfg(not(feature = "sync"))]
-        async fn broadcast_created_transactions(
-            &self,
-        ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
-            let mut tx_map = self
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
-            let current_height = self
-                .get_latest_block_height()
-                .await
-                .map_err(BroadcastCachedTransactionsError::Height)?;
-            let calculated_tx_cache = tx_map
-                .spending_data
-                .as_ref()
-                .ok_or(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ))?
-                .cached_raw_transactions
-                .clone();
-            let mut txids = vec![];
-            for (mut txid, raw_tx) in calculated_tx_cache {
-                let mut spend_status = None;
-                if let Some(&mut ref mut transaction_record) =
-                    tx_map.transaction_records_by_id.get_mut(&txid)
-                {
-                    // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
-                    if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
-                        match crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            raw_tx.into_boxed_slice(),
-                        )
-                        .await
-                        {
-                            Ok(serverz_txid_string) => {
-                                let new_status =
-                                    ConfirmationStatus::Transmitted(current_height + 1);
-
-                                transaction_record.status = new_status;
-
-                                match crate::utils::conversion::txid_from_hex_encoded_str(
-                                    serverz_txid_string.as_str(),
-                                ) {
-                                    Ok(reported_txid) => {
-                                        if txid != reported_txid {
-                                            println!(
-                                                "served txid {} does not match calculated txid {}",
-                                                reported_txid, txid,
-                                            );
-                                            // during darkside tests, the server may generate a new txid.
-                                            // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-                                            #[cfg(feature = "darkside_tests")]
-                                            {
-                                                // now we reconfigure the tx_map to align with the server
-                                                // switch the TransactionRecord to the new txid
-                                                if let Some(mut transaction_record) =
-                                                    tx_map.transaction_records_by_id.remove(&txid)
-                                                {
-                                                    transaction_record.txid = reported_txid;
-                                                    tx_map
-                                                        .transaction_records_by_id
-                                                        .insert(reported_txid, transaction_record);
-                                                }
-                                                txid = reported_txid;
-                                            }
-                                            #[cfg(not(feature = "darkside_tests"))]
-                                            {
-                                                // did the server generate a new txid? is this related to the rebroadcast bug?
-                                                // crash
-                                                todo!();
-                                            }
-                                        };
-                                    }
-                                    Err(e) => {
-                                        println!("server returned invalid txid {}", e);
-                                        todo!();
-                                    }
-                                }
-
-                                spend_status = Some((txid, new_status));
-
-                                txids.push(txid);
-                            }
-                            Err(server_err) => {
-                                return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
-                            }
-                        };
-                    }
-                } else {
-                    return Err(BroadcastCachedTransactionsError::Unrecorded(txid));
-                }
-                if let Some(s) = spend_status {
-                    tx_map
-                        .transaction_records_by_id
-                        .update_note_spend_statuses(s.0, spend_status);
-                }
-            }
-
-            tx_map
-                .spending_data
-                .as_mut()
-                .ok_or(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ))?
-                .cached_raw_transactions
-                .clear();
-
-            Ok(txids)
-        }
-        #[cfg(feature = "sync")]
         async fn broadcast_created_transactions(
             &self,
         ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
@@ -487,36 +302,6 @@ pub mod send_with_proposal {
             Ok(txids)
         }
 
-        #[cfg(not(feature = "sync"))]
-        async fn complete_and_broadcast<NoteRef>(
-            &self,
-            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            self.wallet.create_transaction(proposal).await?;
-
-            self.record_created_transactions().await?;
-
-            let broadcast_result = self.broadcast_created_transactions().await;
-
-            self.wallet
-                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
-                    |vec_txids| {
-                        serde_json::Value::Array(
-                            vec_txids
-                                .iter()
-                                .map(|txid| serde_json::Value::String(txid.to_string()))
-                                .collect::<Vec<serde_json::Value>>(),
-                        )
-                    },
-                ))
-                .await;
-
-            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
-                .ok_or(CompleteAndBroadcastError::EmptyList)?;
-
-            Ok(broadcast_txids)
-        }
-        #[cfg(feature = "sync")]
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
@@ -569,15 +354,6 @@ pub mod send_with_proposal {
         }
 
         /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
-        #[cfg(not(feature = "sync"))]
-        pub async fn quick_send(
-            &self,
-            request: TransactionRequest,
-        ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            let proposal = self.wallet.create_send_proposal(request).await?;
-            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
-        }
-        #[cfg(feature = "sync")]
         pub async fn quick_send(
             &self,
             request: TransactionRequest,
@@ -592,12 +368,6 @@ pub mod send_with_proposal {
         }
 
         /// Shields all transparent funds without confirmation.
-        #[cfg(not(feature = "sync"))]
-        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self.wallet.create_shield_proposal().await?;
-            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
-        }
-        #[cfg(feature = "sync")]
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.lock().await.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
@@ -722,39 +492,6 @@ pub mod send_with_proposal {
             /// requires 1 confirmation: expect 3 minute runtime
             #[tokio::test]
             #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            #[cfg(not(feature = "sync"))]
-            async fn mainnet_send_to_self_orchard() {
-                let case = examples::NetworkSeedVersion::Mainnet(
-                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-                );
-                let target_pool = PoolType::Shielded(ShieldedProtocol::Orchard);
-
-                let client = sync_example_wallet(case).await;
-
-                println!(
-                    "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
-                    client
-                        .wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .read()
-                        .await
-                        .transaction_records_by_id
-                        .len()
-                );
-
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
-                    &client,
-                    vec![(&client, target_pool, 10_000, None)],
-                    false,
-                )
-                .await
-                .unwrap();
-            }
-            #[tokio::test]
-            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            #[cfg(feature = "sync")]
             async fn mainnet_send_to_self_orchard() {
                 let case = examples::NetworkSeedVersion::Mainnet(
                     examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
@@ -790,39 +527,6 @@ pub mod send_with_proposal {
             /// requires 1 confirmation: expect 3 minute runtime
             #[tokio::test]
             #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            #[cfg(not(feature = "sync"))]
-            async fn mainnet_send_to_self_sapling() {
-                let case = examples::NetworkSeedVersion::Mainnet(
-                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-                );
-                let target_pool = PoolType::Shielded(ShieldedProtocol::Sapling);
-
-                let client = sync_example_wallet(case).await;
-
-                println!(
-                    "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
-                    client
-                        .wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .read()
-                        .await
-                        .transaction_records_by_id
-                        .len()
-                );
-
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
-                    &client,
-                    vec![(&client, target_pool, 400_000, None)],
-                    false,
-                )
-                .await
-                .unwrap();
-            }
-            #[tokio::test]
-            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            #[cfg(feature = "sync")]
             async fn mainnet_send_to_self_sapling() {
                 let case = examples::NetworkSeedVersion::Mainnet(
                     examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
