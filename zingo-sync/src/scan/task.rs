@@ -33,7 +33,7 @@ use crate::{
 use super::{error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
-const MAX_BATCH_OUTPUTS: usize = 16384; // 2^14
+const MAX_BATCH_OUTPUTS: usize = 8_192; // 2^13
 
 pub(crate) enum ScannerState {
     Verification,
@@ -299,13 +299,13 @@ impl Batcher {
         let handle = tokio::spawn(async move {
             // save seam blocks between scan tasks for linear scanning continuuity checks
             // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
-            let mut first_block: Option<CompactBlock> = None;
-            let mut last_block: Option<CompactBlock> = None;
-            // TODO: finish seam block logic
+            let mut previous_task_first_block: Option<WalletBlock> = None;
+            let mut previous_task_last_block: Option<WalletBlock> = None;
 
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
                 let mut sapling_output_count = 0;
                 let mut orchard_output_count = 0;
+                let mut first_batch = true;
 
                 let mut block_stream = client::get_compact_block_range(
                     fetch_request_sender.clone(),
@@ -314,6 +314,53 @@ impl Batcher {
                 .await
                 .unwrap();
                 while let Some(compact_block) = block_stream.message().await.unwrap() {
+                    if let Some(block) = previous_task_last_block.as_ref() {
+                        if scan_task.start_seam_block.is_none()
+                            && scan_task.scan_range.block_range().start == block.block_height() + 1
+                        {
+                            scan_task.start_seam_block = previous_task_last_block.clone();
+                        }
+                    }
+                    if let Some(block) = previous_task_first_block.as_ref() {
+                        if scan_task.end_seam_block.is_none()
+                            && scan_task.scan_range.block_range().end == block.block_height()
+                        {
+                            scan_task.end_seam_block = previous_task_first_block.clone();
+                        }
+                    }
+
+                    if first_batch {
+                        // TODO: check conditions where chain metadata is none
+                        let chain_metadata = compact_block
+                            .chain_metadata
+                            .expect("chain metadata should always exist");
+                        previous_task_first_block = Some(WalletBlock::from_parts(
+                            compact_block.height(),
+                            compact_block.hash(),
+                            compact_block.prev_hash(),
+                            compact_block.time,
+                            compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
+                            chain_metadata.sapling_commitment_tree_size,
+                            chain_metadata.orchard_commitment_tree_size,
+                        ));
+                        first_batch = false;
+                    }
+                    if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
+                        // TODO: check conditions where chain metadata is none
+                        let chain_metadata = compact_block
+                            .chain_metadata
+                            .expect("chain metadata should always exist");
+                        previous_task_last_block = Some(WalletBlock::from_parts(
+                            compact_block.height(),
+                            compact_block.hash(),
+                            compact_block.prev_hash(),
+                            compact_block.time,
+                            compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
+                            chain_metadata.sapling_commitment_tree_size,
+                            chain_metadata.orchard_commitment_tree_size,
+                        ));
+                    }
+
                     sapling_output_count += compact_block
                         .vtx
                         .iter()
@@ -322,7 +369,6 @@ impl Batcher {
                         .vtx
                         .iter()
                         .fold(0, |acc, transaction| acc + transaction.actions.len());
-
                     if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
                         let (full_batch, new_batch) = scan_task
                             .clone()
@@ -551,7 +597,7 @@ impl ScanTask {
         let mut lower_compact_blocks = self.compact_blocks;
         let upper_compact_blocks = if let Some(index) = lower_compact_blocks
             .iter()
-            .position(|block| block.height == block_height.into())
+            .position(|block| block.height() == block_height)
         {
             lower_compact_blocks.split_off(index)
         } else {
@@ -563,25 +609,35 @@ impl ScanTask {
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
         let lower_task_last_block = lower_compact_blocks.last().map(|block| {
+            // TODO: check conditions where chain metadata is none
+            let chain_metadata = block
+                .chain_metadata
+                .expect("chain metadata should always exist");
+
             WalletBlock::from_parts(
                 block.height(),
                 block.hash(),
                 block.prev_hash(),
-                0,
-                Vec::new(),
-                0,
-                0,
+                block.time,
+                block.vtx.iter().map(|tx| tx.txid()).collect(),
+                chain_metadata.sapling_commitment_tree_size,
+                chain_metadata.orchard_commitment_tree_size,
             )
         });
         let upper_task_first_block = upper_compact_blocks.first().map(|block| {
+            // TODO: check conditions where chain metadata is none
+            let chain_metadata = block
+                .chain_metadata
+                .expect("chain metadata should always exist");
+
             WalletBlock::from_parts(
                 block.height(),
                 block.hash(),
                 block.prev_hash(),
-                0,
-                Vec::new(),
-                0,
-                0,
+                block.time,
+                block.vtx.iter().map(|tx| tx.txid()).collect(),
+                chain_metadata.sapling_commitment_tree_size,
+                chain_metadata.orchard_commitment_tree_size,
             )
         });
         Ok((

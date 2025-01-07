@@ -268,10 +268,9 @@ where
             )
             .await
             .unwrap();
-            state::punch_scan_priority(
+            state::set_scanned_scan_range(
                 wallet.get_sync_state_mut().unwrap(),
                 scan_range.block_range().clone(),
-                ScanPriority::Scanned,
             )
             .unwrap();
             remove_irrelevant_data(wallet).unwrap();

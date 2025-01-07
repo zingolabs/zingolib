@@ -30,7 +30,7 @@ use super::{
 mod runners;
 
 // TODO: move parameters to config module
-const TRIAL_DECRYPT_TASK_SIZE: usize = 1_000;
+const TRIAL_DECRYPT_TASK_SIZE: usize = 1_024; // 2^10
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -61,8 +61,7 @@ where
     let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
     for block in &compact_blocks {
-        let block_height =
-            BlockHeight::from_u32(block.height.try_into().expect("should never overflow"));
+        let block_height = block.height();
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
             // collect trial decryption results by transaction

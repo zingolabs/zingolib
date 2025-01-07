@@ -252,10 +252,19 @@ pub(super) fn set_scanned_scan_range(
 
     let Some((index, scan_range)) = scan_ranges.iter().enumerate().find(|(_, scan_range)| {
         scan_range.block_range().contains(&scanned_range.start)
-            && scan_range.block_range().contains(&scanned_range.end)
+            && scan_range.block_range().contains(&(scanned_range.end - 1))
     }) else {
         panic!("scan range containing scanned range should exist!");
     };
+
+    let split_ranges = split_out_scan_range(
+        scan_range.clone(),
+        scanned_range.clone(),
+        ScanPriority::Scanned,
+    );
+    sync_state
+        .scan_ranges_mut()
+        .splice(index..=index, split_ranges);
 
     Ok(())
 }
@@ -292,7 +301,7 @@ pub(super) fn set_scan_priority(
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
 /// Any scan ranges with `Ignored` (Scanning) or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-pub(crate) fn punch_scan_priority(
+fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
@@ -310,7 +319,7 @@ pub(crate) fn punch_scan_priority(
 
         match (
             block_range.contains(&scan_range.block_range().start),
-            block_range.contains(&scan_range.block_range().end),
+            block_range.contains(&(scan_range.block_range().end - 1)),
             scan_range.block_range().contains(&block_range.start),
         ) {
             (true, true, _) => scan_ranges_contained_by_block_range.push(scan_range.clone()),
@@ -410,28 +419,28 @@ fn split_out_scan_range(
     if let Some((lower_range, higher_range)) = scan_range.split_at(block_range.start) {
         split_ranges.push(lower_range);
         if let Some((middle_range, higher_range)) = higher_range.split_at(block_range.end) {
-            // [scan_range] is split at the upper and lower bound of [block_range]
+            // `scan_range` is split at the upper and lower bound of `block_range`
             split_ranges.push(ScanRange::from_parts(
                 middle_range.block_range().clone(),
                 scan_priority,
             ));
             split_ranges.push(higher_range);
         } else {
-            // [scan_range] is split only at the lower bound of [block_range]
+            // `scan_range` is split only at the lower bound of `block_range`
             split_ranges.push(ScanRange::from_parts(
                 higher_range.block_range().clone(),
                 scan_priority,
             ));
         }
     } else if let Some((lower_range, higher_range)) = scan_range.split_at(block_range.end) {
-        // [scan_range] is split only at the upper bound of [block_range]
+        // `scan_range` is split only at the upper bound of `block_range`
         split_ranges.push(ScanRange::from_parts(
             lower_range.block_range().clone(),
             scan_priority,
         ));
         split_ranges.push(higher_range);
     } else {
-        // [scan_range] is not split as it is fully contained within [block_range]
+        // `scan_range` is not split as it is fully contained within `block_range`
         // only scan priority is updated
         assert!(scan_range.block_range().start >= block_range.start);
         assert!(scan_range.block_range().end <= block_range.end);
