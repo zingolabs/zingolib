@@ -171,8 +171,8 @@ where
     /// The batcher will stream compact blocks into the scan task, splitting the scan task when the maximum number of
     /// outputs is reached. When a scan task is ready is it stored in the batcher ready to be taken by an idle scan
     /// worker for scanning.
-    /// If verification is still in progress, only scan tasks with `Verify` scan priority are created.
-    /// If there are no more ranges available to scan, the batcher, idle workers and mempool are shutdown.
+    /// When verification is still in progress, only scan tasks with `Verify` scan priority are created.
+    /// When all ranges are scanned, the batcher, idle workers and mempool are shutdown.
     pub(crate) async fn update<W>(&mut self, wallet: &mut W, shutdown_mempool: Arc<AtomicBool>)
     where
         W: SyncWallet + SyncBlocks,
@@ -209,7 +209,6 @@ where
                 self.update_batcher(wallet);
             }
             ScannerState::Scan => {
-                // create scan tasks for batching and scanning until all ranges are scanned
                 self.batcher
                     .as_mut()
                     .expect("batcher should be running")
@@ -218,15 +217,10 @@ where
                 self.update_batcher(wallet);
             }
             ScannerState::Shutdown => {
-                // shutdown mempool
                 shutdown_mempool.store(true, atomic::Ordering::Release);
-
-                // shutdown idle workers
                 while let Some(worker) = self.idle_worker() {
                     self.shutdown_worker(worker.id).await.unwrap();
                 }
-
-                // shutdown batcher
                 self.shutdown_batcher()
                     .await
                     .expect("batcher should not fail!");
@@ -330,23 +324,14 @@ impl Batcher {
                         .fold(0, |acc, transaction| acc + transaction.actions.len());
 
                     if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
-                        let new_batch_first_block = WalletBlock::from_parts(
-                            compact_block.height(),
-                            compact_block.hash(),
-                            compact_block.prev_hash(),
-                            0,
-                            Vec::new(),
-                            0,
-                            0,
-                        );
-
                         let (full_batch, new_batch) = scan_task
                             .clone()
-                            .split(
-                                new_batch_first_block.block_height(),
-                                Some(new_batch_first_block),
-                                None,
-                            )
+                            .split(BlockHeight::from_u32(
+                                compact_block
+                                    .height
+                                    .try_into()
+                                    .expect("should never overflow"),
+                            ))
                             .unwrap();
 
                         batch_sender
@@ -553,35 +538,65 @@ impl ScanTask {
         }
     }
 
-    fn split(
-        self,
-        block_height: BlockHeight,
-        lower_task_end_seam_block: Option<WalletBlock>,
-        upper_task_start_seam_block: Option<WalletBlock>,
-    ) -> Result<(Self, Self), ()> {
+    /// Splits a scan task into two at `block_height`.
+    ///
+    /// Panics if `block_height` is not contained in the scan task's block range.
+    fn split(self, block_height: BlockHeight) -> Result<(Self, Self), ()> {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {
             panic!("block height should be within scan tasks block range!");
         }
 
+        let mut lower_compact_blocks = self.compact_blocks;
+        let upper_compact_blocks = if let Some(index) = lower_compact_blocks
+            .iter()
+            .position(|block| block.height == block_height.into())
+        {
+            lower_compact_blocks.split_off(index)
+        } else {
+            Vec::new()
+        };
+
         let mut lower_task_locators = self.locators;
         let upper_task_locators =
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
+        let lower_task_last_block = lower_compact_blocks.last().map(|block| {
+            WalletBlock::from_parts(
+                block.height(),
+                block.hash(),
+                block.prev_hash(),
+                0,
+                Vec::new(),
+                0,
+                0,
+            )
+        });
+        let upper_task_first_block = upper_compact_blocks.first().map(|block| {
+            WalletBlock::from_parts(
+                block.height(),
+                block.hash(),
+                block.prev_hash(),
+                0,
+                Vec::new(),
+                0,
+                0,
+            )
+        });
         Ok((
             ScanTask {
-                compact_blocks: self.compact_blocks,
+                compact_blocks: lower_compact_blocks,
                 scan_range: self.scan_range.truncate_end(block_height).unwrap(),
                 start_seam_block: self.start_seam_block,
-                end_seam_block: lower_task_end_seam_block,
+                end_seam_block: upper_task_first_block,
                 locators: lower_task_locators,
                 transparent_addresses: self.transparent_addresses.clone(),
             },
             ScanTask {
-                compact_blocks: Vec::new(),
+                compact_blocks: upper_compact_blocks,
                 scan_range: self.scan_range.truncate_start(block_height).unwrap(),
-                start_seam_block: upper_task_start_seam_block,
+                start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
                 locators: upper_task_locators,
                 transparent_addresses: self.transparent_addresses,
