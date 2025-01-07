@@ -484,7 +484,7 @@ fn select_scan_range(sync_state: &mut SyncState) -> Option<ScanRange> {
     // otherwise, just set the scan priority of selected range to `Ignored` (scanning) in sync state.
     let selected_block_range = if selected_priority == ScanPriority::Historic {
         let shard_block_range = determine_block_range(
-            &sync_state,
+            sync_state,
             highest_priority_scan_range.block_range().start,
             ShieldedProtocol::Orchard,
         );
