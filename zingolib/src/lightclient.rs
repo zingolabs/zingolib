@@ -2,7 +2,6 @@
 
 use json::{array, object, JsonValue};
 use log::{debug, error};
-use nonempty::NonEmpty;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
