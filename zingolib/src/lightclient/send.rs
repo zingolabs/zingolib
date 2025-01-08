@@ -311,7 +311,9 @@ pub mod send_with_proposal {
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             self.wallet.create_transaction(proposal).await?;
 
-            self.record_created_transactions().await?;
+            let record_txids_result = self.record_created_transactions().await;
+            let txids = NonEmpty::from_vec(record_txids_result?)
+                .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
             self.start_broadcast_insistor().await;
             let broadcast_result = self.broadcast_created_transactions().await;
@@ -329,10 +331,7 @@ pub mod send_with_proposal {
                 ))
                 .await;
 
-            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
-                .ok_or(CompleteAndBroadcastError::EmptyList)?;
-
-            Ok(broadcast_txids)
+            Ok(txids)
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
