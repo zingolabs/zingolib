@@ -338,6 +338,7 @@ pub mod send_with_proposal {
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
+            self.start_broadcast_insistor().await;
             if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
                 match proposal {
                     crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
@@ -368,6 +369,16 @@ pub mod send_with_proposal {
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
+        }
+        pub async fn start_broadcast_insistor(&self) {
+            tokio::spawn(async move {
+                loop {
+                    println!("insistor");
+
+                    tokio::task::yield_now().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            });
         }
     }
 
