@@ -288,6 +288,10 @@ where
         assert_eq!(recipients_confirmed_outputs, *recipient_mempool_outputs);
     });
 
+    {
+        let send_result = dbg!(sender.wallet.get_send_progress().await);
+    }
+
     Ok((
         sender_confirmed_fees.iter().sum(),
         recipients_confirmed_outputs.into_iter().flatten().sum(), // this construction is problematic, because receivers are often duplicates
