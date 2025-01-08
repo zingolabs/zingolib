@@ -59,7 +59,7 @@ impl LightWallet {
     }
 
     /// Get the current sending status.
-    pub async fn get_send_progress(&self) -> SendProgress {
+    pub async fn get_send_result(&self) -> SendProgress {
         self.send_progress.read().await.clone()
     }
 }
