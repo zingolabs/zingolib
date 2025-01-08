@@ -313,6 +313,7 @@ pub mod send_with_proposal {
 
             self.record_created_transactions().await?;
 
+            self.start_broadcast_insistor().await;
             let broadcast_result = self.broadcast_created_transactions().await;
 
             self.wallet
@@ -338,7 +339,6 @@ pub mod send_with_proposal {
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
-            self.start_broadcast_insistor().await;
             if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
                 match proposal {
                     crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
