@@ -62,8 +62,12 @@ pub mod send_with_proposal {
         Unrecorded(TxId),
         #[error("Couldnt fetch server height: {0:?}")]
         Height(String),
-        #[error("Broadcast failed: {0:?}")]
+        #[error("Server returned error: {0:?}")]
         Broadcast(String),
+        #[error("Server returned invalid TxId: {0:?}")]
+        InvalidTxid(String),
+        #[error("Broadcast TxId: [{0:?}], but Server returned different TxId: [{0:?}]")]
+        InconsistentTxId((TxId, TxId)),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -264,13 +268,14 @@ pub mod send_with_proposal {
                                             {
                                                 // did the server generate a new txid? is this related to the rebroadcast bug?
                                                 // crash
-                                                todo!();
+                                                return Err(BroadcastCachedTransactionsError::InconsistentTxId((txid, reported_txid)));
                                             }
                                         };
                                     }
                                     Err(e) => {
-                                        println!("server returned invalid txid {}", e);
-                                        todo!();
+                                        return Err(BroadcastCachedTransactionsError::InvalidTxid(
+                                            format!("{serverz_txid_string} fails to read with {e}"),
+                                        ));
                                     }
                                 }
 
@@ -325,18 +330,7 @@ pub mod send_with_proposal {
             self.start_broadcast_insistor().await;
             let broadcast_result = self.broadcast_created_transactions().await;
 
-            self.wallet
-                .set_send_result(broadcast_result)
-                //     |vec_txids| {
-                //         // serde_json::Value::Array(
-                //         //     vec_txids
-                //         //         .iter()
-                //         //         .map(|txid| serde_json::Value::String(txid.to_string()))
-                //         //         .collect::<Vec<serde_json::Value>>(),
-                //         )
-                //     },
-                // ))
-                .await;
+            self.wallet.set_send_result(broadcast_result).await;
 
             Ok(txids)
         }
