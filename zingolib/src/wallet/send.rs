@@ -16,6 +16,8 @@ use zcash_primitives::memo::MemoBytes;
 
 use zingo_memo::create_wallet_internal_memo_version_1;
 
+use crate::lightclient::send::send_with_proposal::BroadcastCachedTransactionsError;
+
 use super::LightWallet;
 
 /// TODO: Add Doc Comment Here!
@@ -30,7 +32,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<NonEmpty<TxId>, String>>,
+    pub last_result: Option<Result<NonEmpty<TxId>, BroadcastCachedTransactionsError>>,
 }
 
 impl SendProgress {
@@ -62,7 +64,10 @@ impl LightWallet {
     }
 
     // Set the previous send's status as an error or success
-    pub(crate) async fn set_send_result(&self, result: Result<NonEmpty<TxId>, String>) {
+    pub(crate) async fn set_send_result(
+        &self,
+        result: Result<NonEmpty<TxId>, BroadcastCachedTransactionsError>,
+    ) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;

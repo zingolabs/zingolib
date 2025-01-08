@@ -129,9 +129,13 @@ where
     #[cfg(feature = "darkside_tests")]
     let txids = {
         // darkside test chooses an new txid
-        let replacement_txids = sender.wallet.get_send_result().await.txid_aliases;
-        if let Some(replacement_txids_e) = NonEmpty::from_vec(replacement_txids) {
-            replacement_txids_e
+        let gah = sender.wallet.get_send_result().await.last_result;
+        if let Some(aoeu) = gah {
+            if let Ok(poww) = aoeu {
+                poww
+            } else {
+                txids
+            }
         } else {
             txids
         }
