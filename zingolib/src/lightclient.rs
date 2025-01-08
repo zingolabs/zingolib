@@ -2,6 +2,7 @@
 
 use json::{array, object, JsonValue};
 use log::{debug, error};
+use nonempty::NonEmpty;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
@@ -89,22 +90,21 @@ pub struct LightWalletSendProgress {
 impl LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
-        let last_result = self.progress.last_result.clone();
-        let tx_ids: Vec<String> = match &last_result {
-            Some(r) => {
-                let mut binding = r.clone().unwrap();
-                let binding = binding.as_array_mut();
-                let tx_json_values: Vec<String> = binding
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.as_str().unwrap().to_string())
-                    .collect();
-                tx_json_values
-            }
-            None => vec![],
-        };
+        let opt_last_result = self.progress.last_result.clone();
 
-        let error: Option<String> = last_result.and_then(|result| result.err());
+        let (tx_ids, error): (Vec<String>, Option<String>) = match &opt_last_result {
+            Some(last_result) => match last_result {
+                Ok(txids) => (
+                    txids
+                        .iter()
+                        .map(|txid| txid.to_string())
+                        .collect::<Vec<String>>(),
+                    None,
+                ),
+                Err(e) => (vec![], Some(e.to_string())),
+            },
+            None => (vec![], None),
+        };
 
         object! {
             "id" => self.progress.id,
