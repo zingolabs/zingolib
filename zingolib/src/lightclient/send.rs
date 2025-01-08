@@ -327,7 +327,6 @@ pub mod send_with_proposal {
             let txids = NonEmpty::from_vec(record_txids_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            self.start_broadcast_insistor().await;
             let broadcast_result = self.broadcast_created_transactions().await;
 
             self.wallet.set_send_result(broadcast_result).await;
@@ -369,16 +368,6 @@ pub mod send_with_proposal {
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.create_shield_proposal().await?;
             Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
-        }
-        pub async fn start_broadcast_insistor(&self) {
-            tokio::spawn(async move {
-                loop {
-                    println!("insistor");
-
-                    tokio::task::yield_now().await;
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                }
-            });
         }
     }
 
