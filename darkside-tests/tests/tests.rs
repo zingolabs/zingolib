@@ -5,20 +5,21 @@ use darkside_tests::utils::update_tree_states_for_transaction;
 use darkside_tests::utils::DarksideHandler;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use testvectors::seeds::DARKSIDE_SEED;
 use tokio::time::sleep;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::ShieldedProtocol::Orchard;
+use zcash_primitives::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
+use zingolib::grpc_connector;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::PoolBalances;
-use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
-use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
-use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils;
+use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
+use zingolib::wallet::notes::query::OutputQuery;
 
 #[tokio::test]
 async fn simple_sync() {
@@ -178,7 +179,7 @@ async fn sent_transaction_reorged_into_mempool() {
             transparent_balance: Some(0)
         }
     );
-    let one_txid = from_inputs::quick_send(
+    let one_txid = testutils::lightclient::from_inputs::quick_send(
         &light_client,
         vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
     )
@@ -245,92 +246,124 @@ async fn sent_transaction_reorged_into_mempool() {
     );
 }
 
+/// this test demonstrates that
+/// when a transaction is dropped by lightwallet, zingolib does not proactively respond
+/// the test is set up to have a different result if proactive rebroadcast happens
+/// there is a further detail to understand: zingolib currently considers all recorded transactions to be un-contradictable. it cant imagine an alternate history without a transaction until the transaction is deleted. this can cause it to become deeply confused until it forgets about the contradicted transaction VIA a reboot.
+/// despite this test, there may be unexpected failure modes in network conditions
 #[tokio::test]
-#[ignore = "incomplete"]
-async fn evicted_transaction_is_rebroadcast() {
+async fn transaction_disappears_before_mempool() {
     std::env::set_var("RUST_BACKTRACE", "1");
 
-    let mut environment = DarksideEnvironment::setup().await;
-    environment.bump_chain().await;
+    let mut environment = <DarksideEnvironment as ConductChain>::setup().await;
+    <DarksideEnvironment as ConductChain>::bump_chain(&mut environment).await;
 
     let primary = environment.fund_client_orchard(1_000_000).await;
     let secondary = environment.create_client().await;
     primary.do_sync(false).await.unwrap();
 
-    let proposal =
-        to_clients_proposal(&primary, &[(&secondary, Shielded(Orchard), 100_000, None)]).await;
+    let proposal = testutils::chain_generics::with_assertions::to_clients_proposal(
+        &primary,
+        &[(&secondary, Shielded(Orchard), 100_000, None)],
+    )
+    .await;
+    println!("following proposal, preparing to unwind if an assertion fails.");
 
-    let mut send_height = 0;
-
-    let txids = &primary
+    let txids = primary
         .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
 
-    println!(
-        "{:?}",
-        zingolib::testutils::lightclient::list_txids(&primary).await
-    );
+    // a modified zingolib::testutils::chain_generics::with_assertions::follow_proposal block
+    {
+        let sender = &primary;
+        let proposal = &proposal;
 
-    let _recorded_fee = *zingolib::testutils::assertions::lookup_fees_with_proposal_check(
-        &primary, &proposal, txids,
-    )
-    .await
-    .first()
-    .expect("one transaction must have been proposed")
-    .as_ref()
-    .expect("record must exist");
+        let server_height_at_send = BlockHeight::from(
+            grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
+                .await
+                .unwrap()
+                .height as u32,
+        );
 
-    zingolib::testutils::lightclient::lookup_statuses(&primary, txids.clone())
+        // check that each record has the expected fee and status, returning the fee
+        let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
+            Vec<u64>,
+            (Vec<u64>, Vec<ConfirmationStatus>),
+        ) = testutils::assertions::for_each_proposed_record(
+            sender,
+            proposal,
+            &txids,
+            |records, record, step| {
+                (
+                    testutils::assertions::compare_fee(records, record, step),
+                    (record.query_sum_value(OutputQuery::any()), record.status),
+                )
+            },
+        )
         .await
-        .map(|status| {
+        .into_iter()
+        .map(|stepwise_result| {
+            stepwise_result
+                .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+                .unwrap()
+        })
+        .unzip();
+
+        for status in sender_recorded_statuses {
             assert_eq!(
                 status,
-                Some(ConfirmationStatus::Transmitted(send_height.into()))
+                ConfirmationStatus::Transmitted(server_height_at_send + 1)
             );
-        });
+        }
 
-    zingolib::testutils::lightclient::lookup_statuses(&secondary, txids.clone())
-        .await
-        .map(|status| {
-            assert!(status.is_none());
-        });
+        environment
+            .get_connector()
+            .clear_incoming_transactions()
+            .await
+            .unwrap();
 
-    environment
-        .get_connector()
-        .clear_incoming_transactions()
-        .await
-        .unwrap();
-    environment.bump_chain().await;
+        environment.bump_chain().await;
+        // chain scan shows the same
+        sender.do_sync(false).await.unwrap();
 
-    zingolib::testutils::lightclient::lookup_statuses(&primary, txids.clone())
+        sleep(std::time::Duration::from_millis(10_000)).await;
+
+        environment.bump_chain().await;
+        // chain scan shows the same
+        sender.do_sync(false).await.unwrap();
+
+        // check that each record has the expected fee and status, returning the fee and outputs
+        let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
+            Vec<u64>,
+            (Vec<u64>, Vec<ConfirmationStatus>),
+        ) = testutils::assertions::for_each_proposed_record(
+            sender,
+            proposal,
+            &txids,
+            |records, record, step| {
+                (
+                    testutils::assertions::compare_fee(records, record, step),
+                    (record.query_sum_value(OutputQuery::any()), record.status),
+                )
+            },
+        )
         .await
-        .map(|status| {
+        .into_iter()
+        .map(|stepwise_result| {
+            stepwise_result
+                .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+                .unwrap()
+        })
+        .unzip();
+
+        assert_eq!(sender_confirmed_fees, sender_recorded_fees);
+        assert_eq!(sender_confirmed_outputs, sender_recorded_outputs);
+        for status in sender_confirmed_statuses {
             assert_eq!(
                 status,
-                Some(ConfirmationStatus::Transmitted(send_height.into()))
+                ConfirmationStatus::Transmitted(server_height_at_send + 1)
             );
-        });
-
-    zingolib::testutils::lightclient::lookup_statuses(&secondary, txids.clone())
-        .await
-        .map(|status| {
-            assert!(status.is_none());
-        });
-
-    send_height = 0;
-
-    primary.do_sync(false).await.unwrap();
-
-    zingolib::testutils::lightclient::lookup_statuses(&primary, txids.clone())
-        .await
-        .map(|status| {
-            assert_eq!(
-                status,
-                Some(ConfirmationStatus::Transmitted(send_height.into()))
-            );
-        });
-
-    let ref_primary: Arc<LightClient> = Arc::new(primary);
-    LightClient::start_mempool_monitor(ref_primary).unwrap();
+        }
+    }
 }

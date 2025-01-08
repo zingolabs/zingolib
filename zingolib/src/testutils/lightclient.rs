@@ -98,6 +98,7 @@ pub mod from_inputs {
 }
 
 /// gets stati for a vec of txids
+#[deprecated(note = "use for_each_proposed_record")]
 pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,

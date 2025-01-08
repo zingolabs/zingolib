@@ -759,7 +759,7 @@ mod tests {
             true,
         );
 
-        assert_eq!(valid_config.is_ok(), true);
+        assert!(valid_config.is_ok());
     }
 
     #[tokio::test]
