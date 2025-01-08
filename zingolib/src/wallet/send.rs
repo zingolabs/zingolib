@@ -50,7 +50,7 @@ impl SendProgress {
 
 impl LightWallet {
     // Reset the send progress status to blank
-    pub(crate) async fn reset_send_progress(&self) {
+    pub(crate) async fn reset_send_result(&self) {
         let mut g = self.send_progress.write().await;
         let next_id = g.id + 1;
 
@@ -59,7 +59,7 @@ impl LightWallet {
     }
 
     /// Get the current sending status.
-    pub async fn get_send_result(&self) -> SendProgress {
+    pub async fn get_send_progress(&self) -> SendProgress {
         self.send_progress.read().await.clone()
     }
 
@@ -115,7 +115,7 @@ impl LightWallet {
         }
 
         // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
+        self.reset_send_result().await;
 
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
             crate::wallet::utils::read_sapling_params()
