@@ -126,6 +126,17 @@ where
             .height as u32,
     );
 
+    #[cfg(feature = "darkside_tests")]
+    let txids = {
+        // darkside test chooses an new txid
+        let replacement_txids = sender.wallet.get_send_progress().await.txid_aliases;
+        if let Some(replacement_txids_e) = NonEmpty::from_vec(replacement_txids) {
+            replacement_txids_e
+        } else {
+            txids
+        }
+    };
+
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
         Vec<u64>,

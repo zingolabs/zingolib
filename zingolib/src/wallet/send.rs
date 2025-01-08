@@ -29,6 +29,8 @@ pub struct SendProgress {
     pub total: u32,
     /// TODO: Add Doc Comment Here!
     pub last_result: Option<Result<serde_json::Value, String>>,
+    #[cfg(feature = "darkside_tests")]
+    pub txid_aliases: Vec<zcash_primitives::transaction::TxId>,
 }
 
 impl SendProgress {
@@ -40,6 +42,8 @@ impl SendProgress {
             progress: 0,
             total: 0,
             last_result: None,
+            #[cfg(feature = "darkside_tests")]
+            txid_aliases: vec![],
         }
     }
 }
