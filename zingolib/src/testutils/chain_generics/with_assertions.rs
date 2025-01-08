@@ -129,13 +129,10 @@ where
     #[cfg(feature = "darkside_tests")]
     let txids = {
         // darkside test chooses an new txid
-        let gah = sender.wallet.get_send_result().await.last_result;
-        if let Some(aoeu) = gah {
-            if let Ok(poww) = aoeu {
-                poww
-            } else {
-                txids
-            }
+        if let Some(Ok(result_is_non_empty_txids)) =
+            sender.wallet.get_send_result().await.last_result
+        {
+            result_is_non_empty_txids
         } else {
             txids
         }
