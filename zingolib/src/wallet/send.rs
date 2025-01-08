@@ -1,8 +1,10 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
 use log::error;
+use nonempty::NonEmpty;
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
 use std::ops::DerefMut as _;
@@ -28,9 +30,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<serde_json::Value, String>>,
-    #[cfg(feature = "darkside_tests")]
-    pub txid_aliases: Vec<zcash_primitives::transaction::TxId>,
+    pub last_result: Option<Result<NonEmpty<TxId>, String>>,
 }
 
 impl SendProgress {
@@ -42,8 +42,6 @@ impl SendProgress {
             progress: 0,
             total: 0,
             last_result: None,
-            #[cfg(feature = "darkside_tests")]
-            txid_aliases: vec![],
         }
     }
 }
@@ -61,6 +59,14 @@ impl LightWallet {
     /// Get the current sending status.
     pub async fn get_send_result(&self) -> SendProgress {
         self.send_progress.read().await.clone()
+    }
+
+    // Set the previous send's status as an error or success
+    pub(crate) async fn set_send_result(&self, result: Result<NonEmpty<TxId>, String>) {
+        let mut p = self.send_progress.write().await;
+
+        p.is_send_in_progress = false;
+        p.last_result = Some(result);
     }
 }
 

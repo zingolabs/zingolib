@@ -467,14 +467,6 @@ impl LightWallet {
         self.price.write().await.zec_price = Some((now(), price));
         info!("Set current ZEC Price to USD {}", price);
     }
-
-    // Set the previous send's status as an error or success
-    pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
-        let mut p = self.send_progress.write().await;
-
-        p.is_send_in_progress = false;
-        p.last_result = Some(result);
-    }
 }
 
 #[cfg(test)]
