@@ -196,7 +196,7 @@ pub mod send_with_proposal {
         /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
         async fn broadcast_created_transactions(
             &self,
-        ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
+        ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
             let mut tx_map = self
                 .wallet
                 .transaction_context
@@ -292,17 +292,24 @@ pub mod send_with_proposal {
                         .update_note_spend_statuses(s.0, spend_status);
                 }
             }
+            let optnonem_txids = NonEmpty::from_vec(txids);
+            match optnonem_txids {
+                None => Err(BroadcastCachedTransactionsError::Cache(
+                    TransactionCacheError::NoCachedTx,
+                )),
+                Some(nonem_txids) => {
+                    tx_map
+                        .spending_data
+                        .as_mut()
+                        .ok_or(BroadcastCachedTransactionsError::Cache(
+                            TransactionCacheError::NoSpendCapability,
+                        ))?
+                        .cached_raw_transactions
+                        .clear();
 
-            tx_map
-                .spending_data
-                .as_mut()
-                .ok_or(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ))?
-                .cached_raw_transactions
-                .clear();
-
-            Ok(txids)
+                    Ok(nonem_txids)
+                }
+            }
         }
 
         async fn complete_and_broadcast<NoteRef>(
@@ -319,16 +326,16 @@ pub mod send_with_proposal {
             let broadcast_result = self.broadcast_created_transactions().await;
 
             self.wallet
-                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
-                    |vec_txids| {
-                        serde_json::Value::Array(
-                            vec_txids
-                                .iter()
-                                .map(|txid| serde_json::Value::String(txid.to_string()))
-                                .collect::<Vec<serde_json::Value>>(),
-                        )
-                    },
-                ))
+                .set_send_result(broadcast_result)
+                //     |vec_txids| {
+                //         // serde_json::Value::Array(
+                //         //     vec_txids
+                //         //         .iter()
+                //         //         .map(|txid| serde_json::Value::String(txid.to_string()))
+                //         //         .collect::<Vec<serde_json::Value>>(),
+                //         )
+                //     },
+                // ))
                 .await;
 
             Ok(txids)
