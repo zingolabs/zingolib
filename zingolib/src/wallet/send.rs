@@ -99,7 +99,6 @@ impl LightWallet {
             return Err(BuildTransactionError::NoSpendCapability);
         }
 
-        // Reset the progress to start. Any errors will get recorded here
         self.reset_send_result().await;
 
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
