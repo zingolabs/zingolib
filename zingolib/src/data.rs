@@ -1,4 +1,8 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
+
+use zcash_primitives::transaction::TxId;
+
+use crate::utils::conversion::TxIdFromHexEncodedStrError;
 pub mod proposal;
 pub mod witness_trees;
 
@@ -64,5 +68,32 @@ pub mod receivers {
             .collect();
 
         TransactionRequest::new(payments)
+    }
+}
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Clone, Debug, thiserror::Error)]
+pub(crate) enum TxIdComparisonError {
+    #[error("Server returned TxId [{0}] which fails to decode with error: [{1:?}].")]
+    InvalidTxId(String, TxIdFromHexEncodedStrError),
+    #[error("Broadcast TxId: [{0:?}], but Server returned different TxId: [{1:?}].")]
+    InconsistentTxId(TxId, TxId),
+}
+
+pub(crate) fn txid_comparison(
+    txid_1: TxId,
+    txid_2_string: String,
+) -> Result<(), TxIdComparisonError> {
+    match crate::utils::conversion::txid_from_hex_encoded_str(txid_2_string.as_str()) {
+        Ok(reported_txid) => {
+            if txid_1 != reported_txid {
+                {
+                    Err(TxIdComparisonError::InconsistentTxId(txid_1, reported_txid))
+                }
+            } else {
+                Ok(())
+            }
+        }
+        Err(e) => Err(TxIdComparisonError::InvalidTxId(txid_2_string, e)),
     }
 }
