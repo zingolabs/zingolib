@@ -241,7 +241,6 @@ pub mod send_with_proposal {
                                 transaction_record.status = new_status;
 
                                 match txid_comparison(txid, serverz_txid_string) {
-                                    Ok(_) => {}
                                     #[cfg(feature = "darkside_tests")]
                                     Err(TxIdComparisonError::InconsistentTxId(
                                         known_txid,
@@ -255,6 +254,7 @@ pub mod send_with_proposal {
                                             panic!();
                                         }
                                     }
+                                    Ok(_) => {}
                                     Err(e) => {
                                         todo!("{e}");
                                     }
