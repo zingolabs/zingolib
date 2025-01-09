@@ -288,6 +288,12 @@ where
         assert_eq!(recipients_confirmed_outputs, *recipient_mempool_outputs);
     });
 
+    {
+        let send_result = sender.wallet.get_send_progress().await;
+        assert!(matches!(send_result.last_result, Some(Ok(_))));
+        // all other fields of SendProgress are dummies in the lrz-trait world as of Jan 2025
+    }
+
     Ok((
         sender_confirmed_fees.iter().sum(),
         recipients_confirmed_outputs.into_iter().flatten().sum(), // this construction is problematic, because receivers are often duplicates
