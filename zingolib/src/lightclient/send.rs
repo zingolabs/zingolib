@@ -38,6 +38,7 @@ pub mod send_with_proposal {
 
     use zingo_status::confirmation_status::ConfirmationStatus;
 
+    use crate::data::{txid_comparison, TxIdComparisonError};
     use crate::lightclient::LightClient;
     use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
@@ -65,7 +66,7 @@ pub mod send_with_proposal {
         #[error("Server returned error: {0:?}")]
         Broadcast(String),
         #[error("Server returned invalid TxId: {0:?}")]
-        InvalidTxid(String),
+        InvalidTxId(String),
         #[error("Broadcast TxId: [{0:?}], but Server returned different TxId: [{0:?}]")]
         InconsistentTxId((TxId, TxId)),
     }
@@ -239,41 +240,23 @@ pub mod send_with_proposal {
 
                                 transaction_record.status = new_status;
 
-                                match crate::utils::conversion::txid_from_hex_encoded_str(
-                                    serverz_txid_string.as_str(),
-                                ) {
-                                    Ok(reported_txid) => {
-                                        if txid != reported_txid {
-                                            println!(
-                                                "served txid {} does not match calculated txid {}",
-                                                reported_txid, txid,
-                                            );
-                                            // during darkside tests, the server may generate a new txid.
-                                            // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-                                            #[cfg(feature = "darkside_tests")]
-                                            {
-                                                // now we reconfigure the tx_map to align with the server
-                                                // switch the TransactionRecord to the new txid
-                                                if tx_map.reidentify_tx(txid, reported_txid).is_ok()
-                                                {
-                                                    txid = reported_txid;
-                                                } else {
-                                                    panic!();
-                                                }
-                                            }
-
-                                            #[cfg(not(feature = "darkside_tests"))]
-                                            {
-                                                // did the server generate a new txid? is this related to the rebroadcast bug?
-                                                // crash
-                                                return Err(BroadcastCachedTransactionsError::InconsistentTxId((txid, reported_txid)));
-                                            }
-                                        };
+                                match txid_comparison(txid, serverz_txid_string) {
+                                    Ok(_) => {}
+                                    #[cfg(feature = "darkside_tests")]
+                                    Err(TxIdComparisonError::InconsistentTxId(
+                                        known_txid,
+                                        reported_txid,
+                                    )) => {
+                                        // during darkside tests, the server may generate a new txid.
+                                        // we accept and swap the TransactionRecord to the new txid
+                                        if tx_map.reidentify_tx(known_txid, reported_txid).is_ok() {
+                                            txid = reported_txid;
+                                        } else {
+                                            panic!();
+                                        }
                                     }
                                     Err(e) => {
-                                        return Err(BroadcastCachedTransactionsError::InvalidTxid(
-                                            format!("{serverz_txid_string} fails to read with {e}"),
-                                        ));
+                                        todo!("{e}");
                                     }
                                 }
 
