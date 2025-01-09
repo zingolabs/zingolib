@@ -250,20 +250,6 @@ pub mod send_with_proposal {
                                             );
                                             // during darkside tests, the server may generate a new txid.
                                             // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-                                            #[cfg(feature = "darkside_tests")]
-                                            {
-                                                // now we reconfigure the tx_map to align with the server
-                                                // switch the TransactionRecord to the new txid
-                                                if let Some(mut transaction_record) =
-                                                    tx_map.transaction_records_by_id.remove(&txid)
-                                                {
-                                                    transaction_record.txid = reported_txid;
-                                                    tx_map
-                                                        .transaction_records_by_id
-                                                        .insert(reported_txid, transaction_record);
-                                                }
-                                                txid = reported_txid;
-                                            }
                                             #[cfg(not(feature = "darkside_tests"))]
                                             {
                                                 // did the server generate a new txid? is this related to the rebroadcast bug?

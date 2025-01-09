@@ -289,7 +289,7 @@ where
     });
 
     {
-        let send_result = sender.wallet.get_send_progress().await;
+        let send_result = sender.wallet.get_send_result().await;
         assert!(matches!(send_result.last_result, Some(Ok(_))));
         // all other fields of SendProgress are dummies in the lrz-trait world as of Jan 2025
     }
