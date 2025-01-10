@@ -73,27 +73,31 @@ pub mod receivers {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Clone, Debug, thiserror::Error)]
-pub(crate) enum TxIdComparisonError {
+pub enum TxIdComparisonError {
     #[error("Server returned TxId [{0}] which fails to decode with error: [{1:?}].")]
     InvalidTxId(String, TxIdFromHexEncodedStrError),
-    #[error("Broadcast TxId: [{0:?}], but Server returned different TxId: [{1:?}].")]
+    /// please note that this error contains two arguments of the same type. Its possible to cause bugs by interpreting them in the opposite order.
+    #[error("Server returned TxId: [{0:?}], which does not match expected [{1:?}].")]
     InconsistentTxId(TxId, TxId),
 }
 
 pub(crate) fn txid_comparison(
-    txid_1: TxId,
-    txid_2_string: String,
+    reported_string_txid: String,
+    original_txid: TxId,
 ) -> Result<(), TxIdComparisonError> {
-    match crate::utils::conversion::txid_from_hex_encoded_str(txid_2_string.as_str()) {
+    match crate::utils::conversion::txid_from_hex_encoded_str(reported_string_txid.as_str()) {
         Ok(reported_txid) => {
-            if txid_1 != reported_txid {
+            if original_txid != reported_txid {
                 {
-                    Err(TxIdComparisonError::InconsistentTxId(txid_1, reported_txid))
+                    Err(TxIdComparisonError::InconsistentTxId(
+                        reported_txid,
+                        original_txid,
+                    ))
                 }
             } else {
                 Ok(())
             }
         }
-        Err(e) => Err(TxIdComparisonError::InvalidTxId(txid_2_string, e)),
+        Err(e) => Err(TxIdComparisonError::InvalidTxId(reported_string_txid, e)),
     }
 }
