@@ -120,7 +120,64 @@ pub mod send_with_proposal {
         CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
+    /// please note these functions are now arranged in order of top-level to lower level.
     impl LightClient {
+        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
+        /// A primary way to ask the LightClient to send.
+        pub async fn quick_send(
+            &self,
+            request: TransactionRequest,
+        ) -> Result<NonEmpty<TxId>, QuickSendError> {
+            let proposal = self.wallet.create_send_proposal(request).await?;
+            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
+        }
+
+        /// Shields all transparent funds without confirmation.
+        /// A second way to ask the LightClient to send. Will only send transparent funds, to self.
+        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
+            let proposal = self.wallet.create_shield_proposal().await?;
+            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
+        }
+
+        /// Calculates, signs and broadcasts transactions from a stored proposal.
+        /// A third way to ask the LightClient to send. Will finalize any already-proposed transaction.
+        pub async fn complete_and_broadcast_stored_proposal(
+            &self,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
+            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+                match proposal {
+                    crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
+                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                            .await
+                    }
+                    crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
+                        self.complete_and_broadcast::<Infallible>(shield_proposal)
+                            .await
+                    }
+                }
+                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
+            } else {
+                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
+            }
+        }
+
+        async fn complete_and_broadcast<NoteRef>(
+            &self,
+            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            self.wallet.create_transaction(proposal).await?;
+
+            let record_txids_result = self.record_created_transactions().await;
+            let txids = NonEmpty::from_vec(record_txids_result?)
+                .ok_or(CompleteAndBroadcastError::EmptyList)?;
+
+            let broadcast_result = self.broadcast_created_transactions().await;
+
+            self.wallet.set_send_result(broadcast_result).await;
+
+            Ok(txids)
+        }
+
         /// When a transactions are created, they are added to "spending_data".
         /// This step records all cached transactions into TransactionRecord s.
         /// This overwrites confirmation status to Calculated (not Broadcast)
@@ -241,8 +298,8 @@ pub mod send_with_proposal {
                                 match txid_comparison(serverz_txid_string, txid) {
                                     #[cfg(feature = "darkside_tests")]
                                     Err(TxIdComparisonError::InconsistentTxId(
-                                        known_txid,
                                         reported_txid,
+                                        known_txid,
                                     )) => {
                                         // during darkside tests, the server may generate a new txid.
                                         // we accept and swap the TransactionRecord to the new txid
@@ -294,59 +351,6 @@ pub mod send_with_proposal {
                     Ok(nonem_txids)
                 }
             }
-        }
-
-        async fn complete_and_broadcast<NoteRef>(
-            &self,
-            proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            self.wallet.create_transaction(proposal).await?;
-
-            let record_txids_result = self.record_created_transactions().await;
-            let txids = NonEmpty::from_vec(record_txids_result?)
-                .ok_or(CompleteAndBroadcastError::EmptyList)?;
-
-            let broadcast_result = self.broadcast_created_transactions().await;
-
-            self.wallet.set_send_result(broadcast_result).await;
-
-            Ok(txids)
-        }
-
-        /// Calculates, signs and broadcasts transactions from a stored proposal.
-        pub async fn complete_and_broadcast_stored_proposal(
-            &self,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
-            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-                match proposal {
-                    crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
-                            .await
-                    }
-                    crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
-                        self.complete_and_broadcast::<Infallible>(shield_proposal)
-                            .await
-                    }
-                }
-                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
-            } else {
-                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
-            }
-        }
-
-        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
-        pub async fn quick_send(
-            &self,
-            request: TransactionRequest,
-        ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            let proposal = self.wallet.create_send_proposal(request).await?;
-            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
-        }
-
-        /// Shields all transparent funds without confirmation.
-        pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self.wallet.create_shield_proposal().await?;
-            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
         }
     }
 
