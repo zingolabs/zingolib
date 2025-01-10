@@ -38,6 +38,7 @@ pub mod send_with_proposal {
     use crate::lightclient::LightClient;
     use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
+    use crate::wallet::tx_map::TxMap;
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
@@ -97,9 +98,9 @@ pub mod send_with_proposal {
         Cache(#[from] TransactionCacheError),
         #[error("Transaction not recorded. Call record_created_transactions first: {0:?}")]
         Unrecorded(TxId),
-        #[error("Couldnt fetch server height: {0:?}")]
+        #[error("Server returned error in response to blockheight query: {0:?}")]
         Height(String),
-        #[error("Server returned error: {0:?}")]
+        #[error("Server returned error in response to broadcast: {0:?}")]
         Broadcast(String),
         #[error("LightServer returned success txid string, but: {0:?}")]
         ServerResponse(#[from] TxIdComparisonError),
@@ -167,7 +168,16 @@ pub mod send_with_proposal {
             let txids = NonEmpty::from_vec(record_txids_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            let broadcast_result = self.broadcast_created_transactions().await;
+            let broadcast_result = broadcast_created_transactions(
+                &mut *self
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await,
+                self.get_server_uri(),
+            )
+            .await;
 
             self.wallet.set_send_result(broadcast_result).await;
 
@@ -247,105 +257,97 @@ pub mod send_with_proposal {
             }
             Ok(txids)
         }
+    }
+    /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
+    /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
+    async fn broadcast_created_transactions(
+        tx_map: &mut TxMap,
+        server_uri: http::Uri,
+    ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
+        let current_height = crate::grpc_connector::get_latest_block_height(&server_uri)
+            .await
+            .map_err(|e| BroadcastCachedTransactionsError::Height(e))?;
+        let calculated_tx_cache = tx_map
+            .spending_data
+            .as_ref()
+            .ok_or(BroadcastCachedTransactionsError::Cache(
+                TransactionCacheError::NoSpendCapability,
+            ))?
+            .cached_raw_transactions
+            .clone();
+        let mut txids = vec![];
+        for (mut txid, raw_tx) in calculated_tx_cache {
+            let mut spend_status = None;
+            if let Some(&mut ref mut transaction_record) =
+                tx_map.transaction_records_by_id.get_mut(&txid)
+            {
+                // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
+                if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
+                    match crate::grpc_connector::send_transaction(
+                        server_uri.clone(),
+                        raw_tx.into_boxed_slice(),
+                    )
+                    .await
+                    {
+                        Ok(serverz_txid_string) => {
+                            let new_status = ConfirmationStatus::Transmitted(current_height + 1);
 
-        /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
-        /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-        async fn broadcast_created_transactions(
-            &self,
-        ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
-            let mut tx_map = self
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
-            let current_height = self
-                .get_latest_block_height()
-                .await
-                .map_err(BroadcastCachedTransactionsError::Height)?;
-            let calculated_tx_cache = tx_map
-                .spending_data
-                .as_ref()
-                .ok_or(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoSpendCapability,
-                ))?
-                .cached_raw_transactions
-                .clone();
-            let mut txids = vec![];
-            for (mut txid, raw_tx) in calculated_tx_cache {
-                let mut spend_status = None;
-                if let Some(&mut ref mut transaction_record) =
-                    tx_map.transaction_records_by_id.get_mut(&txid)
-                {
-                    // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
-                    if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
-                        match crate::grpc_connector::send_transaction(
-                            self.get_server_uri(),
-                            raw_tx.into_boxed_slice(),
-                        )
-                        .await
-                        {
-                            Ok(serverz_txid_string) => {
-                                let new_status =
-                                    ConfirmationStatus::Transmitted(current_height + 1);
+                            transaction_record.status = new_status;
 
-                                transaction_record.status = new_status;
-
-                                match txid_comparison(serverz_txid_string, txid) {
-                                    #[cfg(feature = "darkside_tests")]
-                                    Err(TxIdComparisonError::InconsistentTxId(
-                                        reported_txid,
-                                        known_txid,
-                                    )) => {
-                                        // during darkside tests, the server may generate a new txid.
-                                        // we accept and swap the TransactionRecord to the new txid
-                                        if tx_map.reidentify_tx(known_txid, reported_txid).is_ok() {
-                                            txid = reported_txid;
-                                        } else {
-                                            panic!();
-                                        }
-                                    }
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        Err(e)?;
+                            match txid_comparison(serverz_txid_string, txid) {
+                                #[cfg(feature = "darkside_tests")]
+                                Err(TxIdComparisonError::InconsistentTxId(
+                                    reported_txid,
+                                    known_txid,
+                                )) => {
+                                    // during darkside tests, the server may generate a new txid.
+                                    // we accept and swap the TransactionRecord to the new txid
+                                    if tx_map.reidentify_tx(known_txid, reported_txid).is_ok() {
+                                        txid = reported_txid;
+                                    } else {
+                                        panic!();
                                     }
                                 }
-
-                                spend_status = Some((txid, new_status));
-
-                                txids.push(txid);
+                                Ok(_) => {}
+                                Err(e) => {
+                                    Err(e)?;
+                                }
                             }
-                            Err(server_err) => {
-                                return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
-                            }
-                        };
-                    }
-                } else {
-                    return Err(BroadcastCachedTransactionsError::Unrecorded(txid));
+
+                            spend_status = Some((txid, new_status));
+
+                            txids.push(txid);
+                        }
+                        Err(server_err) => {
+                            return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
+                        }
+                    };
                 }
-                if let Some(s) = spend_status {
-                    tx_map
-                        .transaction_records_by_id
-                        .update_note_spend_statuses(s.0, spend_status);
-                }
+            } else {
+                return Err(BroadcastCachedTransactionsError::Unrecorded(txid));
             }
-            let optnonem_txids = NonEmpty::from_vec(txids);
-            match optnonem_txids {
-                None => Err(BroadcastCachedTransactionsError::Cache(
-                    TransactionCacheError::NoCachedTx,
-                )),
-                Some(nonem_txids) => {
-                    tx_map
-                        .spending_data
-                        .as_mut()
-                        .ok_or(BroadcastCachedTransactionsError::Cache(
-                            TransactionCacheError::NoSpendCapability,
-                        ))?
-                        .cached_raw_transactions
-                        .clear();
+            if let Some(s) = spend_status {
+                tx_map
+                    .transaction_records_by_id
+                    .update_note_spend_statuses(s.0, spend_status);
+            }
+        }
+        let optnonem_txids = NonEmpty::from_vec(txids);
+        match optnonem_txids {
+            None => Err(BroadcastCachedTransactionsError::Cache(
+                TransactionCacheError::NoCachedTx,
+            )),
+            Some(nonem_txids) => {
+                tx_map
+                    .spending_data
+                    .as_mut()
+                    .ok_or(BroadcastCachedTransactionsError::Cache(
+                        TransactionCacheError::NoSpendCapability,
+                    ))?
+                    .cached_raw_transactions
+                    .clear();
 
-                    Ok(nonem_txids)
-                }
+                Ok(nonem_txids)
             }
         }
     }
