@@ -9,7 +9,6 @@ use testvectors::seeds::DARKSIDE_SEED;
 use tokio::time::sleep;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::ShieldedProtocol::Orchard;
-use zcash_primitives::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
