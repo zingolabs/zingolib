@@ -324,7 +324,7 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 }
 
 /// get_latest_block GRPC call
-pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
+pub async fn get_latest_block(uri: &http::Uri) -> Result<BlockId, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
     let mut client = client
         .get_client()
@@ -339,6 +339,13 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
         .map_err(|e| format!("Error with get_latest_block response at {uri}: {:?}", e))?;
 
     Ok(response.into_inner())
+}
+
+/// ask LightWalletD server for latest block height
+pub async fn get_latest_block_height(uri: &http::Uri) -> Result<BlockHeight, String> {
+    Ok(BlockHeight::from_u32(
+        get_latest_block(uri).await?.height as u32,
+    ))
 }
 
 /// TODO: Add Doc Comment Here!

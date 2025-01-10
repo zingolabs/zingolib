@@ -87,7 +87,7 @@ pub(crate) mod conduct_chain {
 
         async fn bump_chain(&mut self) {
             let height_before =
-                zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+                zingolib::grpc_connector::get_latest_block(&self.lightserver_uri().unwrap())
                     .await
                     .unwrap()
                     .height;

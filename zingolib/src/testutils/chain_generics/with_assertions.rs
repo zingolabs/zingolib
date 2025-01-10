@@ -10,7 +10,6 @@ use crate::wallet::notes::query::OutputQuery;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::PoolType;
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -119,12 +118,9 @@ where
 {
     println!("following proposal, preparing to unwind if an assertion fails.");
 
-    let server_height_at_send = BlockHeight::from(
-        crate::grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
-            .await
-            .unwrap()
-            .height as u32,
-    );
+    let server_height_at_send =
+        crate::grpc_connector::get_latest_block_height(&environment.lightserver_uri().unwrap())
+            .await?;
 
     #[cfg(feature = "darkside_tests")]
     let txids = {

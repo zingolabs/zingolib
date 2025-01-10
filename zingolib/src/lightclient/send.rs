@@ -7,11 +7,7 @@ use super::LightWalletSendProgress;
 
 impl LightClient {
     pub(crate) async fn get_latest_block_height(&self) -> Result<BlockHeight, String> {
-        Ok(BlockHeight::from_u32(
-            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
-                .await?
-                .height as u32,
-        ))
+        crate::grpc_connector::get_latest_block_height(&self.config.get_lightwalletd_uri()).await
     }
 
     /// TODO: Add Doc Comment Here!

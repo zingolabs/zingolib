@@ -279,12 +279,10 @@ async fn transaction_disappears_before_mempool() {
         let sender = &primary;
         let proposal = &proposal;
 
-        let server_height_at_send = BlockHeight::from(
-            grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
+        let server_height_at_send =
+            crate::grpc_connector::get_latest_block_height(&environment.lightserver_uri().unwrap())
                 .await
-                .unwrap()
-                .height as u32,
-        );
+                .unwrap();
 
         // check that each record has the expected fee and status, returning the fee
         let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
