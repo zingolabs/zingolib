@@ -44,14 +44,54 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
-    pub enum TransactionCacheError {
-        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-        NoSpendCapability,
-        #[error("No Tx in cached!")]
-        NoCachedTx,
-        #[error("Multistep transaction with non-tex steps")]
-        InvalidMultiStep,
+    #[derive(Debug, thiserror::Error)]
+    pub enum QuickSendError {
+        #[error("propose send {0:?}")]
+        ProposeSend(#[from] ProposeSendError),
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, thiserror::Error)]
+    pub enum QuickShieldError {
+        #[error("propose shield {0:?}")]
+        Propose(#[from] ProposeShieldError),
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, thiserror::Error)]
+    pub enum CompleteAndBroadcastStoredProposalError {
+        #[error("No proposal. Call do_propose first.")]
+        NoStoredProposal,
+        #[error("send {0:?}")]
+        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, thiserror::Error)]
+    pub enum CompleteAndBroadcastError {
+        #[error("The transaction could not be calculated: {0:?}")]
+        BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
+        #[error("Recording created transaction failed: {0:?}")]
+        Record(#[from] RecordCachedTransactionsError),
+        #[error("Broadcast failed: {0:?}")]
+        Broadcast(#[from] BroadcastCachedTransactionsError),
+        #[error("TxIds did not work through?")]
+        EmptyList,
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Debug, thiserror::Error)]
+    pub enum RecordCachedTransactionsError {
+        #[error("Cant record: {0:?}")]
+        Cache(#[from] TransactionCacheError),
+        #[error("Couldnt fetch server height: {0:?}")]
+        Height(String),
+        #[error("Decoding failed: {0:?}")]
+        Decode(#[from] std::io::Error),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -70,54 +110,14 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum RecordCachedTransactionsError {
-        #[error("Cant record: {0:?}")]
-        Cache(#[from] TransactionCacheError),
-        #[error("Couldnt fetch server height: {0:?}")]
-        Height(String),
-        #[error("Decoding failed: {0:?}")]
-        Decode(#[from] std::io::Error),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum CompleteAndBroadcastError {
-        #[error("The transaction could not be calculated: {0:?}")]
-        BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Recording created transaction failed: {0:?}")]
-        Record(#[from] RecordCachedTransactionsError),
-        #[error("Broadcast failed: {0:?}")]
-        Broadcast(#[from] BroadcastCachedTransactionsError),
-        #[error("TxIds did not work through?")]
-        EmptyList,
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum CompleteAndBroadcastStoredProposalError {
-        #[error("No proposal. Call do_propose first.")]
-        NoStoredProposal,
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum QuickSendError {
-        #[error("propose send {0:?}")]
-        ProposeSend(#[from] ProposeSendError),
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum QuickShieldError {
-        #[error("propose shield {0:?}")]
-        Propose(#[from] ProposeShieldError),
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
+    #[derive(Clone, Debug, thiserror::Error)]
+    pub enum TransactionCacheError {
+        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+        NoSpendCapability,
+        #[error("No Tx in cached!")]
+        NoCachedTx,
+        #[error("Multistep transaction with non-tex steps")]
+        InvalidMultiStep,
     }
 
     /// please note these functions are now arranged in order of top-level to lower level.
