@@ -65,10 +65,8 @@ pub mod send_with_proposal {
         Height(String),
         #[error("Server returned error: {0:?}")]
         Broadcast(String),
-        #[error("Server returned invalid TxId: {0:?}")]
-        InvalidTxId(String),
-        #[error("Broadcast TxId: [{0:?}], but Server returned different TxId: [{0:?}]")]
-        InconsistentTxId((TxId, TxId)),
+        #[error("LightServer returned success txid string, but: {0:?}")]
+        ServerResponse(#[from] TxIdComparisonError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -240,7 +238,7 @@ pub mod send_with_proposal {
 
                                 transaction_record.status = new_status;
 
-                                match txid_comparison(txid, serverz_txid_string) {
+                                match txid_comparison(serverz_txid_string, txid) {
                                     #[cfg(feature = "darkside_tests")]
                                     Err(TxIdComparisonError::InconsistentTxId(
                                         known_txid,
@@ -256,7 +254,7 @@ pub mod send_with_proposal {
                                     }
                                     Ok(_) => {}
                                     Err(e) => {
-                                        todo!("{e}");
+                                        Err(e)?;
                                     }
                                 }
 
