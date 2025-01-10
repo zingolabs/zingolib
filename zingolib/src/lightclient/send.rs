@@ -168,6 +168,15 @@ pub mod send_with_proposal {
             let txids = NonEmpty::from_vec(record_txids_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
+            // tokio::spawn(async move {
+            //     loop {
+            //         println!("insistor");
+
+            //         tokio::task::yield_now().await;
+            //         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            //     }
+            // });
+
             let broadcast_result = broadcast_created_transactions(
                 &mut *self
                     .wallet
