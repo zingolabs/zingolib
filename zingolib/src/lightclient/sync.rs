@@ -337,7 +337,7 @@ impl LightClient {
         };
 
         let latest_blockid =
-            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
+            crate::grpc_connector::get_latest_block(&self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
         let latest_blockid =
             crate::wallet::data::BlockData::new_with(latest_blockid.height, &latest_blockid.hash);
