@@ -170,14 +170,17 @@ pub mod send_with_proposal {
             let txids = NonEmpty::from_vec(record_txids_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            // tokio::spawn(async move {
-            //     loop {
-            //         println!("insistor");
-
-            //         tokio::task::yield_now().await;
-            //         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            //     }
-            // });
+            start_broadcast_loop(
+                &mut *self
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .write()
+                    .await,
+                self.get_server_uri(),
+                self.wallet.send_progress.clone(),
+            )
+            .await;
 
             let broadcast_result = broadcast_created_transactions(
                 &mut *self
@@ -270,6 +273,23 @@ pub mod send_with_proposal {
             Ok(txids)
         }
     }
+
+    pub async fn start_broadcast_loop(
+        tx_map: &mut TxMap,
+        server_uri: http::Uri,
+        send_result: Arc<RwLock<SendProgress>>,
+    ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
+        tokio::spawn(async move {
+            loop {
+                println!("insistor");
+
+                tokio::task::yield_now().await;
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
+        });
+        todo!();
+    }
+
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
     async fn broadcast_created_transactions(
