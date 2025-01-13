@@ -23,9 +23,11 @@ impl LightClient {
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
     use std::convert::Infallible;
+    use std::sync::Arc;
 
     use nonempty::NonEmpty;
 
+    use tokio::sync::RwLock;
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
@@ -36,9 +38,9 @@ pub mod send_with_proposal {
 
     use crate::data::{txid_comparison, TxIdComparisonError};
     use crate::lightclient::LightClient;
-    use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
     use crate::wallet::tx_map::TxMap;
+    use crate::wallet::{now, SendProgress};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
@@ -188,7 +190,8 @@ pub mod send_with_proposal {
             )
             .await;
 
-            self.wallet.set_send_result(broadcast_result).await;
+            self.wallet.send_progress.write().await.is_send_in_progress = false;
+            self.wallet.send_progress.write().await.last_result = Some(broadcast_result);
 
             Ok(txids)
         }

@@ -209,7 +209,7 @@ pub struct LightWallet {
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     /// Progress of an outgoing transaction
-    send_progress: Arc<RwLock<SendProgress>>,
+    pub(crate) send_progress: Arc<RwLock<SendProgress>>,
 
     /// The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
