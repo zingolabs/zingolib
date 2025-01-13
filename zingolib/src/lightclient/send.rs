@@ -182,20 +182,6 @@ pub mod send_with_proposal {
             )
             .await;
 
-            let broadcast_result = broadcast_created_transactions(
-                &mut *self
-                    .wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .write()
-                    .await,
-                self.get_server_uri(),
-            )
-            .await;
-
-            self.wallet.send_progress.write().await.is_send_in_progress = false;
-            self.wallet.send_progress.write().await.last_result = Some(broadcast_result);
-
             Ok(txids)
         }
 
@@ -278,7 +264,11 @@ pub mod send_with_proposal {
         tx_map: &mut TxMap,
         server_uri: http::Uri,
         send_result: Arc<RwLock<SendProgress>>,
-    ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
+    ) {
+        let broadcast_result = broadcast_created_transactions(tx_map, server_uri).await;
+
+        send_result.write().await.is_send_in_progress = false;
+        send_result.write().await.last_result = Some(broadcast_result);
         tokio::spawn(async move {
             loop {
                 println!("insistor");
@@ -287,7 +277,6 @@ pub mod send_with_proposal {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             }
         });
-        todo!();
     }
 
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
@@ -298,7 +287,7 @@ pub mod send_with_proposal {
     ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
         let current_height = crate::grpc_connector::get_latest_block_height(&server_uri)
             .await
-            .map_err(|e| BroadcastCachedTransactionsError::Height(e))?;
+            .map_err(BroadcastCachedTransactionsError::Height)?;
         let calculated_tx_cache = tx_map
             .spending_data
             .as_ref()
