@@ -33,6 +33,8 @@ pub struct SendProgress {
     pub total: u32,
     /// TODO: Add Doc Comment Here!
     pub last_result: Option<Result<NonEmpty<TxId>, BroadcastCachedTransactionsError>>,
+    /// the number of attempts the current broadcast loop has made to broadcast a transaction.
+    pub attempt: u32,
 }
 
 impl SendProgress {
@@ -44,6 +46,7 @@ impl SendProgress {
             progress: 0,
             total: 0,
             last_result: None,
+            attempt: 0,
         }
     }
 }
