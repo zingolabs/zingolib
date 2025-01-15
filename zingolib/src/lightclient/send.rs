@@ -290,8 +290,10 @@ pub mod send_with_proposal {
     pub enum BroadcastCachedTransactionsError {
         #[error("Cant broadcast: {0:?}")]
         Cache(#[from] TransactionCacheError),
+        #[error("Transaction record should have been created already. {0:?}")]
+        Record(#[from] GetRecordError),
         #[error("Broadcast incomplete. Error: {0:?}")]
-        Incomplete(#[from] BroadcastTransactionUnlessConfirmedError),
+        Incomplete(#[from] BroadcastTransactionError),
     }
 
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
@@ -301,9 +303,7 @@ pub mod send_with_proposal {
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
     ) -> Result<(NonEmpty<TxId>, bool), BroadcastCachedTransactionsError> {
-        println!("step 10");
         let tx_map = arc_tx_map.write().await;
-        println!("step 11");
         let calculated_tx_cache = tx_map
             .spending_data
             .as_ref()
@@ -315,21 +315,21 @@ pub mod send_with_proposal {
         drop(tx_map);
         let mut results = vec![];
         let mut any_transaction_broadcast = false;
-        println!("step 12");
         for (txid, raw_tx) in calculated_tx_cache {
-            let broadcast = broadcast_transaction_unless_confirmed(
-                arc_tx_map.clone(),
-                txid,
-                raw_tx,
-                &server_uri,
-            )
-            .await?;
-            if broadcast {
-                any_transaction_broadcast = true;
+            let mut tx_map = arc_tx_map.write().await;
+
+            let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
+            // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
+            match transaction_record.status {
+                ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
+                    drop(tx_map);
+                    broadcast_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await?;
+                    any_transaction_broadcast = true;
+                }
+                ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {}
             }
             results.push(txid);
         }
-        println!("step 13");
         NonEmpty::from_vec(results)
             .map(|vec| (vec, any_transaction_broadcast))
             .ok_or(BroadcastCachedTransactionsError::Cache(
@@ -339,9 +339,7 @@ pub mod send_with_proposal {
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Clone, Debug, thiserror::Error)]
-    pub enum BroadcastTransactionUnlessConfirmedError {
-        #[error("Transaction record should have been created already. {0:?}")]
-        Record(#[from] GetRecordError),
+    pub enum BroadcastTransactionError {
         #[error("Server returned error in response to blockheight query: {0:?}")]
         Height(String),
         #[error("LightServer returned error in response to broadcast: {0:?}")]
@@ -352,49 +350,28 @@ pub mod send_with_proposal {
 
     /// Ok(false) suggests the transaction was not broadcast because it was already on server.
     /// Ok(true) if it was broadcast
-    async fn broadcast_transaction_unless_confirmed(
+    async fn broadcast_transaction(
         arc_tx_map: Arc<RwLock<TxMap>>,
         txid: TxId,
         raw_tx: Vec<u8>,
         server_uri: &http::Uri,
-    ) -> Result<bool, BroadcastTransactionUnlessConfirmedError> {
-        println!("step 120");
-        let mut tx_map = arc_tx_map.write().await;
+    ) -> Result<(), BroadcastTransactionError> {
+        let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
+            .await
+            .map_err(BroadcastTransactionError::Height)?;
 
-        let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
-        // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
-        println!("step 121");
-        match transaction_record.status {
-            ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
-                let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
-                    .await
-                    .map_err(BroadcastTransactionUnlessConfirmedError::Height)?;
-
-                match crate::grpc_connector::send_transaction(
-                    server_uri.clone(),
-                    raw_tx.into_boxed_slice(),
-                )
-                .await
-                {
-                    Err(server_err) => Err(
-                        BroadcastTransactionUnlessConfirmedError::ServerResponse(server_err),
-                    ),
-                    Ok(serverz_txid_string) => {
-                        println!("step 122");
-                        drop(tx_map);
-                        post_broadcast_success_update_transaction(
-                            arc_tx_map,
-                            &txid,
-                            serverz_txid_string,
-                            current_height,
-                        )
-                        .await
-                        .map_err(|e| e.into())
-                        .map(|_| true)
-                    }
-                }
-            }
-            ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => Ok(false),
+        match crate::grpc_connector::send_transaction(server_uri.clone(), raw_tx.into_boxed_slice())
+            .await
+        {
+            Err(server_err) => Err(BroadcastTransactionError::ServerResponse(server_err)),
+            Ok(serverz_txid_string) => post_broadcast_success_update_transaction(
+                arc_tx_map,
+                &txid,
+                serverz_txid_string,
+                current_height,
+            )
+            .await
+            .map_err(|e| e.into()),
         }
     }
 
@@ -413,7 +390,6 @@ pub mod send_with_proposal {
         broadcast_success: String,
         current_height: BlockHeight,
     ) -> Result<(), PostBroadcastSuccessUpdateTransactionError> {
-        println!("step 1220");
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(txid)?;
@@ -422,7 +398,6 @@ pub mod send_with_proposal {
 
         transaction_record.status = new_status;
 
-        println!("step 1221");
         let chosen_txid: TxId = match txid_comparison(broadcast_success, txid) {
             #[cfg(feature = "darkside_tests")]
             Err(TxIdComparisonError::InconsistentTxId(reported_txid, known_txid)) => {
@@ -442,7 +417,6 @@ pub mod send_with_proposal {
         };
 
         let spend_status = Some((chosen_txid, new_status));
-        println!("step 1222");
         tx_map
             .transaction_records_by_id
             .update_note_spend_statuses(chosen_txid, spend_status);
