@@ -12,9 +12,10 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
-        let progress = self.wallet.get_send_result().await;
+        let result = self.wallet.get_send_result().await;
+        todo!();
         Ok(LightWalletSendProgress {
-            progress: progress.clone(),
+            progress: result.clone(),
             interrupt_sync: *self.interrupt_sync.read().await,
         })
     }
@@ -42,7 +43,7 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
     use crate::wallet::transaction_records_by_id::GetRecordError;
     use crate::wallet::tx_map::TxMap;
-    use crate::wallet::{now, SendProgress};
+    use crate::wallet::{now, SendResult};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
@@ -162,7 +163,7 @@ pub mod send_with_proposal {
                     .transaction_context
                     .transaction_metadata_set
                     .clone(),
-                &self.get_server_uri(),
+                self.get_server_uri(),
                 self.wallet.send_progress.clone(),
             )
             .await;
@@ -247,13 +248,13 @@ pub mod send_with_proposal {
 
     pub async fn start_broadcast_loop(
         arc_tx_map: Arc<RwLock<TxMap>>,
-        server_uri: &http::Uri,
-        send_result: Arc<RwLock<SendProgress>>,
+        server_uri: http::Uri,
+        send_result: Arc<RwLock<SendResult>>,
     ) {
         tokio::spawn(async move {
             loop {
                 let broadcast_result = dbg!(
-                    broadcast_cached_transactions(arc_tx_map.clone(), &server_uri.clone()).await
+                    broadcast_cached_transactions(arc_tx_map.clone(), server_uri.clone()).await
                 );
 
                 send_result.write().await.attempt += 1;
@@ -282,7 +283,7 @@ pub mod send_with_proposal {
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
     async fn broadcast_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
-        server_uri: &http::Uri,
+        server_uri: http::Uri,
     ) -> Result<NonEmpty<(TxId, ConfirmationStatus)>, BroadcastCachedTransactionsError> {
         let mut tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
@@ -300,7 +301,7 @@ pub mod send_with_proposal {
                     arc_tx_map.clone(),
                     txid,
                     raw_tx,
-                    &server_uri.clone(),
+                    &server_uri,
                 )
                 .await
                 .map(|status| (txid, status))?,
