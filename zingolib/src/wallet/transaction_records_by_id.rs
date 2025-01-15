@@ -83,8 +83,20 @@ impl TransactionRecordsById {
     }
 }
 
+#[allow(missing_docs)] // error types document themselves
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum GetRecordError {
+    #[error("Transaction not in record: {0:?}")]
+    Unrecorded(TxId),
+}
+
 /// Methods to query and modify the map.
 impl TransactionRecordsById {
+    pub fn get_record(&mut self, txid: &TxId) -> Result<&mut TransactionRecord, GetRecordError> {
+        self.get_mut(txid)
+            .map(Ok)
+            .unwrap_or_else(|| Err(GetRecordError::Unrecorded(txid.clone())))
+    }
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         self.0.iter().fold(0, |partial_sum, (_id, record)| {
