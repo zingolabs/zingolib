@@ -83,19 +83,19 @@ pub enum TxIdComparisonError {
 
 pub(crate) fn txid_comparison(
     reported_string_txid: String,
-    original_txid: TxId,
-) -> Result<(), TxIdComparisonError> {
+    original_txid: &TxId,
+) -> Result<TxId, TxIdComparisonError> {
     match crate::utils::conversion::txid_from_hex_encoded_str(reported_string_txid.as_str()) {
         Ok(reported_txid) => {
-            if original_txid != reported_txid {
+            if *original_txid != reported_txid {
                 {
                     Err(TxIdComparisonError::InconsistentTxId(
                         reported_txid,
-                        original_txid,
+                        *original_txid,
                     ))
                 }
             } else {
-                Ok(())
+                Ok(reported_txid)
             }
         }
         Err(e) => Err(TxIdComparisonError::InvalidTxId(reported_string_txid, e)),
