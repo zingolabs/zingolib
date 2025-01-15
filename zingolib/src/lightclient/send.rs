@@ -263,17 +263,15 @@ pub mod send_with_proposal {
                         send_result.write().await.last_result = Some(Err(e.to_string()));
                         false
                     }
-                    Ok(vec_txid_and_status) => {
+                    Ok(vec_txid_and_whether_broadcast) => {
                         let mut complete = true;
                         let mut txids = vec![];
-                        for (txid, status) in vec_txid_and_status {
-                            match status {
-                                ConfirmationStatus::Calculated(_)
-                                | ConfirmationStatus::Transmitted(_) => {
+                        for (txid, whether_broadcast) in vec_txid_and_whether_broadcast {
+                            match whether_broadcast {
+                                true => {
                                     complete = false;
                                 }
-                                ConfirmationStatus::Mempool(_)
-                                | ConfirmationStatus::Confirmed(_) => {
+                                false => {
                                     txids.push(txid);
                                 }
                             }
@@ -310,7 +308,7 @@ pub mod send_with_proposal {
     async fn broadcast_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-    ) -> Result<NonEmpty<(TxId, ConfirmationStatus)>, BroadcastCachedTransactionsError> {
+    ) -> Result<NonEmpty<(TxId, bool)>, BroadcastCachedTransactionsError> {
         let tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
             .spending_data
@@ -351,12 +349,14 @@ pub mod send_with_proposal {
         PostProcessingError(#[from] PostBroadcastSuccessUpdateTransactionError),
     }
 
+    /// Ok(false) suggests the transaction was not broadcast because it was already on server.
+    /// Ok(true) if it was broadcast
     async fn broadcast_transaction_unless_confirmed(
         arc_tx_map: Arc<RwLock<TxMap>>,
         txid: TxId,
         raw_tx: Vec<u8>,
         server_uri: &http::Uri,
-    ) -> Result<ConfirmationStatus, BroadcastTransactionUnlessConfirmedError> {
+    ) -> Result<bool, BroadcastTransactionUnlessConfirmedError> {
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
@@ -386,12 +386,11 @@ pub mod send_with_proposal {
                         )
                         .await
                         .map_err(|e| e.into())
+                        .map(|_| true)
                     }
                 }
             }
-            ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {
-                Ok(transaction_record.status)
-            }
+            ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => Ok(false),
         }
     }
 
@@ -409,7 +408,7 @@ pub mod send_with_proposal {
         txid: &TxId,
         broadcast_success: String,
         current_height: BlockHeight,
-    ) -> Result<ConfirmationStatus, PostBroadcastSuccessUpdateTransactionError> {
+    ) -> Result<(), PostBroadcastSuccessUpdateTransactionError> {
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(txid)?;
@@ -441,7 +440,7 @@ pub mod send_with_proposal {
             .transaction_records_by_id
             .update_note_spend_statuses(chosen_txid, spend_status);
 
-        Ok(new_status)
+        Ok(())
     }
 
     // async fn broadcast_confirmed(
