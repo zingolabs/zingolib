@@ -252,14 +252,41 @@ pub mod send_with_proposal {
     ) {
         tokio::spawn(async move {
             loop {
+                send_result.write().await.attempt += 1;
+
                 let broadcast_result = dbg!(
                     broadcast_cached_transactions(arc_tx_map.clone(), server_uri.clone()).await
                 );
 
-                send_result.write().await.attempt += 1;
-                send_result.write().await.last_result = Some(broadcast_result);
+                let complete = match broadcast_result {
+                    Err(e) => {
+                        send_result.write().await.last_result = Some(Err(e.to_string()));
+                        false
+                    }
+                    Ok(vec_txid_and_status) => {
+                        let mut complete = true;
+                        let mut txids = vec![];
+                        for (txid, status) in vec_txid_and_status {
+                            match status {
+                                ConfirmationStatus::Calculated(_)
+                                | ConfirmationStatus::Transmitted(_) => {
+                                    complete = false;
+                                }
+                                ConfirmationStatus::Mempool(_)
+                                | ConfirmationStatus::Confirmed(_) => {
+                                    txids.push(txid);
+                                }
+                            }
+                        }
+                        if complete {
+                            send_result.write().await.last_result =
+                                Some(Ok(NonEmpty::from_vec(txids).unwrap()));
+                        }
+                        complete
+                    }
+                };
 
-                if dbg!(send_result.write().await.attempt) > 5 {
+                if (dbg!(send_result.write().await.attempt) > 5) | complete {
                     break;
                 } else {
                     tokio::task::yield_now().await;
@@ -284,7 +311,7 @@ pub mod send_with_proposal {
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
     ) -> Result<NonEmpty<(TxId, ConfirmationStatus)>, BroadcastCachedTransactionsError> {
-        let mut tx_map = arc_tx_map.write().await;
+        let tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
             .spending_data
             .as_ref()
