@@ -171,12 +171,10 @@ pub mod send_with_proposal {
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
             start_broadcast_loop(
-                &mut *self
-                    .wallet
+                self.wallet
                     .transaction_context
                     .transaction_metadata_set
-                    .write()
-                    .await,
+                    .clone(),
                 self.get_server_uri(),
                 self.wallet.send_progress.clone(),
             )
@@ -261,20 +259,25 @@ pub mod send_with_proposal {
     }
 
     pub async fn start_broadcast_loop(
-        tx_map: &mut TxMap,
+        arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
         send_result: Arc<RwLock<SendProgress>>,
     ) {
-        let broadcast_result = broadcast_created_transactions(tx_map, server_uri).await;
-
-        send_result.write().await.is_send_in_progress = false;
-        send_result.write().await.last_result = Some(broadcast_result);
         tokio::spawn(async move {
             loop {
-                println!("insistor");
+                let broadcast_result = dbg!(
+                    broadcast_created_transactions(arc_tx_map.clone(), server_uri.clone()).await
+                );
 
-                tokio::task::yield_now().await;
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                send_result.write().await.attempt += 1;
+                send_result.write().await.last_result = Some(broadcast_result);
+
+                if dbg!(send_result.write().await.attempt) > 5 {
+                    break;
+                } else {
+                    tokio::task::yield_now().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
             }
         });
     }
@@ -282,12 +285,13 @@ pub mod send_with_proposal {
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
     async fn broadcast_created_transactions(
-        tx_map: &mut TxMap,
+        arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
     ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
         let current_height = crate::grpc_connector::get_latest_block_height(&server_uri)
             .await
             .map_err(BroadcastCachedTransactionsError::Height)?;
+        let mut tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
             .spending_data
             .as_ref()
