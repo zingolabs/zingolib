@@ -253,11 +253,17 @@ pub mod send_with_proposal {
     ) {
         tokio::spawn(async move {
             loop {
+                println!("step 0");
+
                 send_result.write().await.attempt += 1;
+
+                println!("step 1");
 
                 let broadcast_result = dbg!(
                     broadcast_cached_transactions(arc_tx_map.clone(), server_uri.clone()).await
                 );
+
+                println!("step 2");
 
                 let complete = match broadcast_result {
                     Err(e) => {
@@ -310,7 +316,9 @@ pub mod send_with_proposal {
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
     ) -> Result<NonEmpty<(TxId, bool)>, BroadcastCachedTransactionsError> {
+        println!("step 10");
         let tx_map = arc_tx_map.write().await;
+        println!("step 11");
         let calculated_tx_cache = tx_map
             .spending_data
             .as_ref()
@@ -319,7 +327,9 @@ pub mod send_with_proposal {
             ))?
             .cached_raw_transactions
             .clone();
+        drop(tx_map);
         let mut results = vec![];
+        println!("step 12");
         for (mut txid, raw_tx) in calculated_tx_cache {
             results.push(
                 broadcast_transaction_unless_confirmed(
@@ -332,6 +342,7 @@ pub mod send_with_proposal {
                 .map(|status| (txid, status))?,
             );
         }
+        println!("step 13");
         NonEmpty::from_vec(results).ok_or(BroadcastCachedTransactionsError::Cache(
             TransactionCacheError::NoCachedTx,
         ))
@@ -358,10 +369,12 @@ pub mod send_with_proposal {
         raw_tx: Vec<u8>,
         server_uri: &http::Uri,
     ) -> Result<bool, BroadcastTransactionUnlessConfirmedError> {
+        println!("step 120");
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
         // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
+        println!("step 121");
         match transaction_record.status {
             ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
                 let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
@@ -378,6 +391,7 @@ pub mod send_with_proposal {
                         BroadcastTransactionUnlessConfirmedError::ServerResponse(server_err),
                     ),
                     Ok(serverz_txid_string) => {
+                        println!("step 122");
                         drop(tx_map);
                         post_broadcast_success_update_transaction(
                             arc_tx_map,
@@ -410,6 +424,7 @@ pub mod send_with_proposal {
         broadcast_success: String,
         current_height: BlockHeight,
     ) -> Result<(), PostBroadcastSuccessUpdateTransactionError> {
+        println!("step 1220");
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(txid)?;
@@ -418,6 +433,7 @@ pub mod send_with_proposal {
 
         transaction_record.status = new_status;
 
+        println!("step 1221");
         let chosen_txid: TxId = match txid_comparison(broadcast_success, txid) {
             #[cfg(feature = "darkside_tests")]
             Err(TxIdComparisonError::InconsistentTxId(reported_txid, known_txid)) => {
@@ -437,6 +453,7 @@ pub mod send_with_proposal {
         };
 
         let spend_status = Some((chosen_txid, new_status));
+        println!("step 1222");
         tx_map
             .transaction_records_by_id
             .update_note_spend_statuses(chosen_txid, spend_status);
