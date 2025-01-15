@@ -32,6 +32,7 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
+    use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::{Transaction, TxId};
 
     use zingo_status::confirmation_status::ConfirmationStatus;
@@ -39,6 +40,7 @@ pub mod send_with_proposal {
     use crate::data::{txid_comparison, TxIdComparisonError};
     use crate::lightclient::LightClient;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
+    use crate::wallet::transaction_records_by_id::GetRecordError;
     use crate::wallet::tx_map::TxMap;
     use crate::wallet::{now, SendProgress};
 
@@ -91,21 +93,6 @@ pub mod send_with_proposal {
         Height(String),
         #[error("Decoding failed: {0:?}")]
         Decode(#[from] std::io::Error),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
-    pub enum BroadcastCachedTransactionsError {
-        #[error("Cant broadcast: {0:?}")]
-        Cache(#[from] TransactionCacheError),
-        #[error("Transaction not recorded. Call record_created_transactions first: {0:?}")]
-        Unrecorded(TxId),
-        #[error("Server returned error in response to blockheight query: {0:?}")]
-        Height(String),
-        #[error("Server returned error in response to broadcast: {0:?}")]
-        Broadcast(String),
-        #[error("LightServer returned success txid string, but: {0:?}")]
-        ServerResponse(#[from] TxIdComparisonError),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -175,7 +162,7 @@ pub mod send_with_proposal {
                     .transaction_context
                     .transaction_metadata_set
                     .clone(),
-                self.get_server_uri(),
+                &self.get_server_uri(),
                 self.wallet.send_progress.clone(),
             )
             .await;
@@ -260,13 +247,13 @@ pub mod send_with_proposal {
 
     pub async fn start_broadcast_loop(
         arc_tx_map: Arc<RwLock<TxMap>>,
-        server_uri: http::Uri,
+        server_uri: &http::Uri,
         send_result: Arc<RwLock<SendProgress>>,
     ) {
         tokio::spawn(async move {
             loop {
                 let broadcast_result = dbg!(
-                    broadcast_created_transactions(arc_tx_map.clone(), server_uri.clone()).await
+                    broadcast_cached_transactions(arc_tx_map.clone(), &server_uri.clone()).await
                 );
 
                 send_result.write().await.attempt += 1;
@@ -282,15 +269,21 @@ pub mod send_with_proposal {
         });
     }
 
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, thiserror::Error)]
+    pub enum BroadcastCachedTransactionsError {
+        #[error("Cant broadcast: {0:?}")]
+        Cache(#[from] TransactionCacheError),
+        #[error("Broadcast incomplete. Error: {0:?}")]
+        Incomplete(#[from] BroadcastTransactionUnlessConfirmedError),
+    }
+
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-    async fn broadcast_created_transactions(
+    async fn broadcast_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
-        server_uri: http::Uri,
-    ) -> Result<NonEmpty<TxId>, BroadcastCachedTransactionsError> {
-        let current_height = crate::grpc_connector::get_latest_block_height(&server_uri)
-            .await
-            .map_err(BroadcastCachedTransactionsError::Height)?;
+        server_uri: &http::Uri,
+    ) -> Result<NonEmpty<(TxId, ConfirmationStatus)>, BroadcastCachedTransactionsError> {
         let mut tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
             .spending_data
@@ -300,82 +293,136 @@ pub mod send_with_proposal {
             ))?
             .cached_raw_transactions
             .clone();
-        let mut txids = vec![];
+        let mut results = vec![];
         for (mut txid, raw_tx) in calculated_tx_cache {
-            let mut spend_status = None;
-            if let Some(&mut ref mut transaction_record) =
-                tx_map.transaction_records_by_id.get_mut(&txid)
-            {
-                // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
-                if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
-                    match crate::grpc_connector::send_transaction(
-                        server_uri.clone(),
-                        raw_tx.into_boxed_slice(),
-                    )
-                    .await
-                    {
-                        Ok(serverz_txid_string) => {
-                            let new_status = ConfirmationStatus::Transmitted(current_height + 1);
-
-                            transaction_record.status = new_status;
-
-                            match txid_comparison(serverz_txid_string, txid) {
-                                #[cfg(feature = "darkside_tests")]
-                                Err(TxIdComparisonError::InconsistentTxId(
-                                    reported_txid,
-                                    known_txid,
-                                )) => {
-                                    // during darkside tests, the server may generate a new txid.
-                                    // we accept and swap the TransactionRecord to the new txid
-                                    if tx_map.reidentify_tx(known_txid, reported_txid).is_ok() {
-                                        txid = reported_txid;
-                                    } else {
-                                        panic!();
-                                    }
-                                }
-                                Ok(_) => {}
-                                Err(e) => {
-                                    Err(e)?;
-                                }
-                            }
-
-                            spend_status = Some((txid, new_status));
-
-                            txids.push(txid);
-                        }
-                        Err(server_err) => {
-                            return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
-                        }
-                    };
-                }
-            } else {
-                return Err(BroadcastCachedTransactionsError::Unrecorded(txid));
-            }
-            if let Some(s) = spend_status {
-                tx_map
-                    .transaction_records_by_id
-                    .update_note_spend_statuses(s.0, spend_status);
-            }
+            results.push(
+                broadcast_transaction_unless_confirmed(
+                    arc_tx_map.clone(),
+                    txid,
+                    raw_tx,
+                    &server_uri.clone(),
+                )
+                .await
+                .map(|status| (txid, status))?,
+            );
         }
-        let optnonem_txids = NonEmpty::from_vec(txids);
-        match optnonem_txids {
-            None => Err(BroadcastCachedTransactionsError::Cache(
-                TransactionCacheError::NoCachedTx,
-            )),
-            Some(nonem_txids) => {
-                tx_map
-                    .spending_data
-                    .as_mut()
-                    .ok_or(BroadcastCachedTransactionsError::Cache(
-                        TransactionCacheError::NoSpendCapability,
-                    ))?
-                    .cached_raw_transactions
-                    .clear();
+        NonEmpty::from_vec(results).ok_or(BroadcastCachedTransactionsError::Cache(
+            TransactionCacheError::NoCachedTx,
+        ))
+    }
 
-                Ok(nonem_txids)
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, thiserror::Error)]
+    pub enum BroadcastTransactionUnlessConfirmedError {
+        #[error("Transaction record should have been created already. {0:?}")]
+        Record(#[from] GetRecordError),
+        #[error("Server returned error in response to blockheight query: {0:?}")]
+        Height(String),
+        #[error("LightServer returned error in response to broadcast: {0:?}")]
+        ServerResponse(String),
+        #[error("Broadcast transaction successfully, but errored in post-processing: {0:?}")]
+        PostProcessingError(#[from] PostBroadcastSuccessUpdateTransactionError),
+    }
+
+    async fn broadcast_transaction_unless_confirmed(
+        arc_tx_map: Arc<RwLock<TxMap>>,
+        txid: TxId,
+        raw_tx: Vec<u8>,
+        server_uri: &http::Uri,
+    ) -> Result<ConfirmationStatus, BroadcastTransactionUnlessConfirmedError> {
+        let mut tx_map = arc_tx_map.write().await;
+
+        let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
+        // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
+        match transaction_record.status {
+            ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
+                let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
+                    .await
+                    .map_err(BroadcastTransactionUnlessConfirmedError::Height)?;
+
+                match crate::grpc_connector::send_transaction(
+                    server_uri.clone(),
+                    raw_tx.into_boxed_slice(),
+                )
+                .await
+                {
+                    Err(server_err) => Err(
+                        BroadcastTransactionUnlessConfirmedError::ServerResponse(server_err),
+                    ),
+                    Ok(serverz_txid_string) => {
+                        drop(tx_map);
+                        post_broadcast_success_update_transaction(
+                            arc_tx_map,
+                            &txid,
+                            serverz_txid_string,
+                            current_height,
+                        )
+                        .await
+                        .map_err(|e| e.into())
+                    }
+                }
+            }
+            ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {
+                Ok(transaction_record.status)
             }
         }
     }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, thiserror::Error)]
+    pub enum PostBroadcastSuccessUpdateTransactionError {
+        #[error("Transaction record should have been created already. {0:?}")]
+        Record(#[from] GetRecordError),
+        #[error("LightServer returned success txid string, but: {0:?}")]
+        ServerResponse(#[from] TxIdComparisonError),
+    }
+
+    async fn post_broadcast_success_update_transaction(
+        arc_tx_map: Arc<RwLock<TxMap>>,
+        txid: &TxId,
+        broadcast_success: String,
+        current_height: BlockHeight,
+    ) -> Result<ConfirmationStatus, PostBroadcastSuccessUpdateTransactionError> {
+        let mut tx_map = arc_tx_map.write().await;
+
+        let transaction_record = tx_map.transaction_records_by_id.get_record(txid)?;
+
+        let new_status = ConfirmationStatus::Transmitted(current_height + 1);
+
+        transaction_record.status = new_status;
+
+        let chosen_txid: TxId = match txid_comparison(broadcast_success, txid) {
+            #[cfg(feature = "darkside_tests")]
+            Err(TxIdComparisonError::InconsistentTxId(reported_txid, known_txid)) => {
+                // during darkside tests, the server may generate a new txid.
+                // we accept and swap the TransactionRecord to the new txid
+                if tx_map.reidentify_tx(known_txid, reported_txid).is_ok() {
+                    reported_txid
+                } else {
+                    panic!()
+                }
+            }
+            Ok(txid) => txid,
+            Err(e) => {
+                Err(e)?;
+                panic!()
+            }
+        };
+
+        let spend_status = Some((chosen_txid, new_status));
+        tx_map
+            .transaction_records_by_id
+            .update_note_spend_statuses(chosen_txid, spend_status);
+
+        Ok(new_status)
+    }
+
+    // async fn broadcast_confirmed(
+    //     arc_tx_map: Arc<RwLock<TxMap>>,
+    //     txid: &TxId,
+    //     current_height: BlockHeight,
+    // ) -> Result<(), PostBroadcastSuccessUpdateTransactionError> {
+    // }
 
     #[cfg(test)]
     mod test {
