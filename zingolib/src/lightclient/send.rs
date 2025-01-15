@@ -43,7 +43,7 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
     use crate::wallet::transaction_records_by_id::GetRecordError;
     use crate::wallet::tx_map::TxMap;
-    use crate::wallet::{now, SendResult};
+    use crate::wallet::{now, SendProgress};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
@@ -249,7 +249,7 @@ pub mod send_with_proposal {
     pub async fn start_broadcast_loop(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-        send_result: Arc<RwLock<SendResult>>,
+        send_result: Arc<RwLock<SendProgress>>,
     ) {
         tokio::spawn(async move {
             loop {
