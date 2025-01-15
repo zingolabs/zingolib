@@ -252,45 +252,29 @@ pub mod send_with_proposal {
     ) {
         tokio::spawn(async move {
             loop {
-                println!("step 0");
+                println!("broadcast attempt beginning");
 
                 send_result.write().await.attempt += 1;
-
-                println!("step 1");
 
                 let broadcast_result = dbg!(
                     broadcast_cached_transactions(arc_tx_map.clone(), server_uri.clone()).await
                 );
 
-                println!("step 2");
-
-                let complete = match broadcast_result {
+                match broadcast_result {
                     Err(e) => {
                         send_result.write().await.last_result = Some(Err(e.to_string()));
-                        false
                     }
-                    Ok(vec_txid_and_whether_broadcast) => {
-                        let mut complete = true;
-                        let mut txids = vec![];
-                        for (txid, whether_broadcast) in vec_txid_and_whether_broadcast {
-                            match whether_broadcast {
-                                true => {
-                                    complete = false;
-                                }
-                                false => {
-                                    txids.push(txid);
-                                }
-                            }
+                    Ok((txids, any_broadcast)) => {
+                        if any_broadcast {
+                            send_result.write().await.last_result = Some(Ok(txids));
+                        } else {
+                            // no transactions were broadcast because they were all confirmed
+                            break;
                         }
-                        if complete {
-                            send_result.write().await.last_result =
-                                Some(Ok(NonEmpty::from_vec(txids).unwrap()));
-                        }
-                        complete
                     }
                 };
 
-                if (dbg!(send_result.write().await.attempt) > 5) | complete {
+                if (dbg!(send_result.write().await.attempt) > 5) {
                     break;
                 } else {
                     tokio::task::yield_now().await;
@@ -311,10 +295,11 @@ pub mod send_with_proposal {
 
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
+    /// the bool in the return denotes whether any transactions have been broadcast. if it is false, we conclude that the broadcast is finished.
     async fn broadcast_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-    ) -> Result<NonEmpty<(TxId, bool)>, BroadcastCachedTransactionsError> {
+    ) -> Result<(NonEmpty<TxId>, bool), BroadcastCachedTransactionsError> {
         println!("step 10");
         let tx_map = arc_tx_map.write().await;
         println!("step 11");
@@ -328,23 +313,27 @@ pub mod send_with_proposal {
             .clone();
         drop(tx_map);
         let mut results = vec![];
+        let mut any_transaction_broadcast = false;
         println!("step 12");
-        for (mut txid, raw_tx) in calculated_tx_cache {
-            results.push(
-                broadcast_transaction_unless_confirmed(
-                    arc_tx_map.clone(),
-                    txid,
-                    raw_tx,
-                    &server_uri,
-                )
-                .await
-                .map(|status| (txid, status))?,
-            );
+        for (txid, raw_tx) in calculated_tx_cache {
+            let broadcast = broadcast_transaction_unless_confirmed(
+                arc_tx_map.clone(),
+                txid,
+                raw_tx,
+                &server_uri,
+            )
+            .await?;
+            if broadcast {
+                any_transaction_broadcast = true;
+            }
+            results.push(txid);
         }
         println!("step 13");
-        NonEmpty::from_vec(results).ok_or(BroadcastCachedTransactionsError::Cache(
-            TransactionCacheError::NoCachedTx,
-        ))
+        NonEmpty::from_vec(results)
+            .map(|vec| (vec, any_transaction_broadcast))
+            .ok_or(BroadcastCachedTransactionsError::Cache(
+                TransactionCacheError::NoCachedTx,
+            ))
     }
 
     #[allow(missing_docs)] // error types document themselves
