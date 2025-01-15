@@ -5,13 +5,15 @@
 macro_rules! get_base_address_macro {
     ($client:expr, $address_protocol:expr) => {
         match $address_protocol {
-            "unified" => $client.do_addresses().await[0]["address"]
+            "unified" => $client.do_addresses($crate::UAReceivers::All).await[0]["address"]
                 .take()
                 .to_string(),
-            "sapling" => $client.do_addresses().await[0]["receivers"]["sapling"]
+            "sapling" => $client.do_addresses($crate::UAReceivers::All).await[0]["receivers"]
+                ["sapling"]
                 .clone()
                 .to_string(),
-            "transparent" => $client.do_addresses().await[0]["receivers"]["transparent"]
+            "transparent" => $client.do_addresses($crate::UAReceivers::All).await[0]["receivers"]
+                ["transparent"]
                 .clone()
                 .to_string(),
             _ => "ERROR".to_string(),
