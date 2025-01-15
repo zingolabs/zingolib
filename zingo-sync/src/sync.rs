@@ -19,7 +19,6 @@ use crate::traits::{
 
 use futures::StreamExt;
 use shardtree::{store::ShardStore, LocatedPrunableTree, RetentionFlags};
-use state::set_initial_state;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
@@ -113,7 +112,13 @@ where
     .await
     .unwrap();
 
-    set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
+    state::set_initial_state(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+        chain_height,
+    )
+    .await;
 
     update_subtree_roots(fetch_request_sender.clone(), &mut *wallet_guard).await;
 
@@ -203,9 +208,10 @@ where
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         });
-    let scanned_blocks = sync_state.total_blocks_to_scan() - unscanned_blocks;
-    let percentage_blocks_complete =
-        (scanned_blocks as f32 / sync_state.total_blocks_to_scan() as f32) * 100.0;
+    let scanned_blocks = sync_state.initial_sync_state().total_blocks_to_scan() - unscanned_blocks;
+    let percentage_blocks_complete = (scanned_blocks as f32
+        / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
+        * 100.0;
 
     SyncStatus {
         scan_ranges: sync_state.scan_ranges().clone(),

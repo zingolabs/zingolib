@@ -2,13 +2,15 @@
 
 use std::{cmp, collections::HashMap, ops::Range};
 
+use tokio::sync::mpsc;
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_primitives::{
-    consensus::{self, BlockHeight},
+    consensus::{self, BlockHeight, NetworkUpgrade},
     transaction::TxId,
 };
 
 use crate::{
+    client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
     primitives::{Locator, SyncState},
     scan::task::ScanTask,
@@ -428,8 +430,114 @@ where
     }
 }
 
-/// Sets the `total_blocks_to_scan` and `sync_start_height` fields at the start of the sync process
-pub(super) fn set_initial_state(sync_state: &mut SyncState) {
+/// Sets the `initial_sync_state` field at the start of the sync session
+pub(super) async fn set_initial_state<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+    chain_height: BlockHeight,
+) where
+    W: SyncWallet + SyncBlocks,
+{
+    struct ScannedRangeTreeBoundaries {
+        sapling_initial_tree_size: u32,
+        orchard_initial_tree_size: u32,
+        sapling_final_tree_size: u32,
+        orchard_final_tree_size: u32,
+    }
+
+    /// Gets `block_height` final tree sizes from wallet block if it exists, otherwise from frontiers fetched from server.
+    ///
+    /// Only used in context of setting initial sync state as can also use the compact blocks to calculate tree sizes
+    /// during scanning.
+    async fn final_tree_sizes<W>(
+        consensus_parameters: &impl consensus::Parameters,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        wallet: &mut W,
+        block_height: BlockHeight,
+    ) -> (u32, u32)
+    where
+        W: SyncWallet + SyncBlocks,
+    {
+        if let Ok(block) = wallet.get_wallet_block(block_height) {
+            (
+                block.sapling_final_tree_size(),
+                block.orchard_final_tree_size(),
+            )
+        } else {
+            // TODO: move this whole block into `client::get_frontiers`
+            let sapling_activation_height = consensus_parameters
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height");
+
+            match block_height.cmp(&sapling_activation_height) {
+                cmp::Ordering::Greater => {
+                    let frontiers =
+                        client::get_frontiers(fetch_request_sender.clone(), block_height)
+                            .await
+                            .unwrap();
+                    (
+                        frontiers
+                            .final_sapling_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                        frontiers
+                            .final_orchard_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                    )
+                }
+                cmp::Ordering::Equal => (0, 0),
+                cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+            }
+        }
+    }
+
+    /// Gets the initial and final tree sizes of a `scanned_range`.
+    ///
+    /// Panics if `scanned_range` boundary wallet blocks are not found in the wallet.
+    fn scanned_range_tree_boundaries<W>(
+        wallet: &mut W,
+        scanned_range: Range<BlockHeight>,
+    ) -> ScannedRangeTreeBoundaries
+    where
+        W: SyncWallet + SyncBlocks,
+    {
+        let start_block = wallet
+            .get_wallet_block(scanned_range.start)
+            .expect("scanned range boundary blocks should be retained in the wallet");
+        let end_block = wallet
+            .get_wallet_block(scanned_range.end - 1)
+            .expect("scanned range boundary blocks should be retained in the wallet");
+
+        ScannedRangeTreeBoundaries {
+            sapling_initial_tree_size: start_block.sapling_initial_tree_size(),
+            orchard_initial_tree_size: start_block.orchard_initial_tree_size(),
+            sapling_final_tree_size: end_block.sapling_final_tree_size(),
+            orchard_final_tree_size: end_block.orchard_final_tree_size(),
+        }
+    }
+
+    let fully_scanned_height = wallet.get_sync_state().unwrap().fully_scanned_height();
+
+    let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        wallet,
+        fully_scanned_height,
+    )
+    .await;
+    let (chain_tip_sapling_tree_size, chain_tip_orchard_tree_size) = final_tree_sizes(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        wallet,
+        chain_height,
+    )
+    .await;
+
+    let sync_state = wallet.get_sync_state().unwrap();
     let total_blocks_to_scan = sync_state
         .scan_ranges()
         .iter()
@@ -438,7 +546,38 @@ pub(super) fn set_initial_state(sync_state: &mut SyncState) {
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         });
-    sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
-    let sync_start_height = sync_state.fully_scanned_height() + 1;
-    sync_state.set_sync_start_height(sync_start_height);
+
+    let scanned_block_ranges = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                && scan_range.block_range().start > fully_scanned_height
+        })
+        .map(|scan_range| scan_range.block_range().clone())
+        .collect::<Vec<_>>();
+    let (scanned_sapling_outputs, scanned_orchard_outputs) = scanned_block_ranges
+        .iter()
+        .map(|block_range| scanned_range_tree_boundaries(wallet, block_range.clone()))
+        .fold((0, 0), |acc, tree_sizes| {
+            (
+                acc.0 + (tree_sizes.sapling_final_tree_size - tree_sizes.sapling_initial_tree_size),
+                acc.1 + (tree_sizes.orchard_final_tree_size - tree_sizes.orchard_initial_tree_size),
+            )
+        });
+    let total_sapling_outputs_to_scan =
+        chain_tip_sapling_tree_size - sync_start_sapling_tree_size - scanned_sapling_outputs;
+    let total_orchard_outputs_to_scan =
+        chain_tip_orchard_tree_size - sync_start_orchard_tree_size - scanned_orchard_outputs;
+
+    let initial_sync_state = wallet
+        .get_sync_state_mut()
+        .unwrap()
+        .initial_sync_state_mut();
+    initial_sync_state.set_sync_start_height(fully_scanned_height + 1);
+    initial_sync_state.set_sync_start_sapling_tree_size(sync_start_sapling_tree_size);
+    initial_sync_state.set_sync_start_orchard_tree_size(sync_start_orchard_tree_size);
+    initial_sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
+    initial_sync_state.set_total_sapling_outputs_to_scan(total_sapling_outputs_to_scan);
+    initial_sync_state.set_total_orchard_outputs_to_scan(total_orchard_outputs_to_scan);
 }

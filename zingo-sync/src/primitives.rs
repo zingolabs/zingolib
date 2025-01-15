@@ -25,6 +25,40 @@ use crate::{
 /// detections or transparent output discovery.
 pub type Locator = (BlockHeight, TxId);
 
+/// Initial sync state.
+///
+/// All fields will be reset when a new sync session starts.
+#[derive(Debug, Clone, CopyGetters, Setters)]
+#[getset(get_copy = "pub", set = "pub")]
+pub struct InitialSyncState {
+    /// One block above the fully scanned wallet height at start of sync.
+    sync_start_height: BlockHeight,
+    /// Sapling tree size of fully scanned wallet height at start of sync.
+    sync_start_sapling_tree_size: u32,
+    /// Orchard tree size of fully scanned wallet height at start of sync.
+    sync_start_orchard_tree_size: u32,
+    /// Total number of blocks to scan.
+    total_blocks_to_scan: u32,
+    /// Total number of sapling outputs to scan.
+    total_sapling_outputs_to_scan: u32,
+    /// Total number of orchard outputs to scan.
+    total_orchard_outputs_to_scan: u32,
+}
+
+impl InitialSyncState {
+    /// Create new InitialSyncState
+    pub fn new() -> Self {
+        InitialSyncState {
+            sync_start_height: 0.into(),
+            sync_start_sapling_tree_size: 0,
+            sync_start_orchard_tree_size: 0,
+            total_blocks_to_scan: 0,
+            total_sapling_outputs_to_scan: 0,
+            total_orchard_outputs_to_scan: 0,
+        }
+    }
+}
+
 /// Encapsulates the current state of sync
 #[derive(Debug, Clone, Getters, MutGetters, CopyGetters, Setters)]
 #[getset(get = "pub", get_mut = "pub")]
@@ -34,16 +68,8 @@ pub struct SyncState {
     scan_ranges: Vec<ScanRange>,
     /// Locators for relevant transactions to the wallet.
     locators: BTreeSet<Locator>,
-    /// Fully scanned wallet height at start of sync.
-    /// Reset when sync starts.
-    #[getset(skip)]
-    #[getset(get_copy = "pub", set = "pub")]
-    sync_start_height: BlockHeight,
-    /// Total number of blocks to scan this session
-    /// Reset when sync starts.
-    #[getset(skip)]
-    #[getset(get_copy = "pub", set = "pub")]
-    total_blocks_to_scan: u32,
+    /// Initial sync state.
+    initial_sync_state: InitialSyncState,
 }
 
 impl SyncState {
@@ -52,8 +78,7 @@ impl SyncState {
         SyncState {
             scan_ranges: Vec::new(),
             locators: BTreeSet::new(),
-            sync_start_height: 0.into(),
-            total_blocks_to_scan: 0,
+            initial_sync_state: InitialSyncState::new(),
         }
     }
 
@@ -171,8 +196,10 @@ pub struct WalletBlock {
     time: u32,
     #[getset(skip)]
     txids: Vec<TxId>,
-    sapling_commitment_tree_size: u32,
-    orchard_commitment_tree_size: u32,
+    sapling_initial_tree_size: u32,
+    orchard_initial_tree_size: u32,
+    sapling_final_tree_size: u32,
+    orchard_final_tree_size: u32,
 }
 
 impl WalletBlock {
@@ -182,8 +209,10 @@ impl WalletBlock {
         prev_hash: BlockHash,
         time: u32,
         txids: Vec<TxId>,
-        sapling_commitment_tree_size: u32,
-        orchard_commitment_tree_size: u32,
+        sapling_starting_tree_size: u32,
+        orchard_starting_tree_size: u32,
+        sapling_final_tree_size: u32,
+        orchard_final_tree_size: u32,
     ) -> Self {
         Self {
             block_height,
@@ -191,8 +220,10 @@ impl WalletBlock {
             prev_hash,
             time,
             txids,
-            sapling_commitment_tree_size,
-            orchard_commitment_tree_size,
+            sapling_initial_tree_size: sapling_starting_tree_size,
+            orchard_initial_tree_size: orchard_starting_tree_size,
+            sapling_final_tree_size,
+            orchard_final_tree_size,
         }
     }
 
