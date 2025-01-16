@@ -16,7 +16,7 @@ use zcash_primitives::{
 
 use crate::{
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, WalletBlock},
+    primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
     witness::WitnessData,
 };
 
@@ -58,11 +58,17 @@ where
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
         Position::from(u64::from(initial_scan_data.orchard_initial_tree_size)),
     );
-    let mut sapling_tree_size = initial_scan_data.sapling_initial_tree_size;
-    let mut orchard_tree_size = initial_scan_data.orchard_initial_tree_size;
+    let mut sapling_initial_tree_size;
+    let mut orchard_initial_tree_size;
+    let mut sapling_final_tree_size = initial_scan_data.sapling_initial_tree_size;
+    let mut orchard_final_tree_size = initial_scan_data.orchard_initial_tree_size;
     for block in &compact_blocks {
+        sapling_initial_tree_size = sapling_final_tree_size;
+        orchard_initial_tree_size = orchard_final_tree_size;
+
         let block_height =
             BlockHeight::from_u32(block.height.try_into().expect("should never overflow"));
+
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
             // collect trial decryption results by transaction
@@ -105,21 +111,21 @@ where
             );
 
             calculate_nullifiers_and_positions(
-                sapling_tree_size,
+                sapling_final_tree_size,
                 scanning_keys.sapling(),
                 &incoming_sapling_outputs,
                 &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
-                orchard_tree_size,
+                orchard_final_tree_size,
                 scanning_keys.orchard(),
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
 
-            sapling_tree_size += u32::try_from(transaction.outputs.len())
+            sapling_final_tree_size += u32::try_from(transaction.outputs.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
-            orchard_tree_size += u32::try_from(transaction.actions.len())
+            orchard_final_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
 
@@ -129,8 +135,12 @@ where
             block.prev_hash(),
             block.time,
             block.vtx.iter().map(|tx| tx.txid()).collect(),
-            sapling_tree_size,
-            orchard_tree_size,
+            TreeBoundaries {
+                sapling_initial_tree_size,
+                sapling_final_tree_size,
+                orchard_initial_tree_size,
+                orchard_final_tree_size,
+            },
         );
 
         check_tree_size(block, &wallet_block).unwrap();
@@ -230,12 +240,12 @@ fn check_continuity(
 fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
         if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.sapling_commitment_tree_size()
+            != wallet_block.tree_boundaries().sapling_final_tree_size
         {
             panic!("sapling tree size is incorrect!")
         }
         if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.orchard_commitment_tree_size()
+            != wallet_block.tree_boundaries().orchard_final_tree_size
         {
             panic!("orchard tree size is incorrect!")
         }
