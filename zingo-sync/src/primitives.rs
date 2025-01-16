@@ -66,6 +66,7 @@ impl Default for InitialSyncState {
         Self::new()
     }
 }
+
 /// Encapsulates the current state of sync
 #[derive(Debug, Clone, Getters, MutGetters, CopyGetters, Setters)]
 #[getset(get = "pub", get_mut = "pub")]
