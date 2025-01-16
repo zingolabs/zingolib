@@ -5,18 +5,7 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::client::{self, FetchRequest};
-use crate::error::SyncError;
-use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus};
-use crate::scan::error::{ContinuityError, ScanError};
-use crate::scan::task::Scanner;
-use crate::scan::transactions::scan_transaction;
-use crate::scan::{DecryptedNoteData, ScanResults};
-use crate::traits::{
-    SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
-};
-use crate::witness;
+use tokio::sync::{mpsc, Mutex};
 
 use shardtree::store::ShardStore;
 use zcash_client_backend::proto::service::RawTransaction;
@@ -27,10 +16,22 @@ use zcash_client_backend::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{self, BlockHeight};
-
-use tokio::sync::{mpsc, Mutex};
 use zcash_primitives::zip32::AccountId;
+
 use zingo_status::confirmation_status::ConfirmationStatus;
+
+use crate::client::{self, FetchRequest};
+use crate::error::SyncError;
+use crate::keys::transparent::TransparentAddressId;
+use crate::primitives::{NullifierMap, OutPointMap, SyncStatus};
+use crate::scan::error::{ContinuityError, ScanError};
+use crate::scan::task::Scanner;
+use crate::scan::transactions::scan_transaction;
+use crate::scan::{DecryptedNoteData, ScanResults};
+use crate::traits::{
+    SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+};
+use crate::witness;
 
 pub(crate) mod spend;
 pub(crate) mod state;
@@ -118,7 +119,13 @@ where
     .await
     .unwrap();
 
-    state::set_initial_state(wallet_guard.get_sync_state_mut().unwrap());
+    state::set_initial_state(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+        chain_height,
+    )
+    .await;
 
     drop(wallet_guard);
 
@@ -198,9 +205,10 @@ where
 /// Designed to be called during the sync process with minimal interruption.
 pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
 where
-    W: SyncWallet,
+    W: SyncWallet + SyncBlocks,
 {
-    let sync_state: SyncState = wallet.lock().await.get_sync_state().unwrap().clone();
+    let wallet_guard = wallet.lock().await;
+    let sync_state = wallet_guard.get_sync_state().unwrap().clone();
 
     let unscanned_blocks = sync_state
         .scan_ranges()
@@ -210,15 +218,40 @@ where
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         });
-    let scanned_blocks = sync_state.total_blocks_to_scan() - unscanned_blocks;
-    let percentage_blocks_complete =
-        (scanned_blocks as f32 / sync_state.total_blocks_to_scan() as f32) * 100.0;
+    let scanned_blocks = sync_state.initial_sync_state().total_blocks_to_scan() - unscanned_blocks;
+    let percentage_blocks_scanned = (scanned_blocks as f32
+        / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
+        * 100.0;
+
+    let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
+        state::calculate_unscanned_outputs(&*wallet_guard);
+    let scanned_sapling_outputs = sync_state
+        .initial_sync_state()
+        .total_sapling_outputs_to_scan()
+        - unscanned_sapling_outputs;
+    let scanned_orchard_outputs = sync_state
+        .initial_sync_state()
+        .total_orchard_outputs_to_scan()
+        - unscanned_orchard_outputs;
+    let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
+        / (sync_state
+            .initial_sync_state()
+            .total_sapling_outputs_to_scan()
+            + sync_state
+                .initial_sync_state()
+                .total_orchard_outputs_to_scan()) as f32)
+        * 100.0;
 
     SyncStatus {
         scan_ranges: sync_state.scan_ranges().clone(),
-        unscanned_blocks,
         scanned_blocks,
-        percentage_blocks_complete,
+        unscanned_blocks,
+        percentage_blocks_scanned,
+        scanned_sapling_outputs,
+        unscanned_sapling_outputs,
+        scanned_orchard_outputs,
+        unscanned_orchard_outputs,
+        percentage_outputs_scanned,
     }
 }
 

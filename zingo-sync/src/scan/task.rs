@@ -30,7 +30,7 @@ use crate::{
     traits::{SyncBlocks, SyncWallet},
 };
 
-use super::{error::ScanError, scan, ScanResults};
+use super::{compact_blocks::calculate_block_tree_boundaries, error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_BATCH_OUTPUTS: usize = 8_192; // 2^13
@@ -53,7 +53,7 @@ impl ScannerState {
 
 pub(crate) struct Scanner<P> {
     state: ScannerState,
-    batcher: Option<Batcher>,
+    batcher: Option<Batcher<P>>,
     workers: Vec<ScanWorker<P>>,
     unique_id: usize,
     scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
@@ -101,7 +101,10 @@ where
     /// When the batcher is running it will wait for a scan task.
     pub(crate) fn spawn_batcher(&mut self) {
         tracing::debug!("Spawning batcher");
-        let mut batcher = Batcher::new(self.fetch_request_sender.clone());
+        let mut batcher = Batcher::new(
+            self.consensus_parameters.clone(),
+            self.fetch_request_sender.clone(),
+        );
         batcher.run().unwrap();
         self.batcher = Some(batcher);
     }
@@ -264,21 +267,29 @@ where
     }
 }
 
-struct Batcher {
+struct Batcher<P> {
     handle: Option<JoinHandle<()>>,
     is_batching: Arc<AtomicBool>,
     batch: Option<ScanTask>,
+    consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     batch_receiver: Option<mpsc::Receiver<ScanTask>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
 }
 
-impl Batcher {
-    fn new(fetch_request_sender: mpsc::UnboundedSender<FetchRequest>) -> Self {
+impl<P> Batcher<P>
+where
+    P: consensus::Parameters + Sync + Send + 'static,
+{
+    fn new(
+        consensus_parameters: P,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    ) -> Self {
         Self {
             handle: None,
             is_batching: Arc::new(AtomicBool::new(false)),
             batch: None,
+            consensus_parameters,
             scan_task_sender: None,
             batch_receiver: None,
             fetch_request_sender,
@@ -295,6 +306,7 @@ impl Batcher {
 
         let is_batching = self.is_batching.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
+        let consensus_parameters = self.consensus_parameters.clone();
 
         let handle = tokio::spawn(async move {
             // save seam blocks between scan tasks for linear scanning continuuity checks
@@ -330,34 +342,38 @@ impl Batcher {
                     }
 
                     if first_batch {
-                        // TODO: check conditions where chain metadata is none
-                        let chain_metadata = compact_block
-                            .chain_metadata
-                            .expect("chain metadata should always exist");
+                        let tree_boundaries = calculate_block_tree_boundaries(
+                            &consensus_parameters,
+                            fetch_request_sender.clone(),
+                            &compact_block,
+                        )
+                        .await;
+
                         previous_task_first_block = Some(WalletBlock::from_parts(
                             compact_block.height(),
                             compact_block.hash(),
                             compact_block.prev_hash(),
                             compact_block.time,
                             compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
-                            chain_metadata.sapling_commitment_tree_size,
-                            chain_metadata.orchard_commitment_tree_size,
+                            tree_boundaries,
                         ));
                         first_batch = false;
                     }
                     if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        // TODO: check conditions where chain metadata is none
-                        let chain_metadata = compact_block
-                            .chain_metadata
-                            .expect("chain metadata should always exist");
+                        let tree_boundaries = calculate_block_tree_boundaries(
+                            &consensus_parameters,
+                            fetch_request_sender.clone(),
+                            &compact_block,
+                        )
+                        .await;
+
                         previous_task_last_block = Some(WalletBlock::from_parts(
                             compact_block.height(),
                             compact_block.hash(),
                             compact_block.prev_hash(),
                             compact_block.time,
                             compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
-                            chain_metadata.sapling_commitment_tree_size,
-                            chain_metadata.orchard_commitment_tree_size,
+                            tree_boundaries,
                         ));
                     }
 
@@ -372,12 +388,12 @@ impl Batcher {
                     if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
                         let (full_batch, new_batch) = scan_task
                             .clone()
-                            .split(BlockHeight::from_u32(
-                                compact_block
-                                    .height
-                                    .try_into()
-                                    .expect("should never overflow"),
-                            ))
+                            .split(
+                                &consensus_parameters,
+                                fetch_request_sender.clone(),
+                                compact_block.height(),
+                            )
+                            .await
                             .unwrap();
 
                         batch_sender
@@ -587,7 +603,15 @@ impl ScanTask {
     /// Splits a scan task into two at `block_height`.
     ///
     /// Panics if `block_height` is not contained in the scan task's block range.
-    fn split(self, block_height: BlockHeight) -> Result<(Self, Self), ()> {
+    async fn split<P>(
+        self,
+        consensus_parameters: &P,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        block_height: BlockHeight,
+    ) -> Result<(Self, Self), ()>
+    where
+        P: consensus::Parameters + Sync + Send + 'static,
+    {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {
@@ -608,38 +632,42 @@ impl ScanTask {
         let upper_task_locators =
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
-        let lower_task_last_block = lower_compact_blocks.last().map(|block| {
-            // TODO: check conditions where chain metadata is none
-            let chain_metadata = block
-                .chain_metadata
-                .expect("chain metadata should always exist");
+        let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
+            let tree_boundaries = calculate_block_tree_boundaries(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                block,
+            )
+            .await;
 
-            WalletBlock::from_parts(
+            Some(WalletBlock::from_parts(
                 block.height(),
                 block.hash(),
                 block.prev_hash(),
                 block.time,
                 block.vtx.iter().map(|tx| tx.txid()).collect(),
-                chain_metadata.sapling_commitment_tree_size,
-                chain_metadata.orchard_commitment_tree_size,
-            )
-        });
-        let upper_task_first_block = upper_compact_blocks.first().map(|block| {
-            // TODO: check conditions where chain metadata is none
-            let chain_metadata = block
-                .chain_metadata
-                .expect("chain metadata should always exist");
+                tree_boundaries,
+            ))
+        } else {
+            None
+        };
+        let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
+            let tree_boundaries =
+                calculate_block_tree_boundaries(consensus_parameters, fetch_request_sender, block)
+                    .await;
 
-            WalletBlock::from_parts(
+            Some(WalletBlock::from_parts(
                 block.height(),
                 block.hash(),
                 block.prev_hash(),
                 block.time,
                 block.vtx.iter().map(|tx| tx.txid()).collect(),
-                chain_metadata.sapling_commitment_tree_size,
-                chain_metadata.orchard_commitment_tree_size,
-            )
-        });
+                tree_boundaries,
+            ))
+        } else {
+            None
+        };
+
         Ok((
             ScanTask {
                 compact_blocks: lower_compact_blocks,
