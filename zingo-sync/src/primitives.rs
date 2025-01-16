@@ -28,6 +28,48 @@ use crate::{
 /// output/spend discovery or for targetted rescan.
 pub type Locator = (BlockHeight, TxId);
 
+/// Initial sync state.
+///
+/// All fields will be reset when a new sync session starts.
+#[derive(Debug, Clone, CopyGetters, Setters)]
+#[getset(get_copy = "pub", set = "pub")]
+pub struct InitialSyncState {
+    /// One block above the fully scanned wallet height at start of sync session.
+    sync_start_height: BlockHeight,
+    /// The tree sizes of the fully scanned height and chain tip at start of sync session.
+    sync_tree_boundaries: TreeBoundaries,
+    /// Total number of blocks to scan.
+    total_blocks_to_scan: u32,
+    /// Total number of sapling outputs to scan.
+    total_sapling_outputs_to_scan: u32,
+    /// Total number of orchard outputs to scan.
+    total_orchard_outputs_to_scan: u32,
+}
+
+impl InitialSyncState {
+    /// Create new InitialSyncState
+    pub fn new() -> Self {
+        InitialSyncState {
+            sync_start_height: 0.into(),
+            sync_tree_boundaries: TreeBoundaries {
+                sapling_initial_tree_size: 0,
+                sapling_final_tree_size: 0,
+                orchard_initial_tree_size: 0,
+                orchard_final_tree_size: 0,
+            },
+            total_blocks_to_scan: 0,
+            total_sapling_outputs_to_scan: 0,
+            total_orchard_outputs_to_scan: 0,
+        }
+    }
+}
+
+impl Default for InitialSyncState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Encapsulates the current state of sync
 #[derive(Debug, Clone, Getters, MutGetters, CopyGetters, Setters)]
 #[getset(get = "pub", get_mut = "pub")]
@@ -47,16 +89,8 @@ pub struct SyncState {
     orchard_shard_ranges: Vec<Range<BlockHeight>>,
     /// Locators for relevant transactions to the wallet.
     locators: BTreeSet<Locator>,
-    /// The block above the fully scanned wallet height at start of sync.
-    /// Reset when sync starts.
-    #[getset(skip)]
-    #[getset(get_copy = "pub", set = "pub")]
-    sync_start_height: BlockHeight,
-    /// Total number of blocks to scan this session
-    /// Reset when sync starts.
-    #[getset(skip)]
-    #[getset(get_copy = "pub", set = "pub")]
-    total_blocks_to_scan: u32,
+    /// Initial sync state.
+    initial_sync_state: InitialSyncState,
 }
 
 impl SyncState {
@@ -67,8 +101,7 @@ impl SyncState {
             sapling_shard_ranges: Vec::new(),
             orchard_shard_ranges: Vec::new(),
             locators: BTreeSet::new(),
-            sync_start_height: 0.into(),
-            total_blocks_to_scan: 0,
+            initial_sync_state: InitialSyncState::new(),
         }
     }
 
@@ -119,15 +152,28 @@ impl Default for SyncState {
     }
 }
 
-/// A snapshot of the current state of sync.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeBoundaries {
+    pub sapling_initial_tree_size: u32,
+    pub sapling_final_tree_size: u32,
+    pub orchard_initial_tree_size: u32,
+    pub orchard_final_tree_size: u32,
+}
+
+/// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
-/// Useful for displaying the status of sync to a user / consumer.
+/// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
 #[derive(Debug, Clone, Getters)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub scanned_blocks: u32,
     pub unscanned_blocks: u32,
-    pub percentage_blocks_complete: f32,
+    pub percentage_blocks_scanned: f32,
+    pub scanned_sapling_outputs: u32,
+    pub unscanned_sapling_outputs: u32,
+    pub scanned_orchard_outputs: u32,
+    pub unscanned_orchard_outputs: u32,
+    pub percentage_outputs_scanned: f32,
 }
 
 /// Output ID for a given pool type
@@ -204,8 +250,7 @@ pub struct WalletBlock {
     time: u32,
     #[getset(skip)]
     txids: Vec<TxId>,
-    sapling_commitment_tree_size: u32,
-    orchard_commitment_tree_size: u32,
+    tree_boundaries: TreeBoundaries,
 }
 
 impl WalletBlock {
@@ -215,8 +260,7 @@ impl WalletBlock {
         prev_hash: BlockHash,
         time: u32,
         txids: Vec<TxId>,
-        sapling_commitment_tree_size: u32,
-        orchard_commitment_tree_size: u32,
+        tree_boundaries: TreeBoundaries,
     ) -> Self {
         Self {
             block_height,
@@ -224,8 +268,7 @@ impl WalletBlock {
             prev_hash,
             time,
             txids,
-            sapling_commitment_tree_size,
-            orchard_commitment_tree_size,
+            tree_boundaries,
         }
     }
 

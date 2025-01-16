@@ -50,59 +50,68 @@ impl InitialScanData {
         // gets initial tree size from previous block if available
         // otherwise, from first block if available
         // otherwise, fetches frontiers from server
-        let (sapling_initial_tree_size, orchard_initial_tree_size) =
-            if let Some(prev) = &previous_wallet_block {
-                (
-                    prev.sapling_commitment_tree_size(),
-                    prev.orchard_commitment_tree_size(),
-                )
-            } else if let Some(chain_metadata) = &first_block.chain_metadata {
-                // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size
-                let sapling_output_count: u32 = first_block
-                    .vtx
-                    .iter()
-                    .map(|tx| tx.outputs.len())
-                    .sum::<usize>()
-                    .try_into()
-                    .expect("Sapling output count cannot exceed a u32");
-                let orchard_output_count: u32 = first_block
-                    .vtx
-                    .iter()
-                    .map(|tx| tx.actions.len())
-                    .sum::<usize>()
-                    .try_into()
-                    .expect("Sapling output count cannot exceed a u32");
+        let (sapling_initial_tree_size, orchard_initial_tree_size) = if let Some(prev) =
+            &previous_wallet_block
+        {
+            (
+                prev.tree_boundaries().sapling_final_tree_size,
+                prev.tree_boundaries().orchard_final_tree_size,
+            )
+        } else if let Some(chain_metadata) = &first_block.chain_metadata {
+            // calculate initial tree size by subtracting number of outputs in block from the blocks final tree size
+            let sapling_output_count: u32 = first_block
+                .vtx
+                .iter()
+                .map(|tx| tx.outputs.len())
+                .sum::<usize>()
+                .try_into()
+                .expect("Sapling output count cannot exceed a u32");
+            let orchard_output_count: u32 = first_block
+                .vtx
+                .iter()
+                .map(|tx| tx.actions.len())
+                .sum::<usize>()
+                .try_into()
+                .expect("Sapling output count cannot exceed a u32");
 
-                (
-                    chain_metadata
-                        .sapling_commitment_tree_size
-                        .checked_sub(sapling_output_count)
-                        .unwrap(),
-                    chain_metadata
-                        .orchard_commitment_tree_size
-                        .checked_sub(orchard_output_count)
-                        .unwrap(),
-                )
-            } else {
-                let sapling_activation_height = consensus_parameters
-                    .activation_height(NetworkUpgrade::Sapling)
-                    .expect("should have some sapling activation height");
+            (
+                chain_metadata
+                    .sapling_commitment_tree_size
+                    .checked_sub(sapling_output_count)
+                    .unwrap(),
+                chain_metadata
+                    .orchard_commitment_tree_size
+                    .checked_sub(orchard_output_count)
+                    .unwrap(),
+            )
+        } else {
+            let sapling_activation_height = consensus_parameters
+                .activation_height(NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height");
 
-                match first_block.height().cmp(&sapling_activation_height) {
-                    cmp::Ordering::Greater => {
-                        let frontiers =
-                            client::get_frontiers(fetch_request_sender, first_block.height() - 1)
-                                .await
-                                .unwrap();
-                        (
-                            frontiers.final_sapling_tree().tree_size() as u32,
-                            frontiers.final_orchard_tree().tree_size() as u32,
-                        )
-                    }
-                    cmp::Ordering::Equal => (0, 0),
-                    cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+            match first_block.height().cmp(&sapling_activation_height) {
+                cmp::Ordering::Greater => {
+                    let frontiers =
+                        client::get_frontiers(fetch_request_sender, first_block.height() - 1)
+                            .await
+                            .unwrap();
+                    (
+                        frontiers
+                            .final_sapling_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                        frontiers
+                            .final_orchard_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                    )
                 }
-            };
+                cmp::Ordering::Equal => (0, 0),
+                cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+            }
+        };
 
         Ok(InitialScanData {
             previous_block: previous_wallet_block,
