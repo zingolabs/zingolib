@@ -557,7 +557,7 @@ where
             .activation_height(NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
 
-        match block_height.cmp(&sapling_activation_height) {
+        match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
                 let frontiers = client::get_frontiers(fetch_request_sender.clone(), block_height)
                     .await

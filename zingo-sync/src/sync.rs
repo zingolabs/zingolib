@@ -209,7 +209,10 @@ where
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         });
-    let scanned_blocks = sync_state.initial_sync_state().total_blocks_to_scan() - unscanned_blocks;
+    let scanned_blocks = sync_state
+        .initial_sync_state()
+        .total_blocks_to_scan()
+        .saturating_sub(unscanned_blocks);
     let percentage_blocks_scanned = (scanned_blocks as f32
         / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
         * 100.0;
@@ -219,11 +222,11 @@ where
     let scanned_sapling_outputs = sync_state
         .initial_sync_state()
         .total_sapling_outputs_to_scan()
-        - unscanned_sapling_outputs;
+        .saturating_sub(unscanned_sapling_outputs);
     let scanned_orchard_outputs = sync_state
         .initial_sync_state()
         .total_orchard_outputs_to_scan()
-        - unscanned_orchard_outputs;
+        .saturating_sub(unscanned_orchard_outputs);
     let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
         / (sync_state
             .initial_sync_state()
