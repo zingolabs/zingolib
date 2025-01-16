@@ -17,7 +17,7 @@ use zcash_primitives::{
 
 use crate::{
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, WalletBlock},
+    primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
     witness::WitnessData,
 };
 
@@ -129,10 +129,12 @@ where
             block.prev_hash(),
             block.time,
             block.vtx.iter().map(|tx| tx.txid()).collect(),
-            sapling_initial_tree_size,
-            orchard_initial_tree_size,
-            sapling_final_tree_size,
-            orchard_final_tree_size,
+            TreeBoundaries {
+                sapling_initial_tree_size,
+                sapling_final_tree_size,
+                orchard_initial_tree_size,
+                orchard_final_tree_size,
+            },
         );
 
         check_tree_size(block, &wallet_block).unwrap();
@@ -210,10 +212,14 @@ fn check_continuity(
 
 fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
-        if chain_metadata.sapling_commitment_tree_size != wallet_block.sapling_final_tree_size() {
+        if chain_metadata.sapling_commitment_tree_size
+            != wallet_block.tree_boundaries().sapling_final_tree_size
+        {
             panic!("sapling tree size is incorrect!")
         }
-        if chain_metadata.orchard_commitment_tree_size != wallet_block.orchard_final_tree_size() {
+        if chain_metadata.orchard_commitment_tree_size
+            != wallet_block.tree_boundaries().orchard_final_tree_size
+        {
             panic!("orchard tree size is incorrect!")
         }
     }

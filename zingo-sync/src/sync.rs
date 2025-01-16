@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, SyncStatus};
+use crate::primitives::{NullifierMap, OutPointMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -196,9 +196,10 @@ where
 /// Designed to be called during the sync process with minimal interruption.
 pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
 where
-    W: SyncWallet,
+    W: SyncWallet + SyncBlocks,
 {
-    let sync_state: SyncState = wallet.lock().await.get_sync_state().unwrap().clone();
+    let wallet_guard = wallet.lock().await;
+    let sync_state = wallet_guard.get_sync_state().unwrap().clone();
 
     let unscanned_blocks = sync_state
         .scan_ranges()
@@ -209,15 +210,39 @@ where
             acc + (block_range.end - block_range.start)
         });
     let scanned_blocks = sync_state.initial_sync_state().total_blocks_to_scan() - unscanned_blocks;
-    let percentage_blocks_complete = (scanned_blocks as f32
+    let percentage_blocks_scanned = (scanned_blocks as f32
         / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
+        * 100.0;
+
+    let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
+        state::calculate_unscanned_outputs(&*wallet_guard);
+    let scanned_sapling_outputs = sync_state
+        .initial_sync_state()
+        .total_sapling_outputs_to_scan()
+        - unscanned_sapling_outputs;
+    let scanned_orchard_outputs = sync_state
+        .initial_sync_state()
+        .total_orchard_outputs_to_scan()
+        - unscanned_orchard_outputs;
+    let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
+        / (sync_state
+            .initial_sync_state()
+            .total_sapling_outputs_to_scan()
+            + sync_state
+                .initial_sync_state()
+                .total_orchard_outputs_to_scan()) as f32)
         * 100.0;
 
     SyncStatus {
         scan_ranges: sync_state.scan_ranges().clone(),
-        unscanned_blocks,
         scanned_blocks,
-        percentage_blocks_complete,
+        unscanned_blocks,
+        percentage_blocks_scanned,
+        scanned_sapling_outputs,
+        unscanned_sapling_outputs,
+        scanned_orchard_outputs,
+        unscanned_orchard_outputs,
+        percentage_outputs_scanned,
     }
 }
 
