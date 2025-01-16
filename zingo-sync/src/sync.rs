@@ -502,15 +502,34 @@ where
     let sync_state = wallet.get_sync_state().unwrap();
     let fully_scanned_height = sync_state.fully_scanned_height();
     let highest_scanned_height = sync_state.highest_scanned_height();
+    let sync_start_height = sync_state.initial_sync_state().sync_start_height();
+
+    let scanned_block_range_boundaries = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                && scan_range.block_range().start >= sync_start_height
+        })
+        .flat_map(|scan_range| {
+            vec![
+                scan_range.block_range().start,
+                scan_range.block_range().end - 1,
+            ]
+        })
+        .collect::<Vec<_>>();
+
     let wallet_transaction_heights = wallet
         .get_wallet_transactions()
         .unwrap()
         .values()
         .filter_map(|tx| tx.confirmation_status().get_confirmed_height())
         .collect::<Vec<_>>();
+
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
-        *height >= fully_scanned_height - 1
+        *height >= sync_start_height - 1
             || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+            || scanned_block_range_boundaries.contains(height)
             || wallet_transaction_heights.contains(height)
     });
     wallet
