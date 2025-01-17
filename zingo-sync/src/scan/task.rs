@@ -258,7 +258,9 @@ where
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
-            if let Some(scan_task) = sync::state::create_scan_task(wallet).unwrap() {
+            if let Some(scan_task) =
+                sync::state::create_scan_task(&self.consensus_parameters, wallet).unwrap()
+            {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state().unwrap().scan_complete() {
                 self.state.scan_completed();
