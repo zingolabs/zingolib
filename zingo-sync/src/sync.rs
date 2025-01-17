@@ -114,6 +114,7 @@ where
     .await;
 
     state::update_scan_ranges(
+        consensus_parameters,
         wallet_height,
         chain_height,
         wallet_guard.get_sync_state_mut().unwrap(),
@@ -291,7 +292,7 @@ where
 {
     match scan_results {
         Ok(results) => {
-            update_wallet_data(wallet, results).unwrap();
+            update_wallet_data(consensus_parameters, wallet, results).unwrap();
             spend::update_transparent_spends(wallet).unwrap();
             spend::update_shielded_spends(
                 consensus_parameters,
@@ -452,7 +453,11 @@ where
 }
 
 /// Updates the wallet with data from `scan_results`
-fn update_wallet_data<W>(wallet: &mut W, scan_results: ScanResults) -> Result<(), ()>
+fn update_wallet_data<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    wallet: &mut W,
+    scan_results: ScanResults,
+) -> Result<(), ()>
 where
     W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
@@ -467,8 +472,18 @@ where
 
     let sync_state = wallet.get_sync_state_mut().unwrap();
     for transaction in wallet_transactions.values() {
-        state::update_found_note_shard_priority(sync_state, ShieldedProtocol::Sapling, transaction);
-        state::update_found_note_shard_priority(sync_state, ShieldedProtocol::Orchard, transaction);
+        state::update_found_note_shard_priority(
+            consensus_parameters,
+            sync_state,
+            ShieldedProtocol::Sapling,
+            transaction,
+        );
+        state::update_found_note_shard_priority(
+            consensus_parameters,
+            sync_state,
+            ShieldedProtocol::Orchard,
+            transaction,
+        );
     }
 
     wallet.append_wallet_blocks(wallet_blocks).unwrap();
