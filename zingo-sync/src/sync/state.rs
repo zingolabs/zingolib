@@ -80,6 +80,7 @@ fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BT
 
 /// Update scan ranges for scanning
 pub(super) async fn update_scan_ranges(
+    consensus_parameters: &impl consensus::Parameters,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
@@ -87,8 +88,13 @@ pub(super) async fn update_scan_ranges(
     reset_scan_ranges(sync_state)?;
     create_scan_range(wallet_height, chain_height, sync_state).await?;
     let locators = sync_state.locators().clone();
-    set_found_note_scan_ranges(sync_state, ShieldedProtocol::Orchard, locators.into_iter())?;
-    set_chain_tip_scan_range(sync_state, chain_height)?;
+    set_found_note_scan_ranges(
+        consensus_parameters,
+        sync_state,
+        ShieldedProtocol::Orchard,
+        locators.into_iter(),
+    )?;
+    set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height)?;
 
     let verification_height = sync_state.highest_scanned_height() + 1;
     if verification_height <= chain_height {
@@ -199,12 +205,13 @@ pub(super) fn set_verify_scan_range(
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
 pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
+    consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     locators: L,
 ) -> Result<(), ()> {
     for locator in locators {
-        set_found_note_scan_range(sync_state, shielded_protocol, locator)?;
+        set_found_note_scan_range(consensus_parameters, sync_state, shielded_protocol, locator)?;
     }
 
     Ok(())
@@ -212,12 +219,18 @@ pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
 
 /// Punches in the `shielded_protocol` shard block range surrounding the `locator` with `ScanPriority::FoundNote`.
 pub(super) fn set_found_note_scan_range(
+    consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     locator: Locator,
 ) -> Result<(), ()> {
     let block_height = locator.0;
-    let block_range = determine_block_range(sync_state, block_height, shielded_protocol);
+    let block_range = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        block_height,
+        shielded_protocol,
+    );
     punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
 
     Ok(())
@@ -228,13 +241,22 @@ pub(super) fn set_found_note_scan_range(
 /// Determines the chain tip block range by finding the lowest start height of the latest incomplete shard for each
 /// shielded protocol.
 fn set_chain_tip_scan_range(
+    consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     chain_height: BlockHeight,
 ) -> Result<(), ()> {
-    let sapling_incomplete_shard =
-        determine_block_range(sync_state, chain_height, ShieldedProtocol::Sapling);
-    let orchard_incomplete_shard =
-        determine_block_range(sync_state, chain_height, ShieldedProtocol::Orchard);
+    let sapling_incomplete_shard = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        chain_height,
+        ShieldedProtocol::Sapling,
+    );
+    let orchard_incomplete_shard = determine_block_range(
+        consensus_parameters,
+        sync_state,
+        chain_height,
+        ShieldedProtocol::Orchard,
+    );
 
     let chain_tip = if sapling_incomplete_shard.start < orchard_incomplete_shard.start {
         sapling_incomplete_shard
@@ -330,10 +352,38 @@ fn punch_scan_priority(
 /// If no shard range exists for the given `block_height`, return the range of the incomplete shard at the chain tip.
 /// If `block_height` contains note commitments from multiple shards, return the block range of all of those shards combined.
 fn determine_block_range(
+    consensus_parameters: &impl consensus::Parameters,
     sync_state: &SyncState,
     block_height: BlockHeight,
-    shielded_protocol: ShieldedProtocol,
+    mut shielded_protocol: ShieldedProtocol,
 ) -> Range<BlockHeight> {
+    loop {
+        match shielded_protocol {
+            ShieldedProtocol::Sapling => {
+                if block_height
+                    < consensus_parameters
+                        .activation_height(consensus::NetworkUpgrade::Sapling)
+                        .expect("network activation height should be set")
+                {
+                    panic!("pre-sapling not supported");
+                } else {
+                    break;
+                }
+            }
+            ShieldedProtocol::Orchard => {
+                if block_height
+                    < consensus_parameters
+                        .activation_height(consensus::NetworkUpgrade::Nu5)
+                        .expect("network activation height should be set")
+                {
+                    shielded_protocol = ShieldedProtocol::Sapling;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     let shard_ranges = match shielded_protocol {
         ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges(),
         ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges(),
@@ -751,6 +801,7 @@ pub(super) fn add_shard_ranges(
 /// Updates the `shielded_protocol` shard range to `FoundNote` scan priority if the `wallet_transaction` contains
 /// a note from the corresponding `shielded_protocol`.
 pub(super) fn update_found_note_shard_priority(
+    consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     wallet_transaction: &WalletTransaction,
@@ -761,6 +812,7 @@ pub(super) fn update_found_note_shard_priority(
     };
     if found_note {
         set_found_note_scan_range(
+            consensus_parameters,
             sync_state,
             shielded_protocol,
             (
