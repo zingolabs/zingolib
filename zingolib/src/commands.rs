@@ -230,7 +230,7 @@ impl Command for ParseAddressCommand {
         indoc! {r#"
             Parse an address
             Usage:
-            parse_address [address]
+            parse_address <address> [orchard]
 
             Example
             parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
@@ -242,18 +242,28 @@ impl Command for ParseAddressCommand {
     }
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
+        if args.len() > 2 {
+            return self.help().to_string();
+        }
+        fn make_decoded_chain_pair(
+            address: &str,
+        ) -> Option<(
+            zcash_client_backend::address::Address,
+            crate::config::ChainType,
+        )> {
+            [
+                crate::config::ChainType::Mainnet,
+                crate::config::ChainType::Testnet,
+                crate::config::ChainType::Regtest(
+                    crate::config::RegtestNetwork::all_upgrades_active(),
+                ),
+            ]
+            .iter()
+            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+        }
         match args.len() {
             1 => json::stringify_pretty(
-                [
-                    crate::config::ChainType::Mainnet,
-                    crate::config::ChainType::Testnet,
-                    crate::config::ChainType::Regtest(
-                        crate::config::RegtestNetwork::all_upgrades_active(),
-                    ),
-                ]
-                .iter()
-                .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map_or(
+                make_decoded_chain_pair(args[0]).map_or(
                     object! {
                         "status" => "Invalid address",
                         "chain_name" => json::JsonValue::Null,
