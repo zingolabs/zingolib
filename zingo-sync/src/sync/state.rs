@@ -64,7 +64,6 @@ where
 }
 
 /// Returns the locators for a given `block_range` from the wallet's [`crate::primitives::SyncState`]
-// TODO: unit test high priority
 fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BTreeSet<Locator> {
     sync_state
         .locators()
@@ -75,8 +74,6 @@ fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BT
         .cloned()
         .collect()
 }
-
-// TODO: remove locators after range is scanned
 
 /// Update scan ranges for scanning
 pub(super) async fn update_scan_ranges(
@@ -147,8 +144,6 @@ fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
     for scan_range in previously_scanning_scan_ranges {
         set_scan_priority(sync_state, scan_range.block_range(), ScanPriority::Verify).unwrap();
     }
-
-    // TODO: determine OpenAdjacent priority ranges from the end block of previous ChainTip ranges
 
     Ok(())
 }

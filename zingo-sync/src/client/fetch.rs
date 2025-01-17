@@ -169,6 +169,7 @@ async fn get_latest_block(
 
     Ok(client.get_latest_block(request).await.unwrap().into_inner())
 }
+
 async fn get_block_range(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_range: Range<BlockHeight>,
@@ -183,9 +184,8 @@ async fn get_block_range(
             hash: vec![],
         }),
     });
-    let block_stream = client.get_block_range(request).await.unwrap().into_inner();
 
-    Ok(block_stream)
+    Ok(client.get_block_range(request).await.unwrap().into_inner())
 }
 
 async fn get_subtree_roots(
@@ -199,12 +199,14 @@ async fn get_subtree_roots(
         shielded_protocol,
         max_entries,
     };
+
     Ok(client
         .get_subtree_roots(request)
         .await
         .unwrap()
         .into_inner())
 }
+
 async fn get_tree_state(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_height: BlockHeight,

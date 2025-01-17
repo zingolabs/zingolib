@@ -37,13 +37,12 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-// TODO: move parameters to config module
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>, // TODO: change underlying service for generic
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
 ) -> Result<(), SyncError>
