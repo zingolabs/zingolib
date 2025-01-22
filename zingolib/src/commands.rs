@@ -125,15 +125,7 @@ impl Command for GetBirthdayCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            lightclient
-                .wallet
-                .lock()
-                .await
-                .get_birthday()
-                .await
-                .to_string()
-        })
+        RT.block_on(async move { lightclient.wallet.lock().await.birthday.to_string() })
     }
 }
 
@@ -751,7 +743,7 @@ impl Command for ExportUfvkCommand {
             };
             object! {
                 "ufvk" => ufvk.encode(&lightclient.config().chain),
-                "birthday" => lightclient.wallet.lock().await.get_birthday().await
+                "birthday" => u32::from(lightclient.wallet.lock().await.birthday)
             }
             .pretty(2)
         })

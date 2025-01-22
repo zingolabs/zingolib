@@ -1,15 +1,12 @@
 //! Trait implementations for sync interface
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::atomic,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock},
+    primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock},
     traits::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
@@ -23,8 +20,7 @@ impl SyncWallet for LightWallet {
     type Error = ();
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
-        let birthday = self.birthday.load(atomic::Ordering::Relaxed);
-        Ok(BlockHeight::from_u32(birthday as u32))
+        Ok(self.birthday)
     }
 
     fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
@@ -116,11 +112,11 @@ impl SyncNullifiers for LightWallet {
 }
 
 impl SyncOutPoints for LightWallet {
-    fn get_outpoints(&self) -> Result<&OutPointMap, Self::Error> {
+    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, Locator>, Self::Error> {
         Ok(&self.outpoint_map)
     }
 
-    fn get_outpoints_mut(&mut self) -> Result<&mut OutPointMap, Self::Error> {
+    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, Locator>, Self::Error> {
         Ok(&mut self.outpoint_map)
     }
 }

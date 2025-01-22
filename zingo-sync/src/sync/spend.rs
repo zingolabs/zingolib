@@ -13,7 +13,7 @@ use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
-    primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletTransaction},
+    primitives::{Locator, NullifierMap, OutputId, WalletTransaction},
     scan::transactions::scan_spending_transactions,
     traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
 };
@@ -194,12 +194,12 @@ pub(super) fn collect_transparent_output_ids(
 
 /// Check if any wallet coin's output id match an outpoint in the `outpoint_map`.
 pub(super) fn detect_transparent_spends(
-    outpoint_map: &mut OutPointMap,
+    outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_output_ids: Vec<OutputId>,
 ) -> BTreeMap<OutputId, Locator> {
     transparent_output_ids
         .iter()
-        .flat_map(|output_id| outpoint_map.inner_mut().remove_entry(output_id))
+        .flat_map(|output_id| outpoint_map.remove_entry(output_id))
         .collect()
 }
 

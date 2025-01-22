@@ -10,12 +10,14 @@ use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction};
+use crate::primitives::{
+    Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction,
+};
 use crate::witness::{LocatedTreeData, ShardTrees};
 
 // TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
-/// Temporary dump for all necessary wallet functionality for PoC
+/// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
     type Error: Debug;
@@ -43,24 +45,6 @@ pub trait SyncWallet {
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
-}
-
-/// Helper to allow generic construction of a
-/// shardtree Node from raw byte representation
-pub(crate) trait FromBytes<const N: usize> {
-    fn from_bytes(array: [u8; N]) -> Self;
-}
-
-impl FromBytes<32> for orchard::tree::MerkleHashOrchard {
-    fn from_bytes(array: [u8; 32]) -> Self {
-        Self::from_bytes(&array).unwrap()
-    }
-}
-
-impl FromBytes<32> for sapling_crypto::Node {
-    fn from_bytes(array: [u8; 32]) -> Self {
-        Self::from_bytes(array).unwrap()
-    }
 }
 
 /// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
@@ -185,13 +169,13 @@ pub trait SyncNullifiers: SyncWallet {
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;
 
     /// Append nullifiers to wallet nullifier map
-    fn append_nullifiers(&mut self, mut nullifier_map: NullifierMap) -> Result<(), Self::Error> {
+    fn append_nullifiers(&mut self, mut nullifiers: NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
             .sapling_mut()
-            .append(nullifier_map.sapling_mut());
+            .append(nullifiers.sapling_mut());
         self.get_nullifiers_mut()?
             .orchard_mut()
-            .append(nullifier_map.orchard_mut());
+            .append(nullifiers.orchard_mut());
 
         Ok(())
     }
@@ -213,16 +197,17 @@ pub trait SyncNullifiers: SyncWallet {
 /// Trait for interfacing outpoints with wallet data
 pub trait SyncOutPoints: SyncWallet {
     /// Get wallet outpoint map
-    fn get_outpoints(&self) -> Result<&OutPointMap, Self::Error>;
+    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, Locator>, Self::Error>;
 
     /// Get mutable reference to wallet outpoint map
-    fn get_outpoints_mut(&mut self) -> Result<&mut OutPointMap, Self::Error>;
+    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, Locator>, Self::Error>;
 
     /// Append outpoints to wallet outpoint map
-    fn append_outpoints(&mut self, mut outpoint_map: OutPointMap) -> Result<(), Self::Error> {
-        self.get_outpoints_mut()?
-            .inner_mut()
-            .append(outpoint_map.inner_mut());
+    fn append_outpoints(
+        &mut self,
+        outpoints: &mut BTreeMap<OutputId, Locator>,
+    ) -> Result<(), Self::Error> {
+        self.get_outpoints_mut()?.append(outpoints);
 
         Ok(())
     }
@@ -230,7 +215,6 @@ pub trait SyncOutPoints: SyncWallet {
     /// Removes all mapped outpoints above the given `block_height`.
     fn truncate_outpoints(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?
-            .inner_mut()
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
 
         Ok(())
@@ -239,10 +223,11 @@ pub trait SyncOutPoints: SyncWallet {
 
 /// Trait for interfacing shard tree data with wallet data
 pub trait SyncShardTrees: SyncWallet {
-    /// Get mutable reference to shard trees
-    fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
     /// Get reference to shard trees
     fn get_shard_trees(&self) -> Result<&ShardTrees, Self::Error>;
+
+    /// Get mutable reference to shard trees
+    fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
 
     /// Update wallet shard trees with new shard tree data
     fn update_shard_trees(

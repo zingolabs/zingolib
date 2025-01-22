@@ -126,7 +126,7 @@ pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) where
     S: ShardStore<
-        H: incrementalmerkletree::Hashable + Clone + PartialEq + crate::traits::FromBytes<32>,
+        H: incrementalmerkletree::Hashable + Clone + PartialEq + FromBytes<32>,
         CheckpointId: Clone + Ord + std::fmt::Debug,
         Error = std::convert::Infallible,
     >,
@@ -135,9 +135,7 @@ pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
         .into_iter()
         .enumerate()
         .for_each(|(index, tree_root)| {
-            let node = <S::H as crate::traits::FromBytes<32>>::from_bytes(
-                tree_root.root_hash.try_into().unwrap(),
-            );
+            let node = <S::H as FromBytes<32>>::from_bytes(tree_root.root_hash.try_into().unwrap());
             let shard = LocatedPrunableTree::with_root_value(
                 incrementalmerkletree::Address::from_parts(
                     incrementalmerkletree::Level::new(SHARD_HEIGHT),
@@ -147,4 +145,21 @@ pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
             );
             shard_tree.store_mut().put_shard(shard).unwrap();
         });
+}
+
+/// Allows generic construction of a shardtree node from raw byte representation
+pub(crate) trait FromBytes<const N: usize> {
+    fn from_bytes(array: [u8; N]) -> Self;
+}
+
+impl FromBytes<32> for orchard::tree::MerkleHashOrchard {
+    fn from_bytes(array: [u8; 32]) -> Self {
+        Self::from_bytes(&array).unwrap()
+    }
+}
+
+impl FromBytes<32> for sapling_crypto::Node {
+    fn from_bytes(array: [u8; 32]) -> Self {
+        Self::from_bytes(array).unwrap()
+    }
 }

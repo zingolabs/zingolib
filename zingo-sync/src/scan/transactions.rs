@@ -30,9 +30,9 @@ use crate::{
     client::{self, FetchRequest},
     keys::{self, transparent::TransparentAddressId, KeyId},
     primitives::{
-        Locator, NullifierMap, OrchardNote, OutPointMap, OutgoingNote, OutgoingOrchardNote,
-        OutgoingSaplingNote, OutputId, SaplingNote, SyncOutgoingNotes, TransparentCoin,
-        WalletBlock, WalletNote, WalletTransaction,
+        Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote,
+        OutputId, SaplingNote, SyncOutgoingNotes, TransparentCoin, WalletBlock, WalletNote,
+        WalletTransaction,
     },
     traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
     utils,
@@ -74,7 +74,7 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     locators: BTreeSet<Locator>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-    outpoint_map: &mut OutPointMap,
+    outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ()> {
     let mut wallet_transactions = HashMap::with_capacity(locators.len());
@@ -124,7 +124,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     confirmation_status: ConfirmationStatus,
     decrypted_note_data: &DecryptedNoteData,
     nullifier_map: &mut NullifierMap,
-    outpoint_map: &mut OutPointMap,
+    outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
 ) -> Result<WalletTransaction, ()> {
     // TODO: consider splitting into separate fns for pending and confirmed etc.
@@ -501,7 +501,7 @@ fn collect_nullifiers(
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
 fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
-    outpoint_map: &mut OutPointMap,
+    outpoint_map: &mut BTreeMap<OutputId, Locator>,
     txid: TxId,
     block_height: BlockHeight,
     transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
@@ -511,7 +511,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .iter()
         .map(|txin| &txin.prevout)
         .for_each(|outpoint| {
-            outpoint_map.inner_mut().insert(
+            outpoint_map.insert(
                 OutputId::from_parts(*outpoint.txid(), outpoint.n() as usize),
                 (block_height, txid),
             );
@@ -560,7 +560,7 @@ where
         );
     }
 
-    let mut outpoint_map = OutPointMap::new(); // dummy outpoint map
+    let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
     let spending_transactions = scan_transactions(
         fetch_request_sender,
         consensus_parameters,

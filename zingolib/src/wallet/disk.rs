@@ -8,7 +8,7 @@ use zip32::AccountId;
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc},
+    sync::Arc,
 };
 
 use tokio::sync::RwLock;
@@ -36,10 +36,10 @@ use super::{
 };
 
 impl LightWallet {
-    /// Changes in version 30:
-    /// - New WalletCapability version (v4) which implements read/write for rejection addresses
+    /// Changes in version 31:
+    /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        30
+        31 // TODO: double check this is correctly incremented before sync integration is complete
     }
 
     /// TODO: Add Doc Comment Here!
@@ -51,10 +51,6 @@ impl LightWallet {
         self.transaction_context
             .key
             .write(&mut writer, self.transaction_context.config.chain)?;
-
-        Vector::write(&mut writer, &self.last_100_blocks.read().await, |w, b| {
-            b.write(w)
-        })?;
 
         self.transaction_context
             .transaction_metadata_set
@@ -70,21 +66,8 @@ impl LightWallet {
 
         self.wallet_options.read().await.write(&mut writer)?;
 
-        // While writing the birthday, get it from the fn so we recalculate it properly
-        // in case of rescans etc...
-        writer.write_u64::<LittleEndian>(self.get_birthday().await)?;
-
-        Optional::write(
-            &mut writer,
-            self.verified_tree.read().await.as_ref(),
-            |w, t| {
-                use prost::Message;
-                let mut buf = vec![];
-
-                t.encode(&mut buf)?;
-                Vector::write(w, &buf, |w, b| w.write_u8(*b))
-            },
-        )?;
+        // TODO: make sure wallet always has a birthday
+        writer.write_u64::<LittleEndian>(self.birthday.into())?;
 
         // Price info
         self.price.read().await.write(&mut writer)?;
@@ -124,11 +107,13 @@ impl LightWallet {
         info!("Reading wallet version {}", external_version);
         let mut wallet_capability = WalletCapability::read(&mut reader, config.chain)?;
 
-        let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-        if external_version <= 14 {
-            // Reverse the order, since after version 20, we need highest-block-first
-            // TODO: Consider order between 14 and 20.
-            blocks = blocks.into_iter().rev().collect();
+        if external_version <= 30 {
+            let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
+            if external_version <= 14 {
+                // Reverse the order, since after version 20, we need highest-block-first
+                // TODO: Consider order between 14 and 20.
+                _blocks = _blocks.into_iter().rev().collect();
+            }
         }
 
         let transactions = if external_version <= 14 {
@@ -155,7 +140,12 @@ impl LightWallet {
             WalletOptions::read(&mut reader)?
         };
 
-        let birthday = reader.read_u64::<LittleEndian>()?;
+        let birthday = BlockHeight::from_u32(
+            reader
+                .read_u64::<LittleEndian>()?
+                .try_into()
+                .expect("should never overflow"),
+        );
 
         if external_version <= 22 {
             let _sapling_tree_verified = if external_version <= 12 {
@@ -165,17 +155,19 @@ impl LightWallet {
             };
         }
 
-        let verified_tree = if external_version <= 21 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| {
-                use prost::Message;
+        if external_version <= 30 {
+            let _verified_tree = if external_version <= 21 {
+                None
+            } else {
+                Optional::read(&mut reader, |r| {
+                    use prost::Message;
 
-                let buf = Vector::read(r, |r| r.read_u8())?;
-                TreeState::decode(&buf[..])
-                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-            })?
-        };
+                    let buf = Vector::read(r, |r| r.read_u8())?;
+                    TreeState::decode(&buf[..])
+                        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+                })?
+            };
+        }
 
         let price = if external_version <= 13 {
             WalletZecPriceInfo::default()
@@ -281,18 +273,17 @@ impl LightWallet {
         );
 
         let lw = Self {
-            last_100_blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
-            birthday: AtomicU64::new(birthday),
-            verified_tree: Arc::new(RwLock::new(verified_tree)),
+            birthday,
+            unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
-            outpoint_map: zingo_sync::primitives::OutPointMap::new(),
+            outpoint_map: BTreeMap::new(),
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),

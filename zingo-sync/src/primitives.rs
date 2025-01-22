@@ -237,30 +237,6 @@ impl Default for NullifierMap {
     }
 }
 
-/// Binary tree map of out points (transparent spends)
-#[derive(Debug)]
-pub struct OutPointMap(BTreeMap<OutputId, Locator>);
-
-impl OutPointMap {
-    pub fn new() -> Self {
-        Self(BTreeMap::new())
-    }
-
-    pub fn inner(&self) -> &BTreeMap<OutputId, Locator> {
-        &self.0
-    }
-
-    pub fn inner_mut(&mut self) -> &mut BTreeMap<OutputId, Locator> {
-        &mut self.0
-    }
-}
-
-impl Default for OutPointMap {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Wallet block data
 #[derive(Debug, Clone, CopyGetters)]
 #[getset(get_copy = "pub")]

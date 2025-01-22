@@ -3,7 +3,7 @@
 use json::{array, object, JsonValue};
 use log::{debug, error};
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{Mutex, RwLock};
 
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::config::ZingoConfig;
+use crate::config::{ChainType, ZingoConfig};
 
 use crate::wallet::{
     keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
@@ -81,8 +81,6 @@ impl WalletStatus {
 pub struct LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub progress: SendProgress,
-    /// TODO: Add Doc Comment Here!
-    pub interrupt_sync: bool,
 }
 
 impl LightWalletSendProgress {
@@ -112,7 +110,6 @@ impl LightWalletSendProgress {
             "total" => self.progress.total,
             "txids" => tx_ids,
             "error" => error,
-            "sync_interrupt" => self.interrupt_sync
         }
     }
 }
@@ -287,7 +284,7 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient connects one LightWallet to one lightwalletd server via gRPC.
+/// The LightClient connects one LightWallet to one indexer server via gRPC.
 ///  1. initialization of stored state
 ///      * from seed
 ///      * from keys
@@ -295,17 +292,17 @@ pub struct UserBalances {
 ///      * from a fresh start with reasonable defaults
 ///  2. synchronization of the client with the state of the blockchain via a gRPC server
 ///      *
+#[allow(dead_code)] // TODO: remove after sync integration
 pub struct LightClient {
-    // / the LightClient connects to one server.
-    // pub(crate) server_uri: Arc<RwLock<Uri>>,
+    /// URI for creating gRPC client to connect to server.
+    pub indexer_uri: Option<http::Uri>,
+    /// Network type.
+    pub network: ChainType,
     pub(crate) config: ZingoConfig,
-    /// TODO: Add Doc Comment Here!
+    /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
-
-    interrupt_sync: Arc<RwLock<bool>>,
-
+    syncing: Arc<AtomicBool>, // TODO: add interrupt to sync engine
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
-
     save_buffer: ZingoSaveBuffer,
 }
 
@@ -314,7 +311,7 @@ pub mod instantiation {
     use log::debug;
     use std::{
         io::{self, Error, ErrorKind},
-        sync::Arc,
+        sync::{atomic::AtomicBool, Arc},
     };
     use tokio::{
         runtime::Runtime,
@@ -335,9 +332,11 @@ pub mod instantiation {
             wallet.write(&mut buffer).await?;
             let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
+                indexer_uri: None,                          // TODO: not yet integrated
+                network: crate::config::ChainType::Mainnet, // TODO: not yet integrated
                 wallet: Arc::new(Mutex::new(wallet)),
                 config: config.clone(),
-                interrupt_sync: Arc::new(RwLock::new(false)),
+                syncing: Arc::new(AtomicBool::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })
@@ -466,9 +465,7 @@ impl LightClient {
         // First, clear the state from the wallet
         wallet.clear_all().await;
 
-        // Then set the initial block
-        let birthday = wallet.get_birthday().await;
-        debug!("Cleared wallet state, with birthday at {}", birthday);
+        debug!("Cleared wallet state");
     }
 
     /// TODO: Add Doc Comment Here!

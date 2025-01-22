@@ -27,7 +27,6 @@ async fn sync_mainnet_test() {
         uri.clone(),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
-        true,
     )
     .unwrap();
     let lightclient = LightClient::create_from_wallet_base_async(
@@ -66,7 +65,6 @@ async fn sync_status() {
         uri.clone(),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
-        true,
     )
     .unwrap();
     let lightclient = LightClient::create_from_wallet_base_async(

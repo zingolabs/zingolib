@@ -68,7 +68,6 @@ pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
     chain: ChainType,
-    monitor_mempool: bool,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -98,8 +97,6 @@ pub fn load_clientconfig(
     let config = ZingoConfig {
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
-        monitor_mempool,
-        reorg_buffer_offset: REORG_BUFFER_OFFSET,
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
@@ -157,13 +154,11 @@ pub struct ZingoConfigBuilder {
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     /// TODO: Add Doc Comment Here!
+    // TODO: remove during sync integration
     pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
     /// TODO: Add Doc Comment Here!
+    // TODO: remove during sync integration
     pub chain: ChainType,
-    /// TODO: Add Doc Comment Here!
-    pub reorg_buffer_offset: u32,
-    /// TODO: Add Doc Comment Here!
-    pub monitor_mempool: bool,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     pub wallet_dir: Option<PathBuf>,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
@@ -220,8 +215,6 @@ impl ZingoConfigBuilder {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(lightwalletd_uri)),
             chain: self.chain,
-            monitor_mempool: false,
-            reorg_buffer_offset: REORG_BUFFER_OFFSET,
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
@@ -756,7 +749,6 @@ mod tests {
             valid_uri.clone(),
             Some(temp_path),
             crate::config::ChainType::Mainnet,
-            true,
         );
 
         assert_eq!(valid_config.is_ok(), true);
@@ -782,7 +774,6 @@ mod tests {
             valid_uri.clone(),
             Some(temp_path),
             crate::config::ChainType::Mainnet,
-            true,
         )
         .unwrap();
 

@@ -15,7 +15,7 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
-    primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletBlock, WalletTransaction},
+    primitives::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
@@ -85,7 +85,7 @@ struct ScanData {
 
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
-    pub(crate) outpoints: OutPointMap,
+    pub(crate) outpoints: BTreeMap<OutputId, Locator>,
     pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
@@ -180,7 +180,7 @@ where
 
     locators.append(&mut decrypted_locators);
 
-    let mut outpoints = OutPointMap::new();
+    let mut outpoints = BTreeMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         consensus_parameters,

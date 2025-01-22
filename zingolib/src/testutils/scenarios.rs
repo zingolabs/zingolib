@@ -211,7 +211,6 @@ pub mod setup {
                 self.server_id.clone(),
                 Some(conf_path),
                 crate::config::ChainType::Regtest(regtest_network),
-                true,
             )
             .unwrap()
         }
