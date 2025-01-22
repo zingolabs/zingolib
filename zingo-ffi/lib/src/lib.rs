@@ -286,7 +286,7 @@ pub fn get_transaction_summaries() -> String {
     resp
 }
 
-pub fn get_value_transfers() -> String {
+pub fn get_value_transfers(recent_vts_to_retrive: String) -> String {
     let resp: String;
     {
         let lightclient: Arc<LightClient>;
@@ -300,8 +300,13 @@ pub fn get_value_transfers() -> String {
             lightclient = lc.borrow().as_ref().unwrap().clone();
         };
 
+        let recent_vts: usize = match recent_vts_to_retrive.parse::<usize>() {
+            Ok(value) => value,
+            Err(_) => return "Error: recent_vts_to_retrive is not a valid number".to_string(),
+        };
+
         let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async { lightclient.value_transfers_json_string().await });
+        resp = rt.block_on(async { lightclient.value_transfers_json_string(recent_vts).await });
     };
 
     resp
