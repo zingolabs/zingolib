@@ -38,7 +38,7 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
-const MAX_VERIFICATION_WINDOW: u32 = 100;
+pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(

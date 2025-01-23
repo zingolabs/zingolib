@@ -28,12 +28,12 @@ use crate::{
     primitives::{Locator, WalletBlock},
     sync,
     traits::{SyncBlocks, SyncWallet},
+    MAX_BATCH_OUTPUTS,
 };
 
 use super::{compact_blocks::calculate_block_tree_boundaries, error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
-const MAX_BATCH_OUTPUTS: usize = 8_192; // 2^13
 
 pub(crate) enum ScannerState {
     Verification,
