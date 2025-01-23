@@ -297,11 +297,11 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         transaction.txid(),
         transaction,
         confirmation_status,
+        transparent_coins,
         sapling_notes,
         orchard_notes,
         outgoing_sapling_notes,
         outgoing_orchard_notes,
-        transparent_coins,
     ))
 }
 

@@ -8,7 +8,10 @@ use std::{
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::{
+    data_api::scanning::{ScanPriority, ScanRange},
+    ShieldedProtocol,
+};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -248,6 +251,7 @@ pub struct WalletBlock {
     #[getset(skip)]
     txids: Vec<TxId>,
     tree_boundaries: TreeBoundaries,
+    // TODO: optional price
 }
 
 impl WalletBlock {
@@ -282,7 +286,9 @@ pub struct WalletTransaction {
     #[getset(get = "pub")]
     transaction: zcash_primitives::transaction::Transaction,
     #[getset(get_copy = "pub")]
-    confirmation_status: ConfirmationStatus,
+    status: ConfirmationStatus,
+    #[getset(skip)]
+    transparent_coins: Vec<TransparentCoin>,
     #[getset(skip)]
     sapling_notes: Vec<SaplingNote>,
     #[getset(skip)]
@@ -291,8 +297,6 @@ pub struct WalletTransaction {
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
     #[getset(skip)]
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-    #[getset(skip)]
-    transparent_coins: Vec<TransparentCoin>,
 }
 
 impl WalletTransaction {
@@ -300,17 +304,17 @@ impl WalletTransaction {
     pub fn from_parts(
         txid: TxId,
         transaction: zcash_primitives::transaction::Transaction,
-        confirmation_status: ConfirmationStatus,
+        status: ConfirmationStatus,
+        transparent_coins: Vec<TransparentCoin>,
         sapling_notes: Vec<SaplingNote>,
         orchard_notes: Vec<OrchardNote>,
         outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
         outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-        transparent_coins: Vec<TransparentCoin>,
     ) -> Self {
         Self {
             txid,
             transaction,
-            confirmation_status,
+            status,
             sapling_notes,
             orchard_notes,
             outgoing_sapling_notes,
@@ -319,6 +323,13 @@ impl WalletTransaction {
         }
     }
 
+    pub fn transparent_coins(&self) -> &[TransparentCoin] {
+        &self.transparent_coins
+    }
+
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+        self.transparent_coins.iter_mut().collect()
+    }
     pub fn sapling_notes(&self) -> &[SaplingNote] {
         &self.sapling_notes
     }
@@ -342,28 +353,24 @@ impl WalletTransaction {
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
     }
-
-    pub fn transparent_coins(&self) -> &[TransparentCoin] {
-        &self.transparent_coins
-    }
-
-    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
-        self.transparent_coins.iter_mut().collect()
-    }
 }
 
 impl std::fmt::Debug for WalletTransaction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("WalletTransaction")
-            .field("confirmation_status", &self.confirmation_status)
+            .field("confirmation_status", &self.status)
+            .field("transparent_coins", &self.transparent_coins)
             .field("sapling_notes", &self.sapling_notes)
             .field("orchard_notes", &self.orchard_notes)
             .field("outgoing_sapling_notes", &self.outgoing_sapling_notes)
             .field("outgoing_orchard_notes", &self.outgoing_orchard_notes)
-            .field("transparent_coins", &self.transparent_coins)
             .finish()
     }
 }
+
+#[cfg(feature = "wallet_impls")]
+impl WalletTransaction {}
+
 pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
 pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 

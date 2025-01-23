@@ -6,6 +6,8 @@ use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zingo_sync::primitives::WalletNote;
+use zingo_sync::primitives::WalletTransaction;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -31,6 +33,8 @@ use crate::wallet::tx_map::TxMap;
 use crate::wallet::LightWallet;
 
 use super::keys::unified::UnifiedKeyStore;
+use super::traits::NoteInterface as _;
+use super::traits::WalletDomain;
 
 impl LightWallet {
     /// returns Some seed phrase for the wallet.
@@ -45,17 +49,14 @@ impl LightWallet {
     /// with optional filtering.
     /// This method ensures that None is returned in the case of a missing view capability.
     #[allow(clippy::type_complexity)]
-    pub async fn get_filtered_balance<D>(
-        &self,
-        filter_function: Box<dyn Fn(&&D::WalletNote, &TransactionRecord) -> bool + '_>,
-    ) -> Option<u64>
+    pub async fn get_filtered_balance<D, N, Nf, F>(&self, filter_function: F) -> Option<u64>
     where
-        D: DomainWalletExt,
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: Recipient,
+        Nf: Copy,
+        F: Fn(&WalletNote<N, Nf>, &WalletTransaction) -> bool,
+        D: WalletDomain<N, Nf>,
     {
         // For the moment we encode lack of view capability as None
-        match &self.wallet_capability().unified_key_store {
+        match self.unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => {
@@ -68,22 +69,19 @@ impl LightWallet {
             UnifiedKeyStore::Empty => return None,
         }
         Some(
-            self.transaction_context
-                .transaction_metadata_set
-                .read()
-                .await
-                .transaction_records_by_id
+            self.wallet_transactions
                 .values()
                 .map(|transaction| {
-                    let mut selected_notes: Box<dyn Iterator<Item = &D::WalletNote>> =
-                        Box::new(D::WalletNote::transaction_metadata_notes(transaction).iter());
+                    let mut selected_notes: Box<
+                        dyn Iterator<Item = &zingo_sync::primitives::WalletNote<N, Nf>>,
+                    > = Box::new(D::Note::transaction_notes(transaction).iter());
                     // All filters in iterator are applied, by this loop
                     selected_notes =
                         Box::new(selected_notes.filter(|nnmd| filter_function(nnmd, transaction)));
                     selected_notes
-                        .map(|notedata| {
-                            if notedata.spending_tx_status().is_none() {
-                                <D::WalletNote as OutputInterface>::value(notedata)
+                        .map(|note| {
+                            if note.spending_transaction().is_none() {
+                                D::Note::value(&note)
                             } else {
                                 0
                             }

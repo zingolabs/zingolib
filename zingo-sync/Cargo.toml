@@ -3,6 +3,9 @@ name = "zingo-sync"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+wallet_impls = []
+
 [dependencies]
 # Zingo
 zingo-netutils = { path = "../zingo-netutils" }

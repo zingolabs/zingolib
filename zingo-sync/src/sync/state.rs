@@ -902,7 +902,7 @@ pub(super) fn update_found_note_shard_priority(
             sync_state,
             shielded_protocol,
             (
-                wallet_transaction.confirmation_status().get_height(),
+                wallet_transaction.status().get_height(),
                 wallet_transaction.txid(),
             ),
         )

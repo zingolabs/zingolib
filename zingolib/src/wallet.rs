@@ -200,7 +200,7 @@ pub struct LightWallet {
 
     /// Local state needed to submit (compact)block-requests to the proxy
     /// and interpret responses
-    pub transaction_context: TransactionContext, // TODO: to be removed
+    // pub transaction_context: TransactionContext, // TODO: to be removed
 
     /// Wallet compact blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,

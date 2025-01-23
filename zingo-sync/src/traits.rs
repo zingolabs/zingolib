@@ -119,10 +119,7 @@ pub trait SyncTransactions: SyncWallet {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
-            .filter(|tx| {
-                tx.confirmation_status()
-                    .is_confirmed_after(&truncate_height)
-            })
+            .filter(|tx| tx.status().is_confirmed_after(&truncate_height))
             .map(|tx| tx.transaction().txid())
             .collect();
 
