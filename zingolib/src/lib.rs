@@ -4,6 +4,8 @@
 //! Zingo backend code base
 //! Use this high level API to do things like submit transactions to the zcash blockchain
 
+use zcash_client_backend::ShieldedProtocol;
+
 #[macro_use]
 extern crate rust_embed;
 
@@ -39,4 +41,26 @@ pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
         })
         .map(|ld_info| ld_info.block_height)
+}
+
+pub trait WalletDomain {
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+
+    type Note: zingo_sync::primitives::NoteInterface;
+}
+
+pub(crate) struct Sapling {}
+
+impl WalletDomain for Sapling {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+
+    type Note = zingo_sync::primitives::SaplingNote;
+}
+
+pub(crate) struct Orchard {}
+
+impl WalletDomain for Orchard {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+
+    type Note = zingo_sync::primitives::OrchardNote;
 }

@@ -52,8 +52,6 @@ use zcash_primitives::{
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingo_sync::primitives::WalletNote;
-use zingo_sync::primitives::WalletTransaction;
 
 use super::keys::unified::UnifiedKeyStore;
 
@@ -693,62 +691,6 @@ impl DomainWalletExt for OrchardDomain {
 
     fn unified_key_store_to_fvk(unified_key_store: &UnifiedKeyStore) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(unified_key_store).map_err(|e| e.to_string())
-    }
-}
-
-pub(crate) trait WalletDomain<N, Nf: Copy> {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
-
-    type Note: NoteInterface<N, Nf>;
-}
-
-pub(crate) struct Sapling {}
-
-impl WalletDomain<sapling_crypto::Note, sapling_crypto::Nullifier> for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
-
-    type Note = zingo_sync::primitives::SaplingNote;
-}
-
-pub(crate) struct Orchard {}
-
-impl WalletDomain<orchard::Note, orchard::note::Nullifier> for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
-
-    type Note = zingo_sync::primitives::OrchardNote;
-}
-
-pub(crate) trait NoteInterface<N, Nf: Copy> {
-    fn value(&self) -> u64;
-
-    fn transaction_notes(transaction: &WalletTransaction) -> &[WalletNote<N, Nf>];
-}
-
-impl NoteInterface<sapling_crypto::Note, sapling_crypto::Nullifier>
-    for zingo_sync::primitives::SaplingNote
-{
-    fn value(&self) -> u64 {
-        self.note().value().inner()
-    }
-
-    fn transaction_notes(
-        transaction: &WalletTransaction,
-    ) -> &[zingo_sync::primitives::SaplingNote] {
-        transaction.sapling_notes()
-    }
-}
-
-impl NoteInterface<orchard::Note, orchard::note::Nullifier>
-    for zingo_sync::primitives::OrchardNote
-{
-    fn value(&self) -> u64 {
-        self.note().value().inner()
-    }
-
-    fn transaction_notes(
-        transaction: &WalletTransaction,
-    ) -> &[zingo_sync::primitives::OrchardNote] {
-        transaction.orchard_notes()
     }
 }
 

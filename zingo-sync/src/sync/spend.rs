@@ -95,12 +95,12 @@ pub(super) fn collect_derived_nullifiers(
     let sapling_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.sapling_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let orchard_nullifiers = wallet_transactions
         .values()
         .flat_map(|tx| tx.orchard_notes())
-        .flat_map(|note| note.nullifier())
+        .flat_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
     (sapling_nullifiers, orchard_nullifiers)
@@ -139,10 +139,10 @@ pub(super) fn update_spent_notes(
         .flat_map(|tx| tx.sapling_notes_mut())
         .for_each(|note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| sapling_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
     wallet_transactions
@@ -150,10 +150,10 @@ pub(super) fn update_spent_notes(
         .flat_map(|tx| tx.orchard_notes_mut())
         .for_each(|note| {
             if let Some((_, txid)) = note
-                .nullifier()
+                .nullifier
                 .and_then(|nf| orchard_spend_locators.get(&nf))
             {
-                note.set_spending_transaction(Some(*txid));
+                note.spending_transaction = Some(*txid);
             }
         });
 }

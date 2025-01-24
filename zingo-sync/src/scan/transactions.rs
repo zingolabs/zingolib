@@ -430,7 +430,7 @@ fn parse_encoded_memos<N, Nf: Copy>(
     let encoded_memos = wallet_notes
         .iter()
         .flat_map(|note| {
-            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo() {
+            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo {
                 Some(zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()).unwrap())
             } else {
                 None

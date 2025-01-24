@@ -8,10 +8,7 @@ use std::{
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    ShieldedProtocol,
-};
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -368,35 +365,24 @@ impl std::fmt::Debug for WalletTransaction {
     }
 }
 
-#[cfg(feature = "wallet_impls")]
-impl WalletTransaction {}
-
-pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
-pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
-
 /// Wallet note, shielded output with metadata relevant to the wallet
-#[derive(Debug, Getters, CopyGetters, Setters)]
+#[derive(Debug, Clone)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    #[getset(get_copy = "pub")]
-    output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
-    key_id: KeyId,
+    pub(crate) key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
-    note: N,
+    pub(crate) note: N,
     /// Derived nullifier
-    #[getset(get_copy = "pub")]
-    nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
     /// Commitment tree leaf position
-    #[getset(get_copy = "pub")]
-    position: Option<Position>,
+    pub(crate) position: Option<Position>,
     /// Memo
-    #[getset(get = "pub")]
-    memo: Memo,
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
+    pub(crate) memo: Memo,
+    /// Transaction this note was spent in.
+    /// If `None`, note is not spent.
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -418,6 +404,125 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
             memo,
             spending_transaction,
         }
+    }
+}
+
+pub trait NoteInterface: Sized {
+    type ZcashNote;
+    type Nullifier: Copy;
+
+    /// Output ID
+    fn output_id(&self) -> OutputId;
+
+    /// Identifier for key used to decrypt output
+    fn key_id(&self) -> KeyId;
+
+    /// Decrypted note with recipient and value
+    fn note(&self) -> &Self::ZcashNote;
+
+    /// Derived nullifier
+    fn nullifier(&self) -> Option<Self::Nullifier>;
+
+    /// Commitment tree leaf position
+    fn position(&self) -> Option<Position>;
+
+    /// Memo
+    fn memo(&self) -> &Memo;
+
+    /// Txid of transaction this note was spent in.
+    /// If `None`, note is not spent.
+    fn spending_transaction(&self) -> Option<TxId>;
+
+    /// Note value.
+    fn value(&self) -> u64;
+
+    /// Notes within `transaction`.
+    fn transaction_notes(transaction: &WalletTransaction) -> &[Self];
+}
+
+pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
+
+impl NoteInterface for SaplingNote {
+    type ZcashNote = sapling_crypto::Note;
+    type Nullifier = sapling_crypto::Nullifier;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> KeyId {
+        self.key_id
+    }
+
+    fn note(&self) -> &Self::ZcashNote {
+        &self.note
+    }
+
+    fn nullifier(&self) -> Option<sapling_crypto::Nullifier> {
+        self.nullifier
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.position
+    }
+
+    fn memo(&self) -> &Memo {
+        &self.memo
+    }
+
+    fn spending_transaction(&self) -> Option<TxId> {
+        self.spending_transaction
+    }
+
+    fn value(&self) -> u64 {
+        self.note.value().inner()
+    }
+
+    fn transaction_notes(transaction: &WalletTransaction) -> &[SaplingNote] {
+        transaction.sapling_notes()
+    }
+}
+
+pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
+
+impl NoteInterface for OrchardNote {
+    type ZcashNote = orchard::Note;
+    type Nullifier = orchard::note::Nullifier;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> KeyId {
+        self.key_id
+    }
+
+    fn note(&self) -> &Self::ZcashNote {
+        &self.note
+    }
+
+    fn nullifier(&self) -> Option<orchard::note::Nullifier> {
+        self.nullifier
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.position
+    }
+
+    fn memo(&self) -> &Memo {
+        &self.memo
+    }
+
+    fn spending_transaction(&self) -> Option<TxId> {
+        self.spending_transaction
+    }
+
+    fn value(&self) -> u64 {
+        self.note.value().inner()
+    }
+
+    fn transaction_notes(transaction: &WalletTransaction) -> &[OrchardNote] {
+        transaction.orchard_notes()
     }
 }
 

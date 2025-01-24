@@ -1,7 +1,6 @@
 //! These functions can be called by consumer to learn about the LightClient.
 use ::orchard::note_encryption::OrchardDomain;
 use json::{object, JsonValue};
-use sapling_crypto::note_encryption::SaplingDomain;
 use std::{cmp::Ordering, collections::HashMap};
 use tokio::runtime::Runtime;
 
@@ -26,6 +25,7 @@ use crate::{
         transaction_record::{SendType, TransactionKind},
         LightWallet,
     },
+    Orchard, Sapling,
 };
 
 #[allow(missing_docs)]
@@ -83,14 +83,14 @@ impl LightClient {
     /// PoolType variant as an argument, and iterate over a `Vec<Output>`
     pub async fn do_balance(&self) -> PoolBalances {
         let wallet = self.wallet.lock().await;
-        let verified_sapling_balance = wallet.confirmed_balance::<SaplingDomain>().await;
-        let unverified_sapling_balance = wallet.pending_balance::<SaplingDomain>().await;
-        let spendable_sapling_balance = wallet.spendable_balance::<SaplingDomain>().await;
+        let verified_sapling_balance = wallet.confirmed_balance::<Sapling>().await;
+        let unverified_sapling_balance = wallet.pending_balance::<Sapling>().await;
+        let spendable_sapling_balance = wallet.spendable_balance::<Sapling>().await;
         let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
 
-        let verified_orchard_balance = wallet.confirmed_balance::<OrchardDomain>().await;
-        let unverified_orchard_balance = wallet.pending_balance::<OrchardDomain>().await;
-        let spendable_orchard_balance = wallet.spendable_balance::<OrchardDomain>().await;
+        let verified_orchard_balance = wallet.confirmed_balance::<Orchard>().await;
+        let unverified_orchard_balance = wallet.pending_balance::<Orchard>().await;
+        let spendable_orchard_balance = wallet.spendable_balance::<Orchard>().await;
         let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
         PoolBalances {
             sapling_balance,

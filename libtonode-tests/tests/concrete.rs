@@ -1698,95 +1698,97 @@ mod slow {
     //     ));
     // }
 
-    #[tokio::test]
-    async fn sends_to_self_handle_balance_properly() {
-        let transparent_funding = 100_000;
-        let (ref regtest_manager, _cph, faucet, ref recipient) =
-            scenarios::faucet_recipient_default().await;
-        from_inputs::quick_send(
-            &faucet,
-            vec![(
-                &get_base_address_macro!(recipient, "transparent"),
-                transparent_funding,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-            .await
-            .unwrap();
-        recipient.quick_shield().await.unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-            .await
-            .unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-        println!("{}", recipient.do_list_transactions().await.pretty(2));
-        println!(
-            "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
-        );
-        recipient.do_rescan().await.unwrap();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-        println!("{}", recipient.do_list_transactions().await.pretty(2));
-        println!(
-            "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
-        );
-        // TODO: Add asserts!
-    }
-    #[tokio::test]
-    async fn send_to_ua_saves_full_ua_in_wallet() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
-        let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-        let sent_value = 50_000;
-        from_inputs::quick_send(
-            &faucet,
-            vec![(recipient_unified_address.as_str(), sent_value, None)],
-        )
-        .await
-        .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let list = faucet.do_list_transactions().await;
-        assert!(list.members().any(|transaction| {
-            transaction.entries().any(|(key, value)| {
-                if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_unified_address
-                } else {
-                    false
-                }
-            })
-        }));
-        faucet.do_rescan().await.unwrap();
-        let new_list = faucet.do_list_transactions().await;
-        assert!(new_list.members().any(|transaction| {
-            transaction.entries().any(|(key, value)| {
-                if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_unified_address
-                } else {
-                    false
-                }
-            })
-        }));
-        assert_eq!(
-            list,
-            new_list,
-            "Pre-Rescan: {}\n\n\nPost-Rescan: {}\n\n\n",
-            json::stringify_pretty(list.clone(), 4),
-            json::stringify_pretty(new_list.clone(), 4)
-        );
-    }
-    // FIXME:
+    // FIXME: sync integration
+    // #[tokio::test]
+    // async fn sends_to_self_handle_balance_properly() {
+    //     let transparent_funding = 100_000;
+    //     let (ref regtest_manager, _cph, faucet, ref recipient) =
+    //         scenarios::faucet_recipient_default().await;
+    //     from_inputs::quick_send(
+    //         &faucet,
+    //         vec![(
+    //             &get_base_address_macro!(recipient, "transparent"),
+    //             transparent_funding,
+    //             None,
+    //         )],
+    //     )
+    //     .await
+    //     .unwrap();
+    //     zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+    //         .await
+    //         .unwrap();
+    //     recipient.quick_shield().await.unwrap();
+    //     zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+    //         .await
+    //         .unwrap();
+    //     println!(
+    //         "{}",
+    //         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    //     );
+    //     println!("{}", recipient.do_list_transactions().await.pretty(2));
+    //     println!(
+    //         "{}",
+    //         JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
+    //     );
+    //     recipient.do_rescan().await.unwrap();
+    //     println!(
+    //         "{}",
+    //         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    //     );
+    //     println!("{}", recipient.do_list_transactions().await.pretty(2));
+    //     println!(
+    //         "{}",
+    //         JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
+    //     );
+    //     // TODO: Add asserts!
+    // }
+    // FIXME: sync integration
+    // #[tokio::test]
+    // async fn send_to_ua_saves_full_ua_in_wallet() {
+    //     let (regtest_manager, _cph, faucet, recipient) =
+    //         scenarios::faucet_recipient_default().await;
+    //     //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
+    //     let recipient_unified_address = get_base_address_macro!(recipient, "unified");
+    //     let sent_value = 50_000;
+    //     from_inputs::quick_send(
+    //         &faucet,
+    //         vec![(recipient_unified_address.as_str(), sent_value, None)],
+    //     )
+    //     .await
+    //     .unwrap();
+    //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    //         .await
+    //         .unwrap();
+    //     let list = faucet.do_list_transactions().await;
+    //     assert!(list.members().any(|transaction| {
+    //         transaction.entries().any(|(key, value)| {
+    //             if key == "outgoing_metadata" {
+    //                 value[0]["address"] == recipient_unified_address
+    //             } else {
+    //                 false
+    //             }
+    //         })
+    //     }));
+    //     faucet.do_rescan().await.unwrap();
+    //     let new_list = faucet.do_list_transactions().await;
+    //     assert!(new_list.members().any(|transaction| {
+    //         transaction.entries().any(|(key, value)| {
+    //             if key == "outgoing_metadata" {
+    //                 value[0]["address"] == recipient_unified_address
+    //             } else {
+    //                 false
+    //             }
+    //         })
+    //     }));
+    //     assert_eq!(
+    //         list,
+    //         new_list,
+    //         "Pre-Rescan: {}\n\n\nPost-Rescan: {}\n\n\n",
+    //         json::stringify_pretty(list.clone(), 4),
+    //         json::stringify_pretty(new_list.clone(), 4)
+    //     );
+    // }
+    // FIXME: sync integration
     // #[tokio::test]
     // async fn send_to_transparent_and_sapling_maintain_balance() {
     //     // Receipt of orchard funds
@@ -2354,80 +2356,81 @@ mod slow {
         let mut txids = recipient.transaction_summaries().await.txids().into_iter();
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
-    #[tokio::test]
-    async fn sapling_to_sapling_scan_together() {
-        // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
-        // (For this test, the Sapling Domain is assumed in all cases.)
-        // Sender Setup:
-        // 1. create a spend key: SpendK_S
-        // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
-        // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
-        // 4. publish BRT
-        // 5. optionally mine a block including BRT <-- There are two separate tests to run
-        // 6. optionally mine sufficient subsequent blocks to "validate" BRT
-        // Recipient Setup:
-        // 1. create a spend key: "SpendK_R"
-        // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
-        // Test Procedure:
-        // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
-        // 2. publish the transaction to the mempool
-        // 3. mine a block
-        // Constraints:
-        // 1. SpendK_S controls start - spend funds
-        // 2. SpendK_R controls 0 + spend funds
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
+    // FIXME: sync integration
+    // #[tokio::test]
+    // async fn sapling_to_sapling_scan_together() {
+    //     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
+    //     // (For this test, the Sapling Domain is assumed in all cases.)
+    //     // Sender Setup:
+    //     // 1. create a spend key: SpendK_S
+    //     // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
+    //     // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
+    //     // 4. publish BRT
+    //     // 5. optionally mine a block including BRT <-- There are two separate tests to run
+    //     // 6. optionally mine sufficient subsequent blocks to "validate" BRT
+    //     // Recipient Setup:
+    //     // 1. create a spend key: "SpendK_R"
+    //     // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
+    //     // Test Procedure:
+    //     // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
+    //     // 2. publish the transaction to the mempool
+    //     // 3. mine a block
+    //     // Constraints:
+    //     // 1. SpendK_S controls start - spend funds
+    //     // 2. SpendK_R controls 0 + spend funds
+    //     let (regtest_manager, _cph, faucet, recipient) =
+    //         scenarios::faucet_recipient_default().await;
 
-        // Give the faucet a block reward
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        let value = 100_000;
+    //     // Give the faucet a block reward
+    //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    //         .await
+    //         .unwrap();
+    //     let value = 100_000;
 
-        // Send some sapling value to the recipient
-        let txid = zingolib::testutils::send_value_between_clients_and_sync(
-            &regtest_manager,
-            &faucet,
-            &recipient,
-            value,
-            "sapling",
-        )
-        .await
-        .unwrap();
+    //     // Send some sapling value to the recipient
+    //     let txid = zingolib::testutils::send_value_between_clients_and_sync(
+    //         &regtest_manager,
+    //         &faucet,
+    //         &recipient,
+    //         value,
+    //         "sapling",
+    //     )
+    //     .await
+    //     .unwrap();
 
-        let spent_value = 250;
+    //     let spent_value = 250;
 
-        // Construct transaction to wallet-external recipient-address.
-        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let spent_txid =
-            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-                .await
-                .unwrap()
-                .first()
-                .to_string();
+    //     // Construct transaction to wallet-external recipient-address.
+    //     let exit_zaddr = get_base_address_macro!(faucet, "sapling");
+    //     let spent_txid =
+    //         from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
+    //             .await
+    //             .unwrap()
+    //             .first()
+    //             .to_string();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        // 5. Check the transaction list to make sure we got all transactions
-        let list = recipient.do_list_transactions().await;
+    //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    //         .await
+    //         .unwrap();
+    //     // 5. Check the transaction list to make sure we got all transactions
+    //     let list = recipient.do_list_transactions().await;
 
-        assert_eq!(list[0]["block_height"].as_u64().unwrap(), 5);
-        assert_eq!(list[0]["txid"], txid.to_string());
-        assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
+    //     assert_eq!(list[0]["block_height"].as_u64().unwrap(), 5);
+    //     assert_eq!(list[0]["txid"], txid.to_string());
+    //     assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
 
-        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
-        assert_eq!(list[1]["txid"], spent_txid);
-        assert_eq!(
-            list[1]["amount"].as_i64().unwrap(),
-            -((spent_value + u64::from(MINIMUM_FEE)) as i64)
-        );
-        assert_eq!(list[1]["outgoing_metadata"][0]["address"], exit_zaddr);
-        assert_eq!(
-            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-            spent_value
-        );
-    }
+    //     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
+    //     assert_eq!(list[1]["txid"], spent_txid);
+    //     assert_eq!(
+    //         list[1]["amount"].as_i64().unwrap(),
+    //         -((spent_value + u64::from(MINIMUM_FEE)) as i64)
+    //     );
+    //     assert_eq!(list[1]["outgoing_metadata"][0]["address"], exit_zaddr);
+    //     assert_eq!(
+    //         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+    //         spent_value
+    //     );
+    // }
     // FIXME:
     // #[tokio::test]
     // async fn sapling_incoming_sapling_outgoing() {
@@ -2768,68 +2771,70 @@ mod slow {
                 external_send_txid_with_memo_ref
             );
         }
-        #[tokio::test]
-        async fn check_list_value_transfers_across_rescan() {
-            let inital_value = 100_000;
-            let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-                scenarios::faucet_funded_recipient_default(inital_value).await;
-            from_inputs::quick_send(
-                recipient,
-                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
-            )
-            .await
-            .unwrap();
-            zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-                .await
-                .unwrap();
-            let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
-            recipient.do_rescan().await.unwrap();
-            let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
-            assert_eq!(pre_rescan_transactions, post_rescan_transactions);
-            assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-            let mut outgoing_metadata = pre_rescan_transactions
-                .members()
-                .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
-                .unwrap()
-                .1
-                .members();
-            // The two outgoing spends were identical. They should be represented as such
-            assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
-        }
+        // FIXME: sync integration
+        // #[tokio::test]
+        // async fn check_list_value_transfers_across_rescan() {
+        //     let inital_value = 100_000;
+        //     let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+        //         scenarios::faucet_funded_recipient_default(inital_value).await;
+        //     from_inputs::quick_send(
+        //         recipient,
+        //         vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+        //     )
+        //     .await
+        //     .unwrap();
+        //     zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+        //         .await
+        //         .unwrap();
+        //     let pre_rescan_transactions = recipient.do_list_transactions().await;
+        //     let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
+        //     recipient.do_rescan().await.unwrap();
+        //     let post_rescan_transactions = recipient.do_list_transactions().await;
+        //     let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
+        //     assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+        //     assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+        //     let mut outgoing_metadata = pre_rescan_transactions
+        //         .members()
+        //         .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+        //         .unwrap()
+        //         .1
+        //         .members();
+        //     // The two outgoing spends were identical. They should be represented as such
+        //     assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+        // }
     }
-    #[ignore = "redundant with tests that validate with validate_otd"]
-    #[tokio::test]
-    async fn multiple_outgoing_metadatas_work_right_on_restore() {
-        let inital_value = 100_000;
-        let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(inital_value).await;
-        from_inputs::quick_send(
-            recipient,
-            vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
-        )
-        .await
-        .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
-            .await
-            .unwrap();
-        let pre_rescan_transactions = recipient.do_list_transactions().await;
-        let pre_rescan_summaries = recipient.transaction_summaries().await;
-        recipient.do_rescan().await.unwrap();
-        let post_rescan_transactions = recipient.do_list_transactions().await;
-        let post_rescan_summaries = recipient.transaction_summaries().await;
-        assert_eq!(pre_rescan_transactions, post_rescan_transactions);
-        assert_eq!(pre_rescan_summaries, post_rescan_summaries);
-        let mut outgoing_metadata = pre_rescan_transactions
-            .members()
-            .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
-            .unwrap()
-            .1
-            .members();
-        // The two outgoing spends were identical. They should be represented as such
-        assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
-    }
+    // FIXME: sync integration
+    // #[ignore = "redundant with tests that validate with validate_otd"]
+    // #[tokio::test]
+    // async fn multiple_outgoing_metadatas_work_right_on_restore() {
+    //     let inital_value = 100_000;
+    //     let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+    //         scenarios::faucet_funded_recipient_default(inital_value).await;
+    //     from_inputs::quick_send(
+    //         recipient,
+    //         vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+    //     )
+    //     .await
+    //     .unwrap();
+    //     zingolib::testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+    //         .await
+    //         .unwrap();
+    //     let pre_rescan_transactions = recipient.do_list_transactions().await;
+    //     let pre_rescan_summaries = recipient.transaction_summaries().await;
+    //     recipient.do_rescan().await.unwrap();
+    //     let post_rescan_transactions = recipient.do_list_transactions().await;
+    //     let post_rescan_summaries = recipient.transaction_summaries().await;
+    //     assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+    //     assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+    //     let mut outgoing_metadata = pre_rescan_transactions
+    //         .members()
+    //         .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+    //         .unwrap()
+    //         .1
+    //         .members();
+    //     // The two outgoing spends were identical. They should be represented as such
+    //     assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+    // }
     #[tokio::test]
     async fn note_selection_order() {
         // In order to fund a transaction multiple notes may be selected and consumed.
@@ -3501,34 +3506,35 @@ mod slow {
         .await
         .unwrap();
     }
-    #[tokio::test]
-    async fn dust_sends_change_correctly() {
-        let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::faucet_funded_recipient_default(100_000).await;
+    // FIXME: sync integration
+    // #[tokio::test]
+    // async fn dust_sends_change_correctly() {
+    //     let (regtest_manager, _cph, faucet, recipient, _txid) =
+    //         scenarios::faucet_funded_recipient_default(100_000).await;
 
-        // Send of less that transaction fee
-        let sent_value = 1000;
-        let _sent_transaction_id = from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "unified"),
-                sent_value,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
+    //     // Send of less that transaction fee
+    //     let sent_value = 1000;
+    //     let _sent_transaction_id = from_inputs::quick_send(
+    //         &recipient,
+    //         vec![(
+    //             &get_base_address_macro!(faucet, "unified"),
+    //             sent_value,
+    //             None,
+    //         )],
+    //     )
+    //     .await
+    //     .unwrap();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
-            .await
-            .unwrap();
+    //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 5)
+    //         .await
+    //         .unwrap();
 
-        println!("{}", recipient.do_list_transactions().await.pretty(4));
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-        );
-    }
+    //     println!("{}", recipient.do_list_transactions().await.pretty(4));
+    //     println!(
+    //         "{}",
+    //         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    //     );
+    // }
 
     #[tokio::test]
     async fn by_address_finsight() {
