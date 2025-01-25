@@ -325,10 +325,10 @@ pub mod send_with_proposal {
                     drop(tx_map);
                     broadcast_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await?;
                     any_transaction_broadcast = true;
+                    results.push(txid);
                 }
                 ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {}
             }
-            results.push(txid);
         }
         NonEmpty::from_vec(results)
             .map(|vec| (vec, any_transaction_broadcast))
@@ -359,7 +359,7 @@ pub mod send_with_proposal {
         let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
             .await
             .map_err(BroadcastTransactionError::Height)?;
-
+        println!("actually sending to server now");
         match crate::grpc_connector::send_transaction(server_uri.clone(), raw_tx.into_boxed_slice())
             .await
         {
