@@ -593,7 +593,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 
 [[package]]
 name = "bumpalo"
@@ -839,9 +839,9 @@ dependencies = [
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b80225097f2e5ae4e7179dd2266824648f3e2f49d9134d584b76389d31c4c3"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
 ]
@@ -899,7 +899,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "futures-util",
  "hex",
@@ -2277,9 +2277,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-probe"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
+checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
 name = "openssl-sys"
@@ -2595,7 +2595,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0f3e5beed80eb580c68e2c600937ac2c4eedabdfd5ef1e5b7ea4f3fba84497b"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.13.0",
  "log",
  "multimap",
@@ -3572,7 +3572,7 @@ dependencies = [
 [[package]]
 name = "testvectors"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "bip0039",
  "zcash_primitives",
@@ -3964,9 +3964,9 @@ checksum = "7e51b68083f157f853b6379db119d1c1be0e6e4dec98101079dec41f6f5cf6df"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.14"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
+checksum = "11cd88e12b17c6494200a9c1b683a04fcac9573ed74cd1b62aeb2727c5592243"
 
 [[package]]
 name = "unicode-normalization"
@@ -4905,7 +4905,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -4917,7 +4917,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "http",
  "http-body",
@@ -4937,7 +4937,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "zcash_primitives",
 ]
@@ -4945,7 +4945,7 @@ dependencies = [
 [[package]]
 name = "zingo-sync"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "base58",
  "crossbeam-channel",
@@ -4976,7 +4976,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#f22ff6af31fd7325f5d75a3cc66580e09fb860e1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#c06fc7e2a711fcaabcdaeb5fcbabd8dbae954f06"
 dependencies = [
  "append-only-vec",
  "base58",
