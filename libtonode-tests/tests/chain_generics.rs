@@ -4,6 +4,11 @@ use zingolib::testutils::{
     int_to_pooltype, int_to_shieldedprotocol,
 };
 
+#[tokio::test]
+async fn simple_send_libtonode() {
+    fixtures::simple_send::<LibtonodeEnvironment>(10_000, true).await;
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]

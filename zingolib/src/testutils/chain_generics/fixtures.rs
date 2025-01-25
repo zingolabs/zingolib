@@ -483,3 +483,37 @@ pub async fn single_sufficient_send<CC>(
         (expected_fee, receiver_value, change)
     );
 }
+
+/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
+pub async fn simple_send<CC>(receiver_value: u64, test_mempool: bool)
+where
+    CC: ConductChain,
+{
+    // let shpool = unknown pool in mine to faucet;
+
+    let mut environment = CC::setup().await;
+
+    let primary = environment.create_faucet().await;
+    let secondary = environment.create_client().await;
+    let ref_primary: Arc<LightClient> = Arc::new(primary);
+    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
+
+    // mempool monitor
+    if test_mempool {
+        for lightclient in [&ref_primary, &ref_secondary] {
+            assert!(LightClient::start_mempool_monitor(lightclient.clone()).is_ok());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    let (_recorded_fee, recorded_value, _recorded_change) =
+        with_assertions::propose_send_bump_sync_all_recipients(
+            &mut environment,
+            &ref_primary,
+            vec![(&ref_secondary, PoolType::ORCHARD, receiver_value, None)],
+            test_mempool,
+        )
+        .await
+        .unwrap();
+    assert_eq!(recorded_value, receiver_value);
+}
