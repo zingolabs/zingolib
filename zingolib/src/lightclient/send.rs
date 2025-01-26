@@ -292,7 +292,7 @@ pub mod send_with_proposal {
         #[error("Transaction record should have been created already. {0:?}")]
         Record(#[from] GetRecordError),
         #[error("Broadcast incomplete. Error: {0:?}")]
-        Incomplete(#[from] BroadcastTransactionError),
+        Incomplete(#[from] BroadcastTransactionsError),
     }
 
     /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
@@ -312,9 +312,30 @@ pub mod send_with_proposal {
             .cached_raw_transactions
             .clone();
         drop(tx_map);
+        Ok(broadcast_transactions(arc_tx_map, server_uri, calculated_tx_cache).await?)
+    }
+
+    #[allow(missing_docs)] // error types document themselves
+    #[derive(Clone, Debug, thiserror::Error)]
+    pub enum BroadcastTransactionsError {
+        #[error("Cant broadcast: {0:?}")]
+        Cache(#[from] TransactionCacheError),
+        #[error("Transaction record should have been created already. {0:?}")]
+        Record(#[from] GetRecordError),
+        #[error("Broadcast incomplete. Error: {0:?}")]
+        Incomplete(#[from] BroadcastTransactionError),
+    }
+
+    /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
+    /// the bool in the return denotes whether any transactions have been broadcast. if it is false, we conclude that the broadcast is finished.
+    async fn broadcast_transactions(
+        arc_tx_map: Arc<RwLock<TxMap>>,
+        server_uri: http::Uri,
+        transactions_to_broadcast: Vec<(TxId, Vec<u8>)>,
+    ) -> Result<(NonEmpty<TxId>, bool), BroadcastTransactionsError> {
         let mut results = vec![];
         let mut any_transaction_broadcast = false;
-        for (txid, raw_tx) in calculated_tx_cache {
+        for (txid, raw_tx) in transactions_to_broadcast {
             let mut tx_map = arc_tx_map.write().await;
 
             let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
@@ -331,7 +352,7 @@ pub mod send_with_proposal {
         }
         NonEmpty::from_vec(results)
             .map(|vec| (vec, any_transaction_broadcast))
-            .ok_or(BroadcastCachedTransactionsError::Cache(
+            .ok_or(BroadcastTransactionsError::Cache(
                 TransactionCacheError::NoCachedTx,
             ))
     }
