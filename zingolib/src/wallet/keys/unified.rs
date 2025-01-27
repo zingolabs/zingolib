@@ -29,10 +29,7 @@ use zcash_primitives::zip32::{AccountId, DiversifierIndex};
 
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
-use crate::{
-    config::{ChainType, ZingoConfig},
-    wallet::data::new_rejection_address,
-};
+use crate::{config::ChainType, wallet::data::new_rejection_address};
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
 use super::ToBase58Check;
@@ -53,12 +50,63 @@ pub enum UnifiedKeyStore {
 }
 
 impl UnifiedKeyStore {
+    /// Create a unified key store from raw entropy (64-byte seed).
+    pub fn new_from_seed(
+        network: &ChainType,
+        seed: &[u8; 64],
+        account_index: u32,
+    ) -> Result<Self, KeyError> {
+        let usk = UnifiedSpendingKey::from_seed(
+            network,
+            seed,
+            AccountId::try_from(account_index).map_err(KeyError::InvalidAccountId)?,
+        )
+        .map_err(KeyError::KeyDerivationError)?;
+
+        Ok(UnifiedKeyStore::Spend(Box::new(usk)))
+    }
+
+    /// Create a unified key store from a mnemonic phrase.
+    ///
+    /// Refer to BIP-0039 for details on seed generation from mnemonic phrases.
+    pub fn new_from_phrase(
+        network: &ChainType,
+        mnemonic_phrase: &Mnemonic,
+        account_index: u32,
+    ) -> Result<Self, KeyError> {
+        let seed = mnemonic_phrase.to_seed("");
+        Self::new_from_seed(network, &seed, account_index)
+    }
+
+    /// Create a unified key store from unified spending key bytes.
+    pub fn new_from_usk(usk: &[u8]) -> Result<Self, KeyError> {
+        let usk = UnifiedSpendingKey::from_bytes(Era::Orchard, usk)
+            .map_err(|_| KeyError::KeyDecodingError)?;
+
+        Ok(UnifiedKeyStore::Spend(Box::new(usk)))
+    }
+
+    /// Create a unified key store from unified full viewing key encoded string.
+    pub fn new_from_ufvk(network: &ChainType, ufvk_encoded: String) -> Result<Self, KeyError> {
+        if ufvk_encoded.starts_with(network.hrp_sapling_extended_full_viewing_key()) {
+            return Err(KeyError::InvalidFormat);
+        }
+        let (network_type, ufvk) =
+            Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
+        if network_type != network.network_type() {
+            return Err(KeyError::NetworkMismatch);
+        }
+        let ufvk = UnifiedFullViewingKey::parse(&ufvk).map_err(|_| KeyError::KeyDecodingError)?;
+
+        Ok(UnifiedKeyStore::View(Box::new(ufvk)))
+    }
+
     /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
     pub fn is_spending_key(&self) -> bool {
         matches!(self, UnifiedKeyStore::Spend(_))
     }
 
-    /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
+    /// Returns true if [`UnifiedKeyStore`] is of `Empty` variant
     pub fn is_empty(&self) -> bool {
         matches!(self, UnifiedKeyStore::Empty)
     }
@@ -489,67 +537,67 @@ impl WalletCapability {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn new_from_seed(
-        config: &ZingoConfig,
-        seed: &[u8; 64],
-        position: u32,
-    ) -> Result<Self, KeyError> {
-        let usk = UnifiedSpendingKey::from_seed(
-            &config.chain,
-            seed,
-            AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
-        )
-        .map_err(KeyError::KeyDerivationError)?;
+    // /// TODO: Add Doc Comment Here!
+    // pub fn new_from_seed(
+    //     config: &ZingoConfig,
+    //     seed: &[u8; 64],
+    //     position: u32,
+    // ) -> Result<Self, KeyError> {
+    //     let usk = UnifiedSpendingKey::from_seed(
+    //         &config.chain,
+    //         seed,
+    //         AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
+    //     )
+    //     .map_err(KeyError::KeyDerivationError)?;
 
-        Ok(Self {
-            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
-            ..Default::default()
-        })
-    }
+    //     Ok(Self {
+    //         unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
+    //         ..Default::default()
+    //     })
+    // }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn new_from_phrase(
-        config: &ZingoConfig,
-        seed_phrase: &Mnemonic,
-        position: u32,
-    ) -> Result<Self, KeyError> {
-        // The seed bytes is the raw entropy. To pass it to HD wallet generation,
-        // we need to get the 64 byte bip39 entropy
-        let bip39_seed = seed_phrase.to_seed("");
-        Self::new_from_seed(config, &bip39_seed, position)
-    }
+    // /// TODO: Add Doc Comment Here!
+    // pub fn new_from_phrase(
+    //     config: &ZingoConfig,
+    //     seed_phrase: &Mnemonic,
+    //     position: u32,
+    // ) -> Result<Self, KeyError> {
+    //     // The seed bytes is the raw entropy. To pass it to HD wallet generation,
+    //     // we need to get the 64 byte bip39 entropy
+    //     let bip39_seed = seed_phrase.to_seed("");
+    //     Self::new_from_seed(config, &bip39_seed, position)
+    // }
 
-    /// Creates a new `WalletCapability` from a unified spending key.
-    pub fn new_from_usk(usk: &[u8]) -> Result<Self, KeyError> {
-        // Decode unified spending key
-        let usk = UnifiedSpendingKey::from_bytes(Era::Orchard, usk)
-            .map_err(|_| KeyError::KeyDecodingError)?;
+    // /// Creates a new `WalletCapability` from a unified spending key.
+    // pub fn new_from_usk(usk: &[u8]) -> Result<Self, KeyError> {
+    //     // Decode unified spending key
+    //     let usk = UnifiedSpendingKey::from_bytes(Era::Orchard, usk)
+    //         .map_err(|_| KeyError::KeyDecodingError)?;
 
-        Ok(Self {
-            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
-            ..Default::default()
-        })
-    }
+    //     Ok(Self {
+    //         unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
+    //         ..Default::default()
+    //     })
+    // }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, KeyError> {
-        // Decode UFVK
-        if ufvk_encoded.starts_with(config.chain.hrp_sapling_extended_full_viewing_key()) {
-            return Err(KeyError::InvalidFormat);
-        }
-        let (network, ufvk) =
-            Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
-        if network != config.chain.network_type() {
-            return Err(KeyError::NetworkMismatch);
-        }
-        let ufvk = UnifiedFullViewingKey::parse(&ufvk).map_err(|_| KeyError::KeyDecodingError)?;
+    // /// TODO: Add Doc Comment Here!
+    // pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, KeyError> {
+    //     // Decode UFVK
+    //     if ufvk_encoded.starts_with(config.chain.hrp_sapling_extended_full_viewing_key()) {
+    //         return Err(KeyError::InvalidFormat);
+    //     }
+    //     let (network, ufvk) =
+    //         Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
+    //     if network != config.chain.network_type() {
+    //         return Err(KeyError::NetworkMismatch);
+    //     }
+    //     let ufvk = UnifiedFullViewingKey::parse(&ufvk).map_err(|_| KeyError::KeyDecodingError)?;
 
-        Ok(Self {
-            unified_key_store: UnifiedKeyStore::View(Box::new(ufvk)),
-            ..Default::default()
-        })
-    }
+    //     Ok(Self {
+    //         unified_key_store: UnifiedKeyStore::View(Box::new(ufvk)),
+    //         ..Default::default()
+    //     })
+    // }
 
     /// external here refers to HD keys:
     /// <https://zips.z.cash/zip-0032>

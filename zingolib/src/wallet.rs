@@ -5,7 +5,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::KeyError;
 use keys::unified::UnifiedKeyStore;
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
 
@@ -216,6 +216,9 @@ pub struct LightWallet {
     pub sync_state: SyncState,
     /// Transparent addresses
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    /// Unified_addresses
+    // TODO: sync integration, not yet integrated
+    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
 }
 
 impl LightWallet {

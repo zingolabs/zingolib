@@ -197,6 +197,19 @@ pub struct SyncStatus {
     pub percentage_outputs_scanned: f32,
 }
 
+impl std::fmt::Display for SyncStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                scanned blocks: {}
+                percentage complete: {}
+            }}",
+            self.scanned_blocks, self.percentage_outputs_scanned
+        )
+    }
+}
+
 /// Output ID for a given pool type
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, CopyGetters)]
 #[getset(get_copy = "pub")]

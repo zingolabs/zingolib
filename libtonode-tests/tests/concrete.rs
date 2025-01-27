@@ -1130,6 +1130,8 @@ mod fast {
 
     #[tokio::test]
     async fn mine_to_orchard() {
+        tracing_subscriber::fmt().init();
+
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),

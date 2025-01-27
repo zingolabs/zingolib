@@ -628,23 +628,39 @@ async fn mempool_monitor(
         .await
         .unwrap();
     loop {
-        if shutdown_mempool.load(atomic::Ordering::Acquire) {
-            break;
-        }
+        let mut interval = tokio::time::interval(Duration::from_secs(3));
+        tokio::select! {
+            mempool_stream_response = mempool_stream.message() => {
+                match mempool_stream_response.unwrap_or(None) {
+                    Some(raw_transaction) => {
+                        mempool_transaction_sender
+                            .send(raw_transaction)
+                            .await
+                            .unwrap();
+                            interval.reset();
+                    }
+                    None => {
+                        tokio::select! {
+                            mempool_stream_response = client::get_mempool_transaction_stream(&mut client) => {
+                                mempool_stream = mempool_stream_response.unwrap();
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                            }
 
-        let mempool_stream_response = mempool_stream.message().await;
-        match mempool_stream_response.unwrap_or(None) {
-            Some(raw_transaction) => {
-                mempool_transaction_sender
-                    .send(raw_transaction)
-                    .await
-                    .unwrap();
+                            _ = interval.tick() => {
+                                if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
             }
-            None => {
-                mempool_stream = client::get_mempool_transaction_stream(&mut client)
-                    .await
-                    .unwrap();
-                tokio::time::sleep(Duration::from_millis(500)).await;
+
+            _ = interval.tick() => {
+                if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                    break;
+                }
             }
         }
     }
