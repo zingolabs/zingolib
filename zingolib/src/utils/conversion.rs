@@ -6,7 +6,7 @@ use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId}
 use super::error::ConversionError;
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum TxIdFromHexEncodedStrError {
     #[error("{0}")]
     Decode(hex::FromHexError),

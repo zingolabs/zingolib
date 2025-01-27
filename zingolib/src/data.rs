@@ -72,7 +72,7 @@ pub mod receivers {
 }
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum TxIdComparisonError {
     #[error("Server returned TxId [{0}] which fails to decode with error: [{1:?}].")]
     InvalidTxId(String, TxIdFromHexEncodedStrError),
