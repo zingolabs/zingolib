@@ -449,7 +449,7 @@ pub mod send_with_proposal {
             .update_note_spend_statuses(chosen_txid, spend_status);
 
         txid_comparison_error
-            .map(|t| ())
+            .map(|_t| ())
             .map_err(PostTransmissionSuccessUpdateTransactionError::ServerTxIdMatch)
     }
 
