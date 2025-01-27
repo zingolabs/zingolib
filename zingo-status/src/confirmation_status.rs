@@ -194,6 +194,8 @@ impl ConfirmationStatus {
         }
     }
 
+    /// Because the value inside the ConfirmationStatus means different things depending on the case, this function is poorly quantified and can lead to unexpected behavior.
+    /// Please use a match statement and be careful handling each case.
     /// # Examples
     ///
     /// ```
@@ -203,7 +205,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(15.into());
     /// assert_eq!(status.get_height(), 15.into());
     /// ```
-    pub fn get_height(&self) -> BlockHeight {
+    pub(crate) fn get_height(&self) -> BlockHeight {
         match self {
             Self::Calculated(self_height) => *self_height,
             Self::Mempool(self_height) => *self_height,
