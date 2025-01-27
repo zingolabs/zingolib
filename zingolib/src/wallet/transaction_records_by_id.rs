@@ -84,7 +84,7 @@ impl TransactionRecordsById {
 }
 
 #[allow(missing_docs)] // error types document themselves
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub enum GetRecordError {
     #[error("Transaction not in record: {0:?}")]
     Unrecorded(TxId),

@@ -97,7 +97,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
+    #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
     pub enum TransactionCacheError {
         #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
         NoSpendCapability,
@@ -264,7 +264,7 @@ pub mod send_with_proposal {
                     .await
                 );
 
-                if (dbg!(send_result_cache.write().await.attempt) > 5) {
+                if (send_result_cache.write().await.attempt > 5) || transmission_result == Ok(0) {
                     break;
                 } else {
                     tokio::task::yield_now().await;
@@ -275,7 +275,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
+    #[derive(Clone, Debug, thiserror::Error, PartialEq)]
     pub enum TransmitCachedTransactionsError {
         #[error("Nothing to transmit: {0:?}")]
         Cache(#[from] TransactionCacheError),
@@ -306,7 +306,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
+    #[derive(Clone, Debug, thiserror::Error, PartialEq)]
     pub enum TransmitTransactionsError {
         #[error(
             "Transmission failed because TransactionRecord should have been created already. {0:?}"
@@ -366,7 +366,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
+    #[derive(Clone, Debug, thiserror::Error, PartialEq)]
     pub enum TransmitTransactionError {
         #[error("Server returned error in response to blockheight query: {0:?}")]
         Height(String),
@@ -402,7 +402,7 @@ pub mod send_with_proposal {
     }
 
     #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
+    #[derive(Clone, Debug, thiserror::Error, PartialEq)]
     pub enum PostTransmissionSuccessUpdateTransactionError {
         #[error("Transaction record should have been created already. {0:?}")]
         Record(#[from] GetRecordError),
