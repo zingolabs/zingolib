@@ -249,33 +249,22 @@ pub mod send_with_proposal {
     pub async fn start_broadcast_loop(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-        send_result: Arc<RwLock<SendProgress>>,
+        send_result_cache: Arc<RwLock<SendProgress>>,
     ) {
         tokio::spawn(async move {
             loop {
                 println!("broadcast attempt beginning");
 
-                send_result.write().await.attempt += 1;
-
                 let broadcast_result = dbg!(
-                    broadcast_cached_transactions(arc_tx_map.clone(), server_uri.clone()).await
+                    broadcast_cached_transactions(
+                        arc_tx_map.clone(),
+                        server_uri.clone(),
+                        send_result_cache.clone()
+                    )
+                    .await
                 );
 
-                match broadcast_result {
-                    Err(e) => {
-                        send_result.write().await.last_result = Some(Err(e.to_string()));
-                    }
-                    Ok((txids, any_broadcast)) => {
-                        if any_broadcast {
-                            send_result.write().await.last_result = Some(Ok(txids));
-                        } else {
-                            // no transactions were broadcast because they were all confirmed
-                            break;
-                        }
-                    }
-                };
-
-                if (dbg!(send_result.write().await.attempt) > 5) {
+                if (dbg!(send_result_cache.write().await.attempt) > 5) {
                     break;
                 } else {
                     tokio::task::yield_now().await;
@@ -296,13 +285,14 @@ pub mod send_with_proposal {
         Incomplete(#[from] BroadcastTransactionsError),
     }
 
-    /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
+    /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to Transmitted.
     /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-    /// the bool in the return denotes whether any transactions have been broadcast. if it is false, we conclude that the broadcast is finished.
+    /// the integer in the return denotes whether any transactions have been broadcast. if it is 0, no broadcasts occured
     async fn broadcast_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-    ) -> Result<(NonEmpty<TxId>, bool), BroadcastCachedTransactionsError> {
+        send_result: Arc<RwLock<SendProgress>>,
+    ) -> Result<usize, BroadcastCachedTransactionsError> {
         let tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
             .spending_data
@@ -313,7 +303,10 @@ pub mod send_with_proposal {
             .cached_raw_transactions
             .clone();
         drop(tx_map);
-        Ok(broadcast_transactions(arc_tx_map, server_uri, calculated_tx_cache).await?)
+        Ok(
+            broadcast_transactions(arc_tx_map, server_uri, calculated_tx_cache, send_result)
+                .await?,
+        )
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -323,39 +316,55 @@ pub mod send_with_proposal {
         Cache(#[from] TransactionCacheError),
         #[error("Transaction record should have been created already. {0:?}")]
         Record(#[from] GetRecordError),
-        #[error("Broadcast incomplete. Error: {0:?}")]
-        Incomplete(#[from] BroadcastTransactionError),
+        #[error("Broadcast incomplete. Failed during the last of these {0:?}, with error: {1:?}")]
+        Incomplete(Vec<TxId>, BroadcastTransactionError),
     }
 
-    /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-    /// the bool in the return denotes whether any transactions have been broadcast. if it is false, we conclude that the broadcast is finished.
+    /// only broadcasts transactions marked as calculated (not Transmitted). when it broadcasts them, it marks them as Transmitted.
+    /// the integer in the return denotes whether any transactions have been broadcast. if it is 0, no broadcasts occured
     async fn broadcast_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
         transactions_to_broadcast: Vec<(TxId, Vec<u8>)>,
-    ) -> Result<(NonEmpty<TxId>, bool), BroadcastTransactionsError> {
-        let mut results = vec![];
-        let mut any_transaction_broadcast = false;
+        send_result: Arc<RwLock<SendProgress>>,
+    ) -> Result<usize, BroadcastTransactionsError> {
+        let mut txids = vec![];
+        let mut broadcast_transaction_error = None;
         for (txid, raw_tx) in transactions_to_broadcast {
             let mut tx_map = arc_tx_map.write().await;
 
             let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
+
+            txids.push(txid);
             // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
             match transaction_record.status {
                 ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
                     drop(tx_map);
-                    broadcast_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await?;
-                    any_transaction_broadcast = true;
-                    results.push(txid);
+                    let broadcast_transaction_result =
+                        broadcast_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await;
+                    if let Err(broadcast_error) = broadcast_transaction_result {
+                        broadcast_transaction_error = Some(broadcast_error);
+                        break;
+                    };
                 }
                 ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {}
             }
         }
-        NonEmpty::from_vec(results)
-            .map(|vec| (vec, any_transaction_broadcast))
-            .ok_or(BroadcastTransactionsError::Cache(
-                TransactionCacheError::NoCachedTx,
-            ))
+
+        if let Some(some_broadcast_transaction_error) = broadcast_transaction_error {
+            let error =
+                BroadcastTransactionsError::Incomplete(txids, some_broadcast_transaction_error);
+            send_result.write().await.attempt += 1;
+            send_result.write().await.last_result = Some(Err(error.to_string()));
+            Err(error)
+        } else {
+            let n = txids.len();
+            let some_txids = NonEmpty::from_vec(txids);
+            if let Some(txids_s) = some_txids {
+                send_result.write().await.last_result = Some(Ok(txids_s));
+            }
+            Ok(n)
+        }
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -369,8 +378,6 @@ pub mod send_with_proposal {
         PostProcessingError(#[from] PostBroadcastSuccessUpdateTransactionError),
     }
 
-    /// Ok(false) suggests the transaction was not broadcast because it was already on server.
-    /// Ok(true) if it was broadcast
     async fn broadcast_transaction(
         arc_tx_map: Arc<RwLock<TxMap>>,
         txid: TxId,
