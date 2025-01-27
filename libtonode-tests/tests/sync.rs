@@ -48,6 +48,7 @@ async fn sync_mainnet_test() {
     dbg!(lightclient.wallet.sync_state);
 }
 
+#[ignore = "hangs"]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();

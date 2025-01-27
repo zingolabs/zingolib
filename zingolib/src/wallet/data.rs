@@ -518,7 +518,7 @@ pub mod summaries {
 
     /// A value transfer is a note group abstraction.
     /// A group of all notes sent to a specific address in a transaction.
-    #[derive(PartialEq)]
+    #[derive(Clone, PartialEq)]
     pub struct ValueTransfer {
         txid: TxId,
         datetime: u64,

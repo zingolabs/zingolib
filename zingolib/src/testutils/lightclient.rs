@@ -1,6 +1,9 @@
 //! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
 //! (obviously) in a test environment.
-use crate::{error::ZingoLibError, lightclient::LightClient};
+use crate::{
+    error::ZingoLibError,
+    lightclient::{describe::UAReceivers, LightClient},
+};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::transaction::TxId;
 
@@ -18,15 +21,19 @@ pub async fn new_client_from_save_buffer(
 /// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Transparent => client.do_addresses().await[0]["receivers"]["transparent"]
+        PoolType::Transparent => client.do_addresses(UAReceivers::All).await[0]["receivers"]
+            ["transparent"]
             .clone()
             .to_string(),
-        PoolType::Shielded(ShieldedProtocol::Sapling) => client.do_addresses().await[0]
-            ["receivers"]["sapling"]
-            .clone()
-            .to_string(),
+        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+            client.do_addresses(UAReceivers::All).await[0]["receivers"]["sapling"]
+                .clone()
+                .to_string()
+        }
         PoolType::Shielded(ShieldedProtocol::Orchard) => {
-            client.do_addresses().await[0]["address"].take().to_string()
+            client.do_addresses(UAReceivers::All).await[0]["address"]
+                .take()
+                .to_string()
         }
     }
 }
@@ -98,6 +105,7 @@ pub mod from_inputs {
 }
 
 /// gets stati for a vec of txids
+#[deprecated(note = "use for_each_proposed_record")]
 pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
