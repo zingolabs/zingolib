@@ -96,8 +96,8 @@ pub mod test {
             log::error!("Error installing crypto provider: {:?}", e)
         };
 
-        let wallet = wallet_case.load_example_wallet().await;
-        let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+        let lc = wallet_case.load_example_wallet_with_client().await;
+
         lc.do_sync(true).await.unwrap();
         println!("{:?}", lc.do_balance().await);
         lc

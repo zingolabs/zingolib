@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::config::{ChainType, ZingoConfig};
+use crate::config::ZingoConfig;
 
 use crate::wallet::{
     keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
@@ -294,16 +294,13 @@ pub struct UserBalances {
 ///      *
 #[allow(dead_code)] // TODO: remove after sync integration
 pub struct LightClient {
-    /// URI for creating gRPC client to connect to server.
-    pub indexer_uri: Option<http::Uri>,
-    /// Network type.
-    pub network: ChainType,
+    // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     syncing: Arc<AtomicBool>, // TODO: add interrupt to sync engine
-    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
-    save_buffer: ZingoSaveBuffer,
+    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
+    save_buffer: ZingoSaveBuffer, // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
@@ -328,15 +325,15 @@ pub mod instantiation {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
-        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
+        pub async fn create_from_wallet_async(
+            config: ZingoConfig,
+            wallet: LightWallet,
+        ) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
-            let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
-                indexer_uri: None,                          // TODO: not yet integrated
-                network: crate::config::ChainType::Mainnet, // TODO: not yet integrated
+                config,
                 wallet: Arc::new(Mutex::new(wallet)),
-                config: config.clone(),
                 syncing: Arc::new(AtomicBool::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
@@ -348,7 +345,7 @@ pub mod instantiation {
         /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
         pub fn create_from_wallet_base(
             wallet_base: WalletBase,
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             birthday: u64,
             overwrite: bool,
         ) -> io::Result<Self> {
@@ -362,7 +359,7 @@ pub mod instantiation {
         /// a spend authority.
         pub async fn create_from_wallet_base_async(
             wallet_base: WalletBase,
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             birthday: u64,
             overwrite: bool,
         ) -> io::Result<Self> {
@@ -379,6 +376,7 @@ pub mod instantiation {
                 }
             }
             let lightclient = LightClient::create_from_wallet_async(
+                config.clone(),
                 LightWallet::new(
                     config.chain.clone(),
                     wallet_base,
@@ -402,11 +400,12 @@ pub mod instantiation {
 
         /// TODO: Add Doc Comment Here!
         pub async fn create_unconnected(
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
             let lightclient = LightClient::create_from_wallet_async(
+                config.clone(),
                 LightWallet::new(
                     config.chain.clone(),
                     wallet_base,

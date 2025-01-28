@@ -15,12 +15,12 @@ use crate::wallet::LightWallet;
 impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn read_wallet_from_buffer_async<R: Read>(
-        config: &ZingoConfig,
+        config: &ZingoConfig, // TODO: take owned config not reference
         mut reader: R,
     ) -> io::Result<Self> {
-        let wallet = LightWallet::read_internal(&mut reader, config).await?;
+        let wallet = LightWallet::read_internal(&mut reader, config.chain).await?;
 
-        let lc = LightClient::create_from_wallet_async(wallet).await?;
+        let lc = LightClient::create_from_wallet_async(config.clone(), wallet).await?;
 
         debug!(
             "Read wallet with birthday {}",

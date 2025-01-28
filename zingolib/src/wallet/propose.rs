@@ -1,6 +1,6 @@
 //! creating proposals from wallet data
 
-use std::{convert::Infallible, num::NonZeroU32, ops::DerefMut as _};
+use std::{convert::Infallible, num::NonZeroU32};
 
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
@@ -193,7 +193,7 @@ mod test {
         let wallet = examples::NetworkSeedVersion::Mainnet(
             examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
         )
-        .load_example_wallet()
+        .load_example_wallet_with_client()
         .await;
 
         let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);

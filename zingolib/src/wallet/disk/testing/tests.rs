@@ -4,6 +4,7 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_keys::keys::Era;
 
 use crate::{
+    config::ZingoConfig,
     lightclient::LightClient,
     wallet::{
         disk::testing::{
@@ -23,8 +24,10 @@ use crate::{
 
 impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
-    async fn load_example_wallet_with_verification(&self) -> LightWallet {
-        let wallet = self.load_example_wallet().await;
+    async fn load_example_wallet_with_verification(&self) -> LightClient {
+        let client = self.load_example_wallet_with_client().await;
+        let wallet = client.wallet.lock().await;
+
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
         for pool in [
             PoolType::Transparent,
@@ -38,7 +41,9 @@ impl NetworkSeedVersion {
                 self.example_wallet_address(pool)
             );
         }
-        wallet
+        drop(wallet);
+
+        client
     }
 }
 
@@ -77,13 +82,13 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
 /// unlike other, more basic tests, this test also checks number of addresses and balance
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
-    let wallet =
+    let client =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V26))
             .load_example_wallet_with_verification()
             .await;
 
     loaded_wallet_assert(
-        wallet,
+        client,
         testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
         0,
         3,
@@ -173,42 +178,39 @@ async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_latest() {
 }
 
 async fn loaded_wallet_assert(
-    wallet: LightWallet,
+    lightclient: LightClient,
     expected_seed_phrase: String,
     expected_balance: u64,
     expected_num_addresses: usize,
 ) {
+    let wallet = lightclient.wallet.lock().await;
     assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
-    let wc = wallet.wallet_capability();
-    assert_eq!(wc.addresses().len(), expected_num_addresses);
-    for addr in wc.addresses().iter() {
+    assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
+    for addr in wallet.unified_addresses.iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
     }
 
-    let client = crate::lightclient::LightClient::create_from_wallet_async(wallet)
-        .await
-        .unwrap();
-    let balance = client.do_balance().await;
+    let balance = lightclient.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(expected_balance));
     if expected_balance > 0 {
         crate::testutils::lightclient::from_inputs::quick_send(
-            &client,
+            &lightclient,
             vec![(
-                &crate::get_base_address_macro!(client, "sapling"),
+                &crate::get_base_address_macro!(lightclient, "sapling"),
                 11011,
                 None,
             )],
         )
         .await
         .unwrap();
-        client.do_sync(true).await.unwrap();
+        lightclient.do_sync(true).await.unwrap();
         crate::testutils::lightclient::from_inputs::quick_send(
-            &client,
+            &lightclient,
             vec![(
-                &crate::get_base_address_macro!(client, "transparent"),
+                &crate::get_base_address_macro!(lightclient, "transparent"),
                 28000,
                 None,
             )],
@@ -222,46 +224,38 @@ async fn loaded_wallet_assert(
 #[tokio::test]
 async fn reload_wallet_from_buffer() {
     use crate::wallet::WalletBase;
-    use crate::wallet::WalletCapability;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
-    let mid_wallet =
+    let mid_client =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
+    let mid_client_network = mid_client.wallet.lock().await.network;
 
-    let mid_client = LightClient::create_from_wallet_async(mid_wallet)
-        .await
-        .unwrap();
-    let mid_client_config = mid_client
-        .wallet
-        .lock()
-        .await
-        .transaction_context
-        .config
-        .clone();
     let mid_buffer = mid_client.export_save_buffer_async().await.unwrap();
-    let wallet = LightWallet::read_internal(&mid_buffer[..], &mid_client_config)
-        .await
-        .map_err(|e| format!("Cannot deserialize rebuffered LightWallet: {}", e))
-        .unwrap();
+
+    let client =
+        LightClient::read_wallet_from_buffer_async(&ZingoConfig::create_testnet(), &mid_buffer[..])
+            .await
+            .unwrap();
+    let wallet = client.wallet.lock().await;
+
     let expected_mnemonic = (
         Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
         0,
     );
 
-    let expected_wc = WalletCapability::new_from_phrase(
-        &mid_client_config,
+    let expected_keys = UnifiedKeyStore::new_from_mnemonic(
+        &mid_client_network,
         &expected_mnemonic.0,
         expected_mnemonic.1,
     )
     .unwrap();
-    let wc = wallet.wallet_capability();
 
-    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
         panic!("should be spending key!")
     };
-    let UnifiedKeyStore::Spend(expected_usk) = &expected_wc.unified_key_store else {
+    let UnifiedKeyStore::Spend(expected_usk) = &expected_keys else {
         panic!("should be spending key!")
     };
 
@@ -276,30 +270,28 @@ async fn reload_wallet_from_buffer() {
         expected_usk.transparent().to_bytes()
     );
 
-    assert_eq!(wc.addresses().len(), 3);
-    for addr in wc.addresses().iter() {
+    assert_eq!(wallet.unified_addresses.len(), 3);
+    for addr in wallet.unified_addresses.iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
-    let ufvk_string = ufvk.encode(&wallet.transaction_context.config.chain);
+    let ufvk_string = ufvk.encode(&wallet.network);
     let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
     let view_wallet = LightWallet::new(
-        wallet.transaction_context.config.clone(),
+        wallet.network,
         ufvk_base,
         wallet.birthday.try_into().expect("should never overflow"),
     )
     .unwrap();
-    let v_wc = view_wallet.wallet_capability();
-    let UnifiedKeyStore::View(v_ufvk) = &v_wc.unified_key_store else {
+    let UnifiedKeyStore::View(v_ufvk) = &view_wallet.unified_key_store else {
         panic!("should be viewing key!");
     };
-    let v_ufvk_string = v_ufvk.encode(&wallet.transaction_context.config.chain);
+    let v_ufvk_string = v_ufvk.encode(&view_wallet.network);
     assert_eq!(ufvk_string, v_ufvk_string);
 
-    let client = LightClient::create_from_wallet_async(wallet).await.unwrap();
     let balance = client.do_balance().await;
     assert_eq!(balance.orchard_balance, Some(10342837));
 }

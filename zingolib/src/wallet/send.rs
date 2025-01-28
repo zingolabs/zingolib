@@ -5,8 +5,6 @@ use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
 use zcash_proofs::prover::LocalTxProver;
 
-use std::ops::DerefMut as _;
-
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::memo::Memo;

@@ -3,6 +3,7 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
+use crate::config::ZingoConfig;
 use crate::get_base_address_macro;
 use crate::testutils::lightclient::from_inputs;
 use crate::{lightclient::LightClient, wallet::LightWallet};
@@ -39,10 +40,15 @@ pub trait ConductChain {
     }
 
     /// loads a client from bytes
-    async fn load_client(&mut self, data: &[u8]) -> LightClient {
-        LightClient::create_from_wallet_async(LightWallet::unsafe_from_buffer_testnet(data).await)
-            .await
-            .unwrap()
+    async fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
+        let network = config.chain.clone();
+
+        LightClient::create_from_wallet_async(
+            config,
+            LightWallet::unsafe_from_buffer(network, data).await,
+        )
+        .await
+        .unwrap()
     }
 
     /// moves the chain tip forward, creating 1 new block

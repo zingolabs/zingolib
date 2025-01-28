@@ -2,7 +2,7 @@
 
 use std::sync::atomic;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     io::{self, Read, Write},
     sync::atomic::AtomicBool,
 };
@@ -19,7 +19,7 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
-use zcash_keys::keys::{DerivationError, UnifiedFullViewingKey};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
     keys::{AccountPubKey, IncomingViewingKey, NonHardenedChildIndex},
@@ -27,12 +27,12 @@ use zcash_primitives::legacy::{
 };
 use zcash_primitives::zip32::{AccountId, DiversifierIndex};
 
+use crate::config::ZingoConfig;
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::{DomainWalletExt, ReadableWriteable, Recipient};
 use crate::{config::ChainType, wallet::data::new_rejection_address};
 
 use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_usk, Capability};
-use super::ToBase58Check;
 
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
 pub(crate) const KEY_TYPE_VIEW: u8 = 1;
@@ -468,6 +468,37 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
+    /// TODO: Add Doc Comment Here!
+    pub fn new_from_seed(
+        config: &ZingoConfig,
+        seed: &[u8; 64],
+        position: u32,
+    ) -> Result<Self, KeyError> {
+        let usk = UnifiedSpendingKey::from_seed(
+            &config.chain,
+            seed,
+            AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
+        )
+        .map_err(KeyError::KeyDerivationError)?;
+
+        Ok(Self {
+            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
+            ..Default::default()
+        })
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn new_from_phrase(
+        config: &ZingoConfig,
+        seed_phrase: &Mnemonic,
+        position: u32,
+    ) -> Result<Self, KeyError> {
+        // The seed bytes is the raw entropy. To pass it to HD wallet generation,
+        // we need to get the 64 byte bip39 entropy
+        let bip39_seed = seed_phrase.to_seed("");
+        Self::new_from_seed(config, &bip39_seed, position)
+    }
+
     pub(crate) fn get_ua_from_contained_transparent_receiver(
         &self,
         receiver: &TransparentAddress,

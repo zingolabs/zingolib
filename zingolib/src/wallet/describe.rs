@@ -318,9 +318,9 @@ mod test {
     #[tokio::test]
     async fn confirmed_balance_excluding_dust() {
         let wallet = LightWallet::new(
-            ZingoConfigBuilder::default().create(),
+            ZingoConfigBuilder::default().create().chain,
             WalletBase::FreshEntropy,
-            1,
+            1.into(),
         )
         .unwrap();
         let confirmed_tx_record = TransactionRecordBuilder::default()

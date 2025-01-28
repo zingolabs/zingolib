@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
@@ -35,18 +35,7 @@ impl SyncWallet for LightWallet {
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error> {
         let account_id = AccountId::try_from(0).unwrap();
-        let seed = self
-            .mnemonic()
-            .map(|(mmemonic, _)| mmemonic)
-            .unwrap()
-            .to_seed("");
-        let usk = UnifiedSpendingKey::from_seed(
-            &self.transaction_context.config.chain,
-            &seed,
-            account_id,
-        )
-        .unwrap();
-        let ufvk = usk.to_unified_full_viewing_key();
+        let ufvk = UnifiedFullViewingKey::try_from(&self.unified_key_store).unwrap();
         let mut ufvk_map = HashMap::new();
         ufvk_map.insert(account_id, ufvk);
 

@@ -89,7 +89,7 @@ impl LightWallet {
     /// make explicit (via ident) which variable refers to a value deserialized from
     /// some source ("external") and which is represented as a source-code constant
     /// ("internal").
-    pub async fn read_internal<R: Read>(mut reader: R, network: &ChainType) -> io::Result<Self> {
+    pub async fn read_internal<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
         if external_version > Self::serialized_version() {
             let e = format!(
@@ -223,7 +223,7 @@ impl LightWallet {
                     .expect("wallet capability should exist for versions pre-31")
                     .unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
-                        network,
+                        &network,
                         &mnemonic.0.to_seed(""),
                         AccountId::ZERO,
                     )

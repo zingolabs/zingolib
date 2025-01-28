@@ -23,21 +23,16 @@ use zingo_sync::{
 use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
 use std::{
-    io::{self, Error, ErrorKind, Read, Write},
+    io::{self, Read, Write},
     sync::Arc,
     time::SystemTime,
 };
 use tokio::sync::RwLock;
 
-use crate::config::{ChainType, ZingoConfig};
+use crate::config::ChainType;
 use zcash_encoding::Optional;
 
-use self::keys::unified::WalletCapability;
-
-use self::{
-    data::WalletZecPriceInfo, message::Message, transaction_context::TransactionContext,
-    tx_map::TxMap,
-};
+use self::{data::WalletZecPriceInfo, message::Message};
 
 pub mod data;
 pub mod error;
@@ -347,6 +342,7 @@ impl LightWallet {
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
             unified_addresses: AppendOnlyVec::new(),
+            network,
         })
     }
 
