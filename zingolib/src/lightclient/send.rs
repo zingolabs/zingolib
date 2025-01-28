@@ -250,6 +250,15 @@ pub mod send_with_proposal {
         server_uri: http::Uri,
         send_result_cache: Arc<RwLock<SendProgress>>,
     ) {
+        let transmission_result = dbg!(
+            transmit_cached_transactions(
+                arc_tx_map.clone(),
+                server_uri.clone(),
+                send_result_cache.clone()
+            )
+            .await
+        );
+
         tokio::spawn(async move {
             loop {
                 println!("broadcast attempt beginning");
