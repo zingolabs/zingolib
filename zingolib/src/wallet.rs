@@ -216,6 +216,8 @@ pub struct LightWallet {
     /// Unified_addresses
     // TODO: sync integration, not yet integrated
     unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    /// Network type
+    pub network: ChainType,
 }
 
 impl LightWallet {

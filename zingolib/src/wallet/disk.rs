@@ -21,7 +21,7 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::{config::ZingoConfig, wallet::keys::unified::UnifiedKeyStore};
+use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
@@ -58,7 +58,8 @@ impl LightWallet {
         //     .write()
         //     .await
         //     .write(&mut writer)
-        //     .await?;
+
+        utils::write_string(&mut writer, &self.network.to_string())?; //     .await?;
 
         self.wallet_options.read().await.write(&mut writer)?;
 
@@ -88,7 +89,7 @@ impl LightWallet {
     /// make explicit (via ident) which variable refers to a value deserialized from
     /// some source ("external") and which is represented as a source-code constant
     /// ("internal").
-    pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
+    pub async fn read_internal<R: Read>(mut reader: R, network: &ChainType) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
         if external_version > Self::serialized_version() {
             let e = format!(
@@ -105,7 +106,7 @@ impl LightWallet {
         let mut wallet_capability = None;
         let mut _transactions = None;
         if external_version < 31 {
-            wallet_capability = Some(WalletCapability::read(&mut reader, config.chain)?);
+            wallet_capability = Some(WalletCapability::read(&mut reader, network.clone())?);
 
             let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
 
@@ -124,8 +125,18 @@ impl LightWallet {
                         .expect("wallet capability should exist for versions pre-31"),
                 )?)
             };
+        }
 
-            let _chain_name = utils::read_string(&mut reader)?;
+        let chain_name = utils::read_string(&mut reader)?;
+
+        if chain_name != network.to_string() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Wallet chain name {} doesn't match expected {}",
+                    chain_name, network
+                ),
+            ));
         }
 
         let wallet_options = if external_version <= 23 {
@@ -205,14 +216,14 @@ impl LightWallet {
         // UnifiedSpendingKey is initially incomplete for old wallet versions.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
         // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
-        if external_version <= 28 {
+        if external_version < 29 {
             if let Some(mnemonic) = mnemonic.as_ref() {
                 wallet_capability
                     .as_mut()
                     .expect("wallet capability should exist for versions pre-31")
                     .unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
-                        &config.chain,
+                        network,
                         &mnemonic.0.to_seed(""),
                         AccountId::ZERO,
                     )
@@ -239,7 +250,7 @@ impl LightWallet {
         }
 
         let unified_key_store = if external_version >= 31 {
-            UnifiedKeyStore::read(&mut reader, config.chain)?
+            UnifiedKeyStore::read(&mut reader, network.clone())?
             // TODO: sync integration, check write matches read for v31
         } else {
             wallet_capability
@@ -289,6 +300,7 @@ impl LightWallet {
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
             unified_addresses: AppendOnlyVec::new(),
+            network: network.clone(),
         };
 
         Ok(lw)
