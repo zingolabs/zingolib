@@ -522,7 +522,7 @@ where
     let highest_scanned_height = sync_state.highest_scanned_height();
     let sync_start_height = sync_state.initial_sync_state().sync_start_height();
 
-    let scanned_block_range_boundaries = sync_state
+    let scanned_block_range_bounds = sync_state
         .scan_ranges()
         .iter()
         .filter(|scan_range| {
@@ -547,7 +547,7 @@ where
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
         *height >= sync_start_height - 1
             || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
-            || scanned_block_range_boundaries.contains(height)
+            || scanned_block_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
     wallet

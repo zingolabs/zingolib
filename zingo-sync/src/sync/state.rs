@@ -21,7 +21,7 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, SyncState, TreeBoundaries, WalletTransaction},
+    primitives::{Locator, SyncState, TreeBounds, WalletTransaction},
     scan::task::ScanTask,
     traits::{SyncBlocks, SyncWallet},
 };
@@ -294,7 +294,7 @@ pub(super) fn set_scan_priority(
 
 /// Punches in a `scan_priority` for a given `block_range`.
 ///
-/// This function will set all scan ranges in `sync_state` with block range boundaries contained by `block_range` to
+/// This function will set all scan ranges in `sync_state` with block range bounds contained by `block_range` to
 /// the given `scan_priority`.
 /// If any scan ranges in `sync_state` are found to overlap with the given `block_range`, they will be split at the
 /// boundary and the new scan ranges contained by `block_range` will be set to `scan_priority`.
@@ -595,7 +595,7 @@ pub(super) async fn set_initial_state<W>(
         .unwrap()
         .initial_sync_state_mut();
     initial_sync_state.set_sync_start_height(fully_scanned_height + 1);
-    initial_sync_state.set_sync_tree_boundaries(TreeBoundaries {
+    initial_sync_state.set_sync_tree_bounds(TreeBounds {
         sapling_initial_tree_size: sync_start_sapling_tree_size,
         sapling_final_tree_size: chain_tip_sapling_tree_size,
         orchard_initial_tree_size: sync_start_orchard_tree_size,
@@ -640,31 +640,31 @@ where
     let (nonlinear_scanned_sapling_outputs, nonlinear_scanned_orchard_outputs) =
         nonlinear_scanned_block_ranges
             .iter()
-            .map(|block_range| scanned_range_tree_boundaries(wallet, block_range.clone()))
-            .fold((0, 0), |acc, tree_boundaries| {
+            .map(|block_range| scanned_range_tree_bounds(wallet, block_range.clone()))
+            .fold((0, 0), |acc, tree_bounds| {
                 (
                     acc.0
-                        + (tree_boundaries.sapling_final_tree_size
-                            - tree_boundaries.sapling_initial_tree_size),
+                        + (tree_bounds.sapling_final_tree_size
+                            - tree_bounds.sapling_initial_tree_size),
                     acc.1
-                        + (tree_boundaries.orchard_final_tree_size
-                            - tree_boundaries.orchard_initial_tree_size),
+                        + (tree_bounds.orchard_final_tree_size
+                            - tree_bounds.orchard_initial_tree_size),
                 )
             });
 
     let initial_sync_state = wallet.get_sync_state().unwrap().initial_sync_state();
     let unscanned_sapling_outputs = initial_sync_state
-        .sync_tree_boundaries()
+        .sync_tree_bounds()
         .sapling_final_tree_size
         - initial_sync_state
-            .sync_tree_boundaries()
+            .sync_tree_bounds()
             .sapling_initial_tree_size
         - nonlinear_scanned_sapling_outputs;
     let unscanned_orchard_outputs = initial_sync_state
-        .sync_tree_boundaries()
+        .sync_tree_bounds()
         .orchard_final_tree_size
         - initial_sync_state
-            .sync_tree_boundaries()
+            .sync_tree_bounds()
             .orchard_initial_tree_size
         - nonlinear_scanned_orchard_outputs;
 
@@ -683,8 +683,8 @@ where
 {
     if let Ok(block) = wallet.get_wallet_block(block_height) {
         (
-            block.tree_boundaries().sapling_final_tree_size,
-            block.tree_boundaries().orchard_final_tree_size,
+            block.tree_bounds().sapling_final_tree_size,
+            block.tree_bounds().orchard_final_tree_size,
         )
     } else {
         // TODO: move this whole block into `client::get_frontiers`
@@ -718,8 +718,8 @@ where
 
 /// Gets the initial and final tree sizes of a `scanned_range`.
 ///
-/// Panics if `scanned_range` boundary wallet blocks are not found in the wallet.
-fn scanned_range_tree_boundaries<W>(wallet: &W, scanned_range: Range<BlockHeight>) -> TreeBoundaries
+/// Panics if `scanned_range` wallet blocks bounds are not found in the wallet.
+fn scanned_range_tree_bounds<W>(wallet: &W, scanned_range: Range<BlockHeight>) -> TreeBounds
 where
     W: SyncBlocks,
 {
@@ -730,11 +730,11 @@ where
         .get_wallet_block(scanned_range.end - 1)
         .expect("scanned range boundary blocks should be retained in the wallet");
 
-    TreeBoundaries {
-        sapling_initial_tree_size: start_block.tree_boundaries().sapling_initial_tree_size,
-        sapling_final_tree_size: end_block.tree_boundaries().sapling_final_tree_size,
-        orchard_initial_tree_size: start_block.tree_boundaries().orchard_initial_tree_size,
-        orchard_final_tree_size: end_block.tree_boundaries().orchard_final_tree_size,
+    TreeBounds {
+        sapling_initial_tree_size: start_block.tree_bounds().sapling_initial_tree_size,
+        sapling_final_tree_size: end_block.tree_bounds().sapling_final_tree_size,
+        orchard_initial_tree_size: start_block.tree_bounds().orchard_initial_tree_size,
+        orchard_final_tree_size: end_block.tree_bounds().orchard_final_tree_size,
     }
 }
 

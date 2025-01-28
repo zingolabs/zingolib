@@ -37,7 +37,7 @@ pub struct InitialSyncState {
     /// One block above the fully scanned wallet height at start of sync session.
     sync_start_height: BlockHeight,
     /// The tree sizes of the fully scanned height and chain tip at start of sync session.
-    sync_tree_boundaries: TreeBoundaries,
+    sync_tree_bounds: TreeBounds,
     /// Total number of blocks to scan.
     total_blocks_to_scan: u32,
     /// Total number of sapling outputs to scan.
@@ -51,7 +51,7 @@ impl InitialSyncState {
     pub fn new() -> Self {
         InitialSyncState {
             sync_start_height: 0.into(),
-            sync_tree_boundaries: TreeBoundaries {
+            sync_tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 0,
                 sapling_final_tree_size: 0,
                 orchard_initial_tree_size: 0,
@@ -174,7 +174,7 @@ impl Default for SyncState {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TreeBoundaries {
+pub struct TreeBounds {
     pub sapling_initial_tree_size: u32,
     pub sapling_final_tree_size: u32,
     pub orchard_initial_tree_size: u32,
@@ -271,7 +271,7 @@ pub struct WalletBlock {
     time: u32,
     #[getset(skip)]
     txids: Vec<TxId>,
-    tree_boundaries: TreeBoundaries,
+    tree_bounds: TreeBounds,
 }
 
 impl WalletBlock {
@@ -281,7 +281,7 @@ impl WalletBlock {
         prev_hash: BlockHash,
         time: u32,
         txids: Vec<TxId>,
-        tree_boundaries: TreeBoundaries,
+        tree_bounds: TreeBounds,
     ) -> Self {
         Self {
             block_height,
@@ -289,7 +289,7 @@ impl WalletBlock {
             prev_hash,
             time,
             txids,
-            tree_boundaries,
+            tree_bounds,
         }
     }
 
