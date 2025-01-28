@@ -153,12 +153,12 @@ where
     })
     .unzip();
 
-    // for status in sender_recorded_statuses {
-    //     assert_eq!(
-    //         status,
-    //         ConfirmationStatus::Transmitted(server_height_at_send + 1)
-    //     );
-    // }
+    for status in sender_recorded_statuses {
+        assert_eq!(
+            status,
+            ConfirmationStatus::Transmitted(server_height_at_send + 1)
+        );
+    }
 
     let option_recipient_mempool_outputs = if test_mempool {
         // mempool scan shows the same
