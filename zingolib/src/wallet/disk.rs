@@ -1,4 +1,5 @@
 //! This mod contains write and read functionality of impl LightWallet
+use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use log::{error, info};
@@ -31,7 +32,6 @@ use super::keys::unified::WalletCapability;
 use super::LightWallet;
 use super::{
     data::{BlockData, WalletZecPriceInfo},
-    transaction_context::TransactionContext,
     tx_map::TxMap,
 };
 
@@ -47,22 +47,18 @@ impl LightWallet {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
+        // TODO: sync integration, write keys and addresses
         // Write all the keys
-        self.transaction_context
-            .key
-            .write(&mut writer, self.transaction_context.config.chain)?;
+        // self.transaction_context
+        //     .key
+        //     .write(&mut writer, self.transaction_context.config.chain)?;
 
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .write(&mut writer)
-            .await?;
-
-        utils::write_string(
-            &mut writer,
-            &self.transaction_context.config.chain.to_string(),
-        )?;
+        // self.transaction_context
+        //     .transaction_metadata_set
+        //     .write()
+        //     .await
+        //     .write(&mut writer)
+        //     .await?;
 
         self.wallet_options.read().await.write(&mut writer)?;
 
@@ -105,33 +101,31 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let mut wallet_capability = WalletCapability::read(&mut reader, config.chain)?;
 
-        if external_version <= 30 {
+        let mut wallet_capability = None;
+        let mut _transactions = None;
+        if external_version < 31 {
+            wallet_capability = Some(WalletCapability::read(&mut reader, config.chain)?);
+
             let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-            if external_version <= 14 {
-                // Reverse the order, since after version 20, we need highest-block-first
-                // TODO: Consider order between 14 and 20.
-                _blocks = _blocks.into_iter().rev().collect();
-            }
-        }
 
-        let transactions = if external_version <= 14 {
-            TxMap::read_old(&mut reader, &wallet_capability)
-        } else {
-            TxMap::read(&mut reader, &wallet_capability)
-        }?;
+            _transactions = if external_version <= 14 {
+                Some(TxMap::read_old(
+                    &mut reader,
+                    wallet_capability
+                        .as_ref()
+                        .expect("wallet capability should exist for versions pre-31"),
+                )?)
+            } else {
+                Some(TxMap::read(
+                    &mut reader,
+                    wallet_capability
+                        .as_ref()
+                        .expect("wallet capability should exist for versions pre-31"),
+                )?)
+            };
 
-        let chain_name = utils::read_string(&mut reader)?;
-
-        if chain_name != config.chain.to_string() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Wallet chain name {} doesn't match expected {}",
-                    chain_name, config.chain
-                ),
-            ));
+            let _chain_name = utils::read_string(&mut reader)?;
         }
 
         let wallet_options = if external_version <= 23 {
@@ -155,7 +149,7 @@ impl LightWallet {
             };
         }
 
-        if external_version <= 30 {
+        if external_version < 31 {
             let _verified_tree = if external_version <= 21 {
                 None
             } else {
@@ -211,9 +205,12 @@ impl LightWallet {
         // UnifiedSpendingKey is initially incomplete for old wallet versions.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
         // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
-        if external_version < 29 {
+        if external_version <= 28 {
             if let Some(mnemonic) = mnemonic.as_ref() {
-                wallet_capability.unified_key_store = UnifiedKeyStore::Spend(Box::new(
+                wallet_capability
+                    .as_mut()
+                    .expect("wallet capability should exist for versions pre-31")
+                    .unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
                         &config.chain,
                         &mnemonic.0.to_seed(""),
@@ -229,7 +226,11 @@ impl LightWallet {
                         )
                     })?,
                 ));
-            } else if let UnifiedKeyStore::Spend(_) = &wallet_capability.unified_key_store {
+            } else if let UnifiedKeyStore::Spend(_) = &wallet_capability
+                .as_ref()
+                .expect("wallet capability should exist for versions pre-31")
+                .unified_key_store
+            {
                 return Err(io::Error::new(
                     ErrorKind::Other,
                     "loading from legacy spending keys with no seed phrase to recover",
@@ -237,8 +238,17 @@ impl LightWallet {
             }
         }
 
+        let unified_key_store = if external_version >= 31 {
+            UnifiedKeyStore::read(&mut reader, config.chain)?
+            // TODO: sync integration, check write matches read for v31
+        } else {
+            wallet_capability
+                .expect("wallet capability should exist for versions pre-31")
+                .unified_key_store
+        };
+
         info!("Keys in this wallet:");
-        match &wallet_capability.unified_key_store {
+        match &unified_key_store {
             UnifiedKeyStore::Spend(_) => {
                 info!("  - orchard spending key");
                 info!("  - sapling extended spending key");
@@ -258,28 +268,19 @@ impl LightWallet {
             UnifiedKeyStore::Empty => info!("  - no keys found"),
         }
 
-        // this initialization combines two types of data
-        let transaction_context = TransactionContext::new(
-            // Config data could be used differently based on the circumstances
-            // hardcoded?
-            // entered at init by user?
-            // stored on disk in a separate location and connected by a descendant library (such as zingo-mobile)?
-            config,
-            // Saveable Arc data
-            //   - Arcs allow access between threads.
-            //   - This data is loaded from the wallet file and but needs multithreaded access during sync.
-            Arc::new(wallet_capability),
-            Arc::new(RwLock::new(transactions)),
-        );
+        if external_version >= 31 {
+            // TODO: sync integration, load new wallet format
+        } else {
+            // TODO: sync integration, add locators for targetted rescan
+        }
 
         let lw = Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
-            unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
+            unified_key_store,
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
-            transaction_context,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
@@ -287,6 +288,7 @@ impl LightWallet {
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
+            unified_addresses: AppendOnlyVec::new(),
         };
 
         Ok(lw)

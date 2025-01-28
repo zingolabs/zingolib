@@ -81,7 +81,7 @@ impl LightWallet {
 
     /// Sums the transparent balance (unspent)
     pub async fn get_transparent_balance(&self) -> Option<u64> {
-        match &self.wallet_capability().unified_key_store {
+        match &self.unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => {
                 ufvk.transparent()?;
@@ -116,7 +116,7 @@ impl LightWallet {
     where
         D: WalletDomain,
     {
-        if let UnifiedKeyStore::Spend(_) = self.wallet_capability().unified_key_store {
+        if let UnifiedKeyStore::Spend(_) = self.unified_key_store {
             self.confirmed_balance::<D>().await
         } else {
             None
@@ -228,7 +228,6 @@ mod test {
 
     use zcash_client_backend::PoolType;
     use zcash_client_backend::ShieldedProtocol;
-    use zcash_primitives::consensus::NetworkConstants as _;
 
     use crate::wallet::LightWallet;
 

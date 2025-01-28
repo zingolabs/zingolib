@@ -317,6 +317,7 @@ pub mod instantiation {
         runtime::Runtime,
         sync::{Mutex, RwLock},
     };
+    use zcash_primitives::consensus::BlockHeight;
 
     use crate::config::ZingoConfig;
 
@@ -377,11 +378,16 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
-                config.clone(),
-                wallet_base,
-                birthday,
-            )?)
+            let lightclient = LightClient::create_from_wallet_async(
+                LightWallet::new(
+                    config.chain.clone(),
+                    wallet_base,
+                    BlockHeight::from_u32(birthday.try_into().expect("should never overflow")),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(ErrorKind::Other, format!("wallet creation failed: {}", e))
+                })?,
+            )
             .await?;
 
             lightclient
@@ -400,11 +406,16 @@ pub mod instantiation {
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
-            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
-                config.clone(),
-                wallet_base,
-                height,
-            )?)
+            let lightclient = LightClient::create_from_wallet_async(
+                LightWallet::new(
+                    config.chain.clone(),
+                    wallet_base,
+                    BlockHeight::from_u32(height.try_into().expect("should never overflow")),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(ErrorKind::Other, format!("wallet creation failed: {}", e))
+                })?,
+            )
             .await?;
             Ok(lightclient)
         }
@@ -517,7 +528,7 @@ impl LightClient {
         }
     }
 
-    /// Create a new address, deriving it from the seed.
+    /// Generates a new unified address from the given `addr_type`.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
@@ -530,8 +541,8 @@ impl LightClient {
             .wallet
             .lock()
             .await
-            .wallet_capability()
-            .new_address(desired_receivers, false)?;
+            .generate_unified_address(desired_receivers)
+            .map_err(|e| e.to_string())?;
 
         // self.save_internal_rust().await?;
 

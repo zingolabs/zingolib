@@ -4,6 +4,17 @@ use zcash_keys::keys::DerivationError;
 
 use crate::wallet::data::OutgoingTxData;
 
+/// Top level wallet errors
+#[derive(Debug, thiserror::Error)]
+pub enum WalletError {
+    /// Key error
+    #[error("{0}")]
+    KeyError(#[from] KeyError),
+    /// Mnemonic error
+    #[error("{0}")]
+    MnemonicError(#[from] bip0039::Error),
+}
+
 /// Errors associated with transaction fee calculation
 #[derive(Debug, thiserror::Error)]
 pub enum FeeError {
@@ -42,7 +53,7 @@ pub enum BalanceError {
     ConversionFailed(#[from] crate::utils::error::ConversionError),
 }
 
-/// Errors associated with balance key derivation
+/// Errors associated with key and address derivation
 #[derive(Debug, thiserror::Error)]
 pub enum KeyError {
     /// Error associated with standard IO
@@ -77,4 +88,13 @@ pub enum KeyError {
     /// Invalid format
     #[error("Viewing keys must be imported in the unified format")]
     InvalidFormat,
+    /// Unified address missing shielded receiver
+    #[error("Unified address must contain a shielded receiver")]
+    UnifiedAddressError,
+}
+
+impl From<bip32::Error> for KeyError {
+    fn from(value: bip32::Error) -> Self {
+        Self::KeyDerivationError(DerivationError::Transparent(value))
+    }
 }

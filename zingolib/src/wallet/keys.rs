@@ -8,13 +8,36 @@ use sapling_crypto::{
     PaymentAddress,
 };
 use sha2::Sha256;
+use unified::ReceiverSelection;
 use zcash_client_backend::address;
+use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
 
+use super::{error::KeyError, LightWallet};
+
 pub mod legacy;
 pub mod unified;
+
+impl LightWallet {
+    /// Returns a new unified address for the given `receivers`.
+    /// Also adds this new unified address to the wallet.
+    pub fn generate_unified_address(
+        &self,
+        receivers: ReceiverSelection,
+    ) -> Result<UnifiedAddress, KeyError> {
+        let unified_address = self.unified_key_store.generate_unified_address(
+            self.unified_addresses.len() as u32,
+            receivers,
+            false,
+        )?;
+
+        self.unified_addresses.push(unified_address.clone());
+
+        Ok(unified_address)
+    }
+}
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
