@@ -3,7 +3,6 @@ use zcash_client_backend::ShieldedProtocol;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zingo_sync::primitives::NoteInterface;
 use zingo_sync::primitives::WalletTransaction;
 
 use std::sync::Arc;
@@ -31,7 +30,13 @@ use crate::Orchard;
 use crate::Sapling;
 use crate::WalletDomain;
 
+use super::data::summaries::OrchardNoteSummary;
+use super::data::summaries::SaplingNoteSummary;
+use super::data::summaries::TransactionSummaries;
+use super::data::summaries::TransactionSummaryBuilder;
+use super::data::summaries::TransparentCoinSummary;
 use super::keys::unified::UnifiedKeyStore;
+use super::transaction_record::TransactionKind;
 
 impl LightWallet {
     /// returns Some seed phrase for the wallet.
@@ -220,6 +225,176 @@ impl LightWallet {
             .iter()
             .map(|(_index, sk)| *sk)
             .collect::<Vec<_>>()
+    }
+
+    /// Provides a list of transaction summaries related to this wallet in order of blockheight
+    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+        let mut transaction_summaries = self
+            .wallet_transactions
+            .values()
+            .map(|transaction| {
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                    self.basic_transaction_summary_parts(transaction);
+
+                TransactionSummaryBuilder::new()
+                    .txid(transaction.txid())
+                    .datetime(transaction.datetime())
+                    .blockheight(transaction.status().get_height())
+                    .kind(kind)
+                    .value(value)
+                    .fee(fee)
+                    .status(transaction.status())
+                    .zec_price(transaction.price())
+                    .transparent_coins(transparent_coins)
+                    .sapling_notes(sapling_notes)
+                    .orchard_notes(orchard_notes)
+                    .outgoing_tx_data(transaction.outgoing_tx_data.clone())
+                    .build()
+                    .expect("all fields should be populated")
+            })
+            .collect::<Vec<_>>();
+        drop(transaction_map);
+        drop(wallet);
+
+        transaction_summaries.sort_by(|sum1, sum2| {
+            match sum1.blockheight().cmp(&sum2.blockheight()) {
+                Ordering::Equal => {
+                    let starts_with_tex = |summary: &TransactionSummary| {
+                        summary.outgoing_tx_data().iter().any(|outgoing_txdata| {
+                            outgoing_txdata.recipient_address.starts_with("tex")
+                        })
+                    };
+                    match (starts_with_tex(sum1), starts_with_tex(sum2)) {
+                        (true, false) => Ordering::Greater,
+                        (false, true) => Ordering::Less,
+                        (false, false) | (true, true) => Ordering::Equal,
+                    }
+                }
+                otherwise => otherwise,
+            }
+        });
+
+        TransactionSummaries::new(transaction_summaries)
+    }
+
+    /// TODO: doc comment
+    pub async fn transaction_summaries_json_string(&self) -> String {
+        json::JsonValue::from(self.transaction_summaries().await).pretty(2)
+    }
+
+    fn basic_transaction_summary_parts(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> (
+        TransactionKind,
+        u64,
+        Option<u64>,
+        Vec<OrchardNoteSummary>,
+        Vec<SaplingNoteSummary>,
+        Vec<TransparentCoinSummary>,
+    ) {
+        let kind = transaction_records.transaction_kind(transaction_record, chain);
+        let value = match kind {
+            TransactionKind::Received
+            | TransactionKind::Sent(SendType::Shield)
+            | TransactionKind::Sent(SendType::SendToSelf) => {
+                transaction_record.total_value_received()
+            }
+            TransactionKind::Sent(SendType::Send) => transaction_record.value_outgoing(),
+        };
+        let fee = transaction_records
+            .calculate_transaction_fee(transaction_record)
+            .ok();
+        let mut orchard_notes = transaction_record
+            .orchard_notes
+            .iter()
+            .map(|output| {
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
+
+                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                OrchardNoteSummary::from_parts(
+                    output.value(),
+                    spend_summary,
+                    output.output_index,
+                    memo,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut sapling_notes = transaction_record
+            .sapling_notes
+            .iter()
+            .map(|output| {
+                // example of creating spend summary "from foundational truths" with correct wallet level insight
+                let spend_summary = if let Some(status) = wallet.output_spend_status(output) {
+                    match status {
+                        ConfirmationStatus::Confirmed(_) => SpendSummary::Spent(
+                            output
+                                .spending_txid()
+                                .expect("transaction must exist in the wallet"),
+                        ),
+                        ConfirmationStatus::Transmitted(_) => SpendSummary::TransmittedSpent(
+                            output
+                                .spending_txid()
+                                .expect("transaction must exist in the wallet"),
+                        ),
+                        ConfirmationStatus::Mempool(_) => SpendSummary::MempoolSpent(
+                            output
+                                .spending_txid()
+                                .expect("transaction must exist in the wallet"),
+                        ),
+                        _ => SpendSummary::Unspent, // TODO: add calculated spent
+                    }
+                } else {
+                    SpendSummary::Unspent
+                };
+
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
+
+                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                SaplingNoteSummary::from_parts(
+                    output.value(),
+                    spend_summary,
+                    output.output_index,
+                    memo,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut transparent_coins = transaction_record
+            .transparent_outputs
+            .iter()
+            .map(|output| {
+                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
+
+                TransparentCoinSummary::from_parts(
+                    output.value(),
+                    spend_summary,
+                    output.output_index,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // TODO: this sorting should be removed once we root cause the tx records outputs being out of order
+        orchard_notes.sort_by_key(|output| output.output_index());
+        sapling_notes.sort_by_key(|output| output.output_index());
+        transparent_coins.sort_by_key(|output| output.output_index());
+        (
+            kind,
+            value,
+            fee,
+            orchard_notes,
+            sapling_notes,
+            transparent_coins,
+        )
     }
 }
 

@@ -480,18 +480,21 @@ pub mod finsight {
 pub mod summaries {
     use std::collections::HashMap;
 
-    use crate::{config::ChainType, wallet::notes::OutputInterface};
+    use crate::{
+        config::ChainType,
+        wallet::{notes::OutputInterface, LightWallet},
+    };
     use chrono::DateTime;
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_sync::primitives::WalletTransaction;
 
     use crate::{
         error::BuildError,
         utils::build_method,
         wallet::{
             data::OutgoingTxDataSummaries,
-            notes::OutputInterface as _,
             transaction_record::{SendType, TransactionKind},
             transaction_records_by_id::TransactionRecordsById,
         },
@@ -1189,7 +1192,7 @@ pub mod summaries {
     /// Builds TransactionSummary from builder
     pub struct TransactionSummaryBuilder {
         txid: Option<TxId>,
-        datetime: Option<u64>,
+        datetime: Option<u32>,
         status: Option<ConfirmationStatus>,
         blockheight: Option<BlockHeight>,
         kind: Option<TransactionKind>,
@@ -1915,108 +1918,6 @@ pub mod summaries {
                 SpendSummary::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
             }
         }
-    }
-
-    pub(crate) fn basic_transaction_summary_parts(
-        transaction_record: &TransactionRecord,
-        transaction_records: &TransactionRecordsById,
-        chain: &ChainType,
-    ) -> (
-        TransactionKind,
-        u64,
-        Option<u64>,
-        Vec<OrchardNoteSummary>,
-        Vec<SaplingNoteSummary>,
-        Vec<TransparentCoinSummary>,
-    ) {
-        let kind = transaction_records.transaction_kind(transaction_record, chain);
-        let value = match kind {
-            TransactionKind::Received
-            | TransactionKind::Sent(SendType::Shield)
-            | TransactionKind::Sent(SendType::SendToSelf) => {
-                transaction_record.total_value_received()
-            }
-            TransactionKind::Sent(SendType::Send) => transaction_record.value_outgoing(),
-        };
-        let fee = transaction_records
-            .calculate_transaction_fee(transaction_record)
-            .ok();
-        let mut orchard_notes = transaction_record
-            .orchard_notes
-            .iter()
-            .map(|output| {
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
-
-                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                    Some(memo_text.to_string())
-                } else {
-                    None
-                };
-
-                OrchardNoteSummary::from_parts(
-                    output.value(),
-                    spend_summary,
-                    output.output_index,
-                    memo,
-                )
-            })
-            .collect::<Vec<_>>();
-        let mut sapling_notes = transaction_record
-            .sapling_notes
-            .iter()
-            .map(|output| {
-                // example of creating spend summary "from foundational truths" with correct wallet level insight
-                let spend_summary = match transaction_records
-                    .get(output.spending_txid())
-                    .unwrap()
-                    .status
-                {
-                    ConfirmationStatus::Confirmed(_) => SpendSummary::Spent(output.spending_txid()),
-                    _ => SpendSummary::Unspent,
-                };
-
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
-
-                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
-                    Some(memo_text.to_string())
-                } else {
-                    None
-                };
-
-                SaplingNoteSummary::from_parts(
-                    output.value(),
-                    spend_summary,
-                    output.output_index,
-                    memo,
-                )
-            })
-            .collect::<Vec<_>>();
-        let mut transparent_coins = transaction_record
-            .transparent_outputs
-            .iter()
-            .map(|output| {
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
-
-                TransparentCoinSummary::from_parts(
-                    output.value(),
-                    spend_summary,
-                    output.output_index,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        // TODO: this sorting should be removed once we root cause the tx records outputs being out of order
-        orchard_notes.sort_by_key(|output| output.output_index());
-        sapling_notes.sort_by_key(|output| output.output_index());
-        transparent_coins.sort_by_key(|output| output.output_index());
-        (
-            kind,
-            value,
-            fee,
-            orchard_notes,
-            sapling_notes,
-            transparent_coins,
-        )
     }
 }
 

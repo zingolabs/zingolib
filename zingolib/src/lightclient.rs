@@ -1,7 +1,7 @@
 //! TODO: Add Mod Description Here!
 
 use json::{array, object, JsonValue};
-use log::{debug, error};
+use log::error;
 use serde::Serialize;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{Mutex, RwLock};
@@ -468,16 +468,6 @@ pub mod propose;
 
 // other functions
 impl LightClient {
-    /// TODO: Add Doc Comment Here!
-    pub async fn clear_state(&self) {
-        let wallet = self.wallet.lock().await;
-
-        // First, clear the state from the wallet
-        wallet.clear_all().await;
-
-        debug!("Cleared wallet state");
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn config(&self) -> &ZingoConfig {
         &self.config

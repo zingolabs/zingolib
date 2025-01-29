@@ -314,11 +314,10 @@ where
         .wallet
         .lock()
         .await
-        .query_sum_value(OutputQuery {
+        .sum_queried_output_values(OutputQuery {
             spend_status: OutputSpendStatusQuery::only_unspent(),
             pools: OutputPoolQuery::one_pool(Shielded(Orchard)),
-        })
-        .await;
+        });
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 

@@ -21,7 +21,7 @@ use crate::{
             },
         },
         keys::address_from_pubkeyhash,
-        notes::{query::OutputQuery, Output},
+        notes::Output,
         transaction_record::{SendType, TransactionKind},
         LightWallet,
     },

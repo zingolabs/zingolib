@@ -6,7 +6,7 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::{KeyError, WalletError};
 use keys::unified::UnifiedKeyStore;
-use notes::query::OutputQuery;
+use notes::query::{OutputQuery, OutputSpendStatusQuery};
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
@@ -15,9 +15,12 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+    primitives::{
+        Locator, NullifierMap, OutputId, OutputInterface, SyncState, WalletBlock, WalletTransaction,
+    },
     witness::ShardTrees,
 };
 
@@ -371,38 +374,72 @@ impl LightWallet {
         p.last_result = Some(result);
     }
 
-    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    /// Sum the values of all outputs in the wallet which match the given `query`.
     pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
         self.wallet_transactions
             .values()
             .fold(0, |acc, transaction| {
                 acc + {
                     let mut sum = 0;
-                    let spend_status_query = query.spend_status;
                     if query.transparent() {
                         for output in transaction.transparent_coins().iter() {
-                            if output.spend_status_query(spend_status_query) {
-                                sum += output.value()
+                            if self.query_output_spend_status(query.spend_status, output) {
+                                sum += output.value();
                             }
                         }
                     }
                     if query.sapling() {
                         for output in transaction.sapling_notes().iter() {
-                            if output.spend_status_query(spend_status_query) {
-                                sum += output.value()
+                            if self.query_output_spend_status(query.spend_status, output) {
+                                sum += output.value();
                             }
                         }
                     }
                     if query.orchard() {
                         for output in transaction.orchard_notes().iter() {
-                            if output.spend_status_query(spend_status_query) {
-                                sum += output.value()
+                            if self.query_output_spend_status(query.spend_status, output) {
+                                sum += output.value();
                             }
                         }
                     }
                     sum
                 }
             })
+    }
+
+    /// Returns `true` if `output` spend status matches `query`. Otherwise, returns `false`.
+    fn query_output_spend_status(
+        &self,
+        query: OutputSpendStatusQuery,
+        output: &impl OutputInterface,
+    ) -> bool {
+        if let Some(txid) = output.spending_transaction() {
+            match self
+                .wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Confirmed(_) => query.spent,
+                _confirmation_pending if query.pending_spent => true,
+                _ => false,
+            }
+        } else if query.unspent {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns confirmation status of the transaction that spent a given `output`.
+    /// Returns `None` if output is unspent.
+    pub fn output_spend_status(&self, output: &impl OutputInterface) -> Option<ConfirmationStatus> {
+        output.spending_transaction().map(|txid| {
+            self.wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+        })
     }
 }
 

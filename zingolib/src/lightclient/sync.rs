@@ -71,7 +71,7 @@ impl LightClient {
     pub async fn do_rescan(&self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
-        self.clear_state().await;
+        self.wallet.lock().await.clear_all();
 
         let response = self.do_sync(false).await;
 

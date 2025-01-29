@@ -472,7 +472,7 @@ impl Command for ClearCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            lightclient.clear_state().await;
+            lightclient.wallet.lock().await.clear_all();
 
             let result = object! { "result" => "success" };
             result.pretty(2)
