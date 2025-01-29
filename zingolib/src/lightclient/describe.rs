@@ -38,31 +38,11 @@ fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
 impl LightClient {
-    /// Uses a query to select all notes across all transactions with specific properties and sum them
-    pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
-        self.wallet
-            .lock()
-            .await
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .transaction_records_by_id
-            .query_sum_value(include_notes)
-    }
-
     /// TODO: Add Doc Comment Here!
     // todo use helpers
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self
-            .wallet
-            .lock()
-            .await
-            .wallet_capability()
-            .addresses()
-            .iter()
-        {
+        for address in self.wallet.lock().await.unified_addresses.iter() {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()

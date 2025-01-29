@@ -311,6 +311,9 @@ where
     );
 
     let received_change_from_transaction_2 = secondary
+        .wallet
+        .lock()
+        .await
         .query_sum_value(OutputQuery {
             spend_status: OutputSpendStatusQuery::only_unspent(),
             pools: OutputPoolQuery::one_pool(Shielded(Orchard)),

@@ -6,6 +6,7 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::{KeyError, WalletError};
 use keys::unified::UnifiedKeyStore;
+use notes::query::OutputQuery;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
@@ -194,7 +195,7 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
-    /// Wallet compact blocks
+    /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
     pub wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
@@ -210,7 +211,7 @@ pub struct LightWallet {
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Unified_addresses
     // TODO: sync integration, not yet integrated
-    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    pub unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     /// Network type
     pub network: ChainType,
 }
@@ -219,21 +220,21 @@ impl LightWallet {
     /// Clears all the downloaded blocks and resets the state back to the initial block.
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
-    pub async fn clear_all(&self) {
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .clear();
+    pub async fn clear_all(&mut self) {
+        self.wallet_blocks.clear();
+        self.wallet_transactions.clear();
+        self.nullifier_map.sapling_mut().clear();
+        self.nullifier_map.orchard_mut().clear();
+        self.outpoint_map.clear();
+        self.sync_state = SyncState::new();
     }
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let ufvk: UnifiedFullViewingKey =
-            match (&self.wallet_capability().unified_key_store).try_into() {
-                Ok(ufvk) => ufvk,
-                Err(e) => return Err(e.to_string()),
-            };
+        let ufvk: UnifiedFullViewingKey = match (&self.unified_key_store).try_into() {
+            Ok(ufvk) => ufvk,
+            Err(e) => return Err(e.to_string()),
+        };
         let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
             ivk.to_external_ivk().prepare()
         } else {
@@ -368,6 +369,40 @@ impl LightWallet {
 
         p.is_send_in_progress = false;
         p.last_result = Some(result);
+    }
+
+    /// Uses a query to select all notes across all transactions with specific properties and sum them
+    pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
+        self.wallet_transactions
+            .values()
+            .fold(0, |acc, transaction| {
+                acc + {
+                    let mut sum = 0;
+                    let spend_status_query = query.spend_status;
+                    if query.transparent() {
+                        for output in transaction.transparent_coins().iter() {
+                            if output.spend_status_query(spend_status_query) {
+                                sum += output.value()
+                            }
+                        }
+                    }
+                    if query.sapling() {
+                        for output in transaction.sapling_notes().iter() {
+                            if output.spend_status_query(spend_status_query) {
+                                sum += output.value()
+                            }
+                        }
+                    }
+                    if query.orchard() {
+                        for output in transaction.orchard_notes().iter() {
+                            if output.spend_status_query(spend_status_query) {
+                                sum += output.value()
+                            }
+                        }
+                    }
+                    sum
+                }
+            })
     }
 }
 

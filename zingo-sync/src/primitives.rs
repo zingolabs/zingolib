@@ -365,6 +365,11 @@ impl WalletTransaction {
     }
 }
 
+#[cfg(feature = "wallet_pack")]
+impl WalletTransaction {
+    //
+}
+
 impl std::fmt::Debug for WalletTransaction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("WalletTransaction")
@@ -382,20 +387,20 @@ impl std::fmt::Debug for WalletTransaction {
 #[derive(Debug, Clone)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    pub(crate) output_id: OutputId,
+    pub output_id: OutputId,
     /// Identifier for key used to decrypt output
-    pub(crate) key_id: KeyId,
+    pub key_id: KeyId,
     /// Decrypted note with recipient and value
-    pub(crate) note: N,
+    pub note: N,
     /// Derived nullifier
-    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    pub nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
     /// Commitment tree leaf position
-    pub(crate) position: Option<Position>,
+    pub position: Option<Position>,
     /// Memo
-    pub(crate) memo: Memo,
-    /// Transaction this note was spent in.
-    /// If `None`, note is not spent.
-    pub(crate) spending_transaction: Option<TxId>,
+    pub memo: Memo,
+    /// Txid of transaction this output was spent.
+    /// If `None`, output is not spent.
+    pub spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -420,15 +425,29 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
     }
 }
 
-pub trait NoteInterface: Sized {
-    type ZcashNote;
-    type Nullifier: Copy;
+pub trait OutputInterface: Sized {
+    type KeyId;
 
     /// Output ID
     fn output_id(&self) -> OutputId;
 
     /// Identifier for key used to decrypt output
-    fn key_id(&self) -> KeyId;
+    fn key_id(&self) -> Self::KeyId;
+
+    /// Txid of transaction this output was spent.
+    /// If `None`, output is not spent.
+    fn spending_transaction(&self) -> Option<TxId>;
+
+    /// Note value.
+    fn value(&self) -> u64;
+
+    /// Outputs within `transaction`.
+    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self];
+}
+
+pub trait NoteInterface: OutputInterface + Sized {
+    type ZcashNote;
+    type Nullifier: Copy;
 
     /// Decrypted note with recipient and value
     fn note(&self) -> &Self::ZcashNote;
@@ -441,23 +460,12 @@ pub trait NoteInterface: Sized {
 
     /// Memo
     fn memo(&self) -> &Memo;
-
-    /// Txid of transaction this note was spent in.
-    /// If `None`, note is not spent.
-    fn spending_transaction(&self) -> Option<TxId>;
-
-    /// Note value.
-    fn value(&self) -> u64;
-
-    /// Notes within `transaction`.
-    fn transaction_notes(transaction: &WalletTransaction) -> &[Self];
 }
 
 pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
 
-impl NoteInterface for SaplingNote {
-    type ZcashNote = sapling_crypto::Note;
-    type Nullifier = sapling_crypto::Nullifier;
+impl OutputInterface for SaplingNote {
+    type KeyId = KeyId;
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -466,6 +474,23 @@ impl NoteInterface for SaplingNote {
     fn key_id(&self) -> KeyId {
         self.key_id
     }
+
+    fn spending_transaction(&self) -> Option<TxId> {
+        self.spending_transaction
+    }
+
+    fn value(&self) -> u64 {
+        self.note.value().inner()
+    }
+
+    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+        &transaction.sapling_notes
+    }
+}
+
+impl NoteInterface for SaplingNote {
+    type ZcashNote = sapling_crypto::Note;
+    type Nullifier = sapling_crypto::Nullifier;
 
     fn note(&self) -> &Self::ZcashNote {
         &self.note
@@ -482,6 +507,20 @@ impl NoteInterface for SaplingNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+}
+
+pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
+
+impl OutputInterface for OrchardNote {
+    type KeyId = KeyId;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> KeyId {
+        self.key_id
+    }
 
     fn spending_transaction(&self) -> Option<TxId> {
         self.spending_transaction
@@ -491,24 +530,14 @@ impl NoteInterface for SaplingNote {
         self.note.value().inner()
     }
 
-    fn transaction_notes(transaction: &WalletTransaction) -> &[SaplingNote] {
-        transaction.sapling_notes()
+    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+        &transaction.orchard_notes
     }
 }
-
-pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 impl NoteInterface for OrchardNote {
     type ZcashNote = orchard::Note;
     type Nullifier = orchard::note::Nullifier;
-
-    fn output_id(&self) -> OutputId {
-        self.output_id
-    }
-
-    fn key_id(&self) -> KeyId {
-        self.key_id
-    }
 
     fn note(&self) -> &Self::ZcashNote {
         &self.note
@@ -525,22 +554,74 @@ impl NoteInterface for OrchardNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+}
+
+///  Transparent coin (output) with metadata relevant to the wallet
+#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+pub struct TransparentCoin {
+    /// Output ID
+    #[getset(get_copy = "pub")]
+    output_id: OutputId,
+    /// Identifier for key used to derive address
+    #[getset(get_copy = "pub")]
+    key_id: TransparentAddressId,
+    /// Encoded transparent address
+    #[getset(get = "pub")]
+    address: String,
+    /// Script
+    #[getset(get = "pub")]
+    script: Script,
+    /// Coin value
+    value: NonNegativeAmount,
+    /// Txid of transaction this output was spent.
+    /// If `None`, output is not spent.
+    #[getset(get = "pub", set = "pub")]
+    spending_transaction: Option<TxId>,
+}
+
+impl TransparentCoin {
+    pub fn from_parts(
+        output_id: OutputId,
+        key_id: TransparentAddressId,
+        address: String,
+        script: Script,
+        value: NonNegativeAmount,
+        spending_transaction: Option<TxId>,
+    ) -> Self {
+        Self {
+            output_id,
+            key_id,
+            address,
+            script,
+            value,
+            spending_transaction,
+        }
+    }
+}
+
+impl OutputInterface for TransparentCoin {
+    type KeyId = TransparentAddressId;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> Self::KeyId {
+        self.key_id
+    }
 
     fn spending_transaction(&self) -> Option<TxId> {
         self.spending_transaction
     }
 
     fn value(&self) -> u64 {
-        self.note.value().inner()
+        self.value.into_u64()
     }
 
-    fn transaction_notes(transaction: &WalletTransaction) -> &[OrchardNote] {
-        transaction.orchard_notes()
+    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+        &transaction.transparent_coins
     }
 }
-
-pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
-pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 /// Note sent from this capability to a recipient
 #[derive(Debug, Clone, Getters, CopyGetters, Setters)]
@@ -608,45 +689,5 @@ pub(crate) trait SyncOutgoingNotes {
         P: Parameters + NetworkConstants;
 }
 
-///  Transparent coin (output) with metadata relevant to the wallet
-#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
-pub struct TransparentCoin {
-    /// Output ID
-    #[getset(get_copy = "pub")]
-    output_id: OutputId,
-    /// Identifier for key used to derive address
-    #[getset(get_copy = "pub")]
-    key_id: TransparentAddressId,
-    /// Encoded transparent address
-    #[getset(get = "pub")]
-    address: String,
-    /// Script
-    #[getset(get = "pub")]
-    script: Script,
-    /// Coin value
-    #[getset(get_copy = "pub")]
-    value: NonNegativeAmount,
-    /// Spend status
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
-}
-
-impl TransparentCoin {
-    pub fn from_parts(
-        output_id: OutputId,
-        key_id: TransparentAddressId,
-        address: String,
-        script: Script,
-        value: NonNegativeAmount,
-        spending_transaction: Option<TxId>,
-    ) -> Self {
-        Self {
-            output_id,
-            key_id,
-            address,
-            script,
-            value,
-            spending_transaction,
-        }
-    }
-}
+pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
+pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;

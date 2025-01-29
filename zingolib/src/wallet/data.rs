@@ -480,7 +480,7 @@ pub mod finsight {
 pub mod summaries {
     use std::collections::HashMap;
 
-    use crate::config::ChainType;
+    use crate::{config::ChainType, wallet::notes::OutputInterface};
     use chrono::DateTime;
     use json::JsonValue;
     use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
@@ -1899,7 +1899,6 @@ pub mod summaries {
                 Some((txid, ConfirmationStatus::Transmitted(_))) => {
                     SpendSummary::TransmittedSpent(*txid)
                 }
-
                 Some((txid, ConfirmationStatus::Mempool(_))) => SpendSummary::MempoolSpent(*txid),
                 Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
                 _ => SpendSummary::Unspent,
@@ -1966,6 +1965,16 @@ pub mod summaries {
             .sapling_notes
             .iter()
             .map(|output| {
+                // example of creating spend summary "from foundational truths" with correct wallet level insight
+                let spend_summary = match transaction_records
+                    .get(output.spending_txid())
+                    .unwrap()
+                    .status
+                {
+                    ConfirmationStatus::Confirmed(_) => SpendSummary::Spent(output.spending_txid()),
+                    _ => SpendSummary::Unspent,
+                };
+
                 let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
 
                 let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
