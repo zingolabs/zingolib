@@ -21,8 +21,10 @@ pub type AddressIndex = u32;
 /// Unique ID for shielded keys.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct KeyId {
-    account_id: zcash_primitives::zip32::AccountId,
-    scope: Scope,
+    /// Account ID
+    pub account_id: zcash_primitives::zip32::AccountId,
+    /// Scope
+    pub scope: Scope,
 }
 
 pub mod transparent;

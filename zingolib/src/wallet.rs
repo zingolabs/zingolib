@@ -8,8 +8,8 @@ use error::{KeyError, WalletError};
 use keys::unified::UnifiedKeyStore;
 use notes::query::{OutputQuery, OutputSpendStatusQuery};
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};
 use rand::rngs::OsRng;
@@ -201,7 +201,7 @@ pub struct LightWallet {
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
-    pub wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
+    pub wallet_transactions: HashMap<TxId, WalletTransaction>,
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
@@ -213,8 +213,7 @@ pub struct LightWallet {
     /// Transparent addresses
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Unified_addresses
-    // TODO: sync integration, not yet integrated
-    pub unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
     /// Network type
     pub network: ChainType,
 }

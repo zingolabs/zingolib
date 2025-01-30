@@ -1323,7 +1323,17 @@ impl Command for TransactionsCommand {
             return "Error: invalid arguments\nTry 'help transactions' for correct usage and examples"
                 .to_string();
         }
-        RT.block_on(async move { format!("{}", lightclient.transaction_summaries().await) })
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .wallet
+                    .lock()
+                    .await
+                    .transaction_summaries()
+                    .await
+            )
+        })
     }
 }
 

@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
     ops::Range,
 };
 
@@ -15,7 +16,10 @@ use zcash_primitives::{
     consensus::{BlockHeight, NetworkConstants, Parameters},
     legacy::Script,
     memo::Memo,
-    transaction::{components::amount::NonNegativeAmount, TxId},
+    transaction::{
+        components::{amount::NonNegativeAmount, OutPoint},
+        TxId,
+    },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -370,6 +374,51 @@ impl WalletTransaction {
 
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
+    }
+
+    /// Returns nullifers from orchard bundle.
+    /// Returns empty vec if bundle is `None`.
+    pub fn orchard_nullifiers(&self) -> Vec<&orchard::note::Nullifier> {
+        self.transaction.orchard_bundle().map_or_else(
+            || Vec::new(),
+            |bundle| {
+                bundle
+                    .actions()
+                    .iter()
+                    .map(|action| action.nullifier())
+                    .collect::<Vec<_>>()
+            },
+        )
+    }
+
+    /// Returns nullifers from orchard bundle.
+    /// Returns empty vec if bundle is `None`.
+    pub fn sapling_nullifiers(&self) -> Vec<&sapling_crypto::Nullifier> {
+        self.transaction.sapling_bundle().map_or_else(
+            || Vec::new(),
+            |bundle| {
+                bundle
+                    .shielded_spends()
+                    .iter()
+                    .map(|spend| spend.nullifier())
+                    .collect::<Vec<_>>()
+            },
+        )
+    }
+
+    /// Returns outpoints from transparent bundle.
+    /// Returns empty vec if bundle is `None`.
+    pub fn outpoints(&self) -> Vec<&OutPoint> {
+        self.transaction.transparent_bundle().map_or_else(
+            || Vec::new(),
+            |bundle| {
+                bundle
+                    .vin
+                    .iter()
+                    .map(|txin| &txin.prevout)
+                    .collect::<Vec<_>>()
+            },
+        )
     }
 }
 

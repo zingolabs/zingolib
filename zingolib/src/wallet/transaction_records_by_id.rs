@@ -486,61 +486,6 @@ impl TransactionRecordsById {
     //     self.invalidate_transactions(txids_to_remove);
     // }
 
-    /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
-    /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
-    /// the Zcash protocol
-    ///  TODO:   Test and handle 0-value, 0-fee transaction
-    pub(crate) fn transaction_kind(
-        &self,
-        query_record: &TransactionRecord,
-        chain: &ChainType,
-    ) -> TransactionKind {
-        let zfz_address = match chain {
-            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        };
-
-        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
-        let sapling_spends = self
-            .get_sapling_notes_spent_in_tx(query_record, false)
-            .expect("cannot fail. fail_on_miss is set false");
-        let orchard_spends = self
-            .get_orchard_notes_spent_in_tx(query_record, false)
-            .expect("cannot fail. fail_on_miss is set false");
-
-        if transparent_spends.is_empty()
-            && sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.outgoing_tx_data.is_empty()
-        {
-            // no spends and no outgoing tx data
-            TransactionKind::Received
-        } else if !transparent_spends.is_empty()
-            && sapling_spends.is_empty()
-            && orchard_spends.is_empty()
-            && query_record.outgoing_tx_data.is_empty()
-            && (!query_record.orchard_notes().is_empty() | !query_record.sapling_notes().is_empty())
-        {
-            // only transparent spends, no outgoing tx data and notes received
-            // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
-            TransactionKind::Sent(SendType::Shield)
-        } else if query_record.outgoing_tx_data.is_empty()
-            || (query_record.outgoing_tx_data.len() == 1
-                && query_record.outgoing_tx_data.iter().any(|otd| {
-                    otd.recipient_address == *zfz_address
-                        || otd.recipient_ua == Some(zfz_address.to_string())
-                }))
-        {
-            // not Received, this capability created this transaction
-            // not Shield, notes were spent
-            // no outgoing tx data, with the exception of ONLY a Zennies For Zingo! donation
-            TransactionKind::Sent(SendType::SendToSelf)
-        } else {
-            TransactionKind::Sent(SendType::Send)
-        }
-    }
-
     /// TODO: Add Doc Comment Here!
     #[allow(deprecated)]
     #[deprecated(note = "uses unstable deprecated functions")]
