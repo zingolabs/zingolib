@@ -1264,9 +1264,17 @@ impl Command for ValueTransfersCommand {
             .unwrap_or(Ok(false))
             .unwrap_or(false);
 
-        RT.block_on(
-            async move { format!("{}", lightclient.sorted_value_transfers(newer_first).await) },
-        )
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .wallet
+                    .lock()
+                    .await
+                    .sorted_value_transfers(newer_first)
+                    .await
+            )
+        })
     }
 }
 
@@ -1337,31 +1345,32 @@ impl Command for TransactionsCommand {
     }
 }
 
-struct DetailedTransactionsCommand {}
-impl Command for DetailedTransactionsCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Provides a detailed list of transaction summaries related to this wallet in order of blockheight.
+// FIXME: zingo2, re-implement
+// struct DetailedTransactionsCommand {}
+// impl Command for DetailedTransactionsCommand {
+//     fn help(&self) -> &'static str {
+//         indoc! {r#"
+//             Provides a detailed list of transaction summaries related to this wallet in order of blockheight.
 
-            Usage:
-            detailed_transactions
-        "#}
-    }
+//             Usage:
+//             detailed_transactions
+//         "#}
+//     }
 
-    fn short_help(&self) -> &'static str {
-        "Provides a detailed list of transaction summaries related to this wallet in order of blockheight."
-    }
+//     fn short_help(&self) -> &'static str {
+//         "Provides a detailed list of transaction summaries related to this wallet in order of blockheight."
+//     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if !args.is_empty() {
-            return "Error: invalid arguments\nTry 'help detailed_transactions' for correct usage and examples"
-                .to_string();
-        }
-        RT.block_on(
-            async move { format!("{}", lightclient.detailed_transaction_summaries().await) },
-        )
-    }
-}
+//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+//         if !args.is_empty() {
+//             return "Error: invalid arguments\nTry 'help detailed_transactions' for correct usage and examples"
+//                 .to_string();
+//         }
+//         RT.block_on(
+//             async move { format!("{}", lightclient.detailed_transaction_summaries().await) },
+//         )
+//     }
+// }
 
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
@@ -1786,6 +1795,7 @@ impl Command for DeprecatedNoCommand {
 
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
+    // FIXME zingo2, re-impl or delete commented commands
     #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
@@ -1808,10 +1818,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         // ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
-        (
-            "detailed_transactions",
-            Box::new(DetailedTransactionsCommand {}),
-        ),
+        // (
+        //     "detailed_transactions",
+        //     Box::new(DetailedTransactionsCommand {}),
+        // ),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
         ("messages", Box::new(MessagesFilterCommand {})),

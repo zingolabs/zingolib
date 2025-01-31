@@ -231,6 +231,18 @@ impl OutputId {
     }
 }
 
+impl From<&OutPoint> for OutputId {
+    fn from(value: &OutPoint) -> Self {
+        OutputId::from_parts(*value.txid(), value.n() as usize)
+    }
+}
+
+impl Into<OutPoint> for OutputId {
+    fn into(self) -> OutPoint {
+        OutPoint::new(self.txid.into(), self.output_index as u32)
+    }
+}
+
 /// Binary tree map of nullifiers from transaction spends or actions
 #[derive(Debug, Getters, MutGetters)]
 #[getset(get = "pub", get_mut = "pub")]
@@ -424,7 +436,20 @@ impl WalletTransaction {
 
 #[cfg(feature = "wallet_pack")]
 impl WalletTransaction {
-    //
+    /// Returns total sum of all output values.
+    pub fn total_value_received(&self) -> u64 {
+        self.total_output_value::<TransparentCoin>()
+            + self.total_output_value::<SaplingNote>()
+            + self.total_output_value::<OrchardNote>()
+    }
+
+    /// Returns total sum of output values for a given pool.
+    pub fn total_output_value<Op: OutputInterface>(&self) -> u64 {
+        Op::transaction_outputs(self)
+            .iter()
+            .map(|output| output.value())
+            .sum()
+    }
 }
 
 impl std::fmt::Debug for WalletTransaction {
@@ -484,6 +509,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
 
 pub trait OutputInterface: Sized {
     type KeyId;
+    type Input: PartialEq + Eq + PartialOrd + Ord;
 
     /// Output ID
     fn output_id(&self) -> OutputId;
@@ -497,6 +523,19 @@ pub trait OutputInterface: Sized {
 
     /// Note value.
     fn value(&self) -> u64;
+
+    /// Returns the type used to link with transaction inputs for spend detection.
+    /// Returns `None` in the case the nullifier is not available for shielded outputs.
+    ///
+    /// Nullifier for shielded outputs.
+    /// Outpoint for transparent outputs.
+    fn spend_link(&self) -> Option<Self::Input>;
+
+    /// Inputs within `transaction` used to detect an output's spend status.
+    ///
+    /// Nullifiers for shielded outputs.
+    /// Out points for transparent outputs.
+    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input>;
 
     /// Outputs within `transaction`.
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self];
@@ -542,6 +581,7 @@ impl TransparentCoin {
 
 impl OutputInterface for TransparentCoin {
     type KeyId = TransparentAddressId;
+    type Input = OutPoint;
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -557,6 +597,14 @@ impl OutputInterface for TransparentCoin {
 
     fn value(&self) -> u64 {
         self.value.into_u64()
+    }
+
+    fn spend_link(&self) -> Option<Self::Input> {
+        Some(self.output_id.into())
+    }
+
+    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+        transaction.outpoints()
     }
 
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
@@ -585,6 +633,7 @@ pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifie
 
 impl OutputInterface for SaplingNote {
     type KeyId = KeyId;
+    type Input = sapling_crypto::Nullifier;
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -602,6 +651,14 @@ impl OutputInterface for SaplingNote {
         self.note.value().inner()
     }
 
+    fn spend_link(&self) -> Option<Self::Input> {
+        self.nullifier
+    }
+
+    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+        transaction.sapling_nullifiers()
+    }
+
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
         &transaction.sapling_notes
     }
@@ -615,7 +672,7 @@ impl NoteInterface for SaplingNote {
         &self.note
     }
 
-    fn nullifier(&self) -> Option<sapling_crypto::Nullifier> {
+    fn nullifier(&self) -> Option<Self::Nullifier> {
         self.nullifier
     }
 
@@ -632,6 +689,7 @@ pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 impl OutputInterface for OrchardNote {
     type KeyId = KeyId;
+    type Input = orchard::note::Nullifier;
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -649,6 +707,14 @@ impl OutputInterface for OrchardNote {
         self.note.value().inner()
     }
 
+    fn spend_link(&self) -> Option<Self::Input> {
+        self.nullifier
+    }
+
+    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+        transaction.orchard_nullifiers()
+    }
+
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
         &transaction.orchard_notes
     }
@@ -662,7 +728,7 @@ impl NoteInterface for OrchardNote {
         &self.note
     }
 
-    fn nullifier(&self) -> Option<orchard::note::Nullifier> {
+    fn nullifier(&self) -> Option<Self::Nullifier> {
         self.nullifier
     }
 

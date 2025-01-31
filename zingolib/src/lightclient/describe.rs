@@ -4,7 +4,7 @@ use json::{object, JsonValue};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::{encoding::encode_payment_address, PoolType, ShieldedProtocol};
+use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants;
 
 use crate::{
@@ -12,14 +12,10 @@ use crate::{
     wallet::{
         data::{
             finsight,
-            summaries::{
-                SelfSendValueTransfer, SentValueTransfer, ValueTransfer, ValueTransferBuilder,
-                ValueTransferKind, ValueTransfers,
-            },
+            summaries::{SentValueTransfer, ValueTransferKind, ValueTransfers},
         },
         keys::address_from_pubkeyhash,
         notes::Output,
-        transaction_record::{SendType, TransactionKind},
         LightWallet,
     },
     Orchard, Sapling,
@@ -107,7 +103,7 @@ impl LightClient {
 
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.
     pub async fn messages_containing(&self, filter: Option<&str>) -> ValueTransfers {
-        let mut value_transfers = self.sorted_value_transfers(true).await;
+        let mut value_transfers = self.wallet.lock().await.sorted_value_transfers(true).await;
         value_transfers.reverse();
 
         // Filter out VTs where all memos are empty.
@@ -160,7 +156,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let value_transfers = self.sorted_value_transfers(true).await;
+        let value_transfers = self.wallet.lock().await.sorted_value_transfers(true).await;
         let mut memobytes_by_address = HashMap::new();
         for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
@@ -425,7 +421,7 @@ impl LightClient {
     }
 
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let value_transfers = self.sorted_value_transfers(false).await;
+        let value_transfers = self.wallet.lock().await.sorted_value_transfers(false).await;
         let mut amount_by_address = HashMap::new();
         for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {

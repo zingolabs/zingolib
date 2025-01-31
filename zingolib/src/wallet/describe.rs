@@ -3,11 +3,16 @@ use zcash_client_backend::ShieldedProtocol;
 
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zingo_sync::primitives::NoteInterface;
+use zingo_sync::primitives::OrchardNote;
+use zingo_sync::primitives::OutgoingNoteInterface;
 use zingo_sync::primitives::OutputId;
 use zingo_sync::primitives::OutputInterface;
+use zingo_sync::primitives::SaplingNote;
 use zingo_sync::primitives::TransparentCoin;
 use zingo_sync::primitives::WalletTransaction;
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -41,9 +46,12 @@ use super::data::summaries::OrchardNoteSummary;
 use super::data::summaries::OutgoingNoteSummary;
 use super::data::summaries::SaplingNoteSummary;
 use super::data::summaries::TransactionSummaries;
+use super::data::summaries::TransactionSummary;
 use super::data::summaries::TransactionSummaryBuilder;
+use super::data::summaries::TransactionSummaryInterface as _;
 use super::data::summaries::TransparentCoinSummary;
 use super::keys::unified::UnifiedKeyStore;
+use super::transaction_record::SendType;
 use super::transaction_record::TransactionKind;
 
 impl LightWallet {
@@ -243,49 +251,41 @@ impl LightWallet {
             .collect()
     }
 
-    // /// Gets all outputs of a given type spent in the `query_transaction`.
-    // fn find_spends<Op: OutputInterface>(&self, query_transaction: &WalletTransaction) -> Vec<&Op> {
-    //     self.get_all_outputs::<Op>()
-    //         .into_iter()
-    //         .filter(|&output| {
-    //             output
-    //                 .spending_transaction()
-    //                 .map_or(false, |txid| txid == query_transaction.txid())
-    //         })
-    //         .collect()
-    // }
-
     /// Gets all outputs of a given type spent in the `query_transaction`.
-    fn find_transparent_spends(
+    // FIXME: zingo2, implement fail on miss
+    fn find_spends<Op: OutputInterface>(
         &self,
         query_transaction: &WalletTransaction,
-    ) -> Vec<&TransparentCoin> {
-        self.get_all_outputs::<TransparentCoin>()
+    ) -> Vec<&Op> {
+        self.get_all_outputs::<Op>()
             .into_iter()
-            .filter(|&output| {
-                if let Some(txid) = output.spending_transaction() {
+            .filter_map(|output| {
+                output.spending_transaction().and_then(|txid| {
                     if txid == query_transaction.txid() {
-                        if self
+                        let spend = Op::transaction_inputs(self
                             .wallet_transactions
                             .get(&txid)
                             .expect("transaction should exist in the wallet")
-                            .outpoints()
+                            )
                             .into_iter()
-                            .find(|&outpoint| {
-                                OutputId::from_parts(*outpoint.txid(), outpoint.n() as usize)
-                                    == output.output_id
-                            }).is_some() 
-                        {
-                            true
-                        } else {
-                            panic!("output's spending transaction field incorrectly points to transaction which did not spend output!")
+                            .find(|&input| {
+                                output.spend_link().map_or(false, |spend_link|
+                                {
+                                    *input
+                                    == spend_link
+                                })
+                            }); 
+
+                        if spend.is_none() {
+                            // TODO: error handling
+                            panic!("output's spending transaction field incorrectly points to transaction which did not spend output!");
                         }
+
+                        Some(output)
                     } else {
-                        false
+                        None
                     }
-                } else {
-                    false
-                }
+                })
             })
             .collect()
     }
@@ -301,40 +301,46 @@ impl LightWallet {
             ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         };
 
-        let transparent_spends = self.find_spends(transaction);
+        let transparent_spends = self.find_spends::<TransparentCoin>(transaction);
         let sapling_spends = self
-            .get_sapling_notes_spent_in_tx(transaction, false)
-            .expect("cannot fail. fail_on_miss is set false");
+            .find_spends::<SaplingNote>(transaction);
         let orchard_spends = self
-            .get_orchard_notes_spent_in_tx(transaction, false)
-            .expect("cannot fail. fail_on_miss is set false");
+            .find_spends::<OrchardNote>(transaction);
 
         if transparent_spends.is_empty()
             && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && transaction.outgoing_tx_data.is_empty()
+            && transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
         {
             // no spends and no outgoing tx data
             TransactionKind::Received
         } else if !transparent_spends.is_empty()
             && sapling_spends.is_empty()
             && orchard_spends.is_empty()
-            && transaction.outgoing_tx_data.is_empty()
+            && transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
             && (!transaction.orchard_notes().is_empty() | !transaction.sapling_notes().is_empty())
         {
             // only transparent spends, no outgoing tx data and notes received
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
-        } else if transaction.outgoing_tx_data.is_empty()
-            || (transaction.outgoing_tx_data.len() == 1
-                && transaction.outgoing_tx_data.iter().any(|otd| {
-                    otd.recipient_address == *zfz_address
-                        || otd.recipient_ua == Some(zfz_address.to_string())
+        } else if transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
+            || (transaction.outgoing_sapling_notes().len() == 1
+                && transaction.outgoing_sapling_notes().iter().any(|outgoing_note| {
+                    outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                        || outgoing_note.encoded_recipient_unified_address(&self.network) == Some(zfz_address.to_string())
+                }))
+            || (transaction.outgoing_orchard_notes().len() == 1
+                && transaction.outgoing_orchard_notes().iter().any(|outgoing_note| {
+                    outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                        || outgoing_note.encoded_recipient_unified_address(&self.network) == Some(zfz_address.to_string())
                 }))
         {
             // not Received, this capability created this transaction
             // not Shield, notes were spent
-            // no outgoing tx data, with the exception of ONLY a Zennies For Zingo! donation
+            // no outgoing notes, with the exception of ONLY a Zennies For Zingo! donation
             TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
@@ -347,7 +353,7 @@ impl LightWallet {
             .wallet_transactions
             .values()
             .map(|transaction| {
-                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
+                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins, outgoing_sapling_notes, outgoing_orchard_notes) =
                     self.basic_transaction_summary_parts(transaction);
 
                 TransactionSummaryBuilder::new()
@@ -362,23 +368,22 @@ impl LightWallet {
                     .transparent_coins(transparent_coins)
                     .sapling_notes(sapling_notes)
                     .orchard_notes(orchard_notes)
-                    .outgoing_tx_data(transaction.outgoing_tx_data.clone())
+                    .outgoing_sapling_notes(outgoing_sapling_notes)
+                    .outgoing_orchard_notes(outgoing_orchard_notes)
                     .build()
                     .expect("all fields should be populated")
             })
             .collect::<Vec<_>>();
-        drop(transaction_map);
-        drop(wallet);
 
-        transaction_summaries.sort_by(|sum1, sum2| {
-            match sum1.blockheight().cmp(&sum2.blockheight()) {
+        transaction_summaries.sort_by(|summary_a, summary_b| {
+            match summary_a.blockheight().cmp(&summary_b.blockheight()) {
                 Ordering::Equal => {
                     let starts_with_tex = |summary: &TransactionSummary| {
-                        summary.outgoing_tx_data().iter().any(|outgoing_txdata| {
-                            outgoing_txdata.recipient_address.starts_with("tex")
+                        summary.outgoing_sapling_notes().iter().chain(summary.outgoing_orchard_notes().iter()).any(|outgoing_note| {
+                            outgoing_note.recipient.starts_with("tex")
                         })
                     };
-                    match (starts_with_tex(sum1), starts_with_tex(sum2)) {
+                    match (starts_with_tex(summary_a), starts_with_tex(summary_b)) {
                         (true, false) => Ordering::Greater,
                         (false, true) => Ordering::Less,
                         (false, false) | (true, true) => Ordering::Equal,
@@ -414,7 +419,7 @@ impl LightWallet {
             TransactionKind::Received
             | TransactionKind::Sent(SendType::Shield)
             | TransactionKind::Sent(SendType::SendToSelf) => {
-                transaction_record.total_value_received()
+                transaction.total_value_received()
             }
             TransactionKind::Sent(SendType::Send) => transaction_record.value_outgoing(),
         };

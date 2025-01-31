@@ -511,10 +511,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .iter()
         .map(|txin| &txin.prevout)
         .for_each(|outpoint| {
-            outpoint_map.insert(
-                OutputId::from_parts(*outpoint.txid(), outpoint.n() as usize),
-                (block_height, txid),
-            );
+            outpoint_map.insert(OutputId::from(outpoint), (block_height, txid));
         });
 }
 
