@@ -1,6 +1,6 @@
 use std::{
     cmp,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
 };
 
 use orchard::tree::MerkleHashOrchard;
@@ -124,7 +124,7 @@ impl InitialScanData {
 struct ScanData {
     nullifiers: NullifierMap,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    relevant_txids: HashSet<TxId>,
+    decrypted_locators: BTreeSet<Locator>,
     decrypted_note_data: DecryptedNoteData,
     witness_data: WitnessData,
 }
@@ -153,14 +153,18 @@ impl DecryptedNoteData {
 }
 
 /// Scans a given range and returns all data relevant to the specified keys.
+///
 /// `previous_wallet_block` is the wallet block with height [scan_range.start - 1].
+/// `locators` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
+/// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
+/// then `locators` will start empty.
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
-    locators: Vec<Locator>,
+    mut locators: BTreeSet<Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<ScanResults, ScanError>
 where
@@ -200,21 +204,19 @@ where
     let ScanData {
         nullifiers,
         wallet_blocks,
-        mut relevant_txids,
+        mut decrypted_locators,
         decrypted_note_data,
         witness_data,
     } = scan_data;
 
-    locators.into_iter().map(|(_, txid)| txid).for_each(|txid| {
-        relevant_txids.insert(txid);
-    });
+    locators.append(&mut decrypted_locators);
 
     let mut outpoints = OutPointMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         parameters,
         ufvks,
-        relevant_txids,
+        locators,
         decrypted_note_data,
         &wallet_blocks,
         &mut outpoints,

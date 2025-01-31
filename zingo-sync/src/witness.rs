@@ -5,7 +5,11 @@ use std::collections::BTreeMap;
 use getset::{Getters, MutGetters};
 use incrementalmerkletree::{Position, Retention};
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{store::memory::MemoryShardStore, LocatedPrunableTree, ShardTree};
+use shardtree::{
+    store::{memory::MemoryShardStore, ShardStore},
+    LocatedPrunableTree, ShardTree,
+};
+use zcash_client_backend::proto::service::SubtreeRoot;
 use zcash_primitives::consensus::BlockHeight;
 
 const NOTE_COMMITMENT_TREE_DEPTH: u8 = 32;
@@ -33,17 +37,6 @@ impl ShardTrees {
             sapling: ShardTree::new(MemoryShardStore::empty(), MAX_CHECKPOINTS),
             orchard: ShardTree::new(MemoryShardStore::empty(), MAX_CHECKPOINTS),
         }
-    }
-
-    // This lets us 'split the borrow' to operate
-    // on both trees concurrently.
-    pub(crate) fn both_mut(
-        &mut self,
-    ) -> (
-        &mut ShardTree<SaplingShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
-        &mut ShardTree<OrchardShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
-    ) {
-        (&mut self.sapling, &mut self.orchard)
     }
 }
 
@@ -126,4 +119,32 @@ where
     }
 
     Ok(located_tree_data)
+}
+
+pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    subtree_roots: Vec<SubtreeRoot>,
+    shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
+) where
+    S: ShardStore<
+        H: incrementalmerkletree::Hashable + Clone + PartialEq + crate::traits::FromBytes<32>,
+        CheckpointId: Clone + Ord + std::fmt::Debug,
+        Error = std::convert::Infallible,
+    >,
+{
+    subtree_roots
+        .into_iter()
+        .enumerate()
+        .for_each(|(index, tree_root)| {
+            let node = <S::H as crate::traits::FromBytes<32>>::from_bytes(
+                tree_root.root_hash.try_into().unwrap(),
+            );
+            let shard = LocatedPrunableTree::with_root_value(
+                incrementalmerkletree::Address::from_parts(
+                    incrementalmerkletree::Level::new(SHARD_HEIGHT),
+                    index as u64,
+                ),
+                (node, shardtree::RetentionFlags::EPHEMERAL),
+            );
+            shard_tree.store_mut().put_shard(shard).unwrap();
+        });
 }

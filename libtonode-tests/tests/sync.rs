@@ -72,7 +72,8 @@ async fn sync_status() {
     let lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
-        2_700_000,
+        2_750_000,
+        // 2_670_000,
         true,
     )
     .await

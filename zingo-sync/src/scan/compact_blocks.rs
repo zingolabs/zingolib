@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
@@ -11,7 +11,6 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, Parameters},
-    transaction::TxId,
     zip32::AccountId,
 };
 
@@ -31,7 +30,7 @@ use super::{
 mod runners;
 
 // TODO: move parameters to config module
-const TRIAL_DECRYPT_TASK_SIZE: usize = 500;
+const TRIAL_DECRYPT_TASK_SIZE: usize = 1_000;
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -49,7 +48,7 @@ where
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
-    let mut relevant_txids: HashSet<TxId> = HashSet::new();
+    let mut decrypted_locators = BTreeSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut witness_data = WitnessData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
@@ -62,6 +61,9 @@ where
     for block in &compact_blocks {
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
+
+        let block_height =
+            BlockHeight::from_u32(block.height.try_into().expect("should never overflow"));
 
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
@@ -77,10 +79,10 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                relevant_txids.insert(output_id.txid());
+                decrypted_locators.insert((block_height, output_id.txid()));
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                relevant_txids.insert(output_id.txid());
+                decrypted_locators.insert((block_height, output_id.txid()));
             });
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
@@ -145,7 +147,7 @@ where
     Ok(ScanData {
         nullifiers,
         wallet_blocks,
-        relevant_txids,
+        decrypted_locators,
         decrypted_note_data,
         witness_data,
     })

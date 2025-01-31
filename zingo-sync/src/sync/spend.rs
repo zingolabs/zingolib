@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use tokio::sync::mpsc;
+use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
     consensus::{self, BlockHeight},
@@ -17,11 +18,14 @@ use crate::{
     traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
 };
 
+use super::state;
+
 /// Helper function for handling spend detection and the spend status of notes.
 ///
-/// Locates any nullifiers of notes in the wallet's transactions which match a nullifier in the wallet's nullifier map.
+/// Detects if any derived nullifiers of notes in the wallet's transactions match a nullifier in the wallet's nullifier map.
 /// If a spend is detected, the nullifier is removed from the nullifier map and added to the map of spend locators.
-/// The spend locators are then used to fetch and scan the transactions with detected spends.
+/// The spend locators are used to set the surrounding shard block ranges to be prioritised for scanning and then to
+/// fetch and scan the transactions with detected spends in the case that they evaded trial decryption.
 /// Finally, all notes that were detected as spent are updated with the located spending transaction.
 pub(super) async fn update_shielded_spends<P, W>(
     consensus_parameters: &P,
@@ -41,6 +45,22 @@ where
         sapling_derived_nullifiers,
         orchard_derived_nullifiers,
     );
+
+    let sync_state = wallet.get_sync_state_mut().unwrap();
+    state::set_found_note_scan_ranges(
+        consensus_parameters,
+        sync_state,
+        ShieldedProtocol::Sapling,
+        sapling_spend_locators.values().cloned(),
+    )
+    .unwrap();
+    state::set_found_note_scan_ranges(
+        consensus_parameters,
+        sync_state,
+        ShieldedProtocol::Orchard,
+        orchard_spend_locators.values().cloned(),
+    )
+    .unwrap();
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
     scan_located_transactions(

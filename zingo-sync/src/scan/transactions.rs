@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use incrementalmerkletree::Position;
 use orchard::{
@@ -71,15 +71,15 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    relevant_txids: HashSet<TxId>,
+    locators: BTreeSet<Locator>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut OutPointMap,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ()> {
-    let mut wallet_transactions = HashMap::with_capacity(relevant_txids.len());
+    let mut wallet_transactions = HashMap::with_capacity(locators.len());
 
-    for txid in relevant_txids {
+    for (_, txid) in locators {
         let (transaction, block_height) =
             client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
                 .await
@@ -519,9 +519,6 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
 }
 
 /// For each `locator`, fetch the transaction and then scan and append to the wallet transactions.
-///
-/// This is not intended to be used outside of the context of processing scan results of a scanned range.
-/// This function will panic if the wallet block for a given locator does not exist in the wallet.
 pub(crate) async fn scan_located_transactions<L, P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
@@ -536,19 +533,24 @@ where
 {
     let wallet_transactions = wallet.get_wallet_transactions().unwrap();
     let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
-    let mut spending_txids = HashSet::new();
+    let mut spending_locators = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
-    for (block_height, txid) in locators {
+    for locator in locators {
+        let block_height = locator.0;
+        let txid = locator.1;
+
         // skip if transaction already exists in the wallet
         if wallet_txids.contains(&txid) {
             continue;
         }
 
-        spending_txids.insert(txid);
+        spending_locators.insert(locator);
+        // TODO: fetch block from server if not in wallet so wallet blocks added to wallet while scanning out of order
+        // don't need to be held in memory
         wallet_blocks.insert(
             block_height,
             wallet.get_wallet_block(block_height).expect(
-                "wallet block should be in the wallet due to the context of this functions purpose",
+                "wallet block should be in the wallet as nullifiers are mapped during scanning",
             ),
         );
     }
@@ -558,7 +560,7 @@ where
         fetch_request_sender,
         consensus_parameters,
         ufvks,
-        spending_txids,
+        spending_locators,
         DecryptedNoteData::new(),
         &wallet_blocks,
         &mut outpoint_map,

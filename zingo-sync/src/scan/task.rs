@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -318,7 +318,7 @@ where
 pub(crate) struct ScanTask {
     scan_range: ScanRange,
     previous_wallet_block: Option<WalletBlock>,
-    locators: Vec<Locator>,
+    locators: BTreeSet<Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 }
 
@@ -326,7 +326,7 @@ impl ScanTask {
     pub(crate) fn from_parts(
         scan_range: ScanRange,
         previous_wallet_block: Option<WalletBlock>,
-        locators: Vec<Locator>,
+        locators: BTreeSet<Locator>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
     ) -> Self {
         Self {
