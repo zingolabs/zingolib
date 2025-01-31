@@ -450,6 +450,25 @@ impl WalletTransaction {
             .map(|output| output.value())
             .sum()
     }
+
+    pub fn total_shielded_value_sent(&self) -> u64 {
+        // let output_sum = self
+        //     .vout
+        //     .iter()
+        //     .map(|p| Amount::from(p.value))
+        //     .sum::<Option<Amount>>()
+        //     .ok_or(BalanceError::Overflow)?;
+
+        self.total_outgoing_note_value::<OutgoingSaplingNote>()
+            + self.total_outgoing_note_value::<OutgoingOrchardNote>()
+    }
+
+    pub fn total_outgoing_note_value<Op: OutgoingNoteInterface>(&self) -> u64 {
+        Op::transaction_outgoing_notes(self)
+            .iter()
+            .map(|note| note.value())
+            .sum()
+    }
 }
 
 impl std::fmt::Debug for WalletTransaction {
@@ -770,7 +789,7 @@ pub trait OutgoingNoteInterface: Sized {
         P: Parameters + NetworkConstants;
 
     /// Outgoing notes within `transaction`.
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self];
+    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self];
 }
 
 /// Note sent from this capability to a recipient
@@ -855,7 +874,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_sapling_notes
     }
 }
@@ -901,7 +920,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_orchard_notes
     }
 }
