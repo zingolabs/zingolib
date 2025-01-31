@@ -734,7 +734,7 @@ where
     }
 }
 
-/// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds the to
+/// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds them to
 /// `sync_state`.
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
