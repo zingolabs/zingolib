@@ -29,7 +29,10 @@ pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<BlockId>),
     /// Gets the specified range of compact blocks from the server (end exclusive).
-    CompactBlockRange(oneshot::Sender<Vec<CompactBlock>>, Range<BlockHeight>),
+    CompactBlockRange(
+        oneshot::Sender<tonic::Streaming<CompactBlock>>,
+        Range<BlockHeight>,
+    ),
     /// Gets the tree states for a specified block height.
     TreeState(oneshot::Sender<TreeState>, BlockHeight),
     /// Get a full transaction by txid.
@@ -74,14 +77,14 @@ pub async fn get_chain_height(
 pub async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<Vec<CompactBlock>, ()> {
+) -> Result<tonic::Streaming<CompactBlock>, ()> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
         .unwrap();
-    let compact_blocks = reply_receiver.await.unwrap();
+    let block_stream = reply_receiver.await.unwrap();
 
-    Ok(compact_blocks)
+    Ok(block_stream)
 }
 
 /// Gets the stream of shards (subtree roots)

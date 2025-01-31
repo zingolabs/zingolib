@@ -518,8 +518,15 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         });
 }
 
-/// For each `locator`, fetch the transaction and then scan and append to the wallet transactions.
-pub(crate) async fn scan_located_transactions<L, P, W>(
+/// For each locator, fetch the spending transaction and then scan and append to the wallet transactions.
+///
+/// This is only intended to be used for transactions that do not contain any incoming notes and therefore evaded
+/// trial decryption.
+/// For targetted rescan of transactions by locator, locators should be added to the wallet using the `TODO` API and
+/// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
+/// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
+/// spending.
+pub(crate) async fn scan_spending_transactions<L, P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
     wallet: &mut W,
@@ -545,8 +552,6 @@ where
         }
 
         spending_locators.insert(locator);
-        // TODO: fetch block from server if not in wallet so wallet blocks added to wallet while scanning out of order
-        // don't need to be held in memory
         wallet_blocks.insert(
             block_height,
             wallet.get_wallet_block(block_height).expect(

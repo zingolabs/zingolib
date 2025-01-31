@@ -37,15 +37,12 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-// TODO: move parameters to config module
-// TODO; replace fixed batches with variable batches with fixed memory size
-const BATCH_SIZE: u32 = 10_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
-const MAX_VERIFICATION_WINDOW: u32 = 100; // TODO: fail if re-org goes beyond this window
+const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>, // TODO: change underlying service for generic
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
 ) -> Result<(), SyncError>
@@ -53,7 +50,7 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    tracing::info!("Syncing wallet...");
+    tracing::info!("Starting sync...");
 
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
@@ -140,12 +137,17 @@ where
         fetch_request_sender.clone(),
         ufvks.clone(),
     );
-    scanner.spawn_workers();
+    scanner.launch();
 
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
     let mut wallet_guard = wallet.lock().await;
+    let initial_verification_height = wallet_guard
+        .get_sync_state()
+        .unwrap()
+        .highest_scanned_height()
+        + 1;
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
         tokio::select! {
@@ -157,6 +159,7 @@ where
                     &ufvks,
                     scan_range,
                     scan_results,
+                    initial_verification_height,
                 )
                 .await
                 .unwrap();
@@ -186,8 +189,6 @@ where
             }
         }
     }
-
-    // TODO: clear locators
 
     drop(wallet_guard);
     drop(scanner);
@@ -285,6 +286,7 @@ async fn process_scan_results<P, W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
+    initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError>
 where
     P: consensus::Parameters,
@@ -302,13 +304,12 @@ where
             )
             .await
             .unwrap();
-            remove_irrelevant_data(wallet, &scan_range).unwrap();
-            state::set_scan_priority(
+            state::set_scanned_scan_range(
                 wallet.get_sync_state_mut().unwrap(),
-                scan_range.block_range(),
-                ScanPriority::Scanned,
+                scan_range.block_range().clone(),
             )
             .unwrap();
+            remove_irrelevant_data(wallet).unwrap();
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
@@ -328,6 +329,15 @@ where
                     state::VerifyEnd::VerifyHighest,
                 );
                 truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1).unwrap();
+
+                if initial_verification_height - scan_range_to_verify.block_range().start
+                    > MAX_VERIFICATION_WINDOW
+                {
+                    panic!(
+                        "sync failed. re-org of larger than {} blocks detected",
+                        MAX_VERIFICATION_WINDOW
+                    );
+                }
             } else {
                 scan_results?;
             }
@@ -495,28 +505,33 @@ where
     wallet
         .update_shard_trees(sapling_located_trees, orchard_located_trees)
         .unwrap();
-    // TODO: add trait to save wallet data to persistence for in-memory wallets
 
     Ok(())
 }
 
-// TODO: replace this function with a filter on the data added to wallet
-fn remove_irrelevant_data<W>(wallet: &mut W, scan_range: &ScanRange) -> Result<(), ()>
+fn remove_irrelevant_data<W>(wallet: &mut W) -> Result<(), ()>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
-    if scan_range.priority() != ScanPriority::Historic {
-        return Ok(());
-    }
+    let sync_state = wallet.get_sync_state().unwrap();
+    let fully_scanned_height = sync_state.fully_scanned_height();
+    let highest_scanned_height = sync_state.highest_scanned_height();
+    let sync_start_height = sync_state.initial_sync_state().sync_start_height();
 
-    let wallet_height = wallet
-        .get_sync_state()
-        .unwrap()
+    let scanned_block_range_boundaries = sync_state
         .scan_ranges()
-        .last()
-        .expect("wallet should always have scan ranges after sync has started")
-        .block_range()
-        .end;
+        .iter()
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                && scan_range.block_range().start >= sync_start_height
+        })
+        .flat_map(|scan_range| {
+            vec![
+                scan_range.block_range().start,
+                scan_range.block_range().end - 1,
+            ]
+        })
+        .collect::<Vec<_>>();
 
     let wallet_transaction_heights = wallet
         .get_wallet_transactions()
@@ -524,21 +539,28 @@ where
         .values()
         .filter_map(|tx| tx.confirmation_status().get_confirmed_height())
         .collect::<Vec<_>>();
+
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
-        *height >= scan_range.block_range().end - 1
-            || *height >= wallet_height - 100
+        *height >= sync_start_height - 1
+            || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+            || scanned_block_range_boundaries.contains(height)
             || wallet_transaction_heights.contains(height)
     });
     wallet
         .get_nullifiers_mut()
         .unwrap()
         .sapling_mut()
-        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+        .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()
         .unwrap()
         .orchard_mut()
-        .retain(|_, (height, _)| *height >= scan_range.block_range().end);
+        .retain(|_, (height, _)| *height > fully_scanned_height);
+    wallet
+        .get_sync_state_mut()
+        .unwrap()
+        .locators_mut()
+        .retain(|(height, _)| *height > fully_scanned_height);
 
     Ok(())
 }

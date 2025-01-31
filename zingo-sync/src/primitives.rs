@@ -131,7 +131,28 @@ impl SyncState {
         }
     }
 
+    /// Returns the highest block height that has been scanned.
+    ///
+    /// If no scan ranges have been scanned, returns the block below the wallet birthday.
+    /// Will panic if called before scan ranges are updated for the first time.
+    pub fn highest_scanned_height(&self) -> BlockHeight {
+        if let Some(last_scanned_range) = self
+            .scan_ranges()
+            .iter()
+            .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+            .last()
+        {
+            last_scanned_range.block_range().end - 1
+        } else {
+            self.wallet_birthday()
+                .expect("scan ranges always non-empty")
+                - 1
+        }
+    }
+
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
+    ///
+    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     pub fn wallet_birthday(&self) -> Option<BlockHeight> {
         self.scan_ranges()
             .first()

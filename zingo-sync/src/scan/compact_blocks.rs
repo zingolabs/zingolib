@@ -1,8 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    cmp,
+    collections::{BTreeMap, BTreeSet, HashMap},
+};
 
 use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use tokio::sync::mpsc;
 use zcash_client_backend::proto::compact_formats::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
 };
@@ -10,11 +14,12 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, Parameters},
+    consensus::{self, BlockHeight, Parameters},
     zip32::AccountId,
 };
 
 use crate::{
+    client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
     witness::WitnessData,
@@ -30,7 +35,7 @@ use super::{
 mod runners;
 
 // TODO: move parameters to config module
-const TRIAL_DECRYPT_TASK_SIZE: usize = 1_000;
+const TRIAL_DECRYPT_TASK_SIZE: usize = 1_024; // 2^10
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -41,7 +46,11 @@ pub(crate) fn scan_compact_blocks<P>(
 where
     P: Parameters + Sync + Send + 'static,
 {
-    check_continuity(&compact_blocks, initial_scan_data.previous_block.as_ref())?;
+    check_continuity(
+        &compact_blocks,
+        initial_scan_data.start_seam_block.as_ref(),
+        initial_scan_data.end_seam_block.as_ref(),
+    )?;
 
     let scanning_keys = ScanningKeys::from_account_ufvks(ufvks.clone());
     let mut runners = trial_decrypt(parameters, &scanning_keys, &compact_blocks).unwrap();
@@ -62,8 +71,7 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height =
-            BlockHeight::from_u32(block.height.try_into().expect("should never overflow"));
+        let block_height = block.height();
 
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
@@ -170,19 +178,21 @@ where
     Ok(runners)
 }
 
-// checks height and hash continuity of a batch of compact blocks.
-// takes the last wallet compact block of the adjacent lower scan range, if available.
-// TODO: remove option and revisit scanner flow to use the last block of previously scanned batch to check continuity
+/// Checks height and hash continuity of a batch of compact blocks.
+///
+/// If available, also checks continuity with the blocks adjacent to the `compact_blocks` forming the start and end
+/// seams of the scan ranges.
 fn check_continuity(
     compact_blocks: &[CompactBlock],
-    previous_compact_block: Option<&WalletBlock>,
+    start_seam_block: Option<&WalletBlock>,
+    end_seam_block: Option<&WalletBlock>,
 ) -> Result<(), ContinuityError> {
     let mut prev_height: Option<BlockHeight> = None;
     let mut prev_hash: Option<BlockHash> = None;
 
-    if let Some(prev) = previous_compact_block {
-        prev_height = Some(prev.block_height());
-        prev_hash = Some(prev.block_hash());
+    if let Some(start_seam_block) = start_seam_block {
+        prev_height = Some(start_seam_block.block_height());
+        prev_hash = Some(start_seam_block.block_hash());
     }
 
     for block in compact_blocks {
@@ -207,6 +217,25 @@ fn check_continuity(
 
         prev_height = Some(block.height());
         prev_hash = Some(block.hash());
+    }
+
+    if let Some(end_seam_block) = end_seam_block {
+        let prev_height = prev_height.expect("compact blocks should not be empty");
+        if end_seam_block.block_height() != prev_height + 1 {
+            return Err(ContinuityError::HeightDiscontinuity {
+                height: end_seam_block.block_height(),
+                previous_block_height: prev_height,
+            });
+        }
+
+        let prev_hash = prev_hash.expect("compact blocks should not be empty");
+        if end_seam_block.prev_hash() != prev_hash {
+            return Err(ContinuityError::HashDiscontinuity {
+                height: end_seam_block.block_height(),
+                prev_hash: end_seam_block.prev_hash(),
+                previous_block_hash: prev_hash,
+            });
+        }
     }
 
     Ok(())
@@ -383,4 +412,70 @@ fn collect_nullifiers(
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     Ok(())
+}
+
+pub(super) async fn calculate_block_tree_boundaries<P>(
+    consensus_parameters: &P,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    compact_block: &CompactBlock,
+) -> TreeBoundaries
+where
+    P: consensus::Parameters + Sync + Send + 'static,
+{
+    let (sapling_final_tree_size, orchard_final_tree_size) =
+        if let Some(chain_metadata) = compact_block.chain_metadata {
+            (
+                chain_metadata.sapling_commitment_tree_size,
+                chain_metadata.orchard_commitment_tree_size,
+            )
+        } else {
+            let sapling_activation_height = consensus_parameters
+                .activation_height(consensus::NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height");
+
+            match compact_block.height().cmp(&sapling_activation_height) {
+                cmp::Ordering::Greater => {
+                    let frontiers =
+                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
+                            .await
+                            .unwrap();
+                    (
+                        frontiers
+                            .final_sapling_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                        frontiers
+                            .final_orchard_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                    )
+                }
+                cmp::Ordering::Equal => (0, 0),
+                cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+            }
+        };
+
+    let sapling_output_count: u32 = compact_block
+        .vtx
+        .iter()
+        .map(|tx| tx.outputs.len())
+        .sum::<usize>()
+        .try_into()
+        .expect("Sapling output count cannot exceed a u32");
+    let orchard_output_count: u32 = compact_block
+        .vtx
+        .iter()
+        .map(|tx| tx.actions.len())
+        .sum::<usize>()
+        .try_into()
+        .expect("Sapling output count cannot exceed a u32");
+
+    TreeBoundaries {
+        sapling_initial_tree_size: sapling_final_tree_size - sapling_output_count,
+        sapling_final_tree_size,
+        orchard_initial_tree_size: orchard_final_tree_size - orchard_output_count,
+        orchard_final_tree_size,
+    }
 }
