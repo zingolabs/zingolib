@@ -88,7 +88,7 @@ where
     ///
     /// When the worker is running it will wait for a scan task.
     pub(crate) fn spawn_worker(&mut self) {
-        tracing::info!("Spawning worker {}", self.unique_id);
+        tracing::debug!("Spawning worker {}", self.unique_id);
         let mut worker = ScanWorker::new(
             self.unique_id,
             self.consensus_parameters.clone(),
@@ -286,7 +286,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) -> Result<(), ()> {
-        tracing::info!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+        tracing::debug!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
         self.scan_task_sender
             .clone()
             .unwrap()
@@ -301,7 +301,7 @@ where
     ///
     /// This should always be called in the context of the scanner as it must be also be removed from the worker pool.
     async fn shutdown(&mut self) -> Result<(), JoinError> {
-        tracing::info!("Shutting down worker {}", self.id);
+        tracing::debug!("Shutting down worker {}", self.id);
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
         }

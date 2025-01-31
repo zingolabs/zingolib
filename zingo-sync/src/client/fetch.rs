@@ -103,17 +103,17 @@ async fn fetch_from_server(
 ) -> Result<(), ()> {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
-            tracing::info!("Fetching chain tip.");
+            tracing::debug!("Fetching chain tip.");
             let block_id = get_latest_block(client).await.unwrap();
             sender.send(block_id).unwrap();
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
-            tracing::info!("Fetching compact blocks. {:?}", &block_range);
+            tracing::debug!("Fetching compact blocks. {:?}", &block_range);
             let compact_blocks = get_block_range(client, block_range).await.unwrap();
             sender.send(compact_blocks).unwrap();
         }
         FetchRequest::GetSubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
-            tracing::info!(
+            tracing::debug!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
                 start_index,
                 shielded_protocol
@@ -124,19 +124,19 @@ async fn fetch_from_server(
             sender.send(shards).unwrap();
         }
         FetchRequest::TreeState(sender, block_height) => {
-            tracing::info!("Fetching tree state. {:?}", &block_height);
+            tracing::debug!("Fetching tree state. {:?}", &block_height);
             let tree_state = get_tree_state(client, block_height).await.unwrap();
             sender.send(tree_state).unwrap();
         }
         FetchRequest::Transaction(sender, txid) => {
-            tracing::info!("Fetching transaction. {:?}", txid);
+            tracing::debug!("Fetching transaction. {:?}", txid);
             let transaction = get_transaction(client, consensus_parameters, txid)
                 .await
                 .unwrap();
             sender.send(transaction).unwrap();
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
-            tracing::info!(
+            tracing::debug!(
                 "Fetching unspent transparent output metadata from {:?} for addresses:\n{:?}",
                 &start_height,
                 &addresses
@@ -147,7 +147,7 @@ async fn fetch_from_server(
             sender.send(utxo_metadata).unwrap();
         }
         FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
-            tracing::info!(
+            tracing::debug!(
                 "Fetching raw transactions in block range {:?} for address {:?}",
                 &block_range,
                 &address

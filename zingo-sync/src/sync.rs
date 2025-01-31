@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap};
+use crate::primitives::{NullifierMap, OutPointMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -66,8 +66,18 @@ where
         .await
     });
 
-    let mut wallet_lock = wallet.lock().await;
-    let wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_lock).unwrap();
+    // create channel for receiving mempool transactions and launch mempool monitor
+    let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(10);
+    let shutdown_mempool = Arc::new(AtomicBool::new(false));
+    let shutdown_mempool_clone = shutdown_mempool.clone();
+    let mempool_handle = tokio::spawn(async move {
+        mempool_monitor(client, mempool_transaction_sender, shutdown_mempool_clone).await
+    });
+
+    // pre-scan initialisation
+    let mut wallet_guard = wallet.lock().await;
+
+    let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard).unwrap();
     let chain_height = client::get_chain_height(fetch_request_sender.clone())
         .await
         .unwrap();
@@ -78,21 +88,15 @@ where
                 MAX_VERIFICATION_WINDOW
             );
         }
-        truncate_wallet_data(&mut *wallet_lock, chain_height).unwrap();
+        truncate_wallet_data(&mut *wallet_guard, chain_height).unwrap();
+        wallet_height = chain_height;
     }
-    let ufvks = wallet_lock.get_unified_full_viewing_keys().unwrap();
 
-    // create channel for receiving mempool transactions and launch mempool monitor
-    let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(10);
-    let shutdown_mempool = Arc::new(AtomicBool::new(false));
-    let shutdown_mempool_clone = shutdown_mempool.clone();
-    let mempool_handle = tokio::spawn(async move {
-        mempool_monitor(client, mempool_transaction_sender, shutdown_mempool_clone).await
-    });
+    let ufvks = wallet_guard.get_unified_full_viewing_keys().unwrap();
 
     transparent::update_addresses_and_locators(
         consensus_parameters,
-        &mut *wallet_lock,
+        &mut *wallet_guard,
         fetch_request_sender.clone(),
         &ufvks,
         wallet_height,
@@ -103,14 +107,22 @@ where
     state::update_scan_ranges(
         wallet_height,
         chain_height,
-        wallet_lock.get_sync_state_mut().unwrap(),
+        wallet_guard.get_sync_state_mut().unwrap(),
     )
     .await
     .unwrap();
 
-    update_subtree_roots(fetch_request_sender.clone(), &mut *wallet_lock).await;
+    state::set_initial_state(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+        chain_height,
+    )
+    .await;
 
-    drop(wallet_lock);
+    update_subtree_roots(fetch_request_sender.clone(), &mut *wallet_guard).await;
+
+    drop(wallet_guard);
 
     // create channel for receiving scan results and launch scanner
     let (scan_results_sender, mut scan_results_receiver) = mpsc::unbounded_channel();
@@ -122,18 +134,17 @@ where
     );
     scanner.spawn_workers();
 
-    // TODO: consider what happens when there is no verification range i.e. all ranges already scanned
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
-    let mut wallet_lock = wallet.lock().await;
+    let mut wallet_guard = wallet.lock().await;
     let mut interval = tokio::time::interval(Duration::from_millis(30));
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
                 process_scan_results(
                     consensus_parameters,
-                    &mut *wallet_lock,
+                    &mut *wallet_guard,
                     fetch_request_sender.clone(),
                     &ufvks,
                     scan_range,
@@ -143,24 +154,24 @@ where
                 .unwrap();
 
                 // allow tasks outside the sync engine access to the wallet data
-                drop(wallet_lock);
-                wallet_lock = wallet.lock().await;
+                drop(wallet_guard);
+                wallet_guard = wallet.lock().await;
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
-                    &mut *wallet_lock,
+                    &mut *wallet_guard,
                     raw_transaction,
                 )
                 .await;
             }
 
             _update_scanner = interval.tick() => {
-                scanner.update(&mut *wallet_lock, shutdown_mempool.clone()).await;
+                scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await;
 
-                if sync_complete(&scanner, &scan_results_receiver, &*wallet_lock) {
+                if sync_complete(&scanner, &scan_results_receiver, &*wallet_guard) {
                     tracing::info!("Sync complete.");
                     break;
                 }
@@ -168,13 +179,74 @@ where
         }
     }
 
-    drop(wallet_lock);
+    // TODO: clear locators
+
+    drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
     mempool_handle.await.unwrap().unwrap();
     fetcher_handle.await.unwrap().unwrap();
 
     Ok(())
+}
+
+/// Obtains the mutex guard to the wallet and creates a [`crate::primitives::SyncStatus`] from the wallet's current
+/// [`crate::primitives::SyncState`].
+///
+/// Designed to be called during the sync process with minimal interruption.
+pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
+where
+    W: SyncWallet + SyncBlocks,
+{
+    let wallet_guard = wallet.lock().await;
+    let sync_state = wallet_guard.get_sync_state().unwrap().clone();
+
+    let unscanned_blocks = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        .map(|scan_range| scan_range.block_range())
+        .fold(0, |acc, block_range| {
+            acc + (block_range.end - block_range.start)
+        });
+    let scanned_blocks = sync_state
+        .initial_sync_state()
+        .total_blocks_to_scan()
+        .saturating_sub(unscanned_blocks);
+    let percentage_blocks_scanned = (scanned_blocks as f32
+        / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
+        * 100.0;
+
+    let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
+        state::calculate_unscanned_outputs(&*wallet_guard);
+    let scanned_sapling_outputs = sync_state
+        .initial_sync_state()
+        .total_sapling_outputs_to_scan()
+        .saturating_sub(unscanned_sapling_outputs);
+    let scanned_orchard_outputs = sync_state
+        .initial_sync_state()
+        .total_orchard_outputs_to_scan()
+        .saturating_sub(unscanned_orchard_outputs);
+    let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
+        / (sync_state
+            .initial_sync_state()
+            .total_sapling_outputs_to_scan()
+            + sync_state
+                .initial_sync_state()
+                .total_orchard_outputs_to_scan()) as f32)
+        * 100.0;
+
+    SyncStatus {
+        scan_ranges: sync_state.scan_ranges().clone(),
+        scanned_blocks,
+        unscanned_blocks,
+        percentage_blocks_scanned,
+        scanned_sapling_outputs,
+        unscanned_sapling_outputs,
+        scanned_orchard_outputs,
+        unscanned_orchard_outputs,
+        percentage_outputs_scanned,
+    }
 }
 
 async fn update_subtree_roots<W>(
@@ -300,7 +372,7 @@ where
                 ScanPriority::Scanned,
             )
             .unwrap();
-            tracing::info!("Scan results processed.");
+            tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
             tracing::info!("Re-org detected.");
@@ -347,7 +419,7 @@ async fn process_mempool_transaction<W>(
     )
     .unwrap();
 
-    tracing::info!(
+    tracing::debug!(
         "mempool received txid {} at height {}",
         transaction.txid(),
         block_height
