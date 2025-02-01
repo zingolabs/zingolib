@@ -1,7 +1,4 @@
-use std::{
-    cmp,
-    collections::{BTreeMap, BTreeSet, HashMap},
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use orchard::tree::MerkleHashOrchard;
 use task::ScanTask;
