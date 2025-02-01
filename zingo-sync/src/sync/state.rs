@@ -75,13 +75,14 @@ fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BT
         .collect()
 }
 
-/// Update scan ranges for scanning
+/// Update scan ranges for scanning.
 pub(super) async fn update_scan_ranges(
     consensus_parameters: &impl consensus::Parameters,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) -> Result<(), ()> {
+    merge_scanned_ranges(sync_state);
     reset_scan_ranges(sync_state)?;
     create_scan_range(wallet_height, chain_height, sync_state).await?;
     let locators = sync_state.locators().clone();
@@ -98,9 +99,47 @@ pub(super) async fn update_scan_ranges(
         set_verify_scan_range(sync_state, verification_height, VerifyEnd::VerifyLowest);
     }
 
-    // TODO: add logic to merge scan ranges
-
     Ok(())
+}
+
+/// Merges all scanned ranges up to the fully scanned height into a single scan range.
+fn merge_scanned_ranges(sync_state: &mut SyncState) {
+    let fully_scanned_ranges = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter(|(_, scan_range)| {
+            scan_range.priority() == ScanPriority::Scanned
+                && scan_range.block_range().end - 1 <= sync_state.fully_scanned_height()
+        })
+        .collect::<Vec<_>>();
+
+    if fully_scanned_ranges.is_empty() {
+        return;
+    }
+
+    let (first_range_index, first_range) = fully_scanned_ranges
+        .first()
+        .expect("fn would have returned if empty")
+        .clone();
+    let (last_range_index, last_range) = fully_scanned_ranges
+        .last()
+        .expect("fn would have returned if empty")
+        .clone();
+
+    assert_eq!(first_range_index, 0);
+
+    sync_state.scan_ranges_mut().splice(
+        first_range_index..=last_range_index,
+        vec![ScanRange::from_parts(
+            Range {
+                start: first_range.block_range().start,
+                end: last_range.block_range().end,
+            },
+            ScanPriority::Scanned,
+        )],
+    );
 }
 
 /// Create scan range between the wallet height and the chain height from the server.
