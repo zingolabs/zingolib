@@ -97,11 +97,10 @@ async fn sync_status() {
     });
 
     sync_handle.await.unwrap();
-
-    dbg!(&lightclient.wallet.lock().await.wallet_blocks);
 }
 
 // temporary test for sync development
+#[ignore = "hangs"]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();

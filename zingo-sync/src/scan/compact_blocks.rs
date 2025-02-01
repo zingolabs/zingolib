@@ -1,8 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    cmp,
+    collections::{BTreeMap, BTreeSet, HashMap},
+};
 
 use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use tokio::sync::mpsc;
 use zcash_client_backend::proto::compact_formats::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
 };
@@ -10,11 +14,12 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, Parameters},
+    consensus::{self, BlockHeight, Parameters},
     zip32::AccountId,
 };
 
 use crate::{
+    client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     primitives::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -30,7 +35,7 @@ use super::{
 mod runners;
 
 // TODO: move parameters to config module
-const TRIAL_DECRYPT_TASK_SIZE: usize = 1_000;
+const TRIAL_DECRYPT_TASK_SIZE: usize = 1_024; // 2^10
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
@@ -66,8 +71,7 @@ where
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
-        let block_height =
-            BlockHeight::from_u32(block.height.try_into().expect("should never overflow"));
+        let block_height = block.height();
 
         let mut transactions = block.vtx.iter().peekable();
         while let Some(transaction) = transactions.next() {
@@ -408,4 +412,70 @@ fn collect_nullifiers(
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     Ok(())
+}
+
+pub(super) async fn calculate_block_tree_boundaries<P>(
+    consensus_parameters: &P,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    compact_block: &CompactBlock,
+) -> TreeBounds
+where
+    P: consensus::Parameters + Sync + Send + 'static,
+{
+    let (sapling_final_tree_size, orchard_final_tree_size) =
+        if let Some(chain_metadata) = compact_block.chain_metadata {
+            (
+                chain_metadata.sapling_commitment_tree_size,
+                chain_metadata.orchard_commitment_tree_size,
+            )
+        } else {
+            let sapling_activation_height = consensus_parameters
+                .activation_height(consensus::NetworkUpgrade::Sapling)
+                .expect("should have some sapling activation height");
+
+            match compact_block.height().cmp(&sapling_activation_height) {
+                cmp::Ordering::Greater => {
+                    let frontiers =
+                        client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
+                            .await
+                            .unwrap();
+                    (
+                        frontiers
+                            .final_sapling_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                        frontiers
+                            .final_orchard_tree()
+                            .tree_size()
+                            .try_into()
+                            .expect("should not be more than 2^32 note commitments in the tree!"),
+                    )
+                }
+                cmp::Ordering::Equal => (0, 0),
+                cmp::Ordering::Less => panic!("pre-sapling not supported!"),
+            }
+        };
+
+    let sapling_output_count: u32 = compact_block
+        .vtx
+        .iter()
+        .map(|tx| tx.outputs.len())
+        .sum::<usize>()
+        .try_into()
+        .expect("Sapling output count cannot exceed a u32");
+    let orchard_output_count: u32 = compact_block
+        .vtx
+        .iter()
+        .map(|tx| tx.actions.len())
+        .sum::<usize>()
+        .try_into()
+        .expect("Sapling output count cannot exceed a u32");
+
+    TreeBounds {
+        sapling_initial_tree_size: sapling_final_tree_size - sapling_output_count,
+        sapling_final_tree_size,
+        orchard_initial_tree_size: orchard_final_tree_size - orchard_output_count,
+        orchard_final_tree_size,
+    }
 }

@@ -37,15 +37,12 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-// TODO: move parameters to config module
-// TODO; replace fixed batches with variable batches with fixed memory size
-const BATCH_SIZE: u32 = 10_000;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>, // TODO: change underlying service for generic
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
 ) -> Result<(), SyncError>
@@ -140,7 +137,7 @@ where
         fetch_request_sender.clone(),
         ufvks.clone(),
     );
-    scanner.spawn_workers();
+    scanner.launch();
 
     // TODO: invalidate any pending transactions after eviction height (40 below best chain height?)
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
@@ -307,10 +304,9 @@ where
             )
             .await
             .unwrap();
-            state::set_scan_priority(
+            state::set_scanned_scan_range(
                 wallet.get_sync_state_mut().unwrap(),
-                scan_range.block_range(),
-                ScanPriority::Scanned,
+                scan_range.block_range().clone(),
             )
             .unwrap();
             remove_irrelevant_data(wallet).unwrap();

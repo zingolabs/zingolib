@@ -4,20 +4,20 @@ use std::{
 };
 
 use orchard::tree::MerkleHashOrchard;
+use task::ScanTask;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::{data_api::scanning::ScanRange, proto::compact_formats::CompactBlock};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{self, BlockHeight, NetworkUpgrade},
     transaction::TxId,
     zip32::AccountId,
 };
 
 use crate::{
     client::{self, FetchRequest},
-    keys::transparent::TransparentAddressId,
     primitives::{Locator, NullifierMap, OutPointMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -47,7 +47,7 @@ impl InitialScanData {
         end_seam_block: Option<WalletBlock>,
     ) -> Result<Self, ()>
     where
-        P: Parameters + Sync + Send + 'static,
+        P: consensus::Parameters + Sync + Send + 'static,
     {
         // gets initial tree size from previous block if available
         // otherwise, from first block if available
@@ -164,27 +164,39 @@ impl DecryptedNoteData {
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    parameters: &P,
+    consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    scan_range: ScanRange,
-    start_seam_block: Option<WalletBlock>,
-    end_seam_block: Option<WalletBlock>,
-    mut locators: BTreeSet<Locator>,
-    transparent_addresses: HashMap<String, TransparentAddressId>,
+    scan_task: ScanTask,
 ) -> Result<ScanResults, ScanError>
 where
-    P: Parameters + Sync + Send + 'static,
+    P: consensus::Parameters + Sync + Send + 'static,
 {
-    let compact_blocks = client::get_compact_block_range(
-        fetch_request_sender.clone(),
-        scan_range.block_range().clone(),
-    )
-    .await
-    .unwrap();
+    let ScanTask {
+        compact_blocks,
+        scan_range,
+        start_seam_block,
+        end_seam_block,
+        mut locators,
+        transparent_addresses,
+    } = scan_task;
+
+    if compact_blocks
+        .first()
+        .expect("compacts blocks should not be empty")
+        .height
+        != scan_range.block_range().start.into()
+        || compact_blocks
+            .last()
+            .expect("compacts blocks should not be empty")
+            .height
+            != (scan_range.block_range().end - 1).into()
+    {
+        panic!("compact blocks do not match scan range!")
+    }
 
     let initial_scan_data = InitialScanData::new(
         fetch_request_sender.clone(),
-        parameters,
+        consensus_parameters,
         compact_blocks
             .first()
             .expect("compacts blocks should not be empty"),
@@ -194,7 +206,7 @@ where
     .await
     .unwrap();
 
-    let consensus_parameters_clone = parameters.clone();
+    let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
     let scan_data = tokio::task::spawn_blocking(move || {
         scan_compact_blocks(
@@ -220,7 +232,7 @@ where
     let mut outpoints = OutPointMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
-        parameters,
+        consensus_parameters,
         ufvks,
         locators,
         decrypted_note_data,
