@@ -172,7 +172,7 @@ where
     ///
     /// Creates a new scan task and sends to batcher if it's idle.
     /// The batcher will stream compact blocks into the scan task, splitting the scan task when the maximum number of
-    /// outputs is reached. When a scan task is ready is it stored in the batcher ready to be taken by an idle scan
+    /// outputs is reached. When a scan task is ready it is stored in the batcher ready to be taken by an idle scan
     /// worker for scanning.
     /// When verification is still in progress, only scan tasks with `Verify` scan priority are created.
     /// When all ranges are scanned, the batcher, idle workers and mempool are shutdown.

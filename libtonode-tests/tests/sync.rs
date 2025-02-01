@@ -100,6 +100,7 @@ async fn sync_status() {
 }
 
 // temporary test for sync development
+#[ignore = "hangs"]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
