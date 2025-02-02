@@ -105,6 +105,27 @@ where
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
 /// returns Ok(total_fee, total_received, total_change)
+pub async fn validate_send_result(
+    sender: &LightClient,
+    txids: NonEmpty<TxId>,
+) -> Result<NonEmpty<TxId>, String> {
+    let result = sender
+        .wallet
+        .get_send_result()
+        .await
+        .last_result
+        .ok_or("no send reported".to_string())??;
+    if result == txids {
+        Ok(txids)
+    } else if cfg!(feature = "darkside_tests") {
+        Ok(result)
+    } else {
+        Err("uncaught txid mismatch".to_string())
+    }
+}
+
+/// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
+/// returns Ok(total_fee, total_received, total_change)
 pub async fn follow_proposal<CC, NoteRef>(
     environment: &mut CC,
     sender: &LightClient,
@@ -122,17 +143,7 @@ where
         crate::grpc_connector::get_latest_block_height(&environment.lightserver_uri().unwrap())
             .await?;
 
-    #[cfg(feature = "darkside_tests")]
-    let txids = {
-        // darkside test chooses an new txid
-        if let Some(Ok(result_is_non_empty_txids)) =
-            sender.wallet.get_send_result().await.last_result
-        {
-            result_is_non_empty_txids
-        } else {
-            txids
-        }
-    };
+    let txids = validate_send_result(sender, txids).await.unwrap();
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
