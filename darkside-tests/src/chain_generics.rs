@@ -14,6 +14,11 @@ use zingolib::testutils::int_to_shieldedprotocol;
 
 use crate::utils::scenarios::DarksideEnvironment;
 
+#[tokio::test]
+async fn simple_send_darkside() {
+    fixtures::simple_send::<DarksideEnvironment>(10_000, true).await;
+}
+
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
     #[test]
