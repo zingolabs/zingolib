@@ -343,19 +343,21 @@ pub mod send_with_proposal {
 
             let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
 
-            txids.push(txid);
             // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
             match transaction_record.status {
                 ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_) => {
                     drop(tx_map);
                     let transmit_transaction_result =
                         transmit_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await;
+                    txids.push(txid);
                     if let Err(transmit_error) = transmit_transaction_result {
                         step_transmission_error = Some(transmit_error);
                         break;
                     };
                 }
-                ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {}
+                ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {
+                    txids.push(txid);
+                }
             }
         }
 
