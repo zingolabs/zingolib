@@ -433,7 +433,7 @@ pub mod send_with_proposal {
 
         transaction_record.status = new_status;
 
-        let txid_comparison_error = txid_comparison(serverz_txid, txid);
+        let mut txid_comparison_error = txid_comparison(serverz_txid, txid);
         let mut chosen_txid: TxId = *txid;
 
         #[cfg(feature = "darkside_tests")]
@@ -445,6 +445,7 @@ pub mod send_with_proposal {
             match tx_map.reidentify_tx(known_txid, reported_txid) {
                 Ok(()) => {
                     chosen_txid = reported_txid;
+                    txid_comparison_error = Ok(reported_txid);
                 }
                 Err(_) => {
                     panic!("darkside retxification failed! {known_txid} not found to move it to {reported_txid}");
