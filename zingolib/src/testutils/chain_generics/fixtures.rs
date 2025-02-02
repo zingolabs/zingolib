@@ -426,9 +426,9 @@ where
     );
 }
 
-/// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
+/// please read the signature to understand the range of scenarios this test is able to cover
 pub async fn single_sufficient_send<CC>(
-    shpool: ShieldedProtocol,
+    sender_pool: ShieldedProtocol,
     pool: PoolType,
     receiver_value: u64,
     change: u64,
@@ -453,14 +453,14 @@ pub async fn single_sufficient_send<CC>(
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 
-    let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
+    let expected_fee = fee_tables::one_to_one(Some(sender_pool), pool, true);
 
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &ref_primary,
         vec![(
             &ref_secondary,
-            Shielded(shpool),
+            Shielded(sender_pool),
             receiver_value + change + expected_fee,
             None,
         )],

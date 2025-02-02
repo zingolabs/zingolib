@@ -16,7 +16,7 @@ use crate::utils::scenarios::DarksideEnvironment;
 
 #[tokio::test]
 async fn simple_send_darkside() {
-    fixtures::simple_send::<DarksideEnvironment>(10_000, true).await;
+    fixtures::simple_send::<DarksideEnvironment>(10_000, false).await;
 }
 
 proptest! {
