@@ -678,7 +678,10 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
+    use crate::{
+        config::{ChainType, RegtestNetwork, ZingoConfig},
+        lightclient::describe::UAReceivers,
+    };
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
     use tokio::runtime::Runtime;
 
@@ -727,7 +730,7 @@ mod tests {
 
         // The first t address and z address should be derived
         Runtime::new().unwrap().block_on(async move {
-            let addresses = lc.do_addresses().await;
+            let addresses = lc.do_addresses(UAReceivers::All).await;
             assert_eq!(
                 "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
                     .to_string(),
