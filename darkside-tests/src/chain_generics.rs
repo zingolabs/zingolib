@@ -55,12 +55,14 @@ pub(crate) mod conduct_chain {
     /// doesnt use the full extent of DarksideEnvironment, preferring to rely on server truths when ever possible.
     impl ConductChain for DarksideEnvironment {
         async fn setup() -> Self {
-            let elf = DarksideEnvironment::new(None).await;
+            let mut elf = DarksideEnvironment::new(None).await;
+            elf.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
+                .await;
             elf.darkside_connector
-                .stage_blocks_create(1, 1, 0)
+                .stage_blocks_create(2, 1, 0)
                 .await
                 .unwrap();
-            elf.darkside_connector.apply_staged(1).await.unwrap();
+            elf.darkside_connector.apply_staged(2).await.unwrap();
             elf
         }
 
@@ -70,8 +72,6 @@ pub(crate) mod conduct_chain {
         }
 
         async fn create_faucet(&mut self) -> LightClient {
-            self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
-                .await;
             let zingo_config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.regtest_network);
