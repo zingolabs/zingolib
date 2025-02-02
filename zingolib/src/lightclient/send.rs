@@ -445,7 +445,7 @@ pub mod send_with_proposal {
             match tx_map.reidentify_tx(known_txid, reported_txid) {
                 Ok(()) => {
                     chosen_txid = reported_txid;
-                    txid_comparison_error = Ok(reported_txid);
+                    txid_comparison_error = dbg!(Ok(reported_txid));
                 }
                 Err(_) => {
                     panic!("darkside retxification failed! {known_txid} not found to move it to {reported_txid}");
