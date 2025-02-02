@@ -26,6 +26,7 @@ proptest::proptest! {
      }
 }
 
+// extra mod. to be removed, and tests coalesced
 mod chain_generics {
     use zcash_client_backend::PoolType::Shielded;
     use zcash_client_backend::PoolType::Transparent;
