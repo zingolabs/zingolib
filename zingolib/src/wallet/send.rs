@@ -31,7 +31,7 @@ pub struct SendProgress {
     pub total: u32,
     /// TODO: Add Doc Comment Here!
     pub last_result: Option<Result<NonEmpty<TxId>, String>>,
-    /// the number of attempts the current broadcast loop has made to broadcast a transaction.
+    /// the number of attempts the current broadcast loop has made to broadcast any transaction. in multistep transactions, will increment per each transaction
     pub attempt: u32,
 }
 
