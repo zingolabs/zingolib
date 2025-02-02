@@ -339,6 +339,8 @@ pub mod send_with_proposal {
         let mut txids = vec![];
         let mut step_transmission_error = None;
         for (txid, raw_tx) in transactions_to_transmit {
+            send_result.write().await.attempt += 1;
+
             let mut tx_map = arc_tx_map.write().await;
 
             let transaction_record = tx_map.transaction_records_by_id.get_record(&txid)?;
@@ -369,7 +371,6 @@ pub mod send_with_proposal {
 
         if let Some(some_step_transmission_error) = step_transmission_error {
             let error = TransmitTransactionsError::Incomplete(txids, some_step_transmission_error);
-            send_result.write().await.attempt += 1;
             send_result.write().await.last_result = Some(Err(error.to_string()));
             Err(error)
         } else {
