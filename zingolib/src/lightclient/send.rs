@@ -350,9 +350,12 @@ pub mod send_with_proposal {
                     let transmit_transaction_result =
                         transmit_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await;
                     txids.push(txid);
-                    if let Err(transmit_error) = transmit_transaction_result {
-                        step_transmission_error = Some(transmit_error);
-                        break;
+                    match transmit_transaction_result {
+                        Ok(_) => {}
+                        Err(transmit_error) => {
+                            step_transmission_error = Some(transmit_error);
+                            break;
+                        }
                     };
                 }
                 ConfirmationStatus::Mempool(_) | ConfirmationStatus::Confirmed(_) => {
