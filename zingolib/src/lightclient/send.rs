@@ -19,7 +19,6 @@ impl LightClient {
         let progress = self.wallet.lock().await.get_send_progress().await;
         Ok(LightWalletSendProgress {
             progress: progress.clone(),
-            interrupt_sync: *self.interrupt_sync.read().await,
         })
     }
 }

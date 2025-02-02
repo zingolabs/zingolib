@@ -289,7 +289,7 @@ async fn reload_wallet_from_buffer() {
     let view_wallet = LightWallet::new(
         wallet.transaction_context.config.clone(),
         ufvk_base,
-        wallet.get_birthday().await,
+        wallet.birthday.try_into().expect("should never overflow"),
     )
     .unwrap();
     let v_wc = view_wallet.wallet_capability();

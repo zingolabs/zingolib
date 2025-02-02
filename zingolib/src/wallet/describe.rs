@@ -7,7 +7,7 @@ use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use std::{cmp, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
@@ -27,8 +27,8 @@ use crate::wallet::notes::TransparentOutput;
 use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
+use crate::wallet::tx_map::TxMap;
 use crate::wallet::LightWallet;
-use crate::wallet::{data::BlockData, tx_map::TxMap};
 
 use super::keys::unified::UnifiedKeyStore;
 
@@ -209,44 +209,6 @@ impl LightWallet {
         self.mnemonic.as_ref()
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn get_birthday(&self) -> u64 {
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        if birthday == 0 {
-            self.get_first_transaction_block().await
-        } else {
-            cmp::min(self.get_first_transaction_block().await, birthday)
-        }
-    }
-
-    /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
-    pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.last_100_blocks.read().await.iter().cloned().collect()
-    }
-
-    /// Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
-    /// If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
-    /// If no birthday was recorded, return the sapling activation height
-    pub async fn get_first_transaction_block(&self) -> u64 {
-        // Find the first transaction
-        let earliest_block = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .transaction_records_by_id
-            .values()
-            .map(|wtx| u64::from(wtx.status.get_height()))
-            .min();
-
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
-            .unwrap_or(cmp::max(
-                birthday,
-                self.transaction_context.config.sapling_activation_height(),
-            ))
-    }
-
     /// Get all (unspent) utxos.
     pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
         self.transaction_context
@@ -263,27 +225,6 @@ impl LightWallet {
             })
             .cloned()
             .collect::<Vec<TransparentOutput>>()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn last_synced_hash(&self) -> String {
-        self.last_100_blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.hash())
-            .unwrap_or_default()
-    }
-
-    /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
-    /// when it should be?  When should it be?
-    pub async fn last_synced_height(&self) -> u64 {
-        self.last_100_blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.height)
-            .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
     /// TODO: Add Doc Comment Here!

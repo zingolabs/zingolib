@@ -4,6 +4,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::KeyError;
+use keys::unified::UnifiedKeyStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
@@ -14,30 +15,26 @@ use rand::Rng;
 
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{NullifierMap, OutPointMap, SyncState, WalletBlock, WalletTransaction},
+    primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
     witness::ShardTrees,
 };
 
 use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
 use std::{
-    cmp,
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc},
+    sync::Arc,
     time::SystemTime,
 };
 use tokio::sync::RwLock;
 
 use crate::config::ZingoConfig;
-use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::Optional;
 
 use self::keys::unified::WalletCapability;
 
 use self::{
-    data::{BlockData, WalletZecPriceInfo},
-    message::Message,
-    transaction_context::TransactionContext,
+    data::WalletZecPriceInfo, message::Message, transaction_context::TransactionContext,
     tx_map::TxMap,
 };
 
@@ -59,7 +56,6 @@ pub mod disk;
 pub mod propose;
 pub mod send;
 pub mod sync;
-pub mod witnesses;
 
 pub(crate) use send::SendProgress;
 
@@ -183,76 +179,50 @@ impl WalletBase {
 
 /// In-memory wallet data struct
 pub struct LightWallet {
-    // The block at which this wallet was born. Rescans
-    // will start from here.
-    birthday: AtomicU64,
-
+    /// The block height at which the wallet was created.
+    ///
+    /// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
+    /// this block height.
+    pub birthday: BlockHeight,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     /// Can be `None` in case of wallet without spending capability
     /// or created directly from spending keys.
+    // TODO: what is the meaning of account index here? the number of accounts keys are generated from the seed?
     mnemonic: Option<(Mnemonic, u32)>,
-
-    /// The last 100 blocks, used if something gets re-orged
-    pub last_100_blocks: Arc<RwLock<Vec<BlockData>>>,
-
     /// Wallet options
-    pub wallet_options: Arc<RwLock<WalletOptions>>,
-
-    /// Highest verified block
-    pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
-
+    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
     /// Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
-
     /// The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    /// Unified key store
+    pub unified_key_store: UnifiedKeyStore,
 
     /// Local state needed to submit (compact)block-requests to the proxy
     /// and interpret responses
-    pub transaction_context: TransactionContext,
+    pub transaction_context: TransactionContext, // TODO: to be removed
 
     /// Wallet compact blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-
     /// Wallet transactions
     pub wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
-
     /// Nullifier map
     pub nullifier_map: NullifierMap,
-
     /// Outpoint map
-    outpoint_map: OutPointMap,
-
+    pub outpoint_map: BTreeMap<OutputId, Locator>,
     /// Shard trees
-    shard_trees: ShardTrees,
-
+    pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-
     /// Transparent addresses
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
 }
 
 impl LightWallet {
-    // This function will likely be used if/when we reimplement key import
-    #[allow(dead_code)]
-    fn adjust_wallet_birthday(&self, new_birthday: u64) {
-        let mut wallet_birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        if new_birthday < wallet_birthday {
-            wallet_birthday = cmp::max(
-                new_birthday,
-                self.transaction_context.config.sapling_activation_height(),
-            );
-            self.birthday
-                .store(wallet_birthday, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-
     /// Clears all the downloaded blocks and resets the state back to the initial block.
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
-        self.last_100_blocks.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -394,18 +364,17 @@ impl LightWallet {
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
-            last_100_blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            birthday: AtomicU64::new(height),
-            verified_tree: Arc::new(RwLock::new(None)),
+            birthday: BlockHeight::from_u32(height.try_into().expect("should never overflow")),
+            unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
-            outpoint_map: zingo_sync::primitives::OutPointMap::new(),
+            outpoint_map: BTreeMap::new(),
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
@@ -413,27 +382,8 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
-        let mut blocks = self.last_100_blocks.write().await;
-        blocks.clear();
-        blocks.extend_from_slice(&new_blocks[..]);
-    }
-
-    /// TODO: Add Doc Comment Here!
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
         self.wallet_options.write().await.download_memos = value;
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
-        let mut blocks = self.last_100_blocks.write().await;
-        if !blocks.is_empty() {
-            return false;
-        }
-
-        blocks.push(BlockData::new_with(height, &hex::decode(hash).unwrap()));
-
-        true
     }
 
     /// TODO: Add Doc Comment Here!

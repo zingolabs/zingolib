@@ -1,6 +1,6 @@
 //! Entrypoint for sync engine
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +23,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, OutPointMap, SyncStatus};
+use crate::primitives::{NullifierMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
@@ -384,7 +384,7 @@ async fn process_mempool_transaction<W>(
 
     let confirmation_status = ConfirmationStatus::Mempool(block_height);
     let mut mempool_transaction_nullifiers = NullifierMap::new();
-    let mut mempool_transaction_outpoints = OutPointMap::new();
+    let mut mempool_transaction_outpoints = BTreeMap::new();
     let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
         .get_transparent_addresses()
         .unwrap()
@@ -473,7 +473,7 @@ where
 {
     let ScanResults {
         nullifiers,
-        outpoints,
+        mut outpoints,
         wallet_blocks,
         wallet_transactions,
         sapling_located_trees,
@@ -501,7 +501,7 @@ where
         .extend_wallet_transactions(wallet_transactions)
         .unwrap();
     wallet.append_nullifiers(nullifiers).unwrap();
-    wallet.append_outpoints(outpoints).unwrap();
+    wallet.append_outpoints(&mut outpoints).unwrap();
     wallet
         .update_shard_trees(sapling_located_trees, orchard_located_trees)
         .unwrap();

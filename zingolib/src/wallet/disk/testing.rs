@@ -19,7 +19,6 @@ impl LightWallet {
             lightwalletd_uri,
             None,
             crate::config::ChainType::Regtest(crate::config::RegtestNetwork::all_upgrades_active()),
-            true,
         )
         .unwrap();
         Self::read_internal(data, &config)
