@@ -348,10 +348,13 @@ pub mod send_with_proposal {
                     drop(tx_map);
                     let transmit_transaction_result =
                         transmit_transaction(arc_tx_map.clone(), txid, raw_tx, &server_uri).await;
-                    txids.push(txid);
                     match transmit_transaction_result {
-                        Ok(_) => {}
+                        Ok(consensus_txid) => {
+                            // if the server picks a new TxId (not crypto-sound, should only happen in simulations) we record the new TxId to the result
+                            txids.push(consensus_txid);
+                        }
                         Err(transmit_error) => {
+                            txids.push(txid);
                             step_transmission_error = Some(transmit_error);
                             break;
                         }
@@ -394,7 +397,7 @@ pub mod send_with_proposal {
         txid: TxId,
         raw_tx: Vec<u8>,
         server_uri: &http::Uri,
-    ) -> Result<(), TransmitTransactionError> {
+    ) -> Result<TxId, TransmitTransactionError> {
         let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
             .await
             .map_err(TransmitTransactionError::Height)?;
@@ -428,7 +431,7 @@ pub mod send_with_proposal {
         txid: &TxId,
         serverz_txid: String,
         current_height: BlockHeight,
-    ) -> Result<(), PostTransmissionSuccessUpdateTransactionError> {
+    ) -> Result<TxId, PostTransmissionSuccessUpdateTransactionError> {
         let mut tx_map = arc_tx_map.write().await;
 
         let transaction_record = tx_map.transaction_records_by_id.get_record(txid)?;
@@ -463,7 +466,6 @@ pub mod send_with_proposal {
             .update_note_spend_statuses(chosen_txid, spend_status);
 
         txid_comparison_error
-            .map(|_t| ())
             .map_err(PostTransmissionSuccessUpdateTransactionError::ServerTxIdMatch)
     }
 
