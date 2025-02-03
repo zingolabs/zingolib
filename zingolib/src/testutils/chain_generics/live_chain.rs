@@ -1,16 +1,20 @@
 //! implementation of conduct chain for live chains
 
+use http::Uri;
+
 use crate::lightclient::LightClient;
 
 use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
 /// allows using existing ChainGeneric functions with TestNet wallets
-pub struct LiveChain;
+pub struct LiveChain {
+    server_uri: Option<Uri>,
+}
 
 impl ConductChain for LiveChain {
     async fn setup() -> Self {
-        Self {}
+        Self { server_uri: None }
     }
 
     async fn create_faucet(&mut self) -> LightClient {
@@ -27,6 +31,6 @@ impl ConductChain for LiveChain {
     }
 
     fn lightserver_uri(&self) -> Option<http::Uri> {
-        unimplemented!()
+        self.server_uri.clone()
     }
 }
