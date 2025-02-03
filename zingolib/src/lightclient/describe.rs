@@ -39,6 +39,11 @@ pub enum ValueTransferRecordingError {
 fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
+pub enum UAReceivers {
+    Orchard,
+    Shielded,
+    All,
+}
 impl LightClient {
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub async fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
@@ -53,21 +58,38 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     // todo use helpers
-    pub async fn do_addresses(&self) -> JsonValue {
+    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().addresses().iter() {
-            let encoded_ua = address.encode(&self.config.chain);
-            let transparent = address
+            let local_address = match subset {
+                UAReceivers::Orchard => zcash_keys::address::UnifiedAddress::from_receivers(
+                    address.orchard().copied(),
+                    None,
+                    None,
+                )
+                .expect("To create a new address."),
+                UAReceivers::Shielded => zcash_keys::address::UnifiedAddress::from_receivers(
+                    address.orchard().copied(),
+                    address.sapling().copied(),
+                    None,
+                )
+                .expect("To create a new address."),
+                UAReceivers::All => address.clone(),
+            };
+            let encoded_ua = local_address.encode(&self.config.chain);
+            let transparent = local_address
                 .transparent()
                 .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
-            objectified_addresses.push(object! {
-        "address" => encoded_ua,
-        "receivers" => object!(
-            "transparent" => transparent,
-            "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
-            "orchard_exists" => address.orchard().is_some(),
+            objectified_addresses.push(
+                object!{
+                    "address" => encoded_ua,
+                    "receivers" => object!(
+                        "transparent" => transparent,
+                        "sapling" => local_address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
+                        "orchard_exists" => local_address.orchard().is_some()
+                    )
+                }
             )
-        })
         }
         JsonValue::Array(objectified_addresses)
     }
@@ -561,8 +583,12 @@ impl LightClient {
     }
 
     /// TODO: doc comment
-    pub async fn value_transfers_json_string(&self) -> String {
-        json::JsonValue::from(self.sorted_value_transfers(true).await).pretty(2)
+    pub async fn value_transfers_json_string(&self, recent_vts_to_retrieve: usize) -> String {
+        let sorted_vts = self.sorted_value_transfers(true).await;
+        let total = sorted_vts.len();
+        let subset_len = recent_vts_to_retrieve.min(total);
+        let subset = &sorted_vts.as_slice()[..subset_len];
+        object! {"value_transfers" => subset, "total" => total}.to_string()
     }
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight

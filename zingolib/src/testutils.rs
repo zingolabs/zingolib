@@ -6,6 +6,7 @@
 pub mod interrupts;
 pub mod scenarios;
 
+use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
     OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
@@ -250,7 +251,7 @@ pub async fn send_value_between_clients_and_sync(
 ) -> Result<String, String> {
     debug!(
         "recipient address is: {}",
-        &recipient.do_addresses().await[0]["address"]
+        &recipient.do_addresses(UAReceivers::All).await[0]["address"]
     );
     let txid = lightclient::from_inputs::quick_send(
         sender,

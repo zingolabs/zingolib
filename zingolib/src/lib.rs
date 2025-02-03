@@ -4,6 +4,7 @@
 //! Zingo backend code base
 //! Use this high level API to do things like submit transactions to the zcash blockchain
 
+pub use lightclient::describe::UAReceivers;
 #[macro_use]
 extern crate rust_embed;
 
