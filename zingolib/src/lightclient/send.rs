@@ -515,16 +515,31 @@ pub mod send_with_proposal {
             /// requires 1 confirmation: expect 3 minute runtime
             #[ignore = "live testnet: testnet relies on NU6"]
             #[tokio::test]
-            async fn glory_goddess_simple_send() {
+            async fn glory_goddess_send_to_self_orchard() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
                 );
+                let target_pool = PoolType::Shielded(ShieldedProtocol::Orchard);
+
                 let client = sync_example_wallet(case).await;
 
-                with_assertions::assure_propose_shield_bump_sync(
+                println!(
+                    "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
+                    client
+                        .wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .read()
+                        .await
+                        .transaction_records_by_id
+                        .len()
+                );
+
+                with_assertions::propose_send_bump_sync_all_recipients(
                     &mut LiveChain::setup().await,
                     &client,
-                    true,
+                    vec![(&client, target_pool, 10_000, None)],
+                    false,
                 )
                 .await
                 .unwrap();
