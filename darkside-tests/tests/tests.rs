@@ -17,6 +17,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::lightclient::PoolBalances;
 use zingolib::testutils;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+use zingolib::testutils::chain_generics::with_assertions::validate_send_result;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
 use zingolib::wallet::notes::query::OutputQuery;
 
@@ -275,6 +276,8 @@ async fn transaction_disappears_before_mempool() {
 
     // a modified zingolib::testutils::chain_generics::with_assertions::follow_proposal block
     {
+        let txids = validate_send_result(&primary, txids).await.unwrap();
+
         let sender = &primary;
         let proposal = &proposal;
 
@@ -359,7 +362,7 @@ async fn transaction_disappears_before_mempool() {
         for status in sender_confirmed_statuses {
             assert_eq!(
                 status,
-                ConfirmationStatus::Transmitted(server_height_at_send + 1)
+                ConfirmationStatus::Confirmed(server_height_at_send + 1)
             );
         }
     }
