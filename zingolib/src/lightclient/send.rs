@@ -157,13 +157,25 @@ pub mod send_with_proposal {
             let txids = NonEmpty::from_vec(record_txids_result?)
                 .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
+            let arc_tx_map = self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .clone();
+            let server_uri = self.get_server_uri();
+            let send_result_cache = self.wallet.send_progress.clone();
+
+            let _transmission_result = transmit_cached_transactions(
+                arc_tx_map.clone(),
+                server_uri.clone(),
+                send_result_cache.clone(),
+            )
+            .await;
+
             start_broadcast_loop(
-                self.wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .clone(),
-                self.get_server_uri(),
-                self.wallet.send_progress.clone(),
+                arc_tx_map.clone(),
+                server_uri.clone(),
+                send_result_cache.clone(),
             )
             .await;
 
@@ -250,28 +262,19 @@ pub mod send_with_proposal {
         server_uri: http::Uri,
         send_result_cache: Arc<RwLock<SendProgress>>,
     ) {
-        let transmission_result = dbg!(
-            transmit_cached_transactions(
-                arc_tx_map.clone(),
-                server_uri.clone(),
-                send_result_cache.clone()
-            )
-            .await
-        );
-
         tokio::spawn(async move {
             loop {
                 println!("broadcast attempt beginning");
 
-                let transmission_result = dbg!(
-                    transmit_cached_transactions(
-                        arc_tx_map.clone(),
-                        server_uri.clone(),
-                        send_result_cache.clone()
-                    )
-                    .await
-                );
+                let transmission_result = transmit_cached_transactions(
+                    arc_tx_map.clone(),
+                    server_uri.clone(),
+                    send_result_cache.clone(),
+                )
+                .await;
 
+                // give up after 5 tries
+                // or if 0 were send, result implies that all are already Mempool or further Confirmed
                 if (send_result_cache.write().await.attempt > 5) || transmission_result == Ok(0) {
                     break;
                 } else {
