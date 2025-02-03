@@ -9,7 +9,8 @@ use super::conduct_chain::ConductChain;
 /// this is essentially a placeholder.
 /// allows using existing ChainGeneric functions with TestNet wallets
 pub struct LiveChain {
-    server_uri: Option<Uri>,
+    /// the address of the lightserver used in live testing
+    pub server_uri: Option<Uri>,
 }
 
 impl ConductChain for LiveChain {
