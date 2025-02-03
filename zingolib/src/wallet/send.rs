@@ -20,7 +20,7 @@ use super::LightWallet;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
-pub struct SendProgress {
+pub struct SendResult {
     /// TODO: Add Doc Comment Here!
     pub id: u32,
     /// TODO: Add Doc Comment Here!
@@ -35,10 +35,10 @@ pub struct SendProgress {
     pub attempt: u32,
 }
 
-impl SendProgress {
+impl SendResult {
     /// TODO: Add Doc Comment Here!
     pub fn new(id: u32) -> Self {
-        SendProgress {
+        SendResult {
             id,
             is_send_in_progress: false,
             progress: 0,
@@ -52,16 +52,16 @@ impl SendProgress {
 impl LightWallet {
     // Reset the send progress status to blank
     pub(crate) async fn reset_send_result(&self) {
-        let mut g = self.send_progress.write().await;
+        let mut g = self.send_result.write().await;
         let next_id = g.id + 1;
 
         // Discard the old value, since we are replacing it
-        let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
+        let _ = std::mem::replace(&mut *g, SendResult::new(next_id));
     }
 
     /// Get the current sending status.
-    pub async fn get_send_progress(&self) -> SendProgress {
-        self.send_progress.read().await.clone()
+    pub async fn get_send_result(&self) -> SendResult {
+        self.send_result.read().await.clone()
     }
 }
 

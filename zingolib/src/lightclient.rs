@@ -16,7 +16,7 @@ use crate::config::ZingoConfig;
 
 use crate::{
     blaze::syncdata::BlazeSyncData,
-    wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress},
+    wallet::{keys::unified::ReceiverSelection, message::Message, LightWallet, SendResult},
 };
 
 use crate::data::proposal::ZingoProposal;
@@ -81,7 +81,7 @@ impl WalletStatus {
 #[derive(Debug, Clone)]
 pub struct LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
-    pub progress: SendProgress,
+    pub progress: SendResult,
     /// TODO: Add Doc Comment Here!
     pub interrupt_sync: bool,
 }

@@ -42,7 +42,7 @@ pub mod send_with_proposal {
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
     use crate::wallet::transaction_records_by_id::GetRecordError;
     use crate::wallet::tx_map::TxMap;
-    use crate::wallet::{now, SendProgress};
+    use crate::wallet::{now, SendResult};
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
@@ -163,7 +163,7 @@ pub mod send_with_proposal {
                 .transaction_metadata_set
                 .clone();
             let server_uri = self.get_server_uri();
-            let send_result_cache = self.wallet.send_progress.clone();
+            let send_result_cache = self.wallet.send_result.clone();
 
             let _transmission_result = transmit_cached_transactions(
                 arc_tx_map.clone(),
@@ -260,7 +260,7 @@ pub mod send_with_proposal {
     pub async fn start_broadcast_loop(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-        send_result_cache: Arc<RwLock<SendProgress>>,
+        send_result_cache: Arc<RwLock<SendResult>>,
     ) {
         tokio::spawn(async move {
             loop {
@@ -301,7 +301,7 @@ pub mod send_with_proposal {
     async fn transmit_cached_transactions(
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
-        send_result: Arc<RwLock<SendProgress>>,
+        send_result: Arc<RwLock<SendResult>>,
     ) -> Result<usize, TransmitCachedTransactionsError> {
         let tx_map = arc_tx_map.write().await;
         let calculated_tx_cache = tx_map
@@ -336,7 +336,7 @@ pub mod send_with_proposal {
         arc_tx_map: Arc<RwLock<TxMap>>,
         server_uri: http::Uri,
         transactions_to_transmit: Vec<(TxId, Vec<u8>)>,
-        send_result: Arc<RwLock<SendProgress>>,
+        send_result: Arc<RwLock<SendResult>>,
     ) -> Result<usize, TransmitTransactionsError> {
         let mut txids = vec![];
         let mut step_transmission_error = None;

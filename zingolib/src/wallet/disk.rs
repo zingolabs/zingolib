@@ -26,7 +26,7 @@ use crate::{config::ZingoConfig, wallet::keys::unified::UnifiedKeyStore};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
-use crate::wallet::{utils, SendProgress};
+use crate::wallet::{utils, SendResult};
 
 use super::keys::unified::WalletCapability;
 
@@ -288,7 +288,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_result: Arc::new(RwLock::new(SendResult::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
             #[cfg(feature = "sync")]

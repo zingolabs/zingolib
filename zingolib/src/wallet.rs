@@ -68,7 +68,7 @@ pub mod witnesses;
 #[cfg(feature = "sync")]
 pub mod sync;
 
-pub(crate) use send::SendProgress;
+pub(crate) use send::SendResult;
 
 /// TODO: Add Doc Comment Here!
 pub fn now() -> u64 {
@@ -209,7 +209,7 @@ pub struct LightWallet {
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     /// Progress of an outgoing transaction
-    pub(crate) send_progress: Arc<RwLock<SendProgress>>,
+    pub(crate) send_result: Arc<RwLock<SendResult>>,
 
     /// The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
@@ -413,7 +413,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_result: Arc::new(RwLock::new(SendResult::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             #[cfg(feature = "sync")]
