@@ -13,7 +13,6 @@ impl LightClient {
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let result = self.wallet.get_send_result().await;
-        todo!();
         Ok(LightWalletSendProgress {
             progress: result.clone(),
             interrupt_sync: *self.interrupt_sync.read().await,
