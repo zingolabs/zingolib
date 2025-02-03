@@ -535,8 +535,15 @@ pub mod send_with_proposal {
                         .len()
                 );
 
+                let mut live_chain_object = LiveChain::setup().await;
+                live_chain_object.server_uri = Some(
+                    "https://lightwalletd.testnet.electriccoin.co:9067"
+                        .parse::<http::Uri>()
+                        .unwrap(),
+                );
+
                 with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
+                    &mut live_chain_object,
                     &client,
                     vec![(&client, target_pool, 10_000, None)],
                     false,
