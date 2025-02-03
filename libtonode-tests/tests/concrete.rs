@@ -109,6 +109,7 @@ mod fast {
             lightclient::from_inputs,
         },
         wallet::data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+        UAReceivers,
     };
 
     use super::*;
@@ -995,7 +996,7 @@ mod fast {
         for code in ["o", "zo", "z"] {
             recipient.do_new_address(code).await.unwrap();
         }
-        let addresses = recipient.do_addresses().await;
+        let addresses = recipient.do_addresses(UAReceivers::All).await;
         let address_5000_nonememo_tuples = addresses
             .members()
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
@@ -1058,7 +1059,7 @@ mod fast {
 
         //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
         let new_address = recipient1.do_new_address("tzo").await.unwrap();
-        let ua_index_1 = recipient1.do_addresses().await[1].clone();
+        let ua_index_1 = recipient1.do_addresses(UAReceivers::All).await[1].clone();
         let ua_address_index_1 = ua_index_1["address"].clone().to_string();
         assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
         let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
@@ -1272,6 +1273,7 @@ mod slow {
         assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
+    use zingolib::UAReceivers;
 
     use super::*;
 
@@ -1676,7 +1678,7 @@ mod slow {
     //     let list = recipient.do_list_transactions().await;
     //     assert_eq!(list[0]["block_height"].as_u64().unwrap(), 4);
     //     assert_eq!(
-    //         recipient.do_addresses().await[0]["receivers"]["transparent"].to_string(),
+    //         recipient.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"].to_string(),
     //         recipient_taddr
     //     );
     //     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
@@ -2456,7 +2458,7 @@ mod slow {
 
     //     // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     //     let b = recipient.do_balance().await;
-    //     let addresses = recipient.do_addresses().await;
+    //     let addresses = recipient.do_addresses(UAReceivers::All).await;
     //     assert_eq!(b.sapling_balance.unwrap(), value);
     //     assert_eq!(b.unverified_sapling_balance.unwrap(), 0);
     //     assert_eq!(b.spendable_sapling_balance.unwrap(), value);
@@ -3098,7 +3100,7 @@ mod slow {
             .await;
         let seed_of_recipient_restored = {
             recipient_restored.do_sync(true).await.unwrap();
-            let restored_addresses = recipient_restored.do_addresses().await;
+            let restored_addresses = recipient_restored.do_addresses(UAReceivers::All).await;
             assert_eq!(
                 &restored_addresses[0]["address"],
                 &original_recipient_address

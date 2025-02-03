@@ -6,6 +6,8 @@
 
 use zcash_client_backend::ShieldedProtocol;
 
+pub use lightclient::describe::UAReceivers;
+
 #[macro_use]
 extern crate rust_embed;
 
