@@ -1,7 +1,7 @@
 //! TODO: Add Mod Description Here!
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use crate::config::{ChainType, ZingoConfig};
+use crate::config::ZingoConfig;
 use base58::ToBase58;
 use sapling_crypto::{
     zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
@@ -9,11 +9,8 @@ use sapling_crypto::{
 };
 use sha2::Sha256;
 use unified::ReceiverSelection;
-use zcash_client_backend::address;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{
-    consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
-};
+use zcash_primitives::{consensus::NetworkConstants, zip32::ChildIndex};
 
 use super::{error::KeyError, LightWallet};
 
@@ -39,6 +36,7 @@ impl LightWallet {
     }
 }
 
+// TODO: zingo2, remove?
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     let h1 = <Sha256 as sha2::Digest>::digest(payload);
@@ -46,6 +44,7 @@ pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     h2.to_vec()
 }
 
+// TODO: zingo2, remove?
 /// A trait for converting a [u8] to base58 encoded string.
 pub trait ToBase58Check {
     /// Converts a value of `self` to a base58 value, returning the owned string.
@@ -103,26 +102,4 @@ pub fn get_zaddr_from_bip39seed(
     let address = fvk.default_address().1;
 
     (extsk, fvk, address)
-}
-
-/// Checks if the address str is a valid zcash address
-#[deprecated(note = "address strings are now immediately converted to valid addresses")]
-pub fn is_shielded_address(addr: &str, chain: &ChainType) -> bool {
-    matches!(
-        address::Address::decode(chain, addr),
-        Some(address::Address::Sapling(_)) | Some(address::Address::Unified(_))
-    )
-}
-
-/// TODO: Add Doc Comment Here!
-/// STATIC METHODS
-pub fn address_from_pubkeyhash(config: &ZingoConfig, taddr: TransparentAddress) -> String {
-    match taddr {
-        TransparentAddress::PublicKeyHash(hash) => {
-            hash.to_base58check(&config.chain.b58_pubkey_address_prefix(), &[])
-        }
-        TransparentAddress::ScriptHash(hash) => {
-            hash.to_base58check(&config.chain.b58_script_address_prefix(), &[])
-        }
-    }
 }

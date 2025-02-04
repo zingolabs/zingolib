@@ -4,7 +4,7 @@
 //! Zingo backend code base
 //! Use this high level API to do things like submit transactions to the zcash blockchain
 
-use zcash_client_backend::ShieldedProtocol;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 
 #[macro_use]
 extern crate rust_embed;
@@ -44,23 +44,55 @@ pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u
 }
 
 pub trait WalletDomain {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
+    const POOL_TYPE: PoolType;
 
-    type Note: zingo_sync::primitives::NoteInterface;
+    type Output: zingo_sync::primitives::OutputInterface;
+}
+
+// pub trait ShieldedDomain: WalletDomain {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol;
+
+//     type Note: zingo_sync::primitives::NoteInterface;
+// }
+
+pub(crate) struct Transparent {}
+
+impl WalletDomain for Transparent {
+    const POOL_TYPE: PoolType = PoolType::Transparent;
+
+    type Output = zingo_sync::primitives::TransparentCoin;
 }
 
 pub(crate) struct Sapling {}
 
 impl WalletDomain for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Sapling);
 
-    type Note = zingo_sync::primitives::SaplingNote;
+    type Output = zingo_sync::primitives::SaplingNote;
 }
+
+// impl ShieldedDomain for Sapling {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+
+//     type Note = zingo_sync::primitives::SaplingNote;
+// }
 
 pub(crate) struct Orchard {}
 
 impl WalletDomain for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Orchard);
 
-    type Note = zingo_sync::primitives::OrchardNote;
+    type Output = zingo_sync::primitives::OrchardNote;
+}
+
+// impl ShieldedDomain for Orchard {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+
+//     type Note = zingo_sync::primitives::OrchardNote;
+// }
+
+pub trait ShieldedDomain: WalletDomain {
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+
+    type Note: zingo_sync::primitives::NoteInterface;
 }

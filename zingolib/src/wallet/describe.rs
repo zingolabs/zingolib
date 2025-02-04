@@ -1,11 +1,15 @@
 //! Wallet-State reporters as LightWallet methods.
+use json::JsonValue;
+use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use zcash_primitives::consensus::NetworkConstants as _;
+use zcash_primitives::consensus::Parameters;
+use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zingo_sync::primitives::NoteInterface;
 use zingo_sync::primitives::OrchardNote;
 use zingo_sync::primitives::OutgoingNoteInterface;
 use zingo_sync::primitives::OutputInterface;
@@ -14,8 +18,6 @@ use zingo_sync::primitives::TransparentCoin;
 use zingo_sync::primitives::WalletTransaction;
 
 use std::cmp::Ordering;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
 
@@ -26,18 +28,15 @@ use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::utils;
-use crate::wallet::notes::OutputInterface as OldOutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 
 use crate::wallet::error::BalanceError;
 use crate::wallet::keys::unified::WalletCapability;
-use crate::wallet::notes::TransparentOutput;
 use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
-use crate::wallet::tx_map::TxMap;
 use crate::wallet::LightWallet;
 use crate::Orchard;
 use crate::Sapling;
@@ -61,6 +60,26 @@ use super::transaction_record::SendType;
 use super::transaction_record::TransactionKind;
 
 impl LightWallet {
+    /// Returns wallet addresses in a JSON array
+    pub async fn do_addresses(&self) -> JsonValue {
+        let mut objectified_addresses = Vec::new();
+        for address in self.unified_addresses.iter() {
+            let encoded_ua = address.encode(&self.network);
+            let transparent = address
+                .transparent()
+                .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
+            objectified_addresses.push(json::object! {
+        "address" => encoded_ua,
+        "receivers" => json::object!(
+            "transparent" => transparent,
+            "sapling" => address.sapling().map(|z_addr| zcash_keys::encoding::encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
+            "orchard_exists" => address.orchard().is_some(),
+            )
+        })
+        }
+        JsonValue::Array(objectified_addresses)
+    }
+
     /// returns Some seed phrase for the wallet.
     /// if wallet does not have a seed phrase, returns None
     pub async fn get_seed_phrase(&self) -> Option<String> {
@@ -68,22 +87,24 @@ impl LightWallet {
             .map(|(mnemonic, _)| mnemonic.phrase().to_string())
     }
 
-    // Core shielded_balance function, other public methods dispatch specific sets of filters to this
-    // method for processing.
-    /// Returns the sum of unspent notes recorded by the wallet with optional filtering.
-    /// This method ensures that `None` is returned in the case of a missing view capability.
+    /// Returns the total balance of the all outputs of a given pool type in the wallet matching the output and transaction
+    /// criteria specified by the `filter_function`.
+    /// Returns `None` if the wallet does not have viewing capability for the given pool type.
     pub async fn get_filtered_balance<D, F>(&self, filter_function: F) -> Option<u64>
     where
         D: WalletDomain,
-        F: Fn(&D::Note, &WalletTransaction) -> bool,
+        F: Fn(&D::Output, &WalletTransaction) -> bool,
     {
         match &self.unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
-            UnifiedKeyStore::View(ufvk) => match D::SHIELDED_PROTOCOL {
-                ShieldedProtocol::Sapling => {
+            UnifiedKeyStore::View(ufvk) => match D::POOL_TYPE {
+                PoolType::Transparent => {
+                    ufvk.transparent()?;
+                }
+                PoolType::Shielded(ShieldedProtocol::Sapling) => {
                     ufvk.sapling()?;
                 }
-                ShieldedProtocol::Orchard => {
+                PoolType::Shielded(ShieldedProtocol::Orchard) => {
                     ufvk.orchard()?;
                 }
             },
@@ -94,34 +115,15 @@ impl LightWallet {
             self.wallet_transactions
                 .values()
                 .fold(0, |acc, transaction| {
-                    acc + D::Note::transaction_outputs(transaction)
+                    acc + D::Output::transaction_outputs(transaction)
                         .iter()
                         .filter(|&note| {
                             filter_function(note, transaction)
                                 && note.spending_transaction().is_none()
                         })
-                        .map(|note| note.value())
+                        .map(|output| output.value())
                         .sum::<u64>()
                 }),
-        )
-    }
-
-    /// Sums the transparent balance (unspent)
-    pub async fn get_transparent_balance(&self) -> Option<u64> {
-        match &self.unified_key_store {
-            UnifiedKeyStore::Spend(_) => (),
-            UnifiedKeyStore::View(ufvk) => {
-                ufvk.transparent()?;
-            }
-            UnifiedKeyStore::Empty => return None,
-        }
-        Some(
-            self.get_utxos()
-                .await
-                .iter()
-                .filter(|transparent_output| transparent_output.is_unspent())
-                .map(|utxo| utxo.value)
-                .sum::<u64>(),
         )
     }
 
@@ -168,7 +170,7 @@ impl LightWallet {
         D: WalletDomain,
     {
         self.get_filtered_balance::<D, _>(|note, transaction: &WalletTransaction| {
-            D::Note::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
+            D::Output::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
         })
         .await
     }
@@ -193,6 +195,7 @@ impl LightWallet {
                     .ok_or(BalanceError::NoFullViewingKey)?,
         )?)
     }
+
     /// TODO: Add Doc Comment Here!
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &crate::config::ChainType,
@@ -217,36 +220,17 @@ impl LightWallet {
         self.mnemonic.as_ref()
     }
 
-    /// Get all (unspent) utxos.
-    pub async fn get_utxos(&self) -> Vec<TransparentOutput> {
-        self.transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .transaction_records_by_id
-            .values()
-            .flat_map(|transaction| {
-                transaction
-                    .transparent_outputs
-                    .iter()
-                    .filter(|utxo| !utxo.is_spent_confirmed())
-            })
-            .cloned()
-            .collect::<Vec<TransparentOutput>>()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn transactions(&self) -> Arc<RwLock<TxMap>> {
-        self.transaction_context.transaction_metadata_set.clone()
-    }
-
     /// lists the transparent addresses known by the wallet.
-    pub fn get_transparent_addresses(&self) -> Vec<zcash_primitives::legacy::TransparentAddress> {
-        self.wallet_capability()
-            .transparent_child_addresses()
-            .iter()
-            .map(|(_index, sk)| *sk)
-            .collect::<Vec<_>>()
+    pub fn get_transparent_addresses(&self) -> Vec<TransparentAddress> {
+        self.transparent_addresses
+            .values()
+            .map(|address| {
+                ZcashAddress::try_from_encoded(&address)
+                    .unwrap()
+                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .expect("incorrect network should be checked on wallet load")
+            })
+            .collect()
     }
 
     /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
@@ -845,6 +829,7 @@ mod test {
 
     use zcash_client_backend::PoolType;
     use zcash_client_backend::ShieldedProtocol;
+    use zcash_primitives::consensus::NetworkConstants as _;
 
     use crate::wallet::LightWallet;
 
@@ -856,13 +841,7 @@ mod test {
         /// zingolib includes derivations of further addresses.
         /// ZingoMobile uses one address.
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            Ok(self
-                .wallet_capability()
-                .addresses()
-                .iter()
-                .next()
-                .ok_or(())?
-                .clone())
+            Ok(self.unified_addresses.iter().next().ok_or(())?.clone())
         }
 
         #[allow(clippy::result_unit_err)]
@@ -876,27 +855,20 @@ mod test {
                 PoolType::Transparent => ua
                     .transparent()
                     .map(|taddr| {
-                        crate::wallet::keys::address_from_pubkeyhash(
-                            &self.transaction_context.config,
-                            *taddr,
-                        )
+                        // TODO: new crate for shared conversion, parsing and encoding
+                        zingo_sync::keys::transparent::encode_address(&self.network, *taddr)
                     })
                     .ok_or(()),
                 PoolType::Shielded(ShieldedProtocol::Sapling) => ua
                     .sapling()
                     .map(|z_addr| {
                         zcash_keys::encoding::encode_payment_address(
-                            self.transaction_context
-                                .config
-                                .chain
-                                .hrp_sapling_payment_address(),
+                            self.network.hrp_sapling_payment_address(),
                             z_addr,
                         )
                     })
                     .ok_or(()),
-                PoolType::Shielded(ShieldedProtocol::Orchard) => {
-                    Ok(ua.encode(&self.transaction_context.config.chain))
-                }
+                PoolType::Shielded(ShieldedProtocol::Orchard) => Ok(ua.encode(&self.network)),
             }
         }
 
@@ -908,100 +880,102 @@ mod test {
         }
     }
 
-    #[cfg(test)]
-    use crate::Orchard;
-    #[cfg(test)]
-    use crate::Sapling;
-    #[cfg(test)]
-    use zingo_status::confirmation_status::ConfirmationStatus;
+    // FIXME: zingo2
+    // #[cfg(test)]
+    // use crate::Orchard;
+    // #[cfg(test)]
+    // use crate::Sapling;
+    // #[cfg(test)]
+    // use zingo_status::confirmation_status::ConfirmationStatus;
 
-    #[cfg(test)]
-    use crate::config::ZingoConfigBuilder;
-    #[cfg(test)]
-    use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
-    #[cfg(test)]
-    use crate::mocks::SaplingCryptoNoteBuilder;
-    #[cfg(test)]
-    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
-    #[cfg(test)]
-    use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
-    #[cfg(test)]
-    use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    #[cfg(test)]
-    use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
-    #[cfg(test)]
-    use crate::wallet::WalletBase;
+    // #[cfg(test)]
+    // use crate::config::ZingoConfigBuilder;
+    // #[cfg(test)]
+    // use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
+    // #[cfg(test)]
+    // use crate::mocks::SaplingCryptoNoteBuilder;
+    // #[cfg(test)]
+    // use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    // #[cfg(test)]
+    // use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
+    // #[cfg(test)]
+    // use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
+    // #[cfg(test)]
+    // use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
+    // #[cfg(test)]
+    // use crate::wallet::WalletBase;
 
-    #[tokio::test]
-    async fn confirmed_balance_excluding_dust() {
-        let wallet = LightWallet::new(
-            ZingoConfigBuilder::default().create().chain,
-            WalletBase::FreshEntropy,
-            1.into(),
-        )
-        .unwrap();
-        let confirmed_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Confirmed(80.into()))
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .note(
-                        SaplingCryptoNoteBuilder::default()
-                            .value(sapling_crypto::value::NoteValue::from_raw(3_000))
-                            .clone(),
-                    )
-                    .clone(),
-            )
-            .orchard_notes(OrchardNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .note(
-                        OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(5_001))
-                            .clone(),
-                    )
-                    .clone(),
-            )
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .note(
-                        OrchardCryptoNoteBuilder::default()
-                            .value(orchard::value::NoteValue::from_raw(2_000))
-                            .clone(),
-                    )
-                    .clone(),
-            )
-            .build();
-        let mempool_tx_record = TransactionRecordBuilder::default()
-            .status(ConfirmationStatus::Mempool(95.into()))
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default())
-            .orchard_notes(OrchardNoteBuilder::default())
-            .build();
-        {
-            let mut tx_map = wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
-            tx_map
-                .transaction_records_by_id
-                .insert_transaction_record(confirmed_tx_record);
-            tx_map
-                .transaction_records_by_id
-                .insert_transaction_record(mempool_tx_record);
-        }
+    // FIXME: zingo2
+    // #[tokio::test]
+    // async fn confirmed_balance_excluding_dust() {
+    //     let wallet = LightWallet::new(
+    //         ZingoConfigBuilder::default().create().chain,
+    //         WalletBase::FreshEntropy,
+    //         1.into(),
+    //     )
+    //     .unwrap();
+    //     let confirmed_tx_record = TransactionRecordBuilder::default()
+    //         .status(ConfirmationStatus::Confirmed(80.into()))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .sapling_notes(
+    //             SaplingNoteBuilder::default()
+    //                 .note(
+    //                     SaplingCryptoNoteBuilder::default()
+    //                         .value(sapling_crypto::value::NoteValue::from_raw(3_000))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .note(
+    //                     OrchardCryptoNoteBuilder::default()
+    //                         .value(orchard::value::NoteValue::from_raw(5_001))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .note(
+    //                     OrchardCryptoNoteBuilder::default()
+    //                         .value(orchard::value::NoteValue::from_raw(2_000))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .build();
+    //     let mempool_tx_record = TransactionRecordBuilder::default()
+    //         .status(ConfirmationStatus::Mempool(95.into()))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .build();
+    //     {
+    //         let mut tx_map = wallet
+    //             .transaction_context
+    //             .transaction_metadata_set
+    //             .write()
+    //             .await;
+    //         tx_map
+    //             .transaction_records_by_id
+    //             .insert_transaction_record(confirmed_tx_record);
+    //         tx_map
+    //             .transaction_records_by_id
+    //             .insert_transaction_record(mempool_tx_record);
+    //     }
 
-        assert_eq!(
-            wallet.confirmed_balance_excluding_dust::<Sapling>().await,
-            Some(400_000)
-        );
-        assert_eq!(
-            wallet.confirmed_balance_excluding_dust::<Orchard>().await,
-            Some(1_605_001)
-        );
-    }
+    //     assert_eq!(
+    //         wallet.confirmed_balance_excluding_dust::<Sapling>().await,
+    //         Some(400_000)
+    //     );
+    //     assert_eq!(
+    //         wallet.confirmed_balance_excluding_dust::<Orchard>().await,
+    //         Some(1_605_001)
+    //     );
+    // }
 }

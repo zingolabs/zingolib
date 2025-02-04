@@ -576,11 +576,10 @@ impl std::fmt::Display for ChainType {
 
 impl Parameters for ChainType {
     fn network_type(&self) -> NetworkType {
-        use ChainType::*;
         match self {
-            Mainnet => NetworkType::Main,
-            Testnet => NetworkType::Test,
-            Regtest(_) => NetworkType::Regtest,
+            ChainType::Mainnet => NetworkType::Main,
+            ChainType::Testnet => NetworkType::Test,
+            ChainType::Regtest(_) => NetworkType::Regtest,
         }
     }
 

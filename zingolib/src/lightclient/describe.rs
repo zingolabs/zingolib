@@ -4,9 +4,6 @@ use json::{object, JsonValue};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::encoding::encode_payment_address;
-use zcash_primitives::consensus::NetworkConstants;
-
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},
     wallet::{
@@ -16,11 +13,10 @@ use crate::{
                 SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers,
             },
         },
-        keys::address_from_pubkeyhash,
         notes::Output,
         LightWallet,
     },
-    Orchard, Sapling,
+    Orchard, Sapling, Transparent,
 };
 
 #[allow(missing_docs)]
@@ -33,31 +29,18 @@ fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
 impl LightClient {
-    /// TODO: Add Doc Comment Here!
-    // todo use helpers
+    /// Wrapper for [crate::wallet::LightWallet::do_addresses].
     pub async fn do_addresses(&self) -> JsonValue {
-        let mut objectified_addresses = Vec::new();
-        for address in self.wallet.lock().await.unified_addresses.iter() {
-            let encoded_ua = address.encode(&self.config.chain);
-            let transparent = address
-                .transparent()
-                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
-            objectified_addresses.push(object! {
-        "address" => encoded_ua,
-        "receivers" => object!(
-            "transparent" => transparent,
-            "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
-            "orchard_exists" => address.orchard().is_some(),
-            )
-        })
-        }
-        JsonValue::Array(objectified_addresses)
+        self.wallet.lock().await.do_addresses().await
     }
 
     /// TODO: Redefine the wallet balance functions as non-generics that take a
     /// PoolType variant as an argument, and iterate over a `Vec<Output>`
     pub async fn do_balance(&self) -> PoolBalances {
         let wallet = self.wallet.lock().await;
+
+        let transparent_balance = wallet.confirmed_balance::<Transparent>().await;
+
         let verified_sapling_balance = wallet.confirmed_balance::<Sapling>().await;
         let unverified_sapling_balance = wallet.pending_balance::<Sapling>().await;
         let spendable_sapling_balance = wallet.spendable_balance::<Sapling>().await;
@@ -67,6 +50,7 @@ impl LightClient {
         let unverified_orchard_balance = wallet.pending_balance::<Orchard>().await;
         let spendable_orchard_balance = wallet.spendable_balance::<Orchard>().await;
         let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
+
         PoolBalances {
             sapling_balance,
             verified_sapling_balance,
@@ -78,7 +62,7 @@ impl LightClient {
             spendable_orchard_balance,
             unverified_orchard_balance,
 
-            transparent_balance: wallet.get_transparent_balance().await,
+            transparent_balance,
         }
     }
 
