@@ -2,7 +2,7 @@
 
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
-use crate::testutils::assertions::for_each_proposed_record;
+use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
@@ -130,10 +130,13 @@ where
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
         Vec<u64>,
         (Vec<u64>, Vec<ConfirmationStatus>),
-    ) = for_each_proposed_record(sender, proposal, &txids, |records, record, step| {
+    ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
-            compare_fee(records, record, step),
-            (record.query_sum_value(OutputQuery::any()), record.status),
+            compare_fee(wallet, transaction, step),
+            (
+                wallet.sum_queried_output_values(OutputQuery::any()),
+                transaction.status(),
+            ),
         )
     })
     .await
@@ -164,7 +167,7 @@ where
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
             Vec<u64>,
             (Vec<u64>, Vec<ConfirmationStatus>),
-        ) = for_each_proposed_record(sender, proposal, &txids, |records, record, step| {
+        ) = for_each_proposed_transaction(sender, proposal, &txids, |records, record, step| {
             (
                 compare_fee(records, record, step),
                 (record.query_sum_value(OutputQuery::any()), record.status),
@@ -196,9 +199,14 @@ where
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
                 Vec<u64>,
                 Vec<ConfirmationStatus>,
-            ) = for_each_proposed_record(recipient, proposal, &txids, |_records, record, _step| {
-                (record.query_sum_value(OutputQuery::any()), record.status)
-            })
+            ) = for_each_proposed_transaction(
+                recipient,
+                proposal,
+                &txids,
+                |_records, record, _step| {
+                    (record.query_sum_value(OutputQuery::any()), record.status)
+                },
+            )
             .await
             .into_iter()
             .map(|stepwise_result| stepwise_result.unwrap())
@@ -224,7 +232,7 @@ where
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
         Vec<u64>,
         (Vec<u64>, Vec<ConfirmationStatus>),
-    ) = for_each_proposed_record(sender, proposal, &txids, |records, record, step| {
+    ) = for_each_proposed_transaction(sender, proposal, &txids, |records, record, step| {
         (
             compare_fee(records, record, step),
             (record.query_sum_value(OutputQuery::any()), record.status),
@@ -256,9 +264,12 @@ where
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (
             Vec<u64>,
             Vec<ConfirmationStatus>,
-        ) = for_each_proposed_record(recipient, proposal, &txids, |_records, record, _step| {
-            (record.query_sum_value(OutputQuery::any()), record.status)
-        })
+        ) = for_each_proposed_transaction(
+            recipient,
+            proposal,
+            &txids,
+            |_records, record, _step| (record.query_sum_value(OutputQuery::any()), record.status),
+        )
         .await
         .into_iter()
         .map(|stepwise_result| stepwise_result.unwrap())

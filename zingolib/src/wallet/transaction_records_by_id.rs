@@ -3,14 +3,13 @@
 
 use crate::wallet::notes::{interface::OutputConstructor, TransparentOutput};
 use crate::wallet::{
-    error::KindError,
     notes::{
         interface::ShieldedNoteInterface,
         query::{OutputQuery, OutputSpendStatusQuery},
-        OrchardNote, OutputInterface, SaplingNote,
+        OldOutputInterface, OrchardNote, SaplingNote,
     },
     traits::{DomainWalletExt, Recipient},
-    transaction_record::{SendType, TransactionKind, TransactionRecord},
+    transaction_record::TransactionRecord,
 };
 use std::collections::HashMap;
 
@@ -22,10 +21,6 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::config::{
-    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-    ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-};
 use zcash_primitives::transaction::TxId;
 
 pub mod trait_inputsource;
@@ -338,74 +333,6 @@ impl TransactionRecordsById {
                 }
             })
     }
-    // returns all sapling notes spent in a given transaction.
-    // will fail if a spend is not found when `fail_on_miss` is set to true.
-    fn get_sapling_notes_spent_in_tx(
-        &self,
-        query_record: &TransactionRecord,
-        fail_on_miss: bool,
-    ) -> Result<Vec<&SaplingNote>, KindError> {
-        let mut sapling_spends: Vec<&SaplingNote> =
-            Vec::with_capacity(query_record.spent_sapling_nullifiers.len());
-
-        for nullifier in query_record.spent_sapling_nullifiers() {
-            if let Some(spend) = self.find_sapling_spend(nullifier) {
-                sapling_spends.push(spend);
-            } else if fail_on_miss {
-                return Err(KindError::SaplingSpendNotFound(*nullifier));
-            }
-        }
-        Ok(sapling_spends)
-    }
-    // returns all orchard notes spent in a given transaction.
-    // will fail if a spend is not found when `fail_on_miss` is set to true.
-    fn get_orchard_notes_spent_in_tx(
-        &self,
-        query_record: &TransactionRecord,
-        fail_on_miss: bool,
-    ) -> Result<Vec<&OrchardNote>, KindError> {
-        let mut orchard_spends: Vec<&OrchardNote> =
-            Vec::with_capacity(query_record.spent_orchard_nullifiers.len());
-
-        for nullifier in query_record.spent_orchard_nullifiers() {
-            if let Some(spend) = self.find_orchard_spend(nullifier) {
-                orchard_spends.push(spend);
-            } else if fail_on_miss {
-                return Err(KindError::OrchardSpendNotFound(*nullifier));
-            }
-        }
-        Ok(orchard_spends)
-    }
-
-    // returns total sum of spends for a given transaction.
-    // will fail if a spend is not found in the wallet
-    fn total_value_input_to_transaction(
-        &self,
-        query_record: &TransactionRecord,
-    ) -> Result<u64, KindError> {
-        let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
-        let sapling_spends = self.get_sapling_notes_spent_in_tx(query_record, true)?;
-        let orchard_spends = self.get_orchard_notes_spent_in_tx(query_record, true)?;
-
-        if sapling_spends.is_empty() && orchard_spends.is_empty() && transparent_spends.is_empty() {
-            if query_record.outgoing_tx_data.is_empty() {
-                return Err(KindError::ReceivedTransaction);
-            } else {
-                return Err(KindError::OutgoingWithoutSpends(
-                    query_record.outgoing_tx_data.to_vec(),
-                ));
-            }
-        }
-
-        let transparent_spend_value = transparent_spends
-            .iter()
-            .map(|&coin| coin.value())
-            .sum::<u64>();
-        let sapling_spend_value = sapling_spends.iter().map(|&note| note.value()).sum::<u64>();
-        let orchard_spend_value = orchard_spends.iter().map(|&note| note.value()).sum::<u64>();
-
-        Ok(transparent_spend_value + sapling_spend_value + orchard_spend_value)
-    }
 
     fn get_all_transparent_outputs(&self) -> Vec<&TransparentOutput> {
         self.values()
@@ -429,39 +356,6 @@ impl TransactionRecordsById {
                 (*o.spending_tx_status()).map_or(false, |(txid, _)| txid == query_record.txid)
             })
             .collect()
-    }
-    /// Calculate the fee for a transaction in the wallet
-    ///
-    /// # Error
-    ///
-    /// Returns [`crate::wallet::error::FeeError::ReceivedTransaction`] if no spends or outgoing_tx_data were found
-    /// in the wallet for this transaction, indicating this transaction was not created by this spend capability.
-    /// Returns
-    /// [`crate::wallet::error::FeeError::SaplingSpendNotFound`]
-    /// OR
-    /// [`crate::wallet::error::FeeError::OrchardSpendNotFound`]
-    /// if any shielded spends in the transaction are not
-    /// found in the wallet, indicating that all shielded spends have not yet been synced.
-    /// Also returns this error
-    /// if the transaction record contains outgoing_tx_data but no spends are found.
-    /// If a transparent spend has not yet been synced, the fee will be incorrect and return
-    /// [`crate::wallet::error::FeeError::FeeUnderflow`] if an underflow occurs.
-    /// The tracking of transparent spends will be improved on the next internal wallet version.
-    pub fn calculate_transaction_fee(
-        &self,
-        query_record: &TransactionRecord,
-    ) -> Result<u64, KindError> {
-        let input_value = self.total_value_input_to_transaction(query_record)?;
-        let explicit_output_value = query_record.total_value_output_to_explicit_receivers();
-
-        if input_value >= explicit_output_value {
-            Ok(input_value - explicit_output_value)
-        } else {
-            Err(KindError::FeeUnderflow {
-                input_value,
-                explicit_output_value,
-            })
-        }
     }
 
     // FIXME:
@@ -734,19 +628,14 @@ impl Default for TransactionRecordsById {
 mod tests {
 
     use crate::{
-        mocks::{
-            nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
-            orchard_note::OrchardCryptoNoteBuilder,
-            random_txid, SaplingCryptoNoteBuilder,
-        },
+        mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
         wallet::{
-            data::mocks::OutgoingTxDataBuilder,
             notes::{
                 orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
                 sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-                Output, OutputInterface,
+                OldOutputInterface,
             },
-            transaction_record::mocks::{nine_note_transaction_record, TransactionRecordBuilder},
+            transaction_record::mocks::nine_note_transaction_record,
         },
     };
 
@@ -754,65 +643,66 @@ mod tests {
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus::{self, Confirmed};
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
 
-    #[test]
-    fn invalidate_all_transactions_after_or_at_height() {
-        let transaction_record_later = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(15.into()))
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .build();
-        let spending_txid = transaction_record_later.txid;
+    // FIXME: zingo2
+    // #[test]
+    // fn invalidate_all_transactions_after_or_at_height() {
+    //     let transaction_record_later = TransactionRecordBuilder::default()
+    //         .randomize_txid()
+    //         .status(Confirmed(15.into()))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .build();
+    //     let spending_txid = transaction_record_later.txid;
 
-        let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
+    //     let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
 
-        let transaction_record_early = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(5.into()))
-            .transparent_outputs(
-                TransparentOutputBuilder::default()
-                    .spending_tx_status(spend_in_known_tx)
-                    .clone(),
-            )
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spending_tx_status(spend_in_known_tx)
-                    .clone(),
-            )
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .spending_tx_status(spend_in_known_tx)
-                    .clone(),
-            )
-            .orchard_notes(OrchardNoteBuilder::default())
-            .set_output_indexes()
-            .build();
+    //     let transaction_record_early = TransactionRecordBuilder::default()
+    //         .randomize_txid()
+    //         .status(Confirmed(5.into()))
+    //         .transparent_outputs(
+    //             TransparentOutputBuilder::default()
+    //                 .spending_tx_status(spend_in_known_tx)
+    //                 .clone(),
+    //         )
+    //         .sapling_notes(
+    //             SaplingNoteBuilder::default()
+    //                 .spending_tx_status(spend_in_known_tx)
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .spending_tx_status(spend_in_known_tx)
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .set_output_indexes()
+    //         .build();
 
-        let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;
+    //     let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;
 
-        let mut transaction_records_by_id = TransactionRecordsById::default();
-        transaction_records_by_id.insert_transaction_record(transaction_record_early);
-        transaction_records_by_id.insert_transaction_record(transaction_record_later);
+    //     let mut transaction_records_by_id = TransactionRecordsById::default();
+    //     transaction_records_by_id.insert_transaction_record(transaction_record_early);
+    //     transaction_records_by_id.insert_transaction_record(transaction_record_later);
 
-        let reorg_height: BlockHeight = 10.into();
+    //     let reorg_height: BlockHeight = 10.into();
 
-        transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
+    //     transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
 
-        assert_eq!(transaction_records_by_id.len(), 1);
-        //^ the deleted tx is not around
-        let transaction_record_cvnwis = transaction_records_by_id
-            .get(&txid_containing_valid_note_with_invalid_spends)
-            .unwrap();
+    //     assert_eq!(transaction_records_by_id.len(), 1);
+    //     //^ the deleted tx is not around
+    //     let transaction_record_cvnwis = transaction_records_by_id
+    //         .get(&txid_containing_valid_note_with_invalid_spends)
+    //         .unwrap();
 
-        let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-        let spentish_sapling_notes_in_tx_cvnwis = Output::get_all_outputs_with_status(
-            transaction_record_cvnwis,
-            query_for_spentish_notes,
-        );
-        assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
-    }
+    //     let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
+    //     let spentish_sapling_notes_in_tx_cvnwis = Output::get_all_outputs_with_status(
+    //         transaction_record_cvnwis,
+    //         query_for_spentish_notes,
+    //     );
+    //     assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
+    // }
 
     // TODO: move this into an associated fn of TransparentOutputBuilder
     fn spent_transparent_output_builder(
@@ -855,230 +745,232 @@ mod tests {
             .nullifier(Some(*orchard_nullifier))
             .to_owned()
     }
-    #[test]
-    fn calculate_transaction_fee() {
-        let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
-        let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
-        let sent_transaction_record = TransactionRecordBuilder::default()
-            .status(Confirmed(15.into()))
-            .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
-            .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
-            .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
-            .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
-            .outgoing_tx_data(OutgoingTxDataBuilder::default()) // value 50_000
-            .build();
-        let sent_txid = sent_transaction_record.txid;
-        let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
-        let second_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[1];
-        let first_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[0];
-        let second_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[1];
-        // t-note + s-note + o-note + outgoing_tx_data
-        let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000; // 1_150_000
+    // FIXME: zingo2
+    // #[test]
+    // fn calculate_transaction_fee() {
+    //     let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
+    //     let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
-        let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
-        let first_received_transaction_record = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(5.into()))
-            .sapling_notes(spent_sapling_note_builder(
-                175_000,
-                spent_in_sent_txid,
-                &first_sapling_nullifier,
-            ))
-            .sapling_notes(spent_sapling_note_builder(
-                325_000,
-                spent_in_sent_txid,
-                &second_sapling_nullifier,
-            ))
-            .orchard_notes(spent_orchard_note_builder(
-                500_000,
-                spent_in_sent_txid,
-                &first_orchard_nullifier,
-            ))
-            .transparent_outputs(spent_transparent_output_builder(30_000, spent_in_sent_txid)) // 100_000
-            .sapling_notes(
-                SaplingNoteBuilder::default()
-                    .spending_tx_status(Some((random_txid(), Confirmed(12.into()))))
-                    .to_owned(),
-            )
-            .orchard_notes(OrchardNoteBuilder::default()) // 800_000
-            .set_output_indexes()
-            .build();
-        let second_received_transaction_record = TransactionRecordBuilder::default()
-            .randomize_txid()
-            .status(Confirmed(7.into()))
-            .orchard_notes(spent_orchard_note_builder(
-                200_000,
-                spent_in_sent_txid,
-                &second_orchard_nullifier,
-            ))
-            .transparent_outputs(TransparentOutputBuilder::default())
-            .sapling_notes(SaplingNoteBuilder::default().clone())
-            .orchard_notes(
-                OrchardNoteBuilder::default()
-                    .spending_tx_status(Some((random_txid(), Confirmed(13.into()))))
-                    .to_owned(),
-            )
-            .set_output_indexes()
-            .build();
-        // s-note1 + s-note2 + o-note1 + o-note2 + sent_transaction.total_transparent_value_spent
-        let expected_spend_value: u64 = 175_000 + 325_000 + 500_000 + 200_000 + 30_000;
+    //     let sent_transaction_record = TransactionRecordBuilder::default()
+    //         .status(Confirmed(15.into()))
+    //         .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
+    //         .spent_sapling_nullifiers(sapling_nullifier_builder.assign_unique_nullifier().clone())
+    //         .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
+    //         .spent_orchard_nullifiers(orchard_nullifier_builder.assign_unique_nullifier().clone())
+    //         .transparent_outputs(TransparentOutputBuilder::default()) // value 100_000
+    //         .sapling_notes(SaplingNoteBuilder::default()) // value 200_000
+    //         .orchard_notes(OrchardNoteBuilder::default()) // value 800_000
+    //         .outgoing_tx_data(OutgoingTxDataBuilder::default()) // value 50_000
+    //         .build();
+    //     let sent_txid = sent_transaction_record.txid;
+    //     let first_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
+    //     let second_sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[1];
+    //     let first_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[0];
+    //     let second_orchard_nullifier = sent_transaction_record.spent_orchard_nullifiers[1];
+    //     // t-note + s-note + o-note + outgoing_tx_data
+    //     let expected_output_value: u64 = 100_000 + 200_000 + 800_000 + 50_000; // 1_150_000
 
-        let mut transaction_records_by_id = TransactionRecordsById::default();
-        transaction_records_by_id.insert_transaction_record(sent_transaction_record);
-        transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
-        transaction_records_by_id.insert_transaction_record(second_received_transaction_record);
+    //     let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
+    //     let first_received_transaction_record = TransactionRecordBuilder::default()
+    //         .randomize_txid()
+    //         .status(Confirmed(5.into()))
+    //         .sapling_notes(spent_sapling_note_builder(
+    //             175_000,
+    //             spent_in_sent_txid,
+    //             &first_sapling_nullifier,
+    //         ))
+    //         .sapling_notes(spent_sapling_note_builder(
+    //             325_000,
+    //             spent_in_sent_txid,
+    //             &second_sapling_nullifier,
+    //         ))
+    //         .orchard_notes(spent_orchard_note_builder(
+    //             500_000,
+    //             spent_in_sent_txid,
+    //             &first_orchard_nullifier,
+    //         ))
+    //         .transparent_outputs(spent_transparent_output_builder(30_000, spent_in_sent_txid)) // 100_000
+    //         .sapling_notes(
+    //             SaplingNoteBuilder::default()
+    //                 .spending_tx_status(Some((random_txid(), Confirmed(12.into()))))
+    //                 .to_owned(),
+    //         )
+    //         .orchard_notes(OrchardNoteBuilder::default()) // 800_000
+    //         .set_output_indexes()
+    //         .build();
+    //     let second_received_transaction_record = TransactionRecordBuilder::default()
+    //         .randomize_txid()
+    //         .status(Confirmed(7.into()))
+    //         .orchard_notes(spent_orchard_note_builder(
+    //             200_000,
+    //             spent_in_sent_txid,
+    //             &second_orchard_nullifier,
+    //         ))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default().clone())
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .spending_tx_status(Some((random_txid(), Confirmed(13.into()))))
+    //                 .to_owned(),
+    //         )
+    //         .set_output_indexes()
+    //         .build();
+    //     // s-note1 + s-note2 + o-note1 + o-note2 + sent_transaction.total_transparent_value_spent
+    //     let expected_spend_value: u64 = 175_000 + 325_000 + 500_000 + 200_000 + 30_000;
 
-        let fee = transaction_records_by_id
-            .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
-            .unwrap();
-        assert_eq!(expected_spend_value - expected_output_value, fee);
-    }
+    //     let mut transaction_records_by_id = TransactionRecordsById::default();
+    //     transaction_records_by_id.insert_transaction_record(sent_transaction_record);
+    //     transaction_records_by_id.insert_transaction_record(first_received_transaction_record);
+    //     transaction_records_by_id.insert_transaction_record(second_received_transaction_record);
 
-    mod calculate_transaction_fee_errors {
-        use crate::{
-            mocks::{
-                nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
-                orchard_note::OrchardCryptoNoteBuilder,
-                SaplingCryptoNoteBuilder,
-            },
-            wallet::{
-                data::mocks::OutgoingTxDataBuilder,
-                error::KindError,
-                notes::{
-                    orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
-                    transparent::mocks::TransparentOutputBuilder,
-                },
-                transaction_record::mocks::TransactionRecordBuilder,
-                transaction_records_by_id::{
-                    tests::spent_transparent_output_builder, TransactionRecordsById,
-                },
-            },
-        };
+    //     let fee = transaction_records_by_id
+    //         .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap())
+    //         .unwrap();
+    //     assert_eq!(expected_spend_value - expected_output_value, fee);
+    // }
 
-        use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
+    // mod calculate_transaction_fee_errors {
+    //     use crate::{
+    //         mocks::{
+    //             nullifier::{OrchardNullifierBuilder, SaplingNullifierBuilder},
+    //             orchard_note::OrchardCryptoNoteBuilder,
+    //             SaplingCryptoNoteBuilder,
+    //         },
+    //         wallet::{
+    //             data::mocks::OutgoingTxDataBuilder,
+    //             error::KindError,
+    //             notes::{
+    //                 orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
+    //                 transparent::mocks::TransparentOutputBuilder,
+    //             },
+    //             transaction_record::mocks::TransactionRecordBuilder,
+    //             transaction_records_by_id::{
+    //                 tests::spent_transparent_output_builder, TransactionRecordsById,
+    //             },
+    //         },
+    //     };
 
-        #[test]
-        fn spend_not_found() {
-            let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
-            let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
+    //     use zingo_status::confirmation_status::ConfirmationStatus::Confirmed;
 
-            let sent_transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
-                .spent_sapling_nullifiers(
-                    sapling_nullifier_builder.assign_unique_nullifier().clone(),
-                )
-                .spent_orchard_nullifiers(
-                    orchard_nullifier_builder.assign_unique_nullifier().clone(),
-                )
-                .outgoing_tx_data(OutgoingTxDataBuilder::default())
-                .transparent_outputs(TransparentOutputBuilder::default())
-                .sapling_notes(SaplingNoteBuilder::default())
-                .orchard_notes(OrchardNoteBuilder::default())
-                .build();
-            let sent_txid = sent_transaction_record.txid;
-            let sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
+    //     #[test]
+    //     fn spend_not_found() {
+    //         let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
+    //         let mut orchard_nullifier_builder = OrchardNullifierBuilder::new();
 
-            let received_transaction_record = TransactionRecordBuilder::default()
-                .randomize_txid()
-                .status(Confirmed(5.into()))
-                .sapling_notes(
-                    SaplingNoteBuilder::default()
-                        .note(
-                            SaplingCryptoNoteBuilder::default()
-                                .value(sapling_crypto::value::NoteValue::from_raw(175_000))
-                                .to_owned(),
-                        )
-                        .spending_tx_status(Some((sent_txid, Confirmed(15.into()))))
-                        .nullifier(Some(sapling_nullifier))
-                        .to_owned(),
-                )
-                .build();
+    //         let sent_transaction_record = TransactionRecordBuilder::default()
+    //             .status(Confirmed(15.into()))
+    //             .spent_sapling_nullifiers(
+    //                 sapling_nullifier_builder.assign_unique_nullifier().clone(),
+    //             )
+    //             .spent_orchard_nullifiers(
+    //                 orchard_nullifier_builder.assign_unique_nullifier().clone(),
+    //             )
+    //             .outgoing_tx_data(OutgoingTxDataBuilder::default())
+    //             .transparent_outputs(TransparentOutputBuilder::default())
+    //             .sapling_notes(SaplingNoteBuilder::default())
+    //             .orchard_notes(OrchardNoteBuilder::default())
+    //             .build();
+    //         let sent_txid = sent_transaction_record.txid;
+    //         let sapling_nullifier = sent_transaction_record.spent_sapling_nullifiers[0];
 
-            let mut transaction_records_by_id = TransactionRecordsById::default();
-            transaction_records_by_id.insert_transaction_record(sent_transaction_record);
-            transaction_records_by_id.insert_transaction_record(received_transaction_record);
+    //         let received_transaction_record = TransactionRecordBuilder::default()
+    //             .randomize_txid()
+    //             .status(Confirmed(5.into()))
+    //             .sapling_notes(
+    //                 SaplingNoteBuilder::default()
+    //                     .note(
+    //                         SaplingCryptoNoteBuilder::default()
+    //                             .value(sapling_crypto::value::NoteValue::from_raw(175_000))
+    //                             .to_owned(),
+    //                     )
+    //                     .spending_tx_status(Some((sent_txid, Confirmed(15.into()))))
+    //                     .nullifier(Some(sapling_nullifier))
+    //                     .to_owned(),
+    //             )
+    //             .build();
 
-            let fee = transaction_records_by_id
-                .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(KindError::OrchardSpendNotFound(_))));
-        }
-        #[test]
-        fn received_transaction() {
-            let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
-                .transparent_outputs(TransparentOutputBuilder::default())
-                .sapling_notes(SaplingNoteBuilder::default())
-                .orchard_notes(OrchardNoteBuilder::default())
-                .build();
-            let sent_txid = transaction_record.txid;
+    //         let mut transaction_records_by_id = TransactionRecordsById::default();
+    //         transaction_records_by_id.insert_transaction_record(sent_transaction_record);
+    //         transaction_records_by_id.insert_transaction_record(received_transaction_record);
 
-            let mut transaction_records_by_id = TransactionRecordsById::default();
-            transaction_records_by_id.insert_transaction_record(transaction_record);
+    //         let fee = transaction_records_by_id
+    //             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
+    //         assert!(matches!(fee, Err(KindError::OrchardSpendNotFound(_))));
+    //     }
+    //     #[test]
+    //     fn received_transaction() {
+    //         let transaction_record = TransactionRecordBuilder::default()
+    //             .status(Confirmed(15.into()))
+    //             .transparent_outputs(TransparentOutputBuilder::default())
+    //             .sapling_notes(SaplingNoteBuilder::default())
+    //             .orchard_notes(OrchardNoteBuilder::default())
+    //             .build();
+    //         let sent_txid = transaction_record.txid;
 
-            let fee = transaction_records_by_id
-                .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(KindError::ReceivedTransaction)));
-        }
-        #[test]
-        fn outgoing_tx_data_but_no_spends_found() {
-            let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
-                .transparent_outputs(TransparentOutputBuilder::default())
-                .sapling_notes(SaplingNoteBuilder::default())
-                .orchard_notes(OrchardNoteBuilder::default())
-                .outgoing_tx_data(OutgoingTxDataBuilder::default())
-                .build();
-            let sent_txid = transaction_record.txid;
+    //         let mut transaction_records_by_id = TransactionRecordsById::default();
+    //         transaction_records_by_id.insert_transaction_record(transaction_record);
 
-            let mut transaction_records_by_id = TransactionRecordsById::default();
-            transaction_records_by_id.insert_transaction_record(transaction_record);
+    //         let fee = transaction_records_by_id
+    //             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
+    //         assert!(matches!(fee, Err(KindError::ReceivedTransaction)));
+    //     }
+    //     #[test]
+    //     fn outgoing_tx_data_but_no_spends_found() {
+    //         let transaction_record = TransactionRecordBuilder::default()
+    //             .status(Confirmed(15.into()))
+    //             .transparent_outputs(TransparentOutputBuilder::default())
+    //             .sapling_notes(SaplingNoteBuilder::default())
+    //             .orchard_notes(OrchardNoteBuilder::default())
+    //             .outgoing_tx_data(OutgoingTxDataBuilder::default())
+    //             .build();
+    //         let sent_txid = transaction_record.txid;
 
-            let fee = transaction_records_by_id
-                .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(KindError::OutgoingWithoutSpends(_))));
-        }
-        #[test]
-        fn transparent_spends_not_fully_synced() {
-            let transaction_record = TransactionRecordBuilder::default()
-                .status(Confirmed(15.into()))
-                .orchard_notes(
-                    OrchardNoteBuilder::default()
-                        .note(
-                            OrchardCryptoNoteBuilder::default()
-                                .value(orchard::value::NoteValue::from_raw(50_000))
-                                .to_owned(),
-                        )
-                        .to_owned(),
-                )
-                .build();
-            let sent_txid = transaction_record.txid;
-            let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
-            let transparent_funding_tx = TransactionRecordBuilder::default()
-                .randomize_txid()
-                .status(Confirmed(7.into()))
-                .transparent_outputs(spent_transparent_output_builder(20_000, spent_in_sent_txid))
-                .set_output_indexes()
-                .build();
+    //         let mut transaction_records_by_id = TransactionRecordsById::default();
+    //         transaction_records_by_id.insert_transaction_record(transaction_record);
 
-            let mut transaction_records_by_id = TransactionRecordsById::default();
-            transaction_records_by_id.insert_transaction_record(transaction_record);
-            transaction_records_by_id.insert_transaction_record(transparent_funding_tx);
+    //         let fee = transaction_records_by_id
+    //             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
+    //         assert!(matches!(fee, Err(KindError::OutgoingWithoutSpends)));
+    //     }
+    //     #[test]
+    //     fn transparent_spends_not_fully_synced() {
+    //         let transaction_record = TransactionRecordBuilder::default()
+    //             .status(Confirmed(15.into()))
+    //             .orchard_notes(
+    //                 OrchardNoteBuilder::default()
+    //                     .note(
+    //                         OrchardCryptoNoteBuilder::default()
+    //                             .value(orchard::value::NoteValue::from_raw(50_000))
+    //                             .to_owned(),
+    //                     )
+    //                     .to_owned(),
+    //             )
+    //             .build();
+    //         let sent_txid = transaction_record.txid;
+    //         let spent_in_sent_txid = (sent_txid, Confirmed(15.into()));
+    //         let transparent_funding_tx = TransactionRecordBuilder::default()
+    //             .randomize_txid()
+    //             .status(Confirmed(7.into()))
+    //             .transparent_outputs(spent_transparent_output_builder(20_000, spent_in_sent_txid))
+    //             .set_output_indexes()
+    //             .build();
 
-            let fee = transaction_records_by_id
-                .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(
-                fee,
-                Err(KindError::FeeUnderflow {
-                    input_value: _,
-                    explicit_output_value: _,
-                })
-            ));
-        }
-    }
+    //         let mut transaction_records_by_id = TransactionRecordsById::default();
+    //         transaction_records_by_id.insert_transaction_record(transaction_record);
+    //         transaction_records_by_id.insert_transaction_record(transparent_funding_tx);
+
+    //         let fee = transaction_records_by_id
+    //             .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
+    //         assert!(matches!(
+    //             fee,
+    //             Err(KindError::FeeUnderflow {
+    //                 input_value: _,
+    //                 explicit_output_value: _,
+    //             })
+    //         ));
+    //     }
+    // }
 
     #[test]
     fn get_received_spendable_note_from_identifier() {

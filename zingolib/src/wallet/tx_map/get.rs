@@ -7,7 +7,7 @@ use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use crate::wallet::notes::interface::OutputConstructor;
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
-    notes::OutputInterface,
+    notes::OldOutputInterface,
     notes::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
     traits::{DomainWalletExt, Recipient},
 };
@@ -173,22 +173,4 @@ fn test_get_some_txid_from_highest_wallet_block() {
         ));
     let highest = tms.get_some_txid_from_highest_wallet_block();
     assert_eq!(highest, Some(txid_2));
-}
-
-#[cfg(feature = "lightclient-deprecated")]
-impl TxMap {
-    /// TODO: Doc-comment!
-    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
-        let transaction_record = self
-            .transaction_records_by_id
-            .get(txid)
-            .expect("should have the requested transaction record in the wallet");
-        match self
-            .transaction_records_by_id
-            .calculate_transaction_fee(transaction_record)
-        {
-            Ok(tx_fee) => tx_fee,
-            Err(e) => panic!("{:?} for txid {}", e, txid,),
-        }
-    }
 }

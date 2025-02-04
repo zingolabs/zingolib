@@ -7,10 +7,10 @@ pub mod interrupts;
 pub mod scenarios;
 
 use crate::wallet::data::summaries::{
-    NoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary,
-    TransactionSummaryInterface as _, TransparentCoinSummary,
+    NoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::notes::SpendStatus;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
@@ -161,8 +161,8 @@ pub fn check_transaction_summary_equality(
         && first.value() == second.value()
         && first.fee() == second.fee()
         && first.zec_price() == second.zec_price()
-        && check_orchard_note_summary_equality(first.orchard_notes(), second.orchard_notes())
-        && check_sapling_note_summary_equality(first.sapling_notes(), second.sapling_notes())
+        && check_note_summary_equality(first.orchard_notes(), second.orchard_notes())
+        && check_note_summary_equality(first.sapling_notes(), second.sapling_notes())
         && check_transparent_coin_summary_equality(
             first.transparent_coins(),
             second.transparent_coins(),
@@ -172,26 +172,7 @@ pub fn check_transaction_summary_equality(
 }
 
 /// TODO: doc comment
-fn check_orchard_note_summary_equality(first: &[NoteSummary], second: &[NoteSummary]) -> bool {
-    if first.len() != second.len() {
-        return false;
-    };
-    for i in 0..first.len() {
-        if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
-            && first[i].memo() == second[i].memo())
-        {
-            return false;
-        }
-    }
-    true
-}
-
-/// TODO: doc comment
-fn check_sapling_note_summary_equality(
-    first: &[SaplingNoteSummary],
-    second: &[SaplingNoteSummary],
-) -> bool {
+fn check_note_summary_equality(first: &[NoteSummary], second: &[NoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
     };

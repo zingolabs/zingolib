@@ -198,11 +198,6 @@ impl Output {
             )
             .collect()
     }
-
-    /// this sums the value of a vec of outputs, ignoring marginal fees
-    pub fn sum_gross_value(list: Vec<Self>) -> u64 {
-        list.iter().fold(0, |total, output| total + output.value())
-    }
 }
 
 #[cfg(test)]
@@ -268,7 +263,7 @@ pub mod tests {
         mocks::default_txid,
         wallet::notes::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, OutputInterface,
+            transparent::mocks::TransparentOutputBuilder, OldOutputInterface as _,
         },
     };
 

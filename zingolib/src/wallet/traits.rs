@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 
 use crate::config::ChainType;
 use crate::data::witness_trees::WitnessTrees;
-use crate::wallet::notes::OutputInterface;
+use crate::wallet::notes::OldOutputInterface;
 use crate::wallet::notes::ShieldedNoteInterface;
 use crate::wallet::{
     data::{

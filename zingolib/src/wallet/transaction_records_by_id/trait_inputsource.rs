@@ -17,7 +17,7 @@ use zcash_primitives::{
     },
 };
 
-use crate::wallet::{notes::OutputInterface, transaction_records_by_id::TransactionRecordsById};
+use crate::wallet::{notes::OldOutputInterface, transaction_records_by_id::TransactionRecordsById};
 
 use std::fmt::Debug;
 

@@ -13,8 +13,8 @@ use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use crate::lightclient::LightClient;
 use crate::wallet::data::summaries::SelfSendValueTransfer;
 use crate::wallet::data::summaries::SentValueTransfer;
+use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
-use crate::wallet::notes::{query::OutputPoolQuery, OutputInterface};
 use crate::wallet::{data::summaries::ValueTransferKind, notes::query::OutputQuery};
 
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
