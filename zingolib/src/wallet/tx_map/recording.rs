@@ -256,9 +256,9 @@ impl crate::wallet::tx_map::TxMap {
     ) -> Result<(), ()> {
         // now we reconfigure the tx_map to align with the server
         // switch the TransactionRecord to the new txid
-        let ref mut v1 = self.spending_data;
+        let v1 = &mut self.spending_data;
         let v2 = v1.as_mut().unwrap();
-        let ref mut v3 = v2.cached_raw_transactions;
+        let v3 = &mut v2.cached_raw_transactions;
         for (txid, _) in v3 {
             if *txid == original_txid {
                 *txid = replacement_txid;

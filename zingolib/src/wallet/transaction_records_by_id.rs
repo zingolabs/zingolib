@@ -95,7 +95,7 @@ impl TransactionRecordsById {
     pub fn get_record(&mut self, txid: &TxId) -> Result<&mut TransactionRecord, GetRecordError> {
         self.get_mut(txid)
             .map(Ok)
-            .unwrap_or_else(|| Err(GetRecordError::Unrecorded(txid.clone())))
+            .unwrap_or_else(|| Err(GetRecordError::Unrecorded(*txid)))
     }
     /// Uses a query to select all notes across all transactions with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
