@@ -1,12 +1,13 @@
 //! Wallet-State reporters as LightWallet methods.
+use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zingo_sync::primitives::NoteInterface;
 use zingo_sync::primitives::OrchardNote;
 use zingo_sync::primitives::OutgoingNoteInterface;
-use zingo_sync::primitives::OutputId;
 use zingo_sync::primitives::OutputInterface;
 use zingo_sync::primitives::SaplingNote;
 use zingo_sync::primitives::TransparentCoin;
@@ -42,14 +43,19 @@ use crate::Orchard;
 use crate::Sapling;
 use crate::WalletDomain;
 
-use super::data::summaries::OrchardNoteSummary;
+use super::data::summaries::NoteSummary;
 use super::data::summaries::OutgoingNoteSummary;
-use super::data::summaries::SaplingNoteSummary;
+use super::data::summaries::SelfSendValueTransfer;
+use super::data::summaries::SentValueTransfer;
 use super::data::summaries::TransactionSummaries;
 use super::data::summaries::TransactionSummary;
 use super::data::summaries::TransactionSummaryBuilder;
 use super::data::summaries::TransactionSummaryInterface as _;
 use super::data::summaries::TransparentCoinSummary;
+use super::data::summaries::ValueTransfer;
+use super::data::summaries::ValueTransferBuilder;
+use super::data::summaries::ValueTransferKind;
+use super::data::summaries::ValueTransfers;
 use super::keys::unified::UnifiedKeyStore;
 use super::transaction_record::SendType;
 use super::transaction_record::TransactionKind;
@@ -243,53 +249,6 @@ impl LightWallet {
             .collect::<Vec<_>>()
     }
 
-    /// Gets all outputs of a given type in the wallet.
-    fn get_all_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
-        self.wallet_transactions
-            .values()
-            .flat_map(|transaction| Op::transaction_outputs(transaction))
-            .collect()
-    }
-
-    /// Gets all outputs of a given type spent in the `query_transaction`.
-    // FIXME: zingo2, implement fail on miss
-    fn find_spends<Op: OutputInterface>(
-        &self,
-        query_transaction: &WalletTransaction,
-    ) -> Vec<&Op> {
-        self.get_all_outputs::<Op>()
-            .into_iter()
-            .filter_map(|output| {
-                output.spending_transaction().and_then(|txid| {
-                    if txid == query_transaction.txid() {
-                        let spend = Op::transaction_inputs(self
-                            .wallet_transactions
-                            .get(&txid)
-                            .expect("transaction should exist in the wallet")
-                            )
-                            .into_iter()
-                            .find(|&input| {
-                                output.spend_link().map_or(false, |spend_link|
-                                {
-                                    *input
-                                    == spend_link
-                                })
-                            }); 
-
-                        if spend.is_none() {
-                            // TODO: error handling
-                            panic!("output's spending transaction field incorrectly points to transaction which did not spend output!");
-                        }
-
-                        Some(output)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect()
-    }
-
     /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
     /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
     /// the Zcash protocol
@@ -301,11 +260,15 @@ impl LightWallet {
             ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         };
 
-        let transparent_spends = self.find_spends::<TransparentCoin>(transaction);
+        let transparent_spends = self
+            .find_spends::<TransparentCoin>(transaction, false)
+            .expect("fail_on_miss is set false");
         let sapling_spends = self
-            .find_spends::<SaplingNote>(transaction);
+            .find_spends::<SaplingNote>(transaction, false)
+            .expect("fail_on_miss is set false");
         let orchard_spends = self
-            .find_spends::<OrchardNote>(transaction);
+            .find_spends::<OrchardNote>(transaction, false)
+            .expect("fail_on_miss is set false");
 
         if transparent_spends.is_empty()
             && sapling_spends.is_empty()
@@ -313,7 +276,7 @@ impl LightWallet {
             && transaction.outgoing_sapling_notes().is_empty()
             && transaction.outgoing_orchard_notes().is_empty()
         {
-            // no spends and no outgoing tx data
+            // no spends and no outgoing notes
             TransactionKind::Received
         } else if !transparent_spends.is_empty()
             && sapling_spends.is_empty()
@@ -322,21 +285,29 @@ impl LightWallet {
             && transaction.outgoing_orchard_notes().is_empty()
             && (!transaction.orchard_notes().is_empty() | !transaction.sapling_notes().is_empty())
         {
-            // only transparent spends, no outgoing tx data and notes received
+            // only transparent spends, no outgoing notes and notes received
             // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
         } else if transaction.outgoing_sapling_notes().is_empty()
             && transaction.outgoing_orchard_notes().is_empty()
             || (transaction.outgoing_sapling_notes().len() == 1
-                && transaction.outgoing_sapling_notes().iter().any(|outgoing_note| {
-                    outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
-                        || outgoing_note.encoded_recipient_unified_address(&self.network) == Some(zfz_address.to_string())
-                }))
+                && transaction
+                    .outgoing_sapling_notes()
+                    .iter()
+                    .any(|outgoing_note| {
+                        outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                            || outgoing_note.encoded_recipient_unified_address(&self.network)
+                                == Some(zfz_address.to_string())
+                    }))
             || (transaction.outgoing_orchard_notes().len() == 1
-                && transaction.outgoing_orchard_notes().iter().any(|outgoing_note| {
-                    outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
-                        || outgoing_note.encoded_recipient_unified_address(&self.network) == Some(zfz_address.to_string())
-                }))
+                && transaction
+                    .outgoing_orchard_notes()
+                    .iter()
+                    .any(|outgoing_note| {
+                        outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                            || outgoing_note.encoded_recipient_unified_address(&self.network)
+                                == Some(zfz_address.to_string())
+                    }))
         {
             // not Received, this capability created this transaction
             // not Shield, notes were spent
@@ -353,8 +324,16 @@ impl LightWallet {
             .wallet_transactions
             .values()
             .map(|transaction| {
-                let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins, outgoing_sapling_notes, outgoing_orchard_notes) =
-                    self.basic_transaction_summary_parts(transaction);
+                let (
+                    kind,
+                    value,
+                    fee,
+                    orchard_notes,
+                    sapling_notes,
+                    transparent_coins,
+                    outgoing_sapling_notes,
+                    outgoing_orchard_notes,
+                ) = self.basic_transaction_summary_parts(transaction);
 
                 TransactionSummaryBuilder::new()
                     .txid(transaction.txid())
@@ -379,9 +358,11 @@ impl LightWallet {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
                 Ordering::Equal => {
                     let starts_with_tex = |summary: &TransactionSummary| {
-                        summary.outgoing_sapling_notes().iter().chain(summary.outgoing_orchard_notes().iter()).any(|outgoing_note| {
-                            outgoing_note.recipient.starts_with("tex")
-                        })
+                        summary
+                            .outgoing_sapling_notes()
+                            .iter()
+                            .chain(summary.outgoing_orchard_notes().iter())
+                            .any(|outgoing_note| outgoing_note.recipient.starts_with("tex"))
                     };
                     match (starts_with_tex(summary_a), starts_with_tex(summary_b)) {
                         (true, false) => Ordering::Greater,
@@ -408,8 +389,8 @@ impl LightWallet {
         TransactionKind,
         u64,
         Option<u64>,
-        Vec<OrchardNoteSummary>,
-        Vec<SaplingNoteSummary>,
+        Vec<NoteSummary>,
+        Vec<NoteSummary>,
         Vec<TransparentCoinSummary>,
         Vec<OutgoingNoteSummary>,
         Vec<OutgoingNoteSummary>,
@@ -418,96 +399,106 @@ impl LightWallet {
         let value = match kind {
             TransactionKind::Received
             | TransactionKind::Sent(SendType::Shield)
-            | TransactionKind::Sent(SendType::SendToSelf) => {
-                transaction.total_value_received()
-            }
-            TransactionKind::Sent(SendType::Send) => transaction_record.value_outgoing(),
+            | TransactionKind::Sent(SendType::SendToSelf) => transaction.total_value_received(),
+            TransactionKind::Sent(SendType::Send) => transaction.total_value_sent(),
         };
-        let fee = transaction_records
-            .calculate_transaction_fee(transaction_record)
-            .ok();
-        let mut orchard_notes = transaction_record
-            .orchard_notes
+        let fee = self.calculate_transaction_fee(transaction).ok();
+        let orchard_notes = transaction
+            .orchard_notes()
             .iter()
             .map(|output| {
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
+                let spend_status = self.output_spend_status(output);
 
-                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = &output.memo {
                     Some(memo_text.to_string())
                 } else {
                     None
                 };
 
-                OrchardNoteSummary::from_parts(
+                NoteSummary::from_parts(
                     output.value(),
-                    spend_summary,
-                    output.output_index,
+                    spend_status,
+                    output.output_id().output_index() as u32,
                     memo,
                 )
             })
             .collect::<Vec<_>>();
-        let mut sapling_notes = transaction_record
-            .sapling_notes
+        let sapling_notes = transaction
+            .sapling_notes()
             .iter()
             .map(|output| {
-                // example of creating spend summary "from foundational truths" with correct wallet level insight
-                let spend_summary = if let Some(status) = wallet.output_spend_status(output) {
-                    match status {
-                        ConfirmationStatus::Confirmed(_) => SpendSummary::Spent(
-                            output
-                                .spending_txid()
-                                .expect("transaction must exist in the wallet"),
-                        ),
-                        ConfirmationStatus::Transmitted(_) => SpendSummary::TransmittedSpent(
-                            output
-                                .spending_txid()
-                                .expect("transaction must exist in the wallet"),
-                        ),
-                        ConfirmationStatus::Mempool(_) => SpendSummary::MempoolSpent(
-                            output
-                                .spending_txid()
-                                .expect("transaction must exist in the wallet"),
-                        ),
-                        _ => SpendSummary::Unspent, // TODO: add calculated spent
-                    }
-                } else {
-                    SpendSummary::Unspent
-                };
+                let spend_status = self.output_spend_status(output);
 
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
-
-                let memo = if let Some(Memo::Text(memo_text)) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = &output.memo {
                     Some(memo_text.to_string())
                 } else {
                     None
                 };
 
-                SaplingNoteSummary::from_parts(
+                NoteSummary::from_parts(
                     output.value(),
-                    spend_summary,
-                    output.output_index,
+                    spend_status,
+                    output.output_id().output_index() as u32,
                     memo,
                 )
             })
             .collect::<Vec<_>>();
-        let mut transparent_coins = transaction_record
-            .transparent_outputs
+        let transparent_coins = transaction
+            .transparent_coins()
             .iter()
             .map(|output| {
-                let spend_summary = SpendSummary::from_spend(output.spending_tx_status());
+                let spend_status = self.output_spend_status(output);
 
                 TransparentCoinSummary::from_parts(
                     output.value(),
-                    spend_summary,
-                    output.output_index,
+                    spend_status,
+                    output.output_id().output_index() as u32,
                 )
             })
             .collect::<Vec<_>>();
 
-        // TODO: this sorting should be removed once we root cause the tx records outputs being out of order
-        orchard_notes.sort_by_key(|output| output.output_index());
-        sapling_notes.sort_by_key(|output| output.output_index());
-        transparent_coins.sort_by_key(|output| output.output_index());
+        let outgoing_orchard_notes = transaction
+            .outgoing_orchard_notes()
+            .iter()
+            .map(|note| {
+                let memo = if let Memo::Text(memo_text) = note.memo() {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                OutgoingNoteSummary {
+                    output_index: note.output_id().output_index(),
+                    key_id: note.key_id(),
+                    memo,
+                    value: note.value(),
+                    recipient: note.encoded_recipient(&self.network),
+                    recipient_unified_address: note
+                        .encoded_recipient_unified_address(&self.network),
+                }
+            })
+            .collect::<Vec<_>>();
+        let outgoing_sapling_notes = transaction
+            .outgoing_sapling_notes()
+            .iter()
+            .map(|note| {
+                let memo = if let Memo::Text(memo_text) = note.memo() {
+                    Some(memo_text.to_string())
+                } else {
+                    None
+                };
+
+                OutgoingNoteSummary {
+                    output_index: note.output_id().output_index(),
+                    key_id: note.key_id(),
+                    memo,
+                    value: note.value(),
+                    recipient: note.encoded_recipient(&self.network),
+                    recipient_unified_address: note
+                        .encoded_recipient_unified_address(&self.network),
+                }
+            })
+            .collect::<Vec<_>>();
         (
             kind,
             value,
@@ -515,17 +506,9 @@ impl LightWallet {
             orchard_notes,
             sapling_notes,
             transparent_coins,
+            outgoing_orchard_notes,
+            outgoing_sapling_notes,
         )
-    }
-
-    /// Provides a list of value transfers sorted
-    /// A value transfer is a group of all notes to a specific receiver in a transaction.
-    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
-        let mut value_transfers = self.value_transfers().await;
-        if newer_first {
-            value_transfers.reverse();
-        }
-        value_transfers
     }
 
     /// Provides a list of value transfers related to this capability
@@ -780,6 +763,16 @@ impl LightWallet {
             };
         }
         ValueTransfers::new(value_transfers)
+    }
+
+    /// Provides a list of value transfers sorted
+    /// A value transfer is a group of all notes to a specific receiver in a transaction.
+    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
+        let mut value_transfers = self.value_transfers().await;
+        if newer_first {
+            value_transfers.reverse();
+        }
+        value_transfers
     }
 
     /// TODO: doc comment

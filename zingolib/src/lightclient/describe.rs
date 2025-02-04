@@ -12,7 +12,9 @@ use crate::{
     wallet::{
         data::{
             finsight,
-            summaries::{SentValueTransfer, ValueTransferKind, ValueTransfers},
+            summaries::{
+                SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers,
+            },
         },
         keys::address_from_pubkeyhash,
         notes::Output,
@@ -99,6 +101,39 @@ impl LightClient {
             }
             Err(e) => e,
         }
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
+    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+        self.wallet.lock().await.transaction_summaries().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries_json_string].
+    pub async fn transaction_summaries_json_string(&self) -> String {
+        self.wallet
+            .lock()
+            .await
+            .transaction_summaries_json_string()
+            .await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::value_transfers].
+    pub async fn value_transfers(&self) -> ValueTransfers {
+        self.wallet.lock().await.value_transfers().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::sorted_value_transfers].
+    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
+        self.wallet
+            .lock()
+            .await
+            .sorted_value_transfers(newer_first)
+            .await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::value_transfers_json_string].
+    pub async fn value_transfers_json_string(&self) -> String {
+        self.wallet.lock().await.value_transfers_json_string().await
     }
 
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.

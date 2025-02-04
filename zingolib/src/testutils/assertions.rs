@@ -16,7 +16,7 @@ pub enum ProposalToTransactionRecordComparisonError {
     #[error("{0:?}")]
     LookupError(#[from] LookupRecordsPairStepsError),
     #[error("Mismatch: Recorded fee: {0:?} ; Expected fee: {1:?}")]
-    Mismatch(Result<u64, crate::wallet::error::FeeError>, u64),
+    Mismatch(Result<u64, crate::wallet::error::KindError>, u64),
 }
 
 /// compares a proposal with a fulfilled record and returns the agreed fee

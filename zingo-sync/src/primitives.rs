@@ -436,6 +436,22 @@ impl WalletTransaction {
 
 #[cfg(feature = "wallet_pack")]
 impl WalletTransaction {
+    /// Returns the total value sent to receivers.
+    // FIXME: check if outgoing notes are generated for change (assumed not). consider correct send-to-self case (subtract shielded outputs?).
+    pub fn total_value_sent(&self) -> u64 {
+        let transparent_value_sent = self.transaction.transparent_bundle().map_or(0, |bundle| {
+            bundle
+                .vout
+                .iter()
+                .map(|output| output.value.into_u64())
+                .sum()
+        }) - self.total_output_value::<TransparentCoin>();
+
+        transparent_value_sent
+            + self.total_outgoing_note_value::<OutgoingSaplingNote>()
+            + self.total_outgoing_note_value::<OutgoingOrchardNote>()
+    }
+
     /// Returns total sum of all output values.
     pub fn total_value_received(&self) -> u64 {
         self.total_output_value::<TransparentCoin>()
@@ -451,18 +467,7 @@ impl WalletTransaction {
             .sum()
     }
 
-    pub fn total_shielded_value_sent(&self) -> u64 {
-        // let output_sum = self
-        //     .vout
-        //     .iter()
-        //     .map(|p| Amount::from(p.value))
-        //     .sum::<Option<Amount>>()
-        //     .ok_or(BalanceError::Overflow)?;
-
-        self.total_outgoing_note_value::<OutgoingSaplingNote>()
-            + self.total_outgoing_note_value::<OutgoingOrchardNote>()
-    }
-
+    /// Returns total sum of outgoing note values for a given shielded pool.
     pub fn total_outgoing_note_value<Op: OutgoingNoteInterface>(&self) -> u64 {
         Op::transaction_outgoing_notes(self)
             .iter()
@@ -528,7 +533,7 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
 
 pub trait OutputInterface: Sized {
     type KeyId;
-    type Input: PartialEq + Eq + PartialOrd + Ord;
+    type Input: Clone + Debug + PartialEq + Eq + PartialOrd + Ord;
 
     /// Output ID
     fn output_id(&self) -> OutputId;

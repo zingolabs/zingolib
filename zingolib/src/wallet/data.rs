@@ -489,7 +489,10 @@ pub mod summaries {
     use crate::{
         error::BuildError,
         utils::build_method,
-        wallet::transaction_record::{SendType, TransactionKind},
+        wallet::{
+            notes::SpendStatus,
+            transaction_record::{SendType, TransactionKind},
+        },
     };
 
     /// A value transfer is a note group abstraction.
@@ -940,9 +943,9 @@ pub mod summaries {
         /// Gets zec price in USD
         fn zec_price(&self) -> Option<f64>;
         /// Gets slice of orchard note summaries
-        fn orchard_notes(&self) -> &[OrchardNoteSummary];
+        fn orchard_notes(&self) -> &[NoteSummary];
         /// Gets slice of sapling note summaries
-        fn sapling_notes(&self) -> &[SaplingNoteSummary];
+        fn sapling_notes(&self) -> &[NoteSummary];
         /// Gets slice of transparent coin summaries
         fn transparent_coins(&self) -> &[TransparentCoinSummary];
         /// Gets slice of outgoing orchard notes
@@ -971,8 +974,8 @@ pub mod summaries {
             String,
             String,
             String,
-            OrchardNoteSummaries,
-            SaplingNoteSummaries,
+            NoteSummaries,
+            NoteSummaries,
             TransparentCoinSummaries,
             OutgoingNoteSummaries,
             OutgoingNoteSummaries,
@@ -992,8 +995,8 @@ pub mod summaries {
             } else {
                 "not available".to_string()
             };
-            let orchard_notes = OrchardNoteSummaries(self.orchard_notes().to_vec());
-            let sapling_notes = SaplingNoteSummaries(self.sapling_notes().to_vec());
+            let orchard_notes = NoteSummaries(self.orchard_notes().to_vec());
+            let sapling_notes = NoteSummaries(self.sapling_notes().to_vec());
             let transparent_coins = TransparentCoinSummaries(self.transparent_coins().to_vec());
             let outgoing_orchard_notes =
                 OutgoingNoteSummaries(self.outgoing_orchard_notes().to_vec());
@@ -1027,8 +1030,8 @@ pub mod summaries {
         value: u64,
         fee: Option<u64>,
         zec_price: Option<f64>,
-        orchard_notes: Vec<OrchardNoteSummary>,
-        sapling_notes: Vec<SaplingNoteSummary>,
+        orchard_notes: Vec<NoteSummary>,
+        sapling_notes: Vec<NoteSummary>,
         transparent_coins: Vec<TransparentCoinSummary>,
         outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
         outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
@@ -1059,10 +1062,10 @@ pub mod summaries {
         fn zec_price(&self) -> Option<f64> {
             self.zec_price
         }
-        fn orchard_notes(&self) -> &[OrchardNoteSummary] {
+        fn orchard_notes(&self) -> &[NoteSummary] {
             &self.orchard_notes
         }
-        fn sapling_notes(&self) -> &[SaplingNoteSummary] {
+        fn sapling_notes(&self) -> &[NoteSummary] {
             &self.sapling_notes
         }
         fn transparent_coins(&self) -> &[TransparentCoinSummary] {
@@ -1197,8 +1200,8 @@ pub mod summaries {
         value: Option<u64>,
         fee: Option<Option<u64>>,
         zec_price: Option<Option<f64>>,
-        orchard_notes: Option<Vec<OrchardNoteSummary>>,
-        sapling_notes: Option<Vec<SaplingNoteSummary>>,
+        orchard_notes: Option<Vec<NoteSummary>>,
+        sapling_notes: Option<Vec<NoteSummary>>,
         transparent_coins: Option<Vec<TransparentCoinSummary>>,
         outgoing_orchard_notes: Option<Vec<OutgoingNoteSummary>>,
         outgoing_sapling_notes: Option<Vec<OutgoingNoteSummary>>,
@@ -1232,8 +1235,8 @@ pub mod summaries {
         build_method!(value, u64);
         build_method!(fee, Option<u64>);
         build_method!(zec_price, Option<f64>);
-        build_method!(orchard_notes, Vec<OrchardNoteSummary>);
-        build_method!(sapling_notes, Vec<SaplingNoteSummary>);
+        build_method!(orchard_notes, Vec<NoteSummary>);
+        build_method!(sapling_notes, Vec<NoteSummary>);
         build_method!(transparent_coins, Vec<TransparentCoinSummary>);
         build_method!(outgoing_orchard_notes, Vec<OutgoingNoteSummary>);
         build_method!(outgoing_sapling_notes, Vec<OutgoingNoteSummary>);
@@ -1601,27 +1604,27 @@ pub mod summaries {
     //         }
     //     }
 
-    /// Orchard note summary.
+    /// Note summary.
     /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
     /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
     /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
-    pub struct OrchardNoteSummary {
+    pub struct NoteSummary {
         value: u64,
-        spend_summary: SpendSummary,
-        output_index: Option<u32>,
+        spend_summary: SpendStatus,
+        output_index: u32,
         memo: Option<String>,
     }
 
-    impl OrchardNoteSummary {
+    impl NoteSummary {
         /// Creates an OrchardNoteSummary from parts
         pub fn from_parts(
             value: u64,
-            spend_status: SpendSummary,
-            output_index: Option<u32>,
+            spend_status: SpendStatus,
+            output_index: u32,
             memo: Option<String>,
         ) -> Self {
-            OrchardNoteSummary {
+            NoteSummary {
                 value,
                 spend_summary: spend_status,
                 output_index,
@@ -1634,12 +1637,12 @@ pub mod summaries {
         }
 
         /// Gets spend status
-        pub fn spend_summary(&self) -> SpendSummary {
+        pub fn spend_summary(&self) -> SpendStatus {
             self.spend_summary
         }
 
         /// Gets output index
-        pub fn output_index(&self) -> Option<u32> {
+        pub fn output_index(&self) -> u32 {
             self.output_index
         }
         /// Gets memo
@@ -1648,13 +1651,8 @@ pub mod summaries {
         }
     }
 
-    impl std::fmt::Display for OrchardNoteSummary {
+    impl std::fmt::Display for NoteSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let output_index = if let Some(i) = self.output_index {
-                i.to_string()
-            } else {
-                "not available".to_string()
-            };
             let memo = if let Some(m) = self.memo.clone() {
                 m
             } else {
@@ -1668,13 +1666,13 @@ pub mod summaries {
             output index: {}
             memo: {}
         }}",
-                self.value, self.spend_summary, output_index, memo,
+                self.value, self.spend_summary, self.output_index, memo,
             )
         }
     }
 
-    impl From<OrchardNoteSummary> for JsonValue {
-        fn from(note: OrchardNoteSummary) -> Self {
+    impl From<NoteSummary> for JsonValue {
+        fn from(note: NoteSummary) -> Self {
             json::object! {
                 "value" => note.value,
                 "spend_status" => note.spend_summary.to_string(),
@@ -1684,105 +1682,10 @@ pub mod summaries {
         }
     }
 
-    /// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
-    pub struct OrchardNoteSummaries(Vec<OrchardNoteSummary>);
+    /// Wraps a vec of note summaries for the implementation of std::fmt::Display
+    pub struct NoteSummaries(Vec<NoteSummary>);
 
-    impl std::fmt::Display for OrchardNoteSummaries {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            for note in &self.0 {
-                write!(f, "\n{}", note)?;
-            }
-            Ok(())
-        }
-    }
-
-    /// Sapling note summary.
-    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
-    /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
-    /// Not to be used for internal logic in the system.
-    #[derive(Clone, PartialEq, Debug)]
-    pub struct SaplingNoteSummary {
-        value: u64,
-        spend_summary: SpendSummary,
-        output_index: Option<u32>,
-        memo: Option<String>,
-    }
-
-    impl SaplingNoteSummary {
-        /// Creates a SaplingNoteSummary from parts
-        pub fn from_parts(
-            value: u64,
-            spend_status: SpendSummary,
-            output_index: Option<u32>,
-            memo: Option<String>,
-        ) -> Self {
-            SaplingNoteSummary {
-                value,
-                spend_summary: spend_status,
-                output_index,
-                memo,
-            }
-        }
-        /// Gets value
-        pub fn value(&self) -> u64 {
-            self.value
-        }
-
-        /// Gets spend status
-        pub fn spend_summary(&self) -> SpendSummary {
-            self.spend_summary
-        }
-
-        /// Gets output index
-        pub fn output_index(&self) -> Option<u32> {
-            self.output_index
-        }
-        /// Gets memo
-        pub fn memo(&self) -> Option<&str> {
-            self.memo.as_deref()
-        }
-    }
-
-    impl std::fmt::Display for SaplingNoteSummary {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let output_index = if let Some(i) = self.output_index {
-                i.to_string()
-            } else {
-                "not available".to_string()
-            };
-            let memo = if let Some(m) = self.memo.clone() {
-                m
-            } else {
-                "no memo".to_string()
-            };
-            write!(
-                f,
-                "\t{{
-            value: {}
-            spend status: {}
-            output index: {}
-            memo: {}
-        }}",
-                self.value, self.spend_summary, output_index, memo,
-            )
-        }
-    }
-
-    impl From<SaplingNoteSummary> for JsonValue {
-        fn from(note: SaplingNoteSummary) -> Self {
-            json::object! {
-                "value" => note.value,
-                "spend_status" => note.spend_summary.to_string(),
-                "output_index" => note.output_index,
-                "memo" => note.memo,
-            }
-        }
-    }
-
-    /// Wraps a vec of sapling note summaries for the implementation of std::fmt::Display
-    pub struct SaplingNoteSummaries(Vec<SaplingNoteSummary>);
-
-    impl std::fmt::Display for SaplingNoteSummaries {
+    impl std::fmt::Display for NoteSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for note in &self.0 {
                 write!(f, "\n{}", note)?;
@@ -1798,13 +1701,13 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Debug)]
     pub struct TransparentCoinSummary {
         value: u64,
-        spend_summary: SpendSummary,
-        output_index: u64,
+        spend_summary: SpendStatus,
+        output_index: u32,
     }
 
     impl TransparentCoinSummary {
         /// Creates a SaplingNoteSummary from parts
-        pub fn from_parts(value: u64, spend_status: SpendSummary, output_index: u64) -> Self {
+        pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u32) -> Self {
             TransparentCoinSummary {
                 value,
                 spend_summary: spend_status,
@@ -1817,12 +1720,12 @@ pub mod summaries {
         }
 
         /// Gets spend status
-        pub fn spend_summary(&self) -> SpendSummary {
+        pub fn spend_summary(&self) -> SpendStatus {
             self.spend_summary
         }
 
         /// Gets output index
-        pub fn output_index(&self) -> u64 {
+        pub fn output_index(&self) -> u32 {
             self.output_index
         }
     }
@@ -1950,47 +1853,6 @@ pub mod summaries {
                 write!(f, "\n{}", nullifier)?;
             }
             Ok(())
-        }
-    }
-
-    /// Spend status of an output
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    pub enum SpendSummary {
-        /// Output is not spent.
-        Unspent,
-        /// Output is pending spent.
-        /// The transaction consuming this output has been transmitted.
-        TransmittedSpent(TxId),
-        /// Output is pending spent.
-        /// The transaction consuming this output has been detected in the mempool.
-        MempoolSpent(TxId),
-        /// Output is spent.
-        /// The transaction consuming this output is confirmed.
-        Spent(TxId),
-    }
-
-    impl SpendSummary {
-        /// converts the interface spend to a SpendSummary
-        pub fn from_spend(spend: &Option<(TxId, ConfirmationStatus)>) -> Self {
-            match spend {
-                Some((txid, ConfirmationStatus::Transmitted(_))) => {
-                    SpendSummary::TransmittedSpent(*txid)
-                }
-                Some((txid, ConfirmationStatus::Mempool(_))) => SpendSummary::MempoolSpent(*txid),
-                Some((txid, ConfirmationStatus::Confirmed(_))) => SpendSummary::Spent(*txid),
-                _ => SpendSummary::Unspent,
-            }
-        }
-    }
-
-    impl std::fmt::Display for SpendSummary {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                SpendSummary::Unspent => write!(f, "unspent"),
-                SpendSummary::TransmittedSpent(txid) => write!(f, "transmitted: spent in {}", txid),
-                SpendSummary::Spent(txid) => write!(f, "confirmed: spent in {}", txid),
-                SpendSummary::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
-            }
         }
     }
 }

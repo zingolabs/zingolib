@@ -3,7 +3,7 @@
 
 use crate::wallet::notes::{interface::OutputConstructor, TransparentOutput};
 use crate::wallet::{
-    error::FeeError,
+    error::KindError,
     notes::{
         interface::ShieldedNoteInterface,
         query::{OutputQuery, OutputSpendStatusQuery},
@@ -344,7 +344,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
         fail_on_miss: bool,
-    ) -> Result<Vec<&SaplingNote>, FeeError> {
+    ) -> Result<Vec<&SaplingNote>, KindError> {
         let mut sapling_spends: Vec<&SaplingNote> =
             Vec::with_capacity(query_record.spent_sapling_nullifiers.len());
 
@@ -352,7 +352,7 @@ impl TransactionRecordsById {
             if let Some(spend) = self.find_sapling_spend(nullifier) {
                 sapling_spends.push(spend);
             } else if fail_on_miss {
-                return Err(FeeError::SaplingSpendNotFound(*nullifier));
+                return Err(KindError::SaplingSpendNotFound(*nullifier));
             }
         }
         Ok(sapling_spends)
@@ -363,7 +363,7 @@ impl TransactionRecordsById {
         &self,
         query_record: &TransactionRecord,
         fail_on_miss: bool,
-    ) -> Result<Vec<&OrchardNote>, FeeError> {
+    ) -> Result<Vec<&OrchardNote>, KindError> {
         let mut orchard_spends: Vec<&OrchardNote> =
             Vec::with_capacity(query_record.spent_orchard_nullifiers.len());
 
@@ -371,7 +371,7 @@ impl TransactionRecordsById {
             if let Some(spend) = self.find_orchard_spend(nullifier) {
                 orchard_spends.push(spend);
             } else if fail_on_miss {
-                return Err(FeeError::OrchardSpendNotFound(*nullifier));
+                return Err(KindError::OrchardSpendNotFound(*nullifier));
             }
         }
         Ok(orchard_spends)
@@ -382,16 +382,16 @@ impl TransactionRecordsById {
     fn total_value_input_to_transaction(
         &self,
         query_record: &TransactionRecord,
-    ) -> Result<u64, FeeError> {
+    ) -> Result<u64, KindError> {
         let transparent_spends = self.get_transparent_coins_spent_in_tx(query_record);
         let sapling_spends = self.get_sapling_notes_spent_in_tx(query_record, true)?;
         let orchard_spends = self.get_orchard_notes_spent_in_tx(query_record, true)?;
 
         if sapling_spends.is_empty() && orchard_spends.is_empty() && transparent_spends.is_empty() {
             if query_record.outgoing_tx_data.is_empty() {
-                return Err(FeeError::ReceivedTransaction);
+                return Err(KindError::ReceivedTransaction);
             } else {
-                return Err(FeeError::OutgoingWithoutSpends(
+                return Err(KindError::OutgoingWithoutSpends(
                     query_record.outgoing_tx_data.to_vec(),
                 ));
             }
@@ -450,14 +450,14 @@ impl TransactionRecordsById {
     pub fn calculate_transaction_fee(
         &self,
         query_record: &TransactionRecord,
-    ) -> Result<u64, FeeError> {
+    ) -> Result<u64, KindError> {
         let input_value = self.total_value_input_to_transaction(query_record)?;
         let explicit_output_value = query_record.total_value_output_to_explicit_receivers();
 
         if input_value >= explicit_output_value {
             Ok(input_value - explicit_output_value)
         } else {
-            Err(FeeError::FeeUnderflow {
+            Err(KindError::FeeUnderflow {
                 input_value,
                 explicit_output_value,
             })
@@ -947,7 +947,7 @@ mod tests {
             },
             wallet::{
                 data::mocks::OutgoingTxDataBuilder,
-                error::FeeError,
+                error::KindError,
                 notes::{
                     orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
                     transparent::mocks::TransparentOutputBuilder,
@@ -1004,7 +1004,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::OrchardSpendNotFound(_))));
+            assert!(matches!(fee, Err(KindError::OrchardSpendNotFound(_))));
         }
         #[test]
         fn received_transaction() {
@@ -1021,7 +1021,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::ReceivedTransaction)));
+            assert!(matches!(fee, Err(KindError::ReceivedTransaction)));
         }
         #[test]
         fn outgoing_tx_data_but_no_spends_found() {
@@ -1039,7 +1039,7 @@ mod tests {
 
             let fee = transaction_records_by_id
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
-            assert!(matches!(fee, Err(FeeError::OutgoingWithoutSpends(_))));
+            assert!(matches!(fee, Err(KindError::OutgoingWithoutSpends(_))));
         }
         #[test]
         fn transparent_spends_not_fully_synced() {
@@ -1072,7 +1072,7 @@ mod tests {
                 .calculate_transaction_fee(transaction_records_by_id.get(&sent_txid).unwrap());
             assert!(matches!(
                 fee,
-                Err(FeeError::FeeUnderflow {
+                Err(KindError::FeeUnderflow {
                     input_value: _,
                     explicit_output_value: _,
                 })

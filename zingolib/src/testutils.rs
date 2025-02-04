@@ -7,7 +7,7 @@ pub mod interrupts;
 pub mod scenarios;
 
 use crate::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
+    NoteSummary, SaplingNoteSummary, SpendStatus, TransactionSummary,
     TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use crate::wallet::keys::unified::WalletCapability;
@@ -167,14 +167,12 @@ pub fn check_transaction_summary_equality(
             first.transparent_coins(),
             second.transparent_coins(),
         )
-        && first.outgoing_tx_data() == second.outgoing_tx_data()
+        && first.outgoing_orchard_notes() == second.outgoing_orchard_notes()
+        && first.outgoing_sapling_notes() == second.outgoing_sapling_notes()
 }
 
 /// TODO: doc comment
-fn check_orchard_note_summary_equality(
-    first: &[OrchardNoteSummary],
-    second: &[OrchardNoteSummary],
-) -> bool {
+fn check_orchard_note_summary_equality(first: &[NoteSummary], second: &[NoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
     };
@@ -226,16 +224,16 @@ fn check_transparent_coin_summary_equality(
     true
 }
 
-fn check_spend_status_equality(first: SpendSummary, second: SpendSummary) -> bool {
+fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
     matches!(
         (first, second),
-        (SpendSummary::Unspent, SpendSummary::Unspent)
-            | (SpendSummary::Spent(_), SpendSummary::Spent(_))
+        (SpendStatus::Unspent, SpendStatus::Unspent)
+            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
             | (
-                SpendSummary::TransmittedSpent(_),
-                SpendSummary::TransmittedSpent(_)
+                SpendStatus::TransmittedSpent(_),
+                SpendStatus::TransmittedSpent(_)
             )
-            | (SpendSummary::MempoolSpent(_), SpendSummary::MempoolSpent(_))
+            | (SpendStatus::MempoolSpent(_), SpendStatus::MempoolSpent(_))
     )
 }
 

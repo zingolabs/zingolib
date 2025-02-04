@@ -1,8 +1,7 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
 use zcash_keys::keys::DerivationError;
-
-use crate::wallet::data::OutgoingTxData;
+use zcash_primitives::transaction::TxId;
 
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
@@ -15,21 +14,69 @@ pub enum WalletError {
     MnemonicError(#[from] bip0039::Error),
 }
 
-/// Errors associated with transaction fee calculation
-#[derive(Debug, thiserror::Error)]
+// /// Transparent spend not found or failed on balance error.
+// #[derive(Debug, thiserror::Error)]
+// #[error("Transparent spend not found for transaction id {txid} or failed on balance error.")]
+// pub struct FeeError {
+//     txid: TxId,
+//     outpoint: String,
+//     balance_error: Option<String>,
+// }
+
+// impl From<zcash_primitives::transaction::components::amount::BalanceError> for FeeError {
+//     fn from(value: zcash_primitives::transaction::components::amount::BalanceError) -> Self {
+//         Self {
+//             txid: TxId::from_bytes([0; 32]),
+//             outpoint: "".to_string(),
+//             balance_error: Some(value.to_string()),
+//         }
+//     }
+// }
+
+/// Errors associated with calculating transaction fee
+#[derive(Debug)]
 pub enum FeeError {
-    /// Sapling notes spent in a transaction not found in the wallet
-    #[error("Sapling nullifier(s) {0:?} for this transaction not found in wallet. Is the wallet fully synced?")]
-    SaplingSpendNotFound(sapling_crypto::Nullifier),
-    /// Orchard notes spent in a transaction not found in the wallet
-    #[error("Orchard nullifier(s) {0:?} for this transaction not found in wallet. Is the wallet fully synced?")]
-    OrchardSpendNotFound(orchard::note::Nullifier),
+    /// Transparent spend not found in wallet
+    SpendNotFound { txid: TxId, spend: String },
+    /// Balance error
+    BalanceError(zcash_primitives::transaction::components::amount::BalanceError),
+}
+
+impl std::error::Error for FeeError {}
+
+impl std::fmt::Display for FeeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self {
+            Self::SpendNotFound { txid, spend } => {
+                write!(
+                    f,
+                    "Transparent spend not found for transaction id {txid}. Is the wallet fully synced? \nMissing spend: {spend}"
+                )
+            }
+            Self::BalanceError(e) => write!(f, "{}", e.to_string()),
+        }
+    }
+}
+
+impl From<zcash_primitives::transaction::components::amount::BalanceError> for FeeError {
+    fn from(value: zcash_primitives::transaction::components::amount::BalanceError) -> Self {
+        Self::BalanceError(value)
+    }
+}
+
+/// Errors associated with determining transaction kind
+#[derive(Debug, thiserror::Error)]
+pub enum KindError {
+    // TODO: add pool info to missing spend
+    /// Transaction spends not found in wallet
+    #[error("Spend not found for transaction id {txid}. Is the wallet fully synced? \nMissing spend: {spend}")]
+    SpendNotFound { txid: TxId, spend: String },
     /// Attempted to calculate a fee for a transaction received and not created by the wallet's spend capability
     #[error("No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability. Is the wallet fully synced?")]
     ReceivedTransaction,
-    /// Outgoing tx data, but no spends found!
-    #[error("No inputs funded this transaction, but it has outgoing data! Is the wallet fully synced? {0:?}")]
-    OutgoingWithoutSpends(Vec<OutgoingTxData>),
+    /// Outgoing notes, but no spends found!
+    #[error("This transaction has outgoing notes but not all spends were found! Is the wallet fully synced?")]
+    OutgoingWithoutSpends,
     /// Total explicit receiver value is larger than input value causing the unsigned integer to underflow
     #[error(
         "Output value {explicit_output_value} is larger than total input value {input_value}. Is the wallet fully synced?"
