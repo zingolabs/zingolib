@@ -217,9 +217,9 @@ where
     // );
 }
 
-/// In order to fund a transaction multiple notes may be selected and consumed.
-/// The algorithm selects the smallest covering note(s).
 // FIXME: zingo2
+// /// In order to fund a transaction multiple notes may be selected and consumed.
+// /// The algorithm selects the smallest covering note(s).
 // pub async fn note_selection_order<CC>()
 // where
 //     CC: ConductChain,

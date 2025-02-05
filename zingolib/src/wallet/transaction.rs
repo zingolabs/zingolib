@@ -1,7 +1,10 @@
 use zcash_primitives::transaction::components::Amount;
 use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
-use super::{error::{FeeError, KindError}, LightWallet};
+use super::{
+    error::{FeeError, KindError},
+    LightWallet,
+};
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -23,7 +26,7 @@ impl LightWallet {
                                     *input
                                     == spend_link
                                 })
-                            }); 
+                            });
 
                         if spend.is_none() {
                             // TODO: error handling
@@ -39,15 +42,20 @@ impl LightWallet {
             .collect::<Vec<_>>();
 
         if fail_on_miss {
-            let spend_links = spends.iter().flat_map(|&spend| spend.spend_link()).collect::<Vec<_>>();
-            
+            let spend_links = spends
+                .iter()
+                .flat_map(|&spend| spend.spend_link())
+                .collect::<Vec<_>>();
+
             for input in Op::transaction_inputs(transaction) {
                 if !spend_links.contains(input) {
-                    return Err(KindError::SpendNotFound{ txid: transaction.txid(), spend: format!("{:?}", input)});
+                    return Err(KindError::SpendNotFound {
+                        txid: transaction.txid(),
+                        spend: format!("{:?}", input),
+                    });
                 }
             }
         }
-        
 
         Ok(spends)
     }
@@ -55,15 +63,26 @@ impl LightWallet {
     /// Calculate the fee for a transaction in the wallet.
     ///
     /// Fails if transparent spends are not found in the wallet.
-    pub fn calculate_transaction_fee(&self, transaction: &WalletTransaction) -> Result<u64, FeeError> {
-        Ok(transaction.transaction().fee_paid(|outpoint| -> Result<Amount, FeeError> {
-            let outpoint = OutputId::from(outpoint);
-              let prevout = self.wallet_outputs::<TransparentCoin>().into_iter().find(|&output| output.output_id == outpoint).ok_or(FeeError::SpendNotFound {
-                  txid: transaction.txid(),
-                  spend: format!("{:?}", outpoint)
-              })?;
+    pub fn calculate_transaction_fee(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> Result<u64, FeeError> {
+        Ok(transaction
+            .transaction()
+            .fee_paid(|outpoint| -> Result<Amount, FeeError> {
+                let outpoint = OutputId::from(outpoint);
+                let prevout = self
+                    .wallet_outputs::<TransparentCoin>()
+                    .into_iter()
+                    .find(|&output| output.output_id == outpoint)
+                    .ok_or(FeeError::SpendNotFound {
+                        txid: transaction.txid(),
+                        spend: format!("{:?}", outpoint),
+                    })?;
 
-              Ok(Amount::from_u64(prevout.value().into()).expect("value converted from checked type"))
-        })?.try_into().expect("fee should not be negative"))
+                Ok(Amount::from_u64(prevout.value()).expect("value converted from checked type"))
+            })?
+            .try_into()
+            .expect("fee should not be negative"))
     }
 }

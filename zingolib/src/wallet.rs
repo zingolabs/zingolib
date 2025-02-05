@@ -330,7 +330,7 @@ impl LightWallet {
         Ok(Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            birthday: BlockHeight::from_u32(height.try_into().expect("should never overflow")),
+            birthday: BlockHeight::from_u32(height.into()),
             unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),

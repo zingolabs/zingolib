@@ -41,7 +41,7 @@ pub trait ConductChain {
 
     /// loads a client from bytes
     async fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        let network = config.chain.clone();
+        let network = config.chain;
 
         LightClient::create_from_wallet_async(
             config,

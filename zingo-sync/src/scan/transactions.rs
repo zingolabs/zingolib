@@ -461,7 +461,7 @@ fn add_recipient_unified_address<P, Nz>(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),
-            transparent::encode_address(parameters, ua.transparent().unwrap().clone()),
+            transparent::encode_address(parameters, *ua.transparent().unwrap()),
             ua.encode(parameters),
         ];
         outgoing_notes

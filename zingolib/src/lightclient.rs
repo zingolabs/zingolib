@@ -378,7 +378,7 @@ pub mod instantiation {
             let lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
                 LightWallet::new(
-                    config.chain.clone(),
+                    config.chain,
                     wallet_base,
                     BlockHeight::from_u32(birthday.try_into().expect("should never overflow")),
                 )
@@ -407,7 +407,7 @@ pub mod instantiation {
             let lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
                 LightWallet::new(
-                    config.chain.clone(),
+                    config.chain,
                     wallet_base,
                     BlockHeight::from_u32(height.try_into().expect("should never overflow")),
                 )

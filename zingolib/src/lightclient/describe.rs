@@ -376,9 +376,9 @@ impl LightClient {
     //     )
     // }
 
-    /// Get all the outputs packed into an Output vector
-    ///  This method will replace do_list_notes
     // FIXME: zingo2
+    // /// Get all the outputs packed into an Output vector
+    // ///  This method will replace do_list_notes
     // pub async fn list_outputs(&self) -> Vec<crate::wallet::notes::Output> {
     //     self.wallet
     //         .lock()
@@ -394,14 +394,14 @@ impl LightClient {
     //         .collect()
     // }
 
-    /// Return a list of notes, if `all_notes` is false, then only return unspent notes
-    ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
-    ///  * TODO:  The Err variant of the result must be a proper type
-    ///  * TODO:  remove all_notes bool
-    ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
-    ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
-    ///  * TODO:  DEPRECATE in favor of list_outputs
     // FIXME: zingo2
+    // /// Return a list of notes, if `all_notes` is false, then only return unspent notes
+    // ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
+    // ///  * TODO:  The Err variant of the result must be a proper type
+    // ///  * TODO:  remove all_notes bool
+    // ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
+    // ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
+    // ///  * TODO:  DEPRECATE in favor of list_outputs
     // #[cfg(any(test, feature = "test-elevation"))]
     // pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
     //     let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =

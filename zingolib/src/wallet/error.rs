@@ -34,7 +34,7 @@ impl std::fmt::Display for FeeError {
                     "Transparent spend not found for transaction id {txid}. Is the wallet fully synced? \nMissing spend: {spend}"
                 )
             }
-            Self::BalanceError(e) => write!(f, "{}", e.to_string()),
+            Self::BalanceError(e) => write!(f, "{}", e),
         }
     }
 }

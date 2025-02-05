@@ -136,10 +136,8 @@ impl LightWallet {
                 _confirmation_pending if query.pending_spent => true,
                 _ => false,
             }
-        } else if query.unspent {
-            true
         } else {
-            false
+            query.unspent
         }
     }
 }

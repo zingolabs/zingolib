@@ -237,9 +237,9 @@ impl From<&OutPoint> for OutputId {
     }
 }
 
-impl Into<OutPoint> for OutputId {
-    fn into(self) -> OutPoint {
-        OutPoint::new(self.txid.into(), self.output_index as u32)
+impl From<OutputId> for OutPoint {
+    fn from(value: OutputId) -> Self {
+        OutPoint::new(value.txid.into(), value.output_index as u32)
     }
 }
 
@@ -391,46 +391,43 @@ impl WalletTransaction {
     /// Returns nullifers from orchard bundle.
     /// Returns empty vec if bundle is `None`.
     pub fn orchard_nullifiers(&self) -> Vec<&orchard::note::Nullifier> {
-        self.transaction.orchard_bundle().map_or_else(
-            || Vec::new(),
-            |bundle| {
+        self.transaction
+            .orchard_bundle()
+            .map_or_else(Vec::new, |bundle| {
                 bundle
                     .actions()
                     .iter()
                     .map(|action| action.nullifier())
                     .collect::<Vec<_>>()
-            },
-        )
+            })
     }
 
     /// Returns nullifers from orchard bundle.
     /// Returns empty vec if bundle is `None`.
     pub fn sapling_nullifiers(&self) -> Vec<&sapling_crypto::Nullifier> {
-        self.transaction.sapling_bundle().map_or_else(
-            || Vec::new(),
-            |bundle| {
+        self.transaction
+            .sapling_bundle()
+            .map_or_else(Vec::new, |bundle| {
                 bundle
                     .shielded_spends()
                     .iter()
                     .map(|spend| spend.nullifier())
                     .collect::<Vec<_>>()
-            },
-        )
+            })
     }
 
     /// Returns outpoints from transparent bundle.
     /// Returns empty vec if bundle is `None`.
     pub fn outpoints(&self) -> Vec<&OutPoint> {
-        self.transaction.transparent_bundle().map_or_else(
-            || Vec::new(),
-            |bundle| {
+        self.transaction
+            .transparent_bundle()
+            .map_or_else(Vec::new, |bundle| {
                 bundle
                     .vin
                     .iter()
                     .map(|txin| &txin.prevout)
                     .collect::<Vec<_>>()
-            },
-        )
+            })
     }
 }
 

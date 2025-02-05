@@ -106,7 +106,7 @@ impl LightWallet {
         let mut wallet_capability = None;
         let mut _transactions = None;
         if external_version < 31 {
-            wallet_capability = Some(WalletCapability::read(&mut reader, network.clone())?);
+            wallet_capability = Some(WalletCapability::read(&mut reader, network)?);
 
             let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
 
@@ -250,7 +250,7 @@ impl LightWallet {
         }
 
         let unified_key_store = if external_version >= 31 {
-            UnifiedKeyStore::read(&mut reader, network.clone())?
+            UnifiedKeyStore::read(&mut reader, network)?
             // FIXME: sync integration, check write matches read for v31
         } else {
             wallet_capability
@@ -300,7 +300,7 @@ impl LightWallet {
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
             unified_addresses: AppendOnlyVec::new(),
-            network: network.clone(),
+            network,
         };
 
         Ok(lw)

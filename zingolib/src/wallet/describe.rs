@@ -246,7 +246,7 @@ impl LightWallet {
         self.transparent_addresses
             .values()
             .map(|address| {
-                ZcashAddress::try_from_encoded(&address)
+                ZcashAddress::try_from_encoded(address)
                     .unwrap()
                     .convert_if_network::<TransparentAddress>(self.network.network_type())
                     .expect("incorrect network should be checked on wallet load")
@@ -300,7 +300,7 @@ impl LightWallet {
                     .outgoing_sapling_notes()
                     .iter()
                     .any(|outgoing_note| {
-                        outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                        outgoing_note.encoded_recipient(&self.network) == *zfz_address
                             || outgoing_note.encoded_recipient_unified_address(&self.network)
                                 == Some(zfz_address.to_string())
                     }))
@@ -309,7 +309,7 @@ impl LightWallet {
                     .outgoing_orchard_notes()
                     .iter()
                     .any(|outgoing_note| {
-                        outgoing_note.encoded_recipient(&self.network) == zfz_address.to_string()
+                        outgoing_note.encoded_recipient(&self.network) == *zfz_address
                             || outgoing_note.encoded_recipient_unified_address(&self.network)
                                 == Some(zfz_address.to_string())
                     }))
@@ -387,6 +387,8 @@ impl LightWallet {
         json::JsonValue::from(self.transaction_summaries().await).pretty(2)
     }
 
+    // TODO: simplify type complexity
+    #[allow(clippy::type_complexity)]
     fn basic_transaction_summary_parts(
         &self,
         transaction: &WalletTransaction,
