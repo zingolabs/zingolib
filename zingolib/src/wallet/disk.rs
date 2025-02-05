@@ -39,7 +39,7 @@ impl LightWallet {
     /// Changes in version 31:
     /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        31 // TODO: double check this is correctly incremented before sync integration is complete
+        31 // FIXME: double check this is correctly incremented before sync integration is complete
     }
 
     /// TODO: Add Doc Comment Here!
@@ -47,7 +47,7 @@ impl LightWallet {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        // TODO: sync integration, write keys and addresses
+        // FIXME: sync integration, write keys and addresses
         // Write all the keys
         // self.transaction_context
         //     .key
@@ -251,7 +251,7 @@ impl LightWallet {
 
         let unified_key_store = if external_version >= 31 {
             UnifiedKeyStore::read(&mut reader, network.clone())?
-            // TODO: sync integration, check write matches read for v31
+            // FIXME: sync integration, check write matches read for v31
         } else {
             wallet_capability
                 .expect("wallet capability should exist for versions pre-31")
@@ -280,9 +280,9 @@ impl LightWallet {
         }
 
         if external_version >= 31 {
-            // TODO: sync integration, load new wallet format
+            // FIXME: sync integration, load new wallet format
         } else {
-            // TODO: sync integration, add locators for targetted rescan
+            // FIXME: sync integration, add locators for targetted rescan
         }
 
         let lw = Self {

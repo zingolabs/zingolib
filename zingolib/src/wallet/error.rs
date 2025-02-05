@@ -14,25 +14,6 @@ pub enum WalletError {
     MnemonicError(#[from] bip0039::Error),
 }
 
-// /// Transparent spend not found or failed on balance error.
-// #[derive(Debug, thiserror::Error)]
-// #[error("Transparent spend not found for transaction id {txid} or failed on balance error.")]
-// pub struct FeeError {
-//     txid: TxId,
-//     outpoint: String,
-//     balance_error: Option<String>,
-// }
-
-// impl From<zcash_primitives::transaction::components::amount::BalanceError> for FeeError {
-//     fn from(value: zcash_primitives::transaction::components::amount::BalanceError) -> Self {
-//         Self {
-//             txid: TxId::from_bytes([0; 32]),
-//             outpoint: "".to_string(),
-//             balance_error: Some(value.to_string()),
-//         }
-//     }
-// }
-
 /// Errors associated with calculating transaction fee
 #[derive(Debug)]
 pub enum FeeError {
