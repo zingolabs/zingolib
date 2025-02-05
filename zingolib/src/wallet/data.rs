@@ -1845,6 +1845,8 @@ pub mod summaries {
     }
 
     /// Wraps a vec of sapling nullifier summaries for the implementation of std::fmt::Display
+    // FIXME: zingo2
+    #[allow(dead_code)]
     struct SaplingNullifierSummaries(Vec<String>);
 
     impl std::fmt::Display for SaplingNullifierSummaries {

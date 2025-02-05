@@ -65,6 +65,8 @@ pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
         }
     }
 }
+// FIXME: zingo2
+#[allow(dead_code)]
 pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
     use crate::SaplingParams;
     let mut sapling_output = vec![];

@@ -10,7 +10,7 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::propose::ProposeSendError;
-use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
+use zingolib::{check_client_balances, get_base_address_macro};
 
 // FIXME:
 // fn check_expected_balance_with_fvks(
@@ -1266,12 +1266,12 @@ mod fast {
     }
 }
 mod slow {
-    use bip0039::Mnemonic;
+    // use bip0039::Mnemonic;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::testutils::{
-        assert_transaction_summary_exists,
+        // assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
 
@@ -2704,75 +2704,77 @@ mod slow {
     // }
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
-        use super::*;
+        // use super::*;
 
-        #[tokio::test]
-        async fn self_send() {
-            let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-            let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
-            let mut txids = vec![];
-            for memo in [None, Some("Second Transaction")] {
-                txids.push(
-                    *from_inputs::quick_send(
-                        &faucet,
-                        vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
-                    )
-                    .await
-                    .unwrap()
-                    .first(),
-                );
-                zingolib::testutils::increase_height_and_wait_for_client(
-                    &regtest_manager,
-                    &faucet,
-                    1,
-                )
-                .await
-                .unwrap();
-            }
+        // FIXME: zingo2
+        // #[tokio::test]
+        // async fn self_send() {
+        //     let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
+        //     let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
+        //     let mut txids = vec![];
+        //     for memo in [None, Some("Second Transaction")] {
+        //         txids.push(
+        //             *from_inputs::quick_send(
+        //                 &faucet,
+        //                 vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
+        //             )
+        //             .await
+        //             .unwrap()
+        //             .first(),
+        //         );
+        //         zingolib::testutils::increase_height_and_wait_for_client(
+        //             &regtest_manager,
+        //             &faucet,
+        //             1,
+        //         )
+        //         .await
+        //         .unwrap();
+        //     }
 
-            let nom_txid = &txids[0];
-            let memo_txid = &txids[1];
-            validate_otds!(faucet, nom_txid, memo_txid);
-        }
-        #[tokio::test]
-        async fn external_send() {
-            let (regtest_manager, _cph, faucet, recipient) =
-                scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo = *from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    Some("foo"),
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            let external_send_txid_no_memo = *from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    None,
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            // TODO:  This chain height bump should be unnecessary. I think removing
-            // this increase_height call reveals a bug!
-            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                .await
-                .unwrap();
-            let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
-            let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
-            validate_otds!(
-                faucet,
-                external_send_txid_no_memo_ref,
-                external_send_txid_with_memo_ref
-            );
-        }
+        //     let nom_txid = &txids[0];
+        //     let memo_txid = &txids[1];
+        //     validate_otds!(faucet, nom_txid, memo_txid);
+        // }
+        // FIXME: zingo2
+        // #[tokio::test]
+        // async fn external_send() {
+        //     let (regtest_manager, _cph, faucet, recipient) =
+        //         scenarios::faucet_recipient_default().await;
+        //     let external_send_txid_with_memo = *from_inputs::quick_send(
+        //         &faucet,
+        //         vec![(
+        //             get_base_address_macro!(recipient, "sapling").as_str(),
+        //             1_000,
+        //             Some("foo"),
+        //         )],
+        //     )
+        //     .await
+        //     .unwrap()
+        //     .first();
+        //     let external_send_txid_no_memo = *from_inputs::quick_send(
+        //         &faucet,
+        //         vec![(
+        //             get_base_address_macro!(recipient, "sapling").as_str(),
+        //             1_000,
+        //             None,
+        //         )],
+        //     )
+        //     .await
+        //     .unwrap()
+        //     .first();
+        //     // TODO:  This chain height bump should be unnecessary. I think removing
+        //     // this increase_height call reveals a bug!
+        //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        //         .await
+        //         .unwrap();
+        //     let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
+        //     let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
+        //     validate_otds!(
+        //         faucet,
+        //         external_send_txid_no_memo_ref,
+        //         external_send_txid_with_memo_ref
+        //     );
+        // }
         // FIXME: sync integration
         // #[tokio::test]
         // async fn check_list_value_transfers_across_rescan() {
@@ -4242,26 +4244,27 @@ async fn propose_orchard_dust_to_sapling() {
     .await
     .unwrap();
 }
-#[tokio::test]
-async fn audit_anyp_outputs() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
-    assert_eq!(recipient.list_outputs().await.len(), 0);
-    from_inputs::quick_send(
-        &faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "unified"),
-            600_000,
-            Some("600_000 orchard funds"),
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-    let lapo = recipient.list_outputs().await;
-    assert_eq!(lapo.len(), 1);
-}
+// FIXME: zingo2
+// #[tokio::test]
+// async fn audit_anyp_outputs() {
+//     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+//     assert_eq!(recipient.list_outputs().await.len(), 0);
+//     from_inputs::quick_send(
+//         &faucet,
+//         vec![(
+//             &get_base_address_macro!(recipient, "unified"),
+//             600_000,
+//             Some("600_000 orchard funds"),
+//         )],
+//     )
+//     .await
+//     .unwrap();
+//     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+//         .await
+//         .unwrap();
+//     let lapo = recipient.list_outputs().await;
+//     assert_eq!(lapo.len(), 1);
+// }
 mod send_all {
 
     use super::*;

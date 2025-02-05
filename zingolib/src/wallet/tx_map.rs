@@ -13,7 +13,7 @@ use crate::{
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
-use zcash_primitives::legacy::{keys::EphemeralIvk, TransparentAddress};
+use zcash_primitives::legacy::TransparentAddress;
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
@@ -37,34 +37,6 @@ pub mod recording;
 pub mod spending_data;
 
 impl TxMap {
-    pub(crate) fn new_with_witness_trees(
-        transparent_child_addresses: Arc<
-            append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
-        >,
-        rejection_addresses: Arc<
-            append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>,
-        >,
-        rejection_ivk: EphemeralIvk,
-    ) -> TxMap {
-        Self {
-            transaction_records_by_id: TransactionRecordsById::new(),
-            spending_data: Some(SpendingData::new(WitnessTrees::default(), rejection_ivk)),
-            transparent_child_addresses,
-            rejection_addresses,
-        }
-    }
-    pub(crate) fn new_treeless(
-        transparent_child_addresses: Arc<
-            append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>,
-        >,
-    ) -> TxMap {
-        Self {
-            transaction_records_by_id: TransactionRecordsById::new(),
-            spending_data: None,
-            transparent_child_addresses,
-            rejection_addresses: Arc::new(append_only_vec::AppendOnlyVec::new()),
-        }
-    }
     /// TODO: Doc-comment!
     pub fn witness_trees(&self) -> Option<&WitnessTrees> {
         self.spending_data

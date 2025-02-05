@@ -499,6 +499,8 @@ impl WalletCapability {
         Self::new_from_seed(config, &bip39_seed, position)
     }
 
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(crate) fn get_ua_from_contained_transparent_receiver(
         &self,
         receiver: &TransparentAddress,
@@ -655,6 +657,8 @@ impl WalletCapability {
     /// external here refers to HD keys:
     /// <https://zips.z.cash/zip-0032>
     /// where external and internal were inherited from the BIP44 conventions
+    // FIXME: zingo2
+    #[allow(dead_code)]
     fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.unified_addresses
             .iter()
@@ -676,6 +680,8 @@ impl WalletCapability {
             .collect()
     }
 
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
         self.get_external_taddrs(chain)
             .union(&self.get_rejection_address_set(chain))
@@ -1016,6 +1022,8 @@ mod rejection {
         ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
             &self.rejection_addresses
         }
+        // FIXME: zingo2
+        #[allow(dead_code)]
         pub(crate) fn get_rejection_address_set(
             &self,
             chain: &crate::config::ChainType,

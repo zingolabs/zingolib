@@ -4,105 +4,108 @@ use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
-use crate::testutils::lightclient::from_inputs;
-use crate::testutils::lightclient::get_base_address;
+// use crate::testutils::lightclient::from_inputs;
+// use crate::testutils::lightclient::get_base_address;
 use crate::wallet::notes::query::OutputQuery;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
-use zcash_client_backend::PoolType;
+// use zcash_client_backend::PoolType;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-/// this function handles inputs and their lifetimes to create a proposal
-pub async fn to_clients_proposal(
-    sender: &LightClient,
-    sends: &[(&LightClient, PoolType, u64, Option<&str>)],
-) -> zcash_client_backend::proposal::Proposal<
-    zcash_primitives::transaction::fees::zip317::FeeRule,
-    zcash_client_backend::wallet::NoteId,
-> {
-    let mut subraw_receivers = vec![];
-    for (recipient, pooltype, amount, memo_str) in sends {
-        let address = get_base_address(recipient, *pooltype).await;
-        subraw_receivers.push((address, amount, memo_str));
-    }
+// FIXME: zingo2
+// /// this function handles inputs and their lifetimes to create a proposal
+// pub async fn to_clients_proposal(
+//     sender: &LightClient,
+//     sends: &[(&LightClient, PoolType, u64, Option<&str>)],
+// ) -> zcash_client_backend::proposal::Proposal<
+//     zcash_primitives::transaction::fees::zip317::FeeRule,
+//     zcash_client_backend::wallet::NoteId,
+// > {
+//     let mut subraw_receivers = vec![];
+//     for (recipient, pooltype, amount, memo_str) in sends {
+//         let address = get_base_address(recipient, *pooltype).await;
+//         subraw_receivers.push((address, amount, memo_str));
+//     }
 
-    let raw_receivers = subraw_receivers
-        .iter()
-        .map(|(address, amount, opt_memo)| (address.as_str(), **amount, **opt_memo))
-        .collect();
+//     let raw_receivers = subraw_receivers
+//         .iter()
+//         .map(|(address, amount, opt_memo)| (address.as_str(), **amount, **opt_memo))
+//         .collect();
 
-    from_inputs::propose(sender, raw_receivers).await.unwrap()
-}
+//     from_inputs::propose(sender, raw_receivers).await.unwrap()
+// }
 
-/// sends to any combo of recipient clients checks that each recipient also received the expected balances
-/// test-only generic
-/// NOTICE this function bumps the chain and syncs the client
-/// test_mempool can be enabled when the test harness supports it
-/// returns Ok(total_fee, total_received, total_change)
-pub async fn propose_send_bump_sync_all_recipients<CC>(
-    environment: &mut CC,
-    sender: &LightClient,
-    sends: Vec<(&LightClient, PoolType, u64, Option<&str>)>,
-    test_mempool: bool,
-) -> Result<(u64, u64, u64), String>
-where
-    CC: ConductChain,
-{
-    sender.do_sync(false).await.unwrap();
-    let proposal = to_clients_proposal(sender, &sends).await;
+// FIXME: zingo2
+// /// sends to any combo of recipient clients checks that each recipient also received the expected balances
+// /// test-only generic
+// /// NOTICE this function bumps the chain and syncs the client
+// /// test_mempool can be enabled when the test harness supports it
+// /// returns Ok(total_fee, total_received, total_change)
+// pub async fn propose_send_bump_sync_all_recipients<CC>(
+//     environment: &mut CC,
+//     sender: &LightClient,
+//     sends: Vec<(&LightClient, PoolType, u64, Option<&str>)>,
+//     test_mempool: bool,
+// ) -> Result<(u64, u64, u64), String>
+// where
+//     CC: ConductChain,
+// {
+//     sender.do_sync(false).await.unwrap();
+//     let proposal = to_clients_proposal(sender, &sends).await;
 
-    let txids = sender
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
+//     let txids = sender
+//         .complete_and_broadcast_stored_proposal()
+//         .await
+//         .unwrap();
 
-    follow_proposal(
-        environment,
-        sender,
-        sends
-            .iter()
-            .map(|(recipient, _, _, _)| *recipient)
-            .collect(),
-        &proposal,
-        txids,
-        test_mempool,
-    )
-    .await
-}
+//     follow_proposal(
+//         environment,
+//         sender,
+//         sends
+//             .iter()
+//             .map(|(recipient, _, _, _)| *recipient)
+//             .collect(),
+//         &proposal,
+//         txids,
+//         test_mempool,
+//     )
+//     .await
+// }
 
-/// a test-only generic version of shield that includes assertions that the proposal was fulfilled
-/// NOTICE this function bumps the chain and syncs the client
-/// only compatible with zip317
-/// returns Ok(total_fee, total_shielded)
-pub async fn assure_propose_shield_bump_sync<CC>(
-    environment: &mut CC,
-    client: &LightClient,
-    test_mempool: bool,
-) -> Result<(u64, u64), String>
-where
-    CC: ConductChain,
-{
-    let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
+// FIXME: zingo2
+// /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
+// /// NOTICE this function bumps the chain and syncs the client
+// /// only compatible with zip317
+// /// returns Ok(total_fee, total_shielded)
+// pub async fn assure_propose_shield_bump_sync<CC>(
+//     environment: &mut CC,
+//     client: &LightClient,
+//     test_mempool: bool,
+// ) -> Result<(u64, u64), String>
+// where
+//     CC: ConductChain,
+// {
+//     let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
 
-    let txids = client
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
+//     let txids = client
+//         .complete_and_broadcast_stored_proposal()
+//         .await
+//         .unwrap();
 
-    let (total_fee, r_shielded, s_shielded) = follow_proposal(
-        environment,
-        client,
-        vec![client],
-        &proposal,
-        txids,
-        test_mempool,
-    )
-    .await?;
-    assert_eq!(r_shielded, s_shielded);
-    Ok((total_fee, s_shielded))
-}
+//     let (total_fee, r_shielded, s_shielded) = follow_proposal(
+//         environment,
+//         client,
+//         vec![client],
+//         &proposal,
+//         txids,
+//         test_mempool,
+//     )
+//     .await?;
+//     assert_eq!(r_shielded, s_shielded);
+//     Ok((total_fee, s_shielded))
+// }
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
 /// returns Ok(total_fee, total_received, total_change)

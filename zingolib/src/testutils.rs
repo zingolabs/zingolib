@@ -27,7 +27,7 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use json::JsonValue;
-use log::debug;
+// use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
 
@@ -216,33 +216,6 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
             )
             | (SpendStatus::MempoolSpent(_), SpendStatus::MempoolSpent(_))
     )
-}
-
-/// Send from sender to recipient and then sync the recipient
-pub async fn send_value_between_clients_and_sync(
-    manager: &RegtestManager,
-    sender: &LightClient,
-    recipient: &LightClient,
-    value: u64,
-    address_type: &str,
-) -> Result<String, String> {
-    debug!(
-        "recipient address is: {}",
-        &recipient.do_addresses().await[0]["address"]
-    );
-    let txid = lightclient::from_inputs::quick_send(
-        sender,
-        vec![(
-            &crate::get_base_address_macro!(recipient, address_type),
-            value,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(manager, sender, 1).await?;
-    recipient.do_sync(false).await?;
-    Ok(txid.first().to_string())
 }
 
 /// This function increases the chain height reliably (with polling) but

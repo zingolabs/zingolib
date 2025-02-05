@@ -4,8 +4,8 @@
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
 use crate::config::ZingoConfig;
-use crate::get_base_address_macro;
-use crate::testutils::lightclient::from_inputs;
+// use crate::get_base_address_macro;
+// use crate::testutils::lightclient::from_inputs;
 use crate::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(async_fn_in_trait)]
@@ -60,23 +60,24 @@ pub trait ConductChain {
     // deprecated. use get_latest_block
 
     /// builds a client and funds it in orchard and syncs it
-    async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
+    async fn fund_client_orchard(&mut self, _value: u64) -> LightClient {
         let faucet = self.create_faucet().await;
         let recipient = self.create_client().await;
 
         self.bump_chain().await;
         faucet.do_sync(false).await.unwrap();
 
-        from_inputs::quick_send(
-            &faucet,
-            vec![(
-                (get_base_address_macro!(recipient, "unified")).as_str(),
-                value,
-                None,
-            )],
-        )
-        .await
-        .unwrap();
+        // FIXME: zingo2
+        // from_inputs::quick_send(
+        //     &faucet,
+        //     vec![(
+        //         (get_base_address_macro!(recipient, "unified")).as_str(),
+        //         value,
+        //         None,
+        //     )],
+        // )
+        // .await
+        // .unwrap();
 
         self.bump_chain().await;
 

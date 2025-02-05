@@ -219,7 +219,7 @@ impl LightWallet {
     /// Clears all the downloaded blocks and resets the state back to the initial block.
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
-    pub async fn clear_all(&mut self) {
+    pub fn clear_all(&mut self) {
         self.wallet_blocks.clear();
         self.wallet_transactions.clear();
         self.nullifier_map.sapling_mut().clear();
@@ -363,6 +363,8 @@ impl LightWallet {
     }
 
     // Set the previous send's status as an error or success
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
         let mut p = self.send_progress.write().await;
 

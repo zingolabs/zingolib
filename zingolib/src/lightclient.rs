@@ -561,6 +561,8 @@ impl LightClient {
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
+    // FIXME: zingo2
+    #[allow(dead_code)]
     fn unspent_pending_spent(
         &self,
         note: JsonValue,

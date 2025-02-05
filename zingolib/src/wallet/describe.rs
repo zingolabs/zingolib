@@ -197,6 +197,8 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &crate::config::ChainType,
         note: &D::WalletNote,

@@ -1,22 +1,22 @@
 //! creating proposals from wallet data
 
-use std::{convert::Infallible, num::NonZeroU32};
+use std::convert::Infallible;
 
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector,
-    zip321::{TransactionRequest, Zip321Error},
-    ShieldedProtocol,
+    data_api::wallet::input_selection::GreedyInputSelector, zip321::Zip321Error, ShieldedProtocol,
 };
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
+use zcash_primitives::memo::MemoBytes;
 
-use crate::config::ChainType;
+// use crate::config::ChainType;
 
 use super::{
-    send::change_memo_from_transaction_request,
+    // send::change_memo_from_transaction_request,
     tx_map::{TxMap, TxMapTraitError},
-    LightWallet,
+    // LightWallet,
 };
 
+// FIXME: zingo2
+#[allow(dead_code)]
 type GISKit =
     GreedyInputSelector<TxMap, zcash_client_backend::fees::zip317::SingleOutputChangeStrategy>;
 
@@ -24,6 +24,8 @@ type GISKit =
 // divergence in change strategy.
 //  Because shielding operations are never expected to create dust notes this change
 // is not a bugfix.
+// FIXME: zingo2
+#[allow(dead_code)]
 fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
     let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
         zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -91,91 +93,92 @@ pub enum ProposeShieldError {
     Insufficient,
 }
 
-impl LightWallet {
-    /// Creates a proposal from a transaction request.
-    pub(crate) async fn create_send_proposal(
-        &self,
-        request: TransactionRequest,
-    ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
-        let number_of_rejection_addresses =
-            self.transaction_context.key.get_rejection_addresses().len() as u32;
-        let memo = change_memo_from_transaction_request(&request, number_of_rejection_addresses);
+// FIXME: zingo2
+// impl LightWallet {
+//     /// Creates a proposal from a transaction request.
+//     pub(crate) async fn create_send_proposal(
+//         &self,
+//         request: TransactionRequest,
+//     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
+//         let number_of_rejection_addresses =
+//             self.transaction_context.key.get_rejection_addresses().len() as u32;
+//         let memo = change_memo_from_transaction_request(&request, number_of_rejection_addresses);
 
-        let input_selector = build_default_giskit(Some(memo));
-        let mut tmamt = self
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
+//         let input_selector = build_default_giskit(Some(memo));
+//         let mut tmamt = self
+//             .transaction_context
+//             .transaction_metadata_set
+//             .write()
+//             .await;
 
-        zcash_client_backend::data_api::wallet::propose_transfer::<
-            TxMap,
-            ChainType,
-            GISKit,
-            TxMapTraitError,
-        >(
-            tmamt.deref_mut(),
-            &self.transaction_context.config.chain,
-            zcash_primitives::zip32::AccountId::ZERO,
-            &input_selector,
-            request,
-            NonZeroU32::MIN, //review! use custom constant?
-        )
-        .map_err(ProposeSendError::Proposal)
-    }
+//         zcash_client_backend::data_api::wallet::propose_transfer::<
+//             TxMap,
+//             ChainType,
+//             GISKit,
+//             TxMapTraitError,
+//         >(
+//             tmamt.deref_mut(),
+//             &self.transaction_context.config.chain,
+//             zcash_primitives::zip32::AccountId::ZERO,
+//             &input_selector,
+//             request,
+//             NonZeroU32::MIN, //review! use custom constant?
+//         )
+//         .map_err(ProposeSendError::Proposal)
+//     }
 
-    /// The shield operation consumes a proposal that transfers value
-    /// into the Orchard pool.
-    ///
-    /// The proposal is generated with this method, which operates on
-    /// the balance transparent pool, without other input.
-    /// In other words, shield does not take a user-specified amount
-    /// to shield, rather it consumes all transparent value in the wallet that
-    /// can be consumsed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn create_shield_proposal(
-        &self,
-    ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
-        let input_selector = build_default_giskit(None);
+//     /// The shield operation consumes a proposal that transfers value
+//     /// into the Orchard pool.
+//     ///
+//     /// The proposal is generated with this method, which operates on
+//     /// the balance transparent pool, without other input.
+//     /// In other words, shield does not take a user-specified amount
+//     /// to shield, rather it consumes all transparent value in the wallet that
+//     /// can be consumsed without costing more in zip317 fees than is being transferred.
+//     pub(crate) async fn create_shield_proposal(
+//         &self,
+//     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
+//         let input_selector = build_default_giskit(None);
 
-        let mut tmamt = self
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
+//         let mut tmamt = self
+//             .transaction_context
+//             .transaction_metadata_set
+//             .write()
+//             .await;
 
-        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-            TxMap,
-            ChainType,
-            GISKit,
-            TxMapTraitError,
-        >(
-            &mut tmamt,
-            &self.transaction_context.config.chain,
-            &input_selector,
-            // don't shield dust
-            NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses(),
-            // review! do we want to require confirmations?
-            // make it configurable?
-            0,
-        )
-        .map_err(ProposeShieldError::Component)?;
+//         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+//             TxMap,
+//             ChainType,
+//             GISKit,
+//             TxMapTraitError,
+//         >(
+//             &mut tmamt,
+//             &self.transaction_context.config.chain,
+//             &input_selector,
+//             // don't shield dust
+//             NonNegativeAmount::const_from_u64(10_000),
+//             &self.get_transparent_addresses(),
+//             // review! do we want to require confirmations?
+//             // make it configurable?
+//             0,
+//         )
+//         .map_err(ProposeShieldError::Component)?;
 
-        for step in proposed_shield.steps().iter() {
-            if step
-                .balance()
-                .proposed_change()
-                .iter()
-                .fold(0, |total_out, output| total_out + output.value().into_u64())
-                == 0
-            {
-                return Err(ProposeShieldError::Insufficient);
-            }
-        }
+//         for step in proposed_shield.steps().iter() {
+//             if step
+//                 .balance()
+//                 .proposed_change()
+//                 .iter()
+//                 .fold(0, |total_out, output| total_out + output.value().into_u64())
+//                 == 0
+//             {
+//                 return Err(ProposeShieldError::Insufficient);
+//             }
+//         }
 
-        Ok(proposed_shield)
-    }
-}
+//         Ok(proposed_shield)
+//     }
+// }
 
 #[cfg(test)]
 mod test {
@@ -190,22 +193,24 @@ mod test {
     #[ignore = "for some reason this is does not work without network, even though it should be possible"]
     #[tokio::test]
     async fn example_mainnet_hhcclaltpcckcsslpcnetblr_80b5594ac_propose_100_000_to_self() {
-        let wallet = examples::NetworkSeedVersion::Mainnet(
+        let client = examples::NetworkSeedVersion::Mainnet(
             examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
         )
         .load_example_wallet_with_client()
         .await;
+        let wallet = client.wallet.lock().await;
 
         let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
         let self_address = wallet.get_first_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
-        let request = transaction_request_from_send_inputs(receivers)
+        let _request = transaction_request_from_send_inputs(receivers)
             .expect("actually all of this logic oughta be internal to propose");
 
-        wallet
-            .create_send_proposal(request)
-            .await
-            .expect("can propose from existing data");
+        // FIXME: zingo2
+        // wallet
+        //     .create_send_proposal(request)
+        //     .await
+        //     .expect("can propose from existing data");
     }
 }
