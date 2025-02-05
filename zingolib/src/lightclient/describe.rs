@@ -85,42 +85,9 @@ impl LightClient {
         }
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
-    pub async fn transaction_summaries(&self) -> TransactionSummaries {
-        self.wallet.lock().await.transaction_summaries().await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries_json_string].
-    pub async fn transaction_summaries_json_string(&self) -> String {
-        self.wallet
-            .lock()
-            .await
-            .transaction_summaries_json_string()
-            .await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::value_transfers].
-    pub async fn value_transfers(&self) -> ValueTransfers {
-        self.wallet.lock().await.value_transfers().await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::sorted_value_transfers].
-    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
-        self.wallet
-            .lock()
-            .await
-            .sorted_value_transfers(newer_first)
-            .await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::value_transfers_json_string].
-    pub async fn value_transfers_json_string(&self) -> String {
-        self.wallet.lock().await.value_transfers_json_string().await
-    }
-
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.
     pub async fn messages_containing(&self, filter: Option<&str>) -> ValueTransfers {
-        let mut value_transfers = self.wallet.lock().await.sorted_value_transfers(true).await;
+        let mut value_transfers = self.sorted_value_transfers(true).await;
         value_transfers.reverse();
 
         // Filter out VTs where all memos are empty.
@@ -151,6 +118,39 @@ impl LightClient {
         value_transfers
     }
 
+    /// Wrapper for [crate::wallet::LightWallet::sorted_value_transfers].
+    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
+        self.wallet
+            .lock()
+            .await
+            .sorted_value_transfers(newer_first)
+            .await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::value_transfers].
+    pub async fn value_transfers(&self) -> ValueTransfers {
+        self.wallet.lock().await.value_transfers().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::value_transfers_json_string].
+    pub async fn value_transfers_json_string(&self) -> String {
+        self.wallet.lock().await.value_transfers_json_string().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
+    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+        self.wallet.lock().await.transaction_summaries().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries_json_string].
+    pub async fn transaction_summaries_json_string(&self) -> String {
+        self.wallet
+            .lock()
+            .await
+            .transaction_summaries_json_string()
+            .await
+    }
+
     /// TODO: Add Doc Comment Here!
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
         let wallet = self.wallet.lock().await;
@@ -173,7 +173,7 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let value_transfers = self.wallet.lock().await.sorted_value_transfers(true).await;
+        let value_transfers = self.sorted_value_transfers(true).await;
         let mut memobytes_by_address = HashMap::new();
         for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
