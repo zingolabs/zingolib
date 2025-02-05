@@ -11,7 +11,7 @@ use crate::{
     wallet::{
         data::PoolNullifier,
         notes::interface::OutputConstructor,
-        notes::OutputInterface,
+        notes::OldOutputInterface,
         notes::ShieldedNoteInterface,
         traits::{self, DomainWalletExt, Nullifier, Recipient},
     },

@@ -134,7 +134,7 @@ where
         (
             compare_fee(wallet, transaction, step),
             (
-                wallet.sum_queried_output_values(OutputQuery::any()),
+                wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
                 transaction.status(),
             ),
         )
@@ -167,10 +167,13 @@ where
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
             Vec<u64>,
             (Vec<u64>, Vec<ConfirmationStatus>),
-        ) = for_each_proposed_transaction(sender, proposal, &txids, |records, record, step| {
+        ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
-                compare_fee(records, record, step),
-                (record.query_sum_value(OutputQuery::any()), record.status),
+                compare_fee(wallet, transaction, step),
+                (
+                    wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
+                    transaction.status(),
+                ),
             )
         })
         .await
@@ -203,8 +206,12 @@ where
                 recipient,
                 proposal,
                 &txids,
-                |_records, record, _step| {
-                    (record.query_sum_value(OutputQuery::any()), record.status)
+                |wallet, transaction, _step| {
+                    (
+                        wallet
+                            .sum_queried_transaction_output_values(transaction, OutputQuery::any()),
+                        transaction.status(),
+                    )
                 },
             )
             .await
@@ -232,10 +239,13 @@ where
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
         Vec<u64>,
         (Vec<u64>, Vec<ConfirmationStatus>),
-    ) = for_each_proposed_transaction(sender, proposal, &txids, |records, record, step| {
+    ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
-            compare_fee(records, record, step),
-            (record.query_sum_value(OutputQuery::any()), record.status),
+            compare_fee(wallet, transaction, step),
+            (
+                wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
+                transaction.status(),
+            ),
         )
     })
     .await
@@ -268,7 +278,12 @@ where
             recipient,
             proposal,
             &txids,
-            |_records, record, _step| (record.query_sum_value(OutputQuery::any()), record.status),
+            |wallet, transaction, _step| {
+                (
+                    wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
+                    transaction.status(),
+                )
+            },
         )
         .await
         .into_iter()

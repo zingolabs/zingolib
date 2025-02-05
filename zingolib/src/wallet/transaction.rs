@@ -10,7 +10,7 @@ impl LightWallet {
         transaction: &WalletTransaction,
         fail_on_miss: bool,
     ) -> Result<Vec<&Op>, KindError> {
-        let spends = self.get_all_outputs::<Op>()
+        let spends = self.wallet_outputs::<Op>()
             .into_iter()
             .filter_map(|output| {
                 output.spending_transaction().and_then(|txid| {
@@ -58,7 +58,7 @@ impl LightWallet {
     pub fn calculate_transaction_fee(&self, transaction: &WalletTransaction) -> Result<u64, FeeError> {
         Ok(transaction.transaction().fee_paid(|outpoint| -> Result<Amount, FeeError> {
             let outpoint = OutputId::from(outpoint);
-              let prevout = self.get_all_outputs::<TransparentCoin>().into_iter().find(|&output| output.output_id == outpoint).ok_or(FeeError::SpendNotFound {
+              let prevout = self.wallet_outputs::<TransparentCoin>().into_iter().find(|&output| output.output_id == outpoint).ok_or(FeeError::SpendNotFound {
                   txid: transaction.txid(),
                   spend: format!("{:?}", outpoint)
               })?;

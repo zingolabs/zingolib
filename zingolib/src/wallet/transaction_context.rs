@@ -77,7 +77,6 @@ impl TransactionContext {
 mod decrypt_transaction {
     use crate::{
         error::{ZingoLibError, ZingoLibResult},
-        utils::interpret_taddr_as_tex_addr,
         wallet::{
             self,
             data::OutgoingTxData,
@@ -87,17 +86,13 @@ mod decrypt_transaction {
                 self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
                 ShieldedOutputExt as _, Spend as _, ToBytes as _,
             },
-            transaction_record::TransactionKind,
         },
     };
-    use orchard::note_encryption::OrchardDomain;
-    use sapling_crypto::note_encryption::SaplingDomain;
     use std::convert::TryInto;
 
     use zcash_client_backend::address::{Address, UnifiedAddress};
     use zcash_note_encryption::{try_output_recovery_with_ovk, Domain};
     use zcash_primitives::{
-        legacy::TransparentAddress,
         memo::{Memo, MemoBytes},
         transaction::{
             components::{transparent::Authorized, TxIn},

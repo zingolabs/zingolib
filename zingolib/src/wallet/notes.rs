@@ -12,6 +12,7 @@ pub mod query;
 
 use zcash_primitives::transaction::TxId;
 use zingo_sync::primitives::OutputInterface;
+use zingo_sync::primitives::WalletTransaction;
 
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
@@ -71,7 +72,7 @@ impl LightWallet {
     }
 
     /// Gets all outputs of a given type in the wallet.
-    pub(super) fn get_all_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
+    pub(super) fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
         self.wallet_transactions
             .values()
             .flat_map(|transaction| Op::transaction_outputs(transaction))
@@ -83,35 +84,42 @@ impl LightWallet {
         self.wallet_transactions
             .values()
             .fold(0, |acc, transaction| {
-                acc + {
-                    let mut sum = 0;
-                    if query.transparent() {
-                        for output in transaction.transparent_coins().iter() {
-                            if self.query_output_spend_status(query.spend_status, output) {
-                                sum += output.value();
-                            }
-                        }
-                    }
-                    if query.sapling() {
-                        for output in transaction.sapling_notes().iter() {
-                            if self.query_output_spend_status(query.spend_status, output) {
-                                sum += output.value();
-                            }
-                        }
-                    }
-                    if query.orchard() {
-                        for output in transaction.orchard_notes().iter() {
-                            if self.query_output_spend_status(query.spend_status, output) {
-                                sum += output.value();
-                            }
-                        }
-                    }
-                    sum
-                }
+                acc + self.sum_queried_transaction_output_values(transaction, query)
             })
     }
 
-    /// Returns `true` if `output` spend status matches `query`. Otherwise, returns `false`.
+    /// Sum the values of all outputs in the `transaction` which match the given `query`.
+    pub fn sum_queried_transaction_output_values(
+        &self,
+        transaction: &WalletTransaction,
+        query: OutputQuery,
+    ) -> u64 {
+        let mut sum = 0;
+        if query.transparent() {
+            for output in transaction.transparent_coins().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.sapling() {
+            for output in transaction.sapling_notes().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.orchard() {
+            for output in transaction.orchard_notes().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        sum
+    }
+
+    /// Returns `true` if `output` spend status matches the `query`. Otherwise, returns `false`.
     fn query_output_spend_status(
         &self,
         query: OutputSpendStatusQuery,
