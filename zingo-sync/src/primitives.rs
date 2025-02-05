@@ -248,6 +248,7 @@ pub struct WalletBlock {
     #[getset(skip)]
     txids: Vec<TxId>,
     tree_boundaries: TreeBoundaries,
+    // TODO: optional price
 }
 
 impl WalletBlock {
@@ -282,7 +283,9 @@ pub struct WalletTransaction {
     #[getset(get = "pub")]
     transaction: zcash_primitives::transaction::Transaction,
     #[getset(get_copy = "pub")]
-    confirmation_status: ConfirmationStatus,
+    status: ConfirmationStatus,
+    #[getset(skip)]
+    transparent_coins: Vec<TransparentCoin>,
     #[getset(skip)]
     sapling_notes: Vec<SaplingNote>,
     #[getset(skip)]
@@ -291,8 +294,6 @@ pub struct WalletTransaction {
     outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
     #[getset(skip)]
     outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-    #[getset(skip)]
-    transparent_coins: Vec<TransparentCoin>,
 }
 
 impl WalletTransaction {
@@ -300,17 +301,17 @@ impl WalletTransaction {
     pub fn from_parts(
         txid: TxId,
         transaction: zcash_primitives::transaction::Transaction,
-        confirmation_status: ConfirmationStatus,
+        status: ConfirmationStatus,
+        transparent_coins: Vec<TransparentCoin>,
         sapling_notes: Vec<SaplingNote>,
         orchard_notes: Vec<OrchardNote>,
         outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
         outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-        transparent_coins: Vec<TransparentCoin>,
     ) -> Self {
         Self {
             txid,
             transaction,
-            confirmation_status,
+            status,
             sapling_notes,
             orchard_notes,
             outgoing_sapling_notes,
@@ -319,6 +320,13 @@ impl WalletTransaction {
         }
     }
 
+    pub fn transparent_coins(&self) -> &[TransparentCoin] {
+        &self.transparent_coins
+    }
+
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+        self.transparent_coins.iter_mut().collect()
+    }
     pub fn sapling_notes(&self) -> &[SaplingNote] {
         &self.sapling_notes
     }
@@ -342,54 +350,39 @@ impl WalletTransaction {
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
     }
-
-    pub fn transparent_coins(&self) -> &[TransparentCoin] {
-        &self.transparent_coins
-    }
-
-    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
-        self.transparent_coins.iter_mut().collect()
-    }
 }
 
 impl std::fmt::Debug for WalletTransaction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("WalletTransaction")
-            .field("confirmation_status", &self.confirmation_status)
+            .field("confirmation_status", &self.status)
+            .field("transparent_coins", &self.transparent_coins)
             .field("sapling_notes", &self.sapling_notes)
             .field("orchard_notes", &self.orchard_notes)
             .field("outgoing_sapling_notes", &self.outgoing_sapling_notes)
             .field("outgoing_orchard_notes", &self.outgoing_orchard_notes)
-            .field("transparent_coins", &self.transparent_coins)
             .finish()
     }
 }
-pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
-pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 
 /// Wallet note, shielded output with metadata relevant to the wallet
-#[derive(Debug, Getters, CopyGetters, Setters)]
+#[derive(Debug, Clone)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    #[getset(get_copy = "pub")]
-    output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to decrypt output
-    #[getset(get_copy = "pub")]
-    key_id: KeyId,
+    pub(crate) key_id: KeyId,
     /// Decrypted note with recipient and value
-    #[getset(get = "pub")]
-    note: N,
+    pub(crate) note: N,
     /// Derived nullifier
-    #[getset(get_copy = "pub")]
-    nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
     /// Commitment tree leaf position
-    #[getset(get_copy = "pub")]
-    position: Option<Position>,
+    pub(crate) position: Option<Position>,
     /// Memo
-    #[getset(get = "pub")]
-    memo: Memo,
-    #[getset(get = "pub", set = "pub")]
-    spending_transaction: Option<TxId>,
+    pub(crate) memo: Memo,
+    /// Transaction this note was spent in.
+    /// If `None`, note is not spent.
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
@@ -411,6 +404,125 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
             memo,
             spending_transaction,
         }
+    }
+}
+
+pub trait NoteInterface: Sized {
+    type ZcashNote;
+    type Nullifier: Copy;
+
+    /// Output ID
+    fn output_id(&self) -> OutputId;
+
+    /// Identifier for key used to decrypt output
+    fn key_id(&self) -> KeyId;
+
+    /// Decrypted note with recipient and value
+    fn note(&self) -> &Self::ZcashNote;
+
+    /// Derived nullifier
+    fn nullifier(&self) -> Option<Self::Nullifier>;
+
+    /// Commitment tree leaf position
+    fn position(&self) -> Option<Position>;
+
+    /// Memo
+    fn memo(&self) -> &Memo;
+
+    /// Txid of transaction this note was spent in.
+    /// If `None`, note is not spent.
+    fn spending_transaction(&self) -> Option<TxId>;
+
+    /// Note value.
+    fn value(&self) -> u64;
+
+    /// Notes within `transaction`.
+    fn transaction_notes(transaction: &WalletTransaction) -> &[Self];
+}
+
+pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifier>;
+
+impl NoteInterface for SaplingNote {
+    type ZcashNote = sapling_crypto::Note;
+    type Nullifier = sapling_crypto::Nullifier;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> KeyId {
+        self.key_id
+    }
+
+    fn note(&self) -> &Self::ZcashNote {
+        &self.note
+    }
+
+    fn nullifier(&self) -> Option<sapling_crypto::Nullifier> {
+        self.nullifier
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.position
+    }
+
+    fn memo(&self) -> &Memo {
+        &self.memo
+    }
+
+    fn spending_transaction(&self) -> Option<TxId> {
+        self.spending_transaction
+    }
+
+    fn value(&self) -> u64 {
+        self.note.value().inner()
+    }
+
+    fn transaction_notes(transaction: &WalletTransaction) -> &[SaplingNote] {
+        transaction.sapling_notes()
+    }
+}
+
+pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
+
+impl NoteInterface for OrchardNote {
+    type ZcashNote = orchard::Note;
+    type Nullifier = orchard::note::Nullifier;
+
+    fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    fn key_id(&self) -> KeyId {
+        self.key_id
+    }
+
+    fn note(&self) -> &Self::ZcashNote {
+        &self.note
+    }
+
+    fn nullifier(&self) -> Option<orchard::note::Nullifier> {
+        self.nullifier
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.position
+    }
+
+    fn memo(&self) -> &Memo {
+        &self.memo
+    }
+
+    fn spending_transaction(&self) -> Option<TxId> {
+        self.spending_transaction
+    }
+
+    fn value(&self) -> u64 {
+        self.note.value().inner()
+    }
+
+    fn transaction_notes(transaction: &WalletTransaction) -> &[OrchardNote] {
+        transaction.orchard_notes()
     }
 }
 

@@ -119,10 +119,7 @@ pub trait SyncTransactions: SyncWallet {
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
-            .filter(|tx| {
-                tx.confirmation_status()
-                    .is_confirmed_after(&truncate_height)
-            })
+            .filter(|tx| tx.status().is_confirmed_after(&truncate_height))
             .map(|tx| tx.transaction().txid())
             .collect();
 
@@ -131,25 +128,25 @@ pub trait SyncTransactions: SyncWallet {
             .values_mut()
             .flat_map(|tx| tx.sapling_notes_mut())
             .filter(|note| {
-                note.spending_transaction().map_or_else(
+                note.spending_transaction.map_or_else(
                     || false,
                     |spending_txid| invalid_txids.contains(&spending_txid),
                 )
             })
             .for_each(|note| {
-                note.set_spending_transaction(None);
+                note.spending_transaction = None;
             });
         wallet_transactions
             .values_mut()
             .flat_map(|tx| tx.orchard_notes_mut())
             .filter(|note| {
-                note.spending_transaction().map_or_else(
+                note.spending_transaction.map_or_else(
                     || false,
                     |spending_txid| invalid_txids.contains(&spending_txid),
                 )
             })
             .for_each(|note| {
-                note.set_spending_transaction(None);
+                note.spending_transaction = None;
             });
 
         invalid_txids.iter().for_each(|invalid_txid| {

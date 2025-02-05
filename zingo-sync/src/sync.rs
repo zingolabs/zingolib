@@ -38,7 +38,7 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
-const MAX_VERIFICATION_WINDOW: u32 = 100;
+pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 
 /// Syncs a wallet to the latest state of the blockchain
 pub async fn sync<P, W>(
@@ -377,7 +377,7 @@ async fn process_mempool_transaction<W>(
         .unwrap()
         .get(&transaction.txid())
     {
-        if tx.confirmation_status().is_confirmed() {
+        if tx.status().is_confirmed() {
             return;
         }
     }
@@ -537,7 +537,7 @@ where
         .get_wallet_transactions()
         .unwrap()
         .values()
-        .filter_map(|tx| tx.confirmation_status().get_confirmed_height())
+        .filter_map(|tx| tx.status().get_confirmed_height())
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {

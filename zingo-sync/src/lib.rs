@@ -10,8 +10,8 @@
 //! Entrypoint: [`crate::sync::sync`]
 //!
 //! Terminology:
-//! Chain height - highest block height of best chain from the server
-//! Wallet height - highest block height of blockchain known to the wallet. Commonly used, to determine the chain height
+//! Chain height - highest block height of best chain from the server.
+//! Wallet height - highest block height of blockchain known to the wallet. Commonly used to determine the chain height
 //!                 of the previous sync, before the server is contacted to update the wallet height to the new chain height.
 //! Fully scanned height - block height in which the wallet has completed scanning all blocks equal to and below this height.
 
@@ -25,3 +25,5 @@ pub mod sync;
 pub mod traits;
 pub(crate) mod utils;
 pub mod witness;
+
+pub(crate) const MAX_BATCH_OUTPUTS: usize = 16_384; // 2^14

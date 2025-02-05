@@ -23,6 +23,7 @@ use crate::{
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
     witness::WitnessData,
+    MAX_BATCH_OUTPUTS,
 };
 
 use self::runners::{BatchRunners, DecryptedOutput};
@@ -34,8 +35,7 @@ use super::{
 
 mod runners;
 
-// TODO: move parameters to config module
-const TRIAL_DECRYPT_TASK_SIZE: usize = 1_024; // 2^10
+const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
 pub(crate) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,

@@ -12,10 +12,11 @@ use shardtree::{
 use zcash_client_backend::proto::service::SubtreeRoot;
 use zcash_primitives::consensus::BlockHeight;
 
+use crate::{sync::MAX_VERIFICATION_WINDOW, MAX_BATCH_OUTPUTS};
+
 const NOTE_COMMITMENT_TREE_DEPTH: u8 = 32;
 const SHARD_HEIGHT: u8 = 16;
-const MAX_CHECKPOINTS: usize = 100;
-const LOCATED_TREE_SIZE: usize = 128;
+const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
 type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
@@ -34,8 +35,8 @@ impl ShardTrees {
     /// Create new ShardTrees
     pub fn new() -> Self {
         Self {
-            sapling: ShardTree::new(MemoryShardStore::empty(), MAX_CHECKPOINTS),
-            orchard: ShardTree::new(MemoryShardStore::empty(), MAX_CHECKPOINTS),
+            sapling: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
+            orchard: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
         }
     }
 }
