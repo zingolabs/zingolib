@@ -28,7 +28,11 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::{
+        self,
+        transparent::{self, TransparentAddressId},
+        KeyId,
+    },
     primitives::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
@@ -457,7 +461,7 @@ fn add_recipient_unified_address<P, Nz>(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),
-            utils::address_from_pubkeyhash(parameters, ua.transparent().unwrap()),
+            transparent::encode_address(parameters, ua.transparent().unwrap().clone()),
             ua.encode(parameters),
         ];
         outgoing_notes

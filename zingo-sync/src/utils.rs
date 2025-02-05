@@ -1,9 +1,4 @@
-use base58::ToBase58;
-
-use zcash_primitives::{
-    consensus::{NetworkConstants, Parameters},
-    legacy::TransparentAddress,
-};
+use zcash_primitives::consensus::Parameters;
 
 pub(crate) fn encode_orchard_receiver<P: Parameters>(
     parameters: &P,
