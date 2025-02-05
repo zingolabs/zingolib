@@ -468,37 +468,6 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    /// TODO: Add Doc Comment Here!
-    pub fn new_from_seed(
-        config: &ZingoConfig,
-        seed: &[u8; 64],
-        position: u32,
-    ) -> Result<Self, KeyError> {
-        let usk = UnifiedSpendingKey::from_seed(
-            &config.chain,
-            seed,
-            AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
-        )
-        .map_err(KeyError::KeyDerivationError)?;
-
-        Ok(Self {
-            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
-            ..Default::default()
-        })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn new_from_phrase(
-        config: &ZingoConfig,
-        seed_phrase: &Mnemonic,
-        position: u32,
-    ) -> Result<Self, KeyError> {
-        // The seed bytes is the raw entropy. To pass it to HD wallet generation,
-        // we need to get the 64 byte bip39 entropy
-        let bip39_seed = seed_phrase.to_seed("");
-        Self::new_from_seed(config, &bip39_seed, position)
-    }
-
     // FIXME: zingo2
     #[allow(dead_code)]
     pub(crate) fn get_ua_from_contained_transparent_receiver(
@@ -652,6 +621,37 @@ impl WalletCapability {
         }?;
 
         Ok(transparent_receiver)
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn new_from_seed(
+        config: &ZingoConfig,
+        seed: &[u8; 64],
+        position: u32,
+    ) -> Result<Self, KeyError> {
+        let usk = UnifiedSpendingKey::from_seed(
+            &config.chain,
+            seed,
+            AccountId::try_from(position).map_err(KeyError::InvalidAccountId)?,
+        )
+        .map_err(KeyError::KeyDerivationError)?;
+
+        Ok(Self {
+            unified_key_store: UnifiedKeyStore::Spend(Box::new(usk)),
+            ..Default::default()
+        })
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn new_from_phrase(
+        config: &ZingoConfig,
+        seed_phrase: &Mnemonic,
+        position: u32,
+    ) -> Result<Self, KeyError> {
+        // The seed bytes is the raw entropy. To pass it to HD wallet generation,
+        // we need to get the 64 byte bip39 entropy
+        let bip39_seed = seed_phrase.to_seed("");
+        Self::new_from_seed(config, &bip39_seed, position)
     }
 
     /// external here refers to HD keys:
