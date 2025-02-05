@@ -6,6 +6,7 @@
 pub mod interrupts;
 pub mod scenarios;
 
+// use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
     NoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
 };
@@ -217,6 +218,34 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
             | (SpendStatus::MempoolSpent(_), SpendStatus::MempoolSpent(_))
     )
 }
+
+// FIXME: zingo2
+// /// Send from sender to recipient and then sync the recipient
+// pub async fn send_value_between_clients_and_sync(
+//     manager: &RegtestManager,
+//     sender: &LightClient,
+//     recipient: &LightClient,
+//     value: u64,
+//     address_type: &str,
+// ) -> Result<String, String> {
+//     debug!(
+//         "recipient address is: {}",
+//         &recipient.do_addresses(UAReceivers::All).await[0]["address"]
+//     );
+//     let txid = lightclient::from_inputs::quick_send(
+//         sender,
+//         vec![(
+//             &crate::get_base_address_macro!(recipient, address_type),
+//             value,
+//             None,
+//         )],
+//     )
+//     .await
+//     .unwrap();
+//     increase_height_and_wait_for_client(manager, sender, 1).await?;
+//     recipient.do_sync(false).await?;
+//     Ok(txid.first().to_string())
+// }
 
 /// This function increases the chain height reliably (with polling) but
 /// it _also_ ensures that the client state is synced.

@@ -21,10 +21,15 @@ pub enum ValueTransferRecordingError {
 fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
+pub enum UAReceivers {
+    Orchard,
+    Shielded,
+    All,
+}
 impl LightClient {
     /// Wrapper for [crate::wallet::LightWallet::do_addresses].
-    pub async fn do_addresses(&self) -> JsonValue {
-        self.wallet.lock().await.do_addresses().await
+    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
+        self.wallet.lock().await.do_addresses(subset).await
     }
 
     /// TODO: Redefine the wallet balance functions as non-generics that take a

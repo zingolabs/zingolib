@@ -4,6 +4,7 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
@@ -40,6 +41,7 @@ use crate::wallet::traits::Recipient;
 use crate::wallet::LightWallet;
 use crate::Orchard;
 use crate::Sapling;
+use crate::UAReceivers;
 use crate::WalletDomain;
 
 use super::data::summaries::NoteSummary;
@@ -61,23 +63,57 @@ use super::transaction_record::TransactionKind;
 
 impl LightWallet {
     /// Returns wallet addresses in a JSON array
-    pub async fn do_addresses(&self) -> JsonValue {
+    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.unified_addresses.iter() {
-            let encoded_ua = address.encode(&self.network);
-            let transparent = address
+            let local_address = match subset {
+                UAReceivers::Orchard => zcash_keys::address::UnifiedAddress::from_receivers(
+                    address.orchard().copied(),
+                    None,
+                    None,
+                )
+                .expect("To create a new address."),
+                UAReceivers::Shielded => zcash_keys::address::UnifiedAddress::from_receivers(
+                    address.orchard().copied(),
+                    address.sapling().copied(),
+                    None,
+                )
+                .expect("To create a new address."),
+                UAReceivers::All => address.clone(),
+            };
+            let encoded_ua = local_address.encode(&self.network);
+            let transparent = local_address
                 .transparent()
                 .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
-            objectified_addresses.push(json::object! {
-        "address" => encoded_ua,
-        "receivers" => json::object!(
-            "transparent" => transparent,
-            "sapling" => address.sapling().map(|z_addr| zcash_keys::encoding::encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
-            "orchard_exists" => address.orchard().is_some(),
+            objectified_addresses.push(
+                json::object!{
+                    "address" => encoded_ua,
+                    "receivers" => json::object!(
+                        "transparent" => transparent,
+                        "sapling" => local_address.sapling().map(|z_addr| encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
+                        "orchard_exists" => local_address.orchard().is_some()
+                    )
+                }
             )
-        })
         }
         JsonValue::Array(objectified_addresses)
+
+        // let mut objectified_addresses = Vec::new();
+        // for address in self.unified_addresses.iter() {
+        //     let encoded_ua = address.encode(&self.network);
+        //     let transparent = address
+        //         .transparent()
+        //         .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
+        //     objectified_addresses.push(json::object! {
+        // "address" => encoded_ua,
+        // "receivers" => json::object!(
+        //     "transparent" => transparent,
+        //     "sapling" => address.sapling().map(|z_addr| zcash_keys::encoding::encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
+        //     "orchard_exists" => address.orchard().is_some(),
+        //     )
+        // })
+        // }
+        // JsonValue::Array(objectified_addresses)
     }
 
     /// returns Some seed phrase for the wallet.

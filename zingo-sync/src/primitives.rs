@@ -28,7 +28,7 @@ use crate::{
     utils,
 };
 
-/// Block height and txid of relevant transactions that have yet to be scanned. These may be added due transparent
+/// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
 /// output/spend discovery or for targetted rescan.
 pub type Locator = (BlockHeight, TxId);
 

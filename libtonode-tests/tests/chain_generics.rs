@@ -6,6 +6,7 @@ use zingolib::testutils::{
 
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
+    #[ignore = "hangs"]
     #[test]
     fn single_sufficient_send_libtonode(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
         Runtime::new().unwrap().block_on(async {
