@@ -491,7 +491,7 @@ impl WalletCapability {
 
     /// Generates a unified address from the given desired receivers
     ///
-    /// See [`crate::wallet::WalletCapability::generate_transparent_receiver`] for information on using `legacy_key`
+    /// See [`self::WalletCapability::generate_transparent_receiver`] for information on using `legacy_key`
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,

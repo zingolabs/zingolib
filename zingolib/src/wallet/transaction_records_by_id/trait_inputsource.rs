@@ -148,7 +148,8 @@ impl InputSource for TransactionRecordsById {
     /// the trait method below is used as a TxMap trait method by propose_transaction.
     /// this function is used inside a loop that calculates a fee and balances change
     /// this algorithm influences strategy for user fee minimization
-    /// see [crate::wallet::LightWallet::create_send_proposal]
+    // FIXME: zingo2
+    // /// see [crate::wallet::LightWallet::create_send_proposal]
     /// TRAIT DOCUMENTATION
     /// Returns a list of spendable notes sufficient to cover the specified target value, if
     /// possible. Only spendable notes corresponding to the specified shielded protocol will
