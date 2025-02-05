@@ -97,23 +97,6 @@ impl LightWallet {
             )
         }
         JsonValue::Array(objectified_addresses)
-
-        // let mut objectified_addresses = Vec::new();
-        // for address in self.unified_addresses.iter() {
-        //     let encoded_ua = address.encode(&self.network);
-        //     let transparent = address
-        //         .transparent()
-        //         .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
-        //     objectified_addresses.push(json::object! {
-        // "address" => encoded_ua,
-        // "receivers" => json::object!(
-        //     "transparent" => transparent,
-        //     "sapling" => address.sapling().map(|z_addr| zcash_keys::encoding::encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
-        //     "orchard_exists" => address.orchard().is_some(),
-        //     )
-        // })
-        // }
-        // JsonValue::Array(objectified_addresses)
     }
 
     /// returns Some seed phrase for the wallet.
