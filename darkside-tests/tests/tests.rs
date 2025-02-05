@@ -263,7 +263,14 @@ async fn evicted_transaction_is_rebroadcast() {
 
     println!(
         "{:?}",
-        zingolib::testutils::lightclient::list_txids(&primary).await
+        primary
+            .wallet
+            .lock()
+            .await
+            .wallet_transactions
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
     );
 
     let _recorded_fee = *zingolib::testutils::assertions::lookup_fees_with_proposal_check(
