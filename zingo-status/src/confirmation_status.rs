@@ -116,6 +116,7 @@ impl ConfirmationStatus {
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&10.into()));
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
     /// ```
+    // TODO: blockheight impls copy so remove ref
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }

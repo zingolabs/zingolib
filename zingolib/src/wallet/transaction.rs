@@ -1,5 +1,8 @@
+use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
 use zcash_primitives::transaction::components::Amount;
 use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
+
+use crate::ShieldedDomain;
 
 use super::{
     error::{FeeError, KindError},
@@ -84,5 +87,35 @@ impl LightWallet {
             })?
             .try_into()
             .expect("fee should not be negative"))
+    }
+
+    // TODO: this is a method on the wallet so we can implement checking the witness can be constructed also
+    pub(crate) fn transaction_spendable_notes<D: ShieldedDomain>(
+        &self,
+        sources: &[ShieldedProtocol],
+        exclude: &[NoteId],
+        transaction: &WalletTransaction,
+    ) {
+        if sources.contains(&D::SHIELDED_PROTOCOL) {
+            D::Output::transaction_outputs(transaction)
+                .iter()
+                .filter_map(|note| {
+                    if note.spending_transaction().is_none() {
+                        let id = NoteId::new(
+                            transaction.txid(),
+                            D::SHIELDED_PROTOCOL,
+                            note.output_id().output_index() as u16,
+                        );
+                        if !exclude.contains(&id) {
+                            Some((id, note.value()))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                });
+            // TODO: return iterator or empty if else
+        }
     }
 }

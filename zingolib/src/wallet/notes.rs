@@ -10,12 +10,16 @@ pub mod orchard;
 pub use orchard::OrchardNote;
 pub mod query;
 
+use zcash_client_backend::wallet::NoteId;
+use zcash_client_backend::ShieldedProtocol;
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zingo_sync::primitives::OutputInterface;
 use zingo_sync::primitives::WalletTransaction;
 
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
+use crate::ShieldedDomain;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
@@ -139,6 +143,58 @@ impl LightWallet {
         } else {
             query.unspent
         }
+    }
+
+    /// Returns a list of spendable [`zcash_client_backend::wallet::NoteId`]s with associated note values
+    pub(crate) fn get_spendable_note_ids_and_values(
+        &self,
+        sources: &[ShieldedProtocol],
+        anchor_height: BlockHeight,
+        exclude: &[NoteId],
+    ) -> Vec<(NoteId, u64)> {
+        self.wallet_transactions
+            .values()
+            .flat_map(|transaction| {
+                if transaction
+                    .status()
+                    .is_confirmed_before_or_at(&anchor_height)
+                {
+                    let mut spendable_notes = vec![];
+                    if sources.contains(&ShieldedProtocol::Sapling) {
+                        transaction.sapling_notes().iter().for_each(|note| {
+                            if note.spending_transaction().is_none() {
+                                let id = NoteId::new(
+                                    transaction.txid(),
+                                    ShieldedProtocol::Sapling,
+                                    note.output_id().output_index() as u16,
+                                );
+                                if !exclude.contains(&id) {
+                                    spendable_notes.push((id, note.value()));
+                                }
+                            }
+                        });
+                    }
+                    if sources.contains(&ShieldedProtocol::Orchard) {
+                        transaction.orchard_notes().iter().for_each(|note| {
+                            if note.spending_transaction().is_none() {
+                                let id = NoteId::new(
+                                    transaction.txid(),
+                                    ShieldedProtocol::Orchard,
+                                    note.output_id().output_index() as u16,
+                                );
+                                if !exclude.contains(&id) {
+                                    spendable_notes.push((id, note.value()));
+                                }
+                            }
+                        });
+                    }
+
+                    spendable_notes
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
     }
 }
 

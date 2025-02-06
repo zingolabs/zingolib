@@ -5,10 +5,11 @@ use std::{collections::HashMap, num::NonZeroU32, ops::Range};
 
 use zcash_client_backend::{
     data_api::{
-        scanning::ScanRange, Account, BlockMetadata, InputSource, NullifierQuery,
+        scanning::ScanRange, Account, BlockMetadata, InputSource, NullifierQuery, SpendableNotes,
         TransactionDataRequest, WalletRead, WalletSummary,
     },
-    wallet::{NoteId, TransparentAddressMetadata},
+    wallet::{NoteId, TransparentAddressMetadata, WalletTransparentOutput},
+    ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
@@ -16,7 +17,10 @@ use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::Memo,
-    transaction::{components::amount::NonNegativeAmount, Transaction, TxId},
+    transaction::{
+        components::{amount::NonNegativeAmount, OutPoint},
+        Transaction, TxId,
+    },
 };
 
 use super::{error::WalletError, LightWallet};
@@ -222,7 +226,7 @@ impl InputSource for LightWallet {
     fn get_spendable_note(
         &self,
         txid: &TxId,
-        protocol: zcash_client_backend::ShieldedProtocol,
+        protocol: ShieldedProtocol,
         index: u32,
     ) -> Result<
         Option<
@@ -240,17 +244,129 @@ impl InputSource for LightWallet {
         &self,
         account: Self::AccountId,
         target_value: NonNegativeAmount,
-        sources: &[zcash_client_backend::ShieldedProtocol],
+        sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<zcash_client_backend::data_api::SpendableNotes<Self::NoteRef>, Self::Error> {
-        unimplemented!()
+    ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
+        let mut unselected = self
+            .get_spendable_note_ids_and_values(sources, anchor_height, exclude)
+            .map_err(InputSourceError::MissingOutputIndexes)?
+            .into_iter()
+            .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(InputSourceError::InvalidValue)?;
+
+        unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
+        let dust_spendable_index =
+            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
+        let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
+        let mut selected = vec![];
+        let mut index_of_unselected = 0;
+
+        loop {
+            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
+            if unselected.is_empty() {
+                break;
+            }
+            // update target value for further note selection
+            let selected_notes_total_value = selected
+                .iter()
+                .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
+                .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
+            let updated_target_value =
+                match calculate_remaining_needed(target_value, selected_notes_total_value) {
+                    RemainingNeeded::Positive(updated_target_value) => updated_target_value,
+                    RemainingNeeded::GracelessChangeAmount(_change) => {
+                        //println!("{:?}", change);
+                        break;
+                    }
+                };
+
+            match unselected.get(index_of_unselected) {
+                Some(smallest_unselected) => {
+                    // selected a note to test if it has enough value to complete the transaction on its own
+                    if smallest_unselected.1 >= updated_target_value {
+                        selected.push(*smallest_unselected);
+                        unselected.remove(index_of_unselected);
+                    } else {
+                        // this note is not big enough. try the next
+                        index_of_unselected += 1;
+                    }
+                }
+                None => {
+                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction
+                    // add the biggest note and reset the iteration
+                    selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
+                    index_of_unselected = 0;
+                }
+            }
+        }
+
+        /* TODO: Priority
+        if selected
+            .iter()
+            .filter(|n| n.0.protocol() == ShieldedProtocol::Sapling)
+            .count()
+            == 1
+            || selected
+                .iter()
+                .filter(|n| n.0.protocol() == ShieldedProtocol::Orchard)
+                .count()
+                == 1
+        {
+            // since we maxed out the target value with only one note in at least one Shielded Pool
+            //  we have an option to sweep a dust note into a grace input.
+            // we will sweep the biggest dust note we can
+            if !dust_notes.is_empty() {
+                sweep_dust_into_grace(&mut selected, dust_notes);
+            }
+            // TODO: re-introduce this optimisation, current bug is that we don't select a note from the same pool as the single selected note
+            // (and we don't have information about the pool(s) the outputs are being created for)
+            // this is ok for dust as it is excluded if the dust is from a pool where grace inputs are available. however, this doesn't work for
+            // non-dust
+            //
+            // } else {
+            //     // we have no extra dust, but we can still save a marginal fee by adding the next smallest note to change
+            //     if let Some(smallest_note) = unselected.pop() {
+            //         selected.push(smallest_note);
+            //     };
+            // }
+        }
+        */
+
+        let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
+        let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+
+        // transform each NoteId to a ReceivedNote
+        selected.iter().try_for_each(|(id, _value)| {
+            let transaction_record = self
+                .get(id.txid())
+                .expect("should exist as note_id is created from the record itself");
+            let output_index = id.output_index() as u32;
+            match id.protocol() {
+                zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
+                    .get_received_note::<SaplingDomain>(output_index)
+                    .map(|received_note| {
+                        selected_sapling.push(received_note);
+                    }),
+                zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
+                    .get_received_note::<OrchardDomain>(output_index)
+                    .map(|received_note| {
+                        selected_orchard.push(received_note);
+                    }),
+            }
+            .ok_or(InputSourceError::WitnessPositionNotFound(*id))
+        })?;
+
+        Ok(SpendableNotes::new(selected_sapling, selected_orchard))
+
+        // unimplemented!()
     }
 
     fn get_unspent_transparent_output(
         &self,
-        _outpoint: &zcash_primitives::transaction::components::OutPoint,
-    ) -> Result<Option<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
+        _outpoint: &OutPoint,
+    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
         unimplemented!()
     }
 
@@ -259,7 +375,7 @@ impl InputSource for LightWallet {
         _address: &TransparentAddress,
         _target_height: BlockHeight,
         _min_confirmations: u32,
-    ) -> Result<Vec<zcash_client_backend::wallet::WalletTransparentOutput>, Self::Error> {
+    ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
         unimplemented!()
     }
 }
