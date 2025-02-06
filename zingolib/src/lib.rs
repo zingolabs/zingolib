@@ -1,9 +1,10 @@
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 #![forbid(unsafe_code)]
 //! ZingoLib
 //! Zingo backend code base
 //! Use this high level API to do things like submit transactions to the zcash blockchain
 
+pub use lightclient::describe::UAReceivers;
 #[macro_use]
 extern crate rust_embed;
 
@@ -21,8 +22,6 @@ pub mod wallet;
 pub mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;
-#[cfg(any(test, feature = "testvectors"))]
-pub mod testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

@@ -58,7 +58,7 @@ impl Drop for ChildProcessHandler {
                 } else {
                     log::debug!("zcashd successfully shut down")
                 };
-                if let Err(e) = self.lightwalletd.wait() {
+                if let Err(e) = self.lightwalletd.kill() {
                     log::warn!("lightwalletd cannot be awaited: {e}")
                 } else {
                     log::debug!("lightwalletd successfully shut down")

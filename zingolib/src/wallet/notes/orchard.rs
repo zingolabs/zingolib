@@ -12,7 +12,7 @@ use super::{
 };
 
 /// TODO: Add Doc Comment Here!
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OrchardNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: orchard::keys::Diversifier,

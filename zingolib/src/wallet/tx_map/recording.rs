@@ -27,14 +27,8 @@ impl super::TxMap {
         self.transaction_records_by_id
             .invalidate_all_transactions_after_or_at_height(reorg_height);
 
-        if let Some(ref mut t) = self.witness_trees_mut() {
-            t.witness_tree_sapling
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.witness_tree_orchard
-                .truncate_removing_checkpoint(&(reorg_height - 1))
-                .expect("Infallible");
-            t.add_checkpoint(reorg_height - 1);
+        if let Some(ref mut trees) = self.witness_trees_mut() {
+            trees.truncate_to_checkpoint(reorg_height - 1);
         }
     }
 
@@ -195,8 +189,7 @@ impl crate::wallet::tx_map::TxMap {
                         if let Some(ref mut tree) =
                             D::transaction_metadata_set_to_shardtree_mut(self)
                         {
-                            tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                                .unwrap();
+                            tree.remove_mark(position, Some(&(height - 1))).unwrap();
                         }
                     } else {
                         todo!("Tried to mark note as spent with no position: FIX")

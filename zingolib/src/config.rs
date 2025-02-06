@@ -1,5 +1,5 @@
 //! ZingConfig
-//! TODO: Add Crate Discription Here!
+//! TODO: Add Crate Description Here!
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use log4rs::{
     append::rolling_file::{
         policy::compound::{
@@ -63,7 +63,7 @@ pub fn margin_fee() -> u64 {
     zcash_primitives::transaction::fees::zip317::MARGINAL_FEE.into_u64()
 }
 
-/// TODO: Add Doc Comment Here!
+/// Same as load_clientconfig but doesn't panic when the server can't be reached
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
@@ -71,17 +71,28 @@ pub fn load_clientconfig(
     monitor_mempool: bool,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
-    format!(
-        "{}:{}",
-        lightwallet_uri.host().unwrap(),
-        lightwallet_uri.port().unwrap()
-    )
-    .to_socket_addrs()?
-    .next()
-    .ok_or(std::io::Error::new(
-        ErrorKind::ConnectionRefused,
-        "Couldn't resolve server!",
-    ))?;
+
+    let host = lightwallet_uri.host();
+    let port = lightwallet_uri.port();
+
+    if host.is_none() || port.is_none() {
+        info!("Using offline mode");
+    } else {
+        match format!(
+            "{}:{}",
+            lightwallet_uri.host().unwrap(),
+            lightwallet_uri.port().unwrap()
+        )
+        .to_socket_addrs()
+        {
+            Ok(_) => {
+                info!("Connected to {}", lightwallet_uri);
+            }
+            Err(e) => {
+                info!("Couldn't resolve server: {}", e);
+            }
+        }
+    }
 
     // Create a Light Client Config
     let config = ZingoConfig {
@@ -92,7 +103,6 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
-        accept_server_txids: false,
     };
 
     Ok(config)
@@ -101,18 +111,23 @@ pub fn load_clientconfig(
 /// TODO: Add Doc Comment Here!
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
-        Some(s) => {
-            let mut s = if s.starts_with("http") {
-                s
-            } else {
-                "http://".to_string() + &s
-            };
-            let uri: http::Uri = s.parse().unwrap();
-            if uri.port().is_none() {
-                s += ":9067";
+        Some(s) => match s.is_empty() {
+            true => {
+                return http::Uri::default();
             }
-            s
-        }
+            false => {
+                let mut s = if s.starts_with("http") {
+                    s
+                } else {
+                    "http://".to_string() + &s
+                };
+                let uri: http::Uri = s.parse().unwrap();
+                if uri.port().is_none() {
+                    s += ":9067";
+                }
+                s
+            }
+        },
         None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
     }
     .parse()
@@ -136,8 +151,6 @@ pub struct ZingoConfigBuilder {
     pub wallet_name: Option<PathBuf>,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: Option<PathBuf>,
-    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-    pub accept_server_txids: bool,
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
@@ -157,8 +170,6 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
-    /// If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-    pub accept_server_txids: bool,
 }
 
 impl ZingoConfigBuilder {
@@ -214,7 +225,6 @@ impl ZingoConfigBuilder {
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            accept_server_txids: self.accept_server_txids,
         }
     }
 }
@@ -229,7 +239,6 @@ impl Default for ZingoConfigBuilder {
             wallet_name: None,
             logfile_name: None,
             chain: ChainType::Mainnet,
-            accept_server_txids: false,
         }
     }
 }
@@ -248,7 +257,7 @@ impl ZingoConfig {
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
-                ("https://zcash.mysideoftheweb.com:19067")
+                ("https://lightwalletd.testnet.electriccoin.co:9067")
                     .parse::<http::Uri>()
                     .unwrap(),
             )
@@ -607,6 +616,7 @@ impl RegtestNetwork {
         heartwood_activation_height: u64,
         canopy_activation_height: u64,
         orchard_activation_height: u64,
+        nu6_activation_height: u64,
     ) -> Self {
         Self {
             activation_heights: ActivationHeights::new(
@@ -616,6 +626,7 @@ impl RegtestNetwork {
                 heartwood_activation_height,
                 canopy_activation_height,
                 orchard_activation_height,
+                nu6_activation_height,
             ),
         }
     }
@@ -623,14 +634,22 @@ impl RegtestNetwork {
     /// TODO: Add Doc Comment Here!
     pub fn all_upgrades_active() -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1, 1),
         }
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn set_orchard(orchard_activation_height: u64) -> Self {
+    pub fn set_orchard_and_nu6(custom_activation_height: u64) -> Self {
         Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
+            activation_heights: ActivationHeights::new(
+                1,
+                1,
+                1,
+                1,
+                1,
+                custom_activation_height,
+                custom_activation_height,
+            ),
         }
     }
 
@@ -661,7 +680,10 @@ impl RegtestNetwork {
                 self.activation_heights
                     .get_activation_height(NetworkUpgrade::Nu5),
             ),
-            NetworkUpgrade::Nu6 => None,
+            NetworkUpgrade::Nu6 => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Nu6),
+            ),
         }
     }
 }
@@ -675,6 +697,7 @@ pub struct ActivationHeights {
     heartwood: BlockHeight,
     canopy: BlockHeight,
     orchard: BlockHeight,
+    nu6: BlockHeight,
 }
 
 impl ActivationHeights {
@@ -686,6 +709,7 @@ impl ActivationHeights {
         heartwood: u64,
         canopy: u64,
         orchard: u64,
+        nu6: u64,
     ) -> Self {
         Self {
             overwinter: BlockHeight::from_u32(overwinter as u32),
@@ -694,6 +718,7 @@ impl ActivationHeights {
             heartwood: BlockHeight::from_u32(heartwood as u32),
             canopy: BlockHeight::from_u32(canopy as u32),
             orchard: BlockHeight::from_u32(orchard as u32),
+            nu6: BlockHeight::from_u32(nu6 as u32),
         }
     }
 
@@ -706,7 +731,70 @@ impl ActivationHeights {
             NetworkUpgrade::Heartwood => self.heartwood,
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.orchard,
-            NetworkUpgrade::Nu6 => todo!(),
+            NetworkUpgrade::Nu6 => self.nu6,
         }
+    }
+}
+
+mod tests {
+
+    /// Validate that the load_clientconfig function creates a valid config from an empty uri
+    #[tokio::test]
+    async fn test_load_clientconfig() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Ring to work as a default");
+        tracing_subscriber::fmt().init();
+
+        let valid_uri = crate::config::construct_lightwalletd_uri(Some("".to_string()));
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let temp_path = temp_dir.path().to_path_buf();
+
+        let valid_config = crate::config::load_clientconfig(
+            valid_uri.clone(),
+            Some(temp_path),
+            crate::config::ChainType::Mainnet,
+            true,
+        );
+
+        assert!(valid_config.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_load_clientconfig_serverless() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Ring to work as a default");
+        tracing_subscriber::fmt().init();
+
+        let valid_uri = crate::config::construct_lightwalletd_uri(Some(
+            crate::config::DEFAULT_LIGHTWALLETD_SERVER.to_string(),
+        ));
+        // let invalid_uri = construct_lightwalletd_uri(Some("Invalid URI".to_string()));
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        let temp_path = temp_dir.path().to_path_buf();
+        // let temp_path_invalid = temp_dir.path().to_path_buf();
+
+        let valid_config = crate::config::load_clientconfig(
+            valid_uri.clone(),
+            Some(temp_path),
+            crate::config::ChainType::Mainnet,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(valid_config.get_lightwalletd_uri(), valid_uri);
+        assert_eq!(valid_config.chain, crate::config::ChainType::Mainnet);
+
+        // let invalid_config = load_clientconfig_serverless(
+        //     invalid_uri.clone(),
+        //     Some(temp_path_invalid),
+        //     ChainType::Mainnet,
+        //     true,
+        // );
+        // assert_eq!(invalid_config.is_err(), true);
     }
 }

@@ -1,39 +1,27 @@
 use bip0039::Mnemonic;
 
-use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_keys::keys::Era;
 
-use crate::lightclient::LightClient;
-use crate::wallet::keys::unified::UnifiedKeyStore;
-
-use super::super::LightWallet;
-use super::assert_wallet_capability_matches_seed;
-
-use super::examples::ExampleWalletNetwork;
-use super::examples::ExampleWalletNetwork::Mainnet;
-use super::examples::ExampleWalletNetwork::Regtest;
-use super::examples::ExampleWalletNetwork::Testnet;
-
-use super::examples::ExampleMainnetWalletSeed::HHCCLALTPCCKCSSLPCNETBLR;
-use super::examples::ExampleMainnetWalletSeed::VTFCORFBCBPCTCFUPMEGMWBP;
-use super::examples::ExampleRegtestWalletSeed::AAAAAAAAAAAAAAAAAAAAAAAA;
-use super::examples::ExampleRegtestWalletSeed::AADAALACAADAALACAADAALAC;
-use super::examples::ExampleRegtestWalletSeed::HMVASMUVWMSSVICHCARBPOCT;
-use super::examples::ExampleTestnetWalletSeed::CBBHRWIILGBRABABSSHSMTPR;
-use super::examples::ExampleTestnetWalletSeed::MSKMGDBHOTBPETCJWCSPGOPP;
-
-use super::examples::ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion;
-use super::examples::ExampleAADAALACAADAALACAADAALACVersion;
-use super::examples::ExampleCBBHRWIILGBRABABSSHSMTPRVersion;
-use super::examples::ExampleHHCCLALTPCCKCSSLPCNETBLRVersion;
-use super::examples::ExampleHMVASMUVWMSSVICHCARBPOCTVersion;
-use super::examples::ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion;
-use super::examples::ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion;
+use crate::{
+    lightclient::LightClient,
+    wallet::{
+        disk::testing::{
+            assert_wallet_capability_matches_seed,
+            examples::{
+                AbandonAbandonVersion, AbsurdAmountVersion, ChimneyBetterVersion,
+                HospitalMuseumVersion, HotelHumorVersion, MainnetSeedVersion, MobileShuffleVersion,
+                NetworkSeedVersion, RegtestSeedVersion, TestnetSeedVersion, VillageTargetVersion,
+            },
+        },
+        keys::unified::UnifiedKeyStore,
+        LightWallet,
+    },
+};
 
 // moving toward completeness: each of these tests should assert everything known about the LightWallet without network.
 
-impl ExampleWalletNetwork {
+impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightWallet {
         let wallet = self.load_example_wallet().await;
@@ -56,32 +44,32 @@ impl ExampleWalletNetwork {
 
 #[tokio::test]
 async fn verify_example_wallet_regtest_aaaaaaaaaaaaaaaaaaaaaaaa_v26() {
-    Regtest(AAAAAAAAAAAAAAAAAAAAAAAA(
-        ExampleAAAAAAAAAAAAAAAAAAAAAAAAVersion::V26,
+    NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_and_sapl() {
-    Regtest(AADAALACAADAALACAADAALAC(
-        ExampleAADAALACAADAALACAADAALACVersion::OrchAndSapl,
+    NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+        AbsurdAmountVersion::OrchAndSapl,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_regtest_aadaalacaadaalacaadaalac_orch_only() {
-    Regtest(AADAALACAADAALACAADAALAC(
-        ExampleAADAALACAADAALACAADAALACVersion::OrchOnly,
+    NetworkSeedVersion::Regtest(RegtestSeedVersion::AbsurdAmount(
+        AbsurdAmountVersion::OrchOnly,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
-    Regtest(HMVASMUVWMSSVICHCARBPOCT(
-        ExampleHMVASMUVWMSSVICHCARBPOCTVersion::V27,
+    NetworkSeedVersion::Regtest(RegtestSeedVersion::HospitalMuseum(
+        HospitalMuseumVersion::V27,
     ))
     .load_example_wallet_with_verification()
     .await;
@@ -89,15 +77,14 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
 /// unlike other, more basic tests, this test also checks number of addresses and balance
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
-    let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V26,
-    ))
-    .load_example_wallet_with_verification()
-    .await;
+    let wallet =
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V26))
+            .load_example_wallet_with_verification()
+            .await;
 
     loaded_wallet_assert(
         wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
         0,
         3,
     )
@@ -107,15 +94,14 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
 #[ignore = "test proves note has no index bug is a breaker"]
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
-    let wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V27,
-    ))
-    .load_example_wallet_with_verification()
-    .await;
+    let wallet =
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V27))
+            .load_example_wallet_with_verification()
+            .await;
 
     loaded_wallet_assert(
         wallet,
-        crate::testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+        testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
         10177826,
         1,
     )
@@ -123,59 +109,67 @@ async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v27() {
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v28() {
-    Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
-    ))
-    .load_example_wallet_with_verification()
-    .await;
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
+        .load_example_wallet_with_verification()
+        .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_g2f3830058() {
-    Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::G2f3830058,
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(
+        ChimneyBetterVersion::Latest,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_gab72a38b() {
-    Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Gab72a38b,
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+        MobileShuffleVersion::Gab72a38b,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_g93738061a() {
-    Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::G93738061a,
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+        MobileShuffleVersion::G93738061a,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_testnet_mskmgdbhotbpetcjwcspgopp_ga74fed621() {
-    Testnet(MSKMGDBHOTBPETCJWCSPGOPP(
-        ExampleMSKMGDBHOTBPETCJWCSPGOPPVersion::Ga74fed621,
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::MobileShuffle(
+        MobileShuffleVersion::Latest,
     ))
     .load_example_wallet_with_verification()
     .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_testnet_glorygoddess() {
+    NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess)
+        .load_example_wallet_with_verification()
+        .await;
 }
 #[tokio::test]
 async fn verify_example_wallet_mainnet_vtfcorfbcbpctcfupmegmwbp_v28() {
-    Mainnet(VTFCORFBCBPCTCFUPMEGMWBP(
-        ExampleVTFCORFBCBPCTCFUPMEGMWBPVersion::V28,
+    NetworkSeedVersion::Mainnet(MainnetSeedVersion::VillageTarget(VillageTargetVersion::V28))
+        .load_example_wallet_with_verification()
+        .await;
+}
+#[tokio::test]
+async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_gf0aaf9347() {
+    NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(
+        HotelHumorVersion::Gf0aaf9347,
     ))
     .load_example_wallet_with_verification()
     .await;
 }
 #[tokio::test]
-async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_gf0aaf9347() {
-    Mainnet(HHCCLALTPCCKCSSLPCNETBLR(
-        ExampleHHCCLALTPCCKCSSLPCNETBLRVersion::Gf0aaf9347,
-    ))
-    .load_example_wallet_with_verification()
-    .await;
+async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_latest() {
+    NetworkSeedVersion::Mainnet(MainnetSeedVersion::HotelHumor(HotelHumorVersion::Latest))
+        .load_example_wallet_with_verification()
+        .await;
 }
 
 async fn loaded_wallet_assert(
@@ -227,15 +221,14 @@ async fn loaded_wallet_assert(
 // todo: proptest enum
 #[tokio::test]
 async fn reload_wallet_from_buffer() {
-    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
     use crate::wallet::WalletBase;
     use crate::wallet::WalletCapability;
+    use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
-    let mid_wallet = Testnet(CBBHRWIILGBRABABSSHSMTPR(
-        ExampleCBBHRWIILGBRABABSSHSMTPRVersion::V28,
-    ))
-    .load_example_wallet_with_verification()
-    .await;
+    let mid_wallet =
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
+            .load_example_wallet_with_verification()
+            .await;
 
     let mid_client = LightClient::create_from_wallet_async(mid_wallet)
         .await
@@ -261,10 +254,10 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wc = wallet.wallet_capability();
 
-    let UnifiedKeyStore::Spend(usk) = wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
         panic!("should be spending key!")
     };
-    let UnifiedKeyStore::Spend(expected_usk) = expected_wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(expected_usk) = &expected_wc.unified_key_store else {
         panic!("should be spending key!")
     };
 
@@ -296,7 +289,7 @@ async fn reload_wallet_from_buffer() {
     )
     .unwrap();
     let v_wc = view_wallet.wallet_capability();
-    let UnifiedKeyStore::View(v_ufvk) = v_wc.unified_key_store() else {
+    let UnifiedKeyStore::View(v_ufvk) = &v_wc.unified_key_store else {
         panic!("should be viewing key!");
     };
     let v_ufvk_string = v_ufvk.encode(&wallet.transaction_context.config.chain);

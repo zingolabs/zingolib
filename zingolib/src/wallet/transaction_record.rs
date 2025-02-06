@@ -190,22 +190,22 @@ impl TransactionRecord {
     /// Uses a query to select all notes with specific properties and sum them
     pub fn query_sum_value(&self, include_notes: OutputQuery) -> u64 {
         let mut sum = 0;
-        let spend_status_query = *include_notes.spend_status();
-        if *include_notes.transparent() {
+        let spend_status_query = include_notes.spend_status;
+        if include_notes.transparent() {
             for note in self.transparent_outputs.iter() {
                 if note.spend_status_query(spend_status_query) {
                     sum += note.value()
                 }
             }
         }
-        if *include_notes.sapling() {
+        if include_notes.sapling() {
             for note in self.sapling_notes.iter() {
                 if note.spend_status_query(spend_status_query) {
                     sum += note.value()
                 }
             }
         }
-        if *include_notes.orchard() {
+        if include_notes.orchard() {
             for note in self.orchard_notes.iter() {
                 if note.spend_status_query(spend_status_query) {
                     sum += note.value()
@@ -445,10 +445,10 @@ impl TransactionRecord {
             0
         };
 
-        // Outgoing metadata was only added in version 2
-        let outgoing_metadata =
-            zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
-
+        let outgoing_metadata = match version {
+            ..24 => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read_old(r))?,
+            24.. => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?,
+        };
         let _full_tx_scanned = reader.read_u8()? > 0;
 
         let zec_price = if version <= 4 {
@@ -496,7 +496,7 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
-        23
+        24
     }
 
     /// TODO: Add Doc Comment Here!

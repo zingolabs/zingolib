@@ -1,7 +1,5 @@
 //! Contains structs for querying a database about notes.
 
-use getset::Getters;
-
 use zcash_client_backend::PoolType;
 use zcash_client_backend::PoolType::Shielded;
 use zcash_client_backend::PoolType::Transparent;
@@ -9,16 +7,13 @@ use zcash_client_backend::ShieldedProtocol::Orchard;
 use zcash_client_backend::ShieldedProtocol::Sapling;
 
 /// Selects received notes by how they been spent
-#[derive(Getters, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct OutputSpendStatusQuery {
     /// will the query include unspent notes?
-    #[getset(get = "pub")]
     pub unspent: bool,
     /// will the query include pending_spent notes?
-    #[getset(get = "pub")]
     pub pending_spent: bool,
     /// will the query include spent notes?
-    #[getset(get = "pub")]
     pub spent: bool,
 }
 impl OutputSpendStatusQuery {
@@ -65,16 +60,13 @@ impl OutputSpendStatusQuery {
 }
 
 /// Selects received notes by pool
-#[derive(Getters, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct OutputPoolQuery {
     /// will the query include transparent notes? (coins)
-    #[getset(get = "pub")]
     pub transparent: bool,
     /// will the query include sapling notes?
-    #[getset(get = "pub")]
     pub sapling: bool,
     /// will the query include orchard notes?
-    #[getset(get = "pub")]
     pub orchard: bool,
 }
 impl OutputPoolQuery {
@@ -117,14 +109,12 @@ impl OutputPoolQuery {
 }
 
 /// Selects received notes by any properties
-#[derive(Getters, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct OutputQuery {
     /// selects spend status properties
     /// the query is expected to match note with ANY of the specified spend_stati AND ANY of the specified pools
-    #[getset(get = "pub")]
     pub spend_status: OutputSpendStatusQuery,
     /// selects pools
-    #[getset(get = "pub")]
     pub pools: OutputPoolQuery,
 }
 
@@ -171,27 +161,27 @@ impl OutputQuery {
         }
     }
     /// will the query include unspent notes?
-    pub fn unspent(&self) -> &bool {
-        self.spend_status().unspent()
+    pub fn unspent(&self) -> bool {
+        self.spend_status.unspent
     }
     /// will the query include pending_spent notes?
-    pub fn pending_spent(&self) -> &bool {
-        self.spend_status().pending_spent()
+    pub fn pending_spent(&self) -> bool {
+        self.spend_status.pending_spent
     }
     /// will the query include spent notes?
-    pub fn spent(&self) -> &bool {
-        self.spend_status().spent()
+    pub fn spent(&self) -> bool {
+        self.spend_status.spent
     }
     /// will the query include transparent notes? (coins)
-    pub fn transparent(&self) -> &bool {
-        self.pools().transparent()
+    pub fn transparent(&self) -> bool {
+        self.pools.transparent
     }
     /// will the query include sapling notes?
-    pub fn sapling(&self) -> &bool {
-        self.pools().sapling()
+    pub fn sapling(&self) -> bool {
+        self.pools.sapling
     }
     /// will the query include orchard notes?
-    pub fn orchard(&self) -> &bool {
-        self.pools().orchard()
+    pub fn orchard(&self) -> bool {
+        self.pools.orchard
     }
 }

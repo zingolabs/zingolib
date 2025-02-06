@@ -26,7 +26,7 @@ impl ConductChain for LiveChain {
         tokio::time::sleep(std::time::Duration::from_secs(150)).await;
     }
 
-    fn get_chain_height(&mut self) -> u32 {
+    fn lightserver_uri(&self) -> Option<http::Uri> {
         unimplemented!()
     }
 }

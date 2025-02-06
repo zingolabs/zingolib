@@ -3,8 +3,7 @@
 use std::io::{self, Read, Write};
 
 use bip32::ExtendedPublicKey;
-use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::LittleEndian;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_address::unified::Typecode;
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey};

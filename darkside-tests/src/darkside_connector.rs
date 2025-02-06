@@ -1,4 +1,4 @@
-use darkside_tests::darkside_types::{
+use super::darkside_types::{
     darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
     DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
 };
@@ -12,7 +12,7 @@ use zingo_netutils::UnderlyingService;
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
         #[allow(unused)]
-        pub(crate) async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<$return, String> {
+        pub async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<$return, String> {
             let request = ::tonic::Request::new($param_packing);
 
             let mut client = $self.get_client().await.map_err(|e| format!("{e}"))?;
@@ -29,11 +29,7 @@ macro_rules! define_darkside_connector_methods(
 pub struct DarksideConnector(pub http::Uri);
 
 impl DarksideConnector {
-    pub fn new(uri: http::Uri) -> Self {
-        Self(uri)
-    }
-
-    pub(crate) fn get_client(
+    pub fn get_client(
         &self,
     ) -> impl std::future::Future<
         Output = Result<DarksideStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
@@ -111,6 +107,9 @@ impl DarksideConnector {
             )
         },
         get_incoming_transactions(&self) -> ::tonic::Streaming<RawTransaction> {
+            Empty {}
+        },
+        clear_incoming_transactions(&self) -> Empty {
             Empty {}
         }
     );

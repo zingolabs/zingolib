@@ -1,7 +1,11 @@
-//! This mod is mostly to take inputs, raw data amd comvert it into lightclient actions
-//! (obvisouly) in a test environment.
-use crate::{error::ZingoLibError, lightclient::LightClient};
+//! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
+//! (obviously) in a test environment.
+use crate::{
+    error::ZingoLibError,
+    lightclient::{describe::UAReceivers, LightClient},
+};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_primitives::transaction::TxId;
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
@@ -17,15 +21,19 @@ pub async fn new_client_from_save_buffer(
 /// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Transparent => client.do_addresses().await[0]["receivers"]["transparent"]
+        PoolType::Transparent => client.do_addresses(UAReceivers::All).await[0]["receivers"]
+            ["transparent"]
             .clone()
             .to_string(),
-        PoolType::Shielded(ShieldedProtocol::Sapling) => client.do_addresses().await[0]
-            ["receivers"]["sapling"]
-            .clone()
-            .to_string(),
+        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+            client.do_addresses(UAReceivers::All).await[0]["receivers"]["sapling"]
+                .clone()
+                .to_string()
+        }
         PoolType::Shielded(ShieldedProtocol::Orchard) => {
-            client.do_addresses().await[0]["address"].take().to_string()
+            client.do_addresses(UAReceivers::All).await[0]["address"]
+                .take()
+                .to_string()
         }
     }
 }
@@ -43,6 +51,7 @@ pub mod from_inputs {
         quick_sender: &crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender.quick_send(request).await
@@ -88,8 +97,43 @@ pub mod from_inputs {
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
+        // TOdo fix expect
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await
     }
+}
+
+/// gets stati for a vec of txids
+#[deprecated(note = "use for_each_proposed_record")]
+pub async fn lookup_statuses(
+    client: &LightClient,
+    txids: nonempty::NonEmpty<TxId>,
+) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
+    let records = &client
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    txids.map(|txid| {
+        records
+            .get(&txid)
+            .map(|transaction_record| transaction_record.status)
+    })
+}
+
+/// gets stati for a vec of txids
+pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
+    let records = &client
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .transaction_records_by_id;
+
+    records.keys().cloned().collect()
 }

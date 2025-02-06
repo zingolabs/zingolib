@@ -1,0 +1,8 @@
+[package]
+name = "testvectors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zcash_primitives.workspace = true
+bip0039 = { workspace = true }

@@ -15,6 +15,10 @@ use crate::{lightclient::LightClient, wallet::LightWallet};
 pub trait ConductChain {
     /// set up the test chain
     async fn setup() -> Self;
+
+    /// used to connect to server via grpc
+    fn lightserver_uri(&self) -> Option<http::Uri>;
+
     /// builds a faucet (funded from mining)
     async fn create_faucet(&mut self) -> LightClient;
 
@@ -23,8 +27,7 @@ pub trait ConductChain {
 
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
-        let mut zingo_config = self.zingo_config();
-        zingo_config.accept_server_txids = true;
+        let zingo_config = self.zingo_config();
         LightClient::create_from_wallet_base_async(
             crate::wallet::WalletBase::FreshEntropy,
             &zingo_config,
@@ -37,9 +40,6 @@ pub trait ConductChain {
 
     /// loads a client from bytes
     async fn load_client(&mut self, data: &[u8]) -> LightClient {
-        let mut zingo_config = self.zingo_config();
-        zingo_config.accept_server_txids = true;
-
         LightClient::create_from_wallet_async(LightWallet::unsafe_from_buffer_testnet(data).await)
             .await
             .unwrap()
@@ -49,8 +49,9 @@ pub trait ConductChain {
     /// and confirming transactions that were received by the server
     async fn bump_chain(&mut self);
 
-    /// gets the height. does not yet need to be async
-    fn get_chain_height(&mut self) -> u32;
+    // gets the height. does not yet need to be async
+    // fn get_chain_height(&mut self) -> u32;
+    // deprecated. use get_latest_block
 
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, value: u64) -> LightClient {

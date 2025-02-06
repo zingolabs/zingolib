@@ -10,7 +10,6 @@ use crate::{
         transaction_records_by_id::{trait_inputsource::InputSourceError, TransactionRecordsById},
     },
 };
-use getset::{Getters, MutGetters};
 use spending_data::SpendingData;
 use std::{fmt::Debug, sync::Arc};
 use zcash_client_backend::wallet::TransparentAddressMetadata;
@@ -19,12 +18,10 @@ use zcash_primitives::legacy::{keys::EphemeralIvk, TransparentAddress};
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-#[derive(Getters, MutGetters)]
 pub struct TxMap {
     /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
-    #[getset(get = "pub(crate)", get_mut = "pub(crate)")]
-    spending_data: Option<SpendingData>,
+    pub(crate) spending_data: Option<SpendingData>,
     // as below
     pub(crate) transparent_child_addresses:
         Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
@@ -72,12 +69,12 @@ impl TxMap {
     pub fn witness_trees(&self) -> Option<&WitnessTrees> {
         self.spending_data
             .as_ref()
-            .map(|spending_data| spending_data.witness_trees())
+            .map(|spending_data| &spending_data.witness_trees)
     }
     pub(crate) fn witness_trees_mut(&mut self) -> Option<&mut WitnessTrees> {
         self.spending_data
             .as_mut()
-            .map(|spending_data| spending_data.witness_trees_mut())
+            .map(|spending_data| &mut spending_data.witness_trees)
     }
     /// TODO: Doc-comment!
     pub fn clear(&mut self) {

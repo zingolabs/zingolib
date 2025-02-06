@@ -45,7 +45,7 @@ pub mod receivers {
                 None,
                 vec![],
             )
-            .expect("memo compatability checked in 'parse_send_args'")
+            .expect("memo compatibility checked in 'parse_send_args'")
         }
     }
 

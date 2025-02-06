@@ -58,6 +58,29 @@ impl TransactionRecordsById {
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
+
+    pub(crate) fn missing_outgoing_output_indexes(&self) -> Vec<(TxId, BlockHeight)> {
+        self.values()
+            .flat_map(|transaction_record| {
+                if transaction_record.status.is_confirmed() {
+                    if transaction_record
+                        .outgoing_tx_data
+                        .iter()
+                        .any(|outgoing_tx_data| outgoing_tx_data.output_index.is_none())
+                    {
+                        Some((
+                            transaction_record.txid,
+                            transaction_record.status.get_height(),
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 /// Methods to query and modify the map.
@@ -443,9 +466,9 @@ impl TransactionRecordsById {
 
     /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
-        let cutoff = BlockHeight::from_u32(
-            (latest_height.saturating_sub(crate::config::MAX_REORG as u64)) as u32,
-        );
+        // Pending window: How long to wait past the chain tip before clearing a pending
+        let pending_window = 2;
+        let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(pending_window)) as u32);
 
         let txids_to_remove = self
             .iter()

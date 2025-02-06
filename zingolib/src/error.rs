@@ -36,6 +36,8 @@ pub enum ZingoLibError {
     MissingOutputIndex(TxId),
     /// TODO: Add Doc Comment Here!
     CouldNotDecodeMemo(std::io::Error),
+    /// server error
+    Lightwalletd(String),
 }
 
 /// TODO: Add Doc Comment Here!
@@ -120,6 +122,10 @@ impl std::fmt::Display for ZingoLibError {
             MissingOutputIndex(txid) => write!(
                 f,
                 "{txid} is missing output_index for note, cannot mark change"
+            ),
+            Lightwalletd(string) => write!(
+                f,
+                "{string}"
             ),
         }
     }

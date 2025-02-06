@@ -537,6 +537,10 @@ pub trait DomainWalletExt:
     /// TODO: Add Doc Comment Here!
     fn get_tree(tree_state: &TreeState) -> &String;
 
+    /// Counts the number of outputs in earlier pools, to allow for
+    // the output index to be a single source for output order
+    fn output_index_offset(transaction: &Transaction) -> u64;
+
     /// TODO: Add Doc Comment Here!
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
@@ -594,6 +598,13 @@ impl DomainWalletExt for SaplingDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+
+    fn output_index_offset(transaction: &Transaction) -> u64 {
+        transaction
+            .transparent_bundle()
+            .map(|tbundle| tbundle.vout.len() as u64)
+            .unwrap_or(0)
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -658,6 +669,14 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn output_index_offset(transaction: &Transaction) -> u64 {
+        SaplingDomain::output_index_offset(transaction)
+            + transaction
+                .sapling_bundle()
+                .map(|sbundle| sbundle.shielded_outputs().len() as u64)
+                .unwrap_or(0)
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -984,7 +1003,7 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
 
         Ok(
             <SaplingDomain as DomainWalletExt>::unified_key_store_to_fvk(
-                wallet_capability.unified_key_store(),
+                &wallet_capability.unified_key_store,
             )
             .expect("to get an fvk from the unified key store")
             .fvk()
@@ -1029,7 +1048,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         ))?;
 
         let fvk = <OrchardDomain as DomainWalletExt>::unified_key_store_to_fvk(
-            wallet_capability.unified_key_store(),
+            &wallet_capability.unified_key_store,
         )
         .expect("to get an fvk from the unified key store");
         Option::from(orchard::note::Note::from_parts(
@@ -1281,12 +1300,100 @@ impl ReadableWriteable for ConfirmationStatus {
 
 #[cfg(test)]
 mod test {
-    use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
+    use std::io::Cursor;
 
-    #[ignore = "not yet complete"]
+    use bip0039::Mnemonic;
+    use orchard::keys::Diversifier;
+    use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        config::ZingoConfig,
+        mocks::orchard_note::OrchardCryptoNoteBuilder,
+        wallet::{
+            keys::unified::WalletCapability,
+            notes::{orchard::mocks::OrchardNoteBuilder, OrchardNote},
+        },
+    };
+    use testvectors::seeds::ABANDON_ART_SEED;
+
+    use super::ReadableWriteable;
+
+    const V4_SERIALZED_NOTES: [u8; 302] = [
+        4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 53, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 53, 12, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
+        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 12, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+    ];
+
     #[test]
     fn check_v5_pending_note_read_write() {
-        let orchard_note = OrchardNoteBuilder::new();
-        dbg!(orchard_note.build());
+        let wc = WalletCapability::new_from_phrase(
+            &ZingoConfig::create_unconnected(crate::config::ChainType::Mainnet, None),
+            &Mnemonic::from_phrase(ABANDON_ART_SEED).unwrap(),
+            0,
+        )
+        .unwrap();
+        let recipient = orchard::keys::FullViewingKey::try_from(&wc.unified_key_store)
+            .unwrap()
+            .address(Diversifier::from_bytes([0; 11]), zip32::Scope::External);
+
+        let mut note_builder = OrchardNoteBuilder::new();
+        note_builder.note(
+            OrchardCryptoNoteBuilder::non_random([0; 32])
+                .recipient(recipient)
+                .clone(),
+        );
+        let unspent_orchard_note = note_builder.clone().build();
+        note_builder.note(
+            OrchardCryptoNoteBuilder::non_random([73; 32])
+                .recipient(recipient)
+                .clone(),
+        );
+        let spent_orchard_note = note_builder
+            .clone()
+            .spending_tx_status(Some((
+                TxId::from_bytes([0; 32]),
+                ConfirmationStatus::Confirmed(BlockHeight::from(12)),
+            )))
+            .build();
+        note_builder.note(
+            OrchardCryptoNoteBuilder::non_random([113; 32])
+                .recipient(recipient)
+                .clone(),
+        );
+        let mempool_orchard_note = note_builder
+            .clone()
+            .spending_tx_status(Some((
+                TxId::from_bytes([1; 32]),
+                ConfirmationStatus::Mempool(BlockHeight::from(13)),
+            )))
+            .build();
+
+        let mut cursor = Cursor::new(V4_SERIALZED_NOTES);
+
+        let unspent_note_from_v4 = OrchardNote::read(&mut cursor, (&wc, None)).unwrap();
+        let spent_note_from_v4 = OrchardNote::read(&mut cursor, (&wc, None)).unwrap();
+
+        assert_eq!(cursor.position() as usize, cursor.get_ref().len());
+
+        assert_eq!(unspent_note_from_v4, unspent_orchard_note);
+        assert_eq!(spent_note_from_v4, spent_orchard_note);
+
+        let mut mempool_note_bytes_v5 = vec![];
+        mempool_orchard_note
+            .write(&mut mempool_note_bytes_v5, ())
+            .unwrap();
+        let mempool_note_from_v5 =
+            OrchardNote::read(mempool_note_bytes_v5.as_slice(), (&wc, None)).unwrap();
+
+        assert_eq!(mempool_note_from_v5, mempool_orchard_note);
     }
 }

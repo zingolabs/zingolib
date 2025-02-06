@@ -72,6 +72,30 @@ impl ConfirmationStatus {
         matches!(self, Self::Confirmed(self_height) if self_height >= comparison_height)
     }
 
+    /// To return true, the status must be confirmed and no earlier than specified height.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after(&9.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after(&10.into()));
+    /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after(&11.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after(&9.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after(&10.into()));
+    /// assert!(!ConfirmationStatus::Transmitted(10.into()).is_confirmed_after(&11.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after(&9.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after(&10.into()));
+    /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed_after(&11.into()));
+    /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&9.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&10.into()));
+    /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&11.into()));
+    /// ```
+    pub fn is_confirmed_after(&self, comparison_height: &BlockHeight) -> bool {
+        matches!(self, Self::Confirmed(self_height) if self_height > comparison_height)
+    }
+
     /// To return true, the status must be confirmed and no later than specified height.
     /// # Examples
     ///

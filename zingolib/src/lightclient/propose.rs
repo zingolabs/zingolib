@@ -157,7 +157,7 @@ mod shielding {
         crate::lightclient::LightClient::create_unconnected(
             &crate::config::ZingoConfigBuilder::default().create(),
             crate::wallet::WalletBase::MnemonicPhrase(
-                crate::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             ),
             0,
         )

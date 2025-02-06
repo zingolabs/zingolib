@@ -90,14 +90,28 @@ impl LightWalletSendProgress {
     /// TODO: Add Doc Comment Here!
     pub fn to_json(&self) -> JsonValue {
         let last_result = self.progress.last_result.clone();
-        let txid: Option<String> = last_result.clone().and_then(|result| result.ok());
+        let tx_ids: Vec<String> = match &last_result {
+            Some(r) => {
+                let mut binding = r.clone().unwrap();
+                let binding = binding.as_array_mut();
+                let tx_json_values: Vec<String> = binding
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_str().unwrap().to_string())
+                    .collect();
+                tx_json_values
+            }
+            None => vec![],
+        };
+
         let error: Option<String> = last_result.and_then(|result| result.err());
+
         object! {
             "id" => self.progress.id,
             "sending" => self.progress.is_send_in_progress,
             "progress" => self.progress.progress,
             "total" => self.progress.total,
-            "txid" => txid,
+            "txids" => tx_ids,
             "error" => error,
             "sync_interrupt" => self.interrupt_sync
         }
@@ -127,6 +141,63 @@ pub struct PoolBalances {
 
     /// TODO: Add Doc Comment Here!
     pub transparent_balance: Option<u64>,
+}
+fn format_option_zatoshis(ioz: &Option<u64>) -> String {
+    ioz.map(|ioz_num| {
+        if ioz_num == 0 {
+            "0".to_string()
+        } else {
+            let mut digits = vec![];
+            let mut remainder = ioz_num;
+            while remainder != 0 {
+                digits.push(remainder % 10);
+                remainder /= 10;
+            }
+            let mut backwards = "".to_string();
+            for (i, digit) in digits.iter().enumerate() {
+                if i % 8 == 4 {
+                    backwards.push('_');
+                }
+                if let Some(ch) = char::from_digit(*digit as u32, 10) {
+                    backwards.push(ch);
+                }
+                if i == 7 {
+                    backwards.push('.');
+                }
+            }
+            backwards.chars().rev().collect::<String>()
+        }
+    })
+    .unwrap_or("null".to_string())
+}
+impl std::fmt::Display for PoolBalances {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[
+    sapling_balance: {}
+    verified_sapling_balance: {}
+    spendable_sapling_balance: {}
+    unverified_sapling_balance: {}
+
+    orchard_balance: {}
+    verified_orchard_balance: {}
+    spendable_orchard_balance: {}
+    unverified_orchard_balance: {}
+
+    transparent_balance: {}
+]",
+            format_option_zatoshis(&self.sapling_balance),
+            format_option_zatoshis(&self.verified_sapling_balance),
+            format_option_zatoshis(&self.spendable_sapling_balance),
+            format_option_zatoshis(&self.unverified_sapling_balance),
+            format_option_zatoshis(&self.orchard_balance),
+            format_option_zatoshis(&self.verified_orchard_balance),
+            format_option_zatoshis(&self.spendable_orchard_balance),
+            format_option_zatoshis(&self.unverified_orchard_balance),
+            format_option_zatoshis(&self.transparent_balance),
+        )
+    }
 }
 
 /// TODO: Add Doc Comment Here!
@@ -267,7 +338,7 @@ pub mod instantiation {
     impl LightClient {
         // toDo rework ZingoConfig.
 
-        /// This is the fundamental invocation of a LightClient. It lives in an asyncronous runtime.
+        /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
         pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
@@ -635,8 +706,11 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ChainType, RegtestNetwork, ZingoConfig};
-    use crate::testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use crate::{
+        config::{ChainType, RegtestNetwork, ZingoConfig},
+        lightclient::describe::UAReceivers,
+    };
+    use testvectors::seeds::CHIMNEY_BETTER_SEED;
     use tokio::runtime::Runtime;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -684,7 +758,7 @@ mod tests {
 
         // The first t address and z address should be derived
         Runtime::new().unwrap().block_on(async move {
-            let addresses = lc.do_addresses().await;
+            let addresses = lc.do_addresses(UAReceivers::All).await;
             assert_eq!(
                 "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
                     .to_string(),

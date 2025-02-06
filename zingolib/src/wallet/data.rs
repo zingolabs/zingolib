@@ -15,7 +15,7 @@ use zcash_client_backend::{
     proto::compact_formats::CompactBlock, wallet::TransparentAddressMetadata,
 };
 
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::{legacy::TransparentAddress, memo::MemoBytes};
@@ -291,6 +291,8 @@ pub struct OutgoingTxData {
     /// What if it wasn't provided?  How does this relate to
     /// recipient_address?
     pub recipient_ua: Option<String>,
+    /// This output's index in its containing transaction
+    pub output_index: Option<u64>,
 }
 impl std::fmt::Display for OutgoingTxData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -343,8 +345,9 @@ impl PartialEq for OutgoingTxData {
     }
 }
 impl OutgoingTxData {
-    /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    const VERSION: u64 = 0;
+    /// Before version 0, OutgoingTxData didn't have a version field
+    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
@@ -370,11 +373,47 @@ impl OutgoingTxData {
             value,
             memo,
             recipient_ua: None,
+            output_index: None,
+        })
+    }
+
+    /// Read an OutgoingTxData from its serialized
+    /// representation
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _external_version = CompactSize::read(&mut reader)?;
+        let address_len = reader.read_u64::<LittleEndian>()?;
+        let mut address_bytes = vec![0; address_len as usize];
+        reader.read_exact(&mut address_bytes)?;
+        let address = String::from_utf8(address_bytes).unwrap();
+
+        let value = reader.read_u64::<LittleEndian>()?;
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = match MemoBytes::from_bytes(&memo_bytes) {
+            Ok(mb) => match Memo::try_from(mb.clone()) {
+                Ok(m) => Ok(m),
+                Err(_) => Ok(Memo::Future(mb)),
+            },
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Couldn't create memo: {}", e),
+            )),
+        }?;
+        let output_index = Optional::read(&mut reader, CompactSize::read)?;
+
+        Ok(OutgoingTxData {
+            recipient_address: address,
+            value,
+            memo,
+            recipient_ua: None,
+            output_index,
         })
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        CompactSize::write(&mut writer, Self::VERSION as usize)?;
         // Strings are written as len + utf8
         match &self.recipient_ua {
             None => {
@@ -387,11 +426,14 @@ impl OutgoingTxData {
             }
         }
         writer.write_u64::<LittleEndian>(self.value)?;
-        writer.write_all(self.memo.encode().as_array())
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(&mut writer, self.output_index, |w, output_index| {
+            CompactSize::write(w, output_index as usize)
+        })
     }
 }
 
-/// Wraps a vec of outgoing transaction datas for the implementation of std::fmt::Display
+/// Wraps a vec of outgoing transaction data for the implementation of std::fmt::Display
 pub struct OutgoingTxDataSummaries(Vec<OutgoingTxData>);
 
 impl std::fmt::Display for OutgoingTxDataSummaries {
@@ -453,6 +495,8 @@ pub mod finsight {
 /// A "snapshot" of the state of the items in the wallet at the time the summary was constructed.
 /// Not to be used for internal logic in the system.
 pub mod summaries {
+    use std::collections::HashMap;
+
     use crate::config::ChainType;
     use chrono::DateTime;
     use json::JsonValue;
@@ -474,7 +518,7 @@ pub mod summaries {
 
     /// A value transfer is a note group abstraction.
     /// A group of all notes sent to a specific address in a transaction.
-    #[derive(PartialEq)]
+    #[derive(Clone, PartialEq)]
     pub struct ValueTransfer {
         txid: TxId,
         datetime: u64,
@@ -633,18 +677,114 @@ pub mod summaries {
         }
     }
 
-    /// A wrapper struct for implementing display and json on a vec of value trasnfers
+    /// A wrapper struct for implementing display and json on a vec of value transfers
     #[derive(PartialEq, Debug)]
-    pub struct ValueTransfers(pub Vec<ValueTransfer>);
+    pub struct ValueTransfers(Vec<ValueTransfer>);
+    impl<'a> std::iter::IntoIterator for &'a ValueTransfers {
+        type Item = &'a ValueTransfer;
+        type IntoIter = std::slice::Iter<'a, ValueTransfer>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
+    }
+    impl std::ops::Deref for ValueTransfers {
+        type Target = Vec<ValueTransfer>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl std::ops::DerefMut for ValueTransfers {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    // Implement the Index trait
+    impl std::ops::Index<usize> for ValueTransfers {
+        type Output = ValueTransfer; // The type of the value returned by the index
+
+        fn index(&self, index: usize) -> &Self::Output {
+            &self.0[index] // Forward the indexing operation to the underlying data structure
+        }
+    }
 
     impl ValueTransfers {
         /// Creates a new ValueTransfer
         pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
             ValueTransfers(value_transfers)
         }
-        /// Implicitly dispatch to the wrapped data
-        pub fn iter(&self) -> std::slice::Iter<ValueTransfer> {
-            self.0.iter()
+
+        /// Creates value transfers for all notes in a transaction that are sent to another
+        /// recipient.  A value transfer is a group of all notes to a specific receiver in a transaction.
+        /// The value transfer list is sorted by the output index of the notes.
+        pub fn create_send_value_transfers(
+            transaction_summary: &TransactionSummary,
+        ) -> Vec<ValueTransfer> {
+            let mut value_transfers: Vec<ValueTransfer> = Vec::new();
+            let mut addresses =
+                HashMap::with_capacity(transaction_summary.outgoing_tx_data().len());
+            transaction_summary
+                .outgoing_tx_data()
+                .iter()
+                .for_each(|outgoing_tx_data| {
+                    let address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone() {
+                        ua
+                    } else {
+                        outgoing_tx_data.recipient_address.clone()
+                    };
+                    // hash map is used to create unique list of addresses as duplicates are not inserted twice
+                    addresses.insert(address, outgoing_tx_data.output_index);
+                });
+            let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
+            addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
+            addresses_vec.iter().for_each(|(address, _output_index)| {
+                let outgoing_data_to_address: Vec<OutgoingTxData> = transaction_summary
+                    .outgoing_tx_data()
+                    .iter()
+                    .filter(|outgoing_tx_data| {
+                        let query_address = if let Some(ua) = outgoing_tx_data.recipient_ua.clone()
+                        {
+                            ua
+                        } else {
+                            outgoing_tx_data.recipient_address.clone()
+                        };
+                        query_address == address.clone()
+                    })
+                    .cloned()
+                    .collect();
+                let value: u64 = outgoing_data_to_address
+                    .iter()
+                    .map(|outgoing_tx_data| outgoing_tx_data.value)
+                    .sum();
+                let memos: Vec<String> = outgoing_data_to_address
+                    .iter()
+                    .filter_map(|outgoing_tx_data| {
+                        if let Memo::Text(memo_text) = outgoing_tx_data.memo.clone() {
+                            Some(memo_text.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                value_transfers.push(
+                    ValueTransferBuilder::new()
+                        .txid(transaction_summary.txid())
+                        .datetime(transaction_summary.datetime())
+                        .status(transaction_summary.status())
+                        .blockheight(transaction_summary.blockheight())
+                        .transaction_fee(transaction_summary.fee())
+                        .zec_price(transaction_summary.zec_price())
+                        .kind(ValueTransferKind::Sent(SentValueTransfer::Send))
+                        .value(value)
+                        .recipient_address(Some(address.clone()))
+                        .pool_received(None)
+                        .memos(memos)
+                        .build()
+                        .expect("all fields should be populated"),
+                );
+            });
+            value_transfers
         }
     }
 
@@ -1277,12 +1417,12 @@ pub mod summaries {
                 self.value,
                 fee,
                 zec_price,
+                orchard_nullifier_summaries,
+                sapling_nullifier_summaries,
                 orchard_notes,
                 sapling_notes,
                 transparent_coins,
                 outgoing_tx_data_summaries,
-                orchard_nullifier_summaries,
-                sapling_nullifier_summaries,
             )
         }
     }
@@ -1308,12 +1448,12 @@ pub mod summaries {
         }
     }
 
-    /// Wraps a vec of detailed  transaction summaries for the implementation of std::fmt::Display
+    /// Wraps a vec of detailed transaction summaries for the implementation of std::fmt::Display
     #[derive(PartialEq, Debug)]
     pub struct DetailedTransactionSummaries(pub Vec<DetailedTransactionSummary>);
 
     impl DetailedTransactionSummaries {
-        /// Creates a new Detailedtransactionsummaries struct
+        /// Creates a new DetailedTransactionSummaries struct
         pub fn new(transaction_summaries: Vec<DetailedTransactionSummary>) -> Self {
             DetailedTransactionSummaries(transaction_summaries)
         }
@@ -1363,12 +1503,12 @@ pub mod summaries {
         value: Option<u64>,
         fee: Option<Option<u64>>,
         zec_price: Option<Option<f64>>,
+        orchard_nullifiers: Option<Vec<String>>,
+        sapling_nullifiers: Option<Vec<String>>,
         orchard_notes: Option<Vec<OrchardNoteSummary>>,
         sapling_notes: Option<Vec<SaplingNoteSummary>>,
         transparent_coins: Option<Vec<TransparentCoinSummary>>,
         outgoing_tx_data: Option<Vec<OutgoingTxData>>,
-        orchard_nullifiers: Option<Vec<String>>,
-        sapling_nullifiers: Option<Vec<String>>,
     }
 
     impl DetailedTransactionSummaryBuilder {
@@ -1383,12 +1523,12 @@ pub mod summaries {
                 value: None,
                 fee: None,
                 zec_price: None,
+                orchard_nullifiers: None,
+                sapling_nullifiers: None,
                 orchard_notes: None,
                 sapling_notes: None,
                 transparent_coins: None,
                 outgoing_tx_data: None,
-                orchard_nullifiers: None,
-                sapling_nullifiers: None,
             }
         }
 
@@ -1400,12 +1540,12 @@ pub mod summaries {
         build_method!(value, u64);
         build_method!(fee, Option<u64>);
         build_method!(zec_price, Option<f64>);
+        build_method!(orchard_nullifiers, Vec<String>);
+        build_method!(sapling_nullifiers, Vec<String>);
         build_method!(orchard_notes, Vec<OrchardNoteSummary>);
         build_method!(sapling_notes, Vec<SaplingNoteSummary>);
         build_method!(transparent_coins, Vec<TransparentCoinSummary>);
         build_method!(outgoing_tx_data, Vec<OutgoingTxData>);
-        build_method!(orchard_nullifiers, Vec<String>);
-        build_method!(sapling_nullifiers, Vec<String>);
 
         /// Builds DetailedTransactionSummary from builder
         pub fn build(&self) -> Result<DetailedTransactionSummary, BuildError> {
@@ -1434,6 +1574,14 @@ pub mod summaries {
                 zec_price: self
                     .zec_price
                     .ok_or(BuildError::MissingField("zec_price".to_string()))?,
+                orchard_nullifiers: self
+                    .orchard_nullifiers
+                    .clone()
+                    .ok_or(BuildError::MissingField("orchard_nullifiers".to_string()))?,
+                sapling_nullifiers: self
+                    .sapling_nullifiers
+                    .clone()
+                    .ok_or(BuildError::MissingField("sapling_nullifiers".to_string()))?,
                 orchard_notes: self
                     .orchard_notes
                     .clone()
@@ -1450,14 +1598,6 @@ pub mod summaries {
                     .outgoing_tx_data
                     .clone()
                     .ok_or(BuildError::MissingField("outgoing_tx_data".to_string()))?,
-                orchard_nullifiers: self
-                    .orchard_nullifiers
-                    .clone()
-                    .ok_or(BuildError::MissingField("orchard_nullifiers".to_string()))?,
-                sapling_nullifiers: self
-                    .sapling_nullifiers
-                    .clone()
-                    .ok_or(BuildError::MissingField("sapling_nullifiers".to_string()))?,
             })
         }
     }
@@ -1819,7 +1959,7 @@ pub mod summaries {
         let fee = transaction_records
             .calculate_transaction_fee(transaction_record)
             .ok();
-        let orchard_notes = transaction_record
+        let mut orchard_notes = transaction_record
             .orchard_notes
             .iter()
             .map(|output| {
@@ -1839,7 +1979,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let sapling_notes = transaction_record
+        let mut sapling_notes = transaction_record
             .sapling_notes
             .iter()
             .map(|output| {
@@ -1859,7 +1999,7 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
-        let transparent_coins = transaction_record
+        let mut transparent_coins = transaction_record
             .transparent_outputs
             .iter()
             .map(|output| {
@@ -1872,6 +2012,11 @@ pub mod summaries {
                 )
             })
             .collect::<Vec<_>>();
+
+        // TODO: this sorting should be removed once we root cause the tx records outputs being out of order
+        orchard_notes.sort_by_key(|output| output.output_index());
+        sapling_notes.sort_by_key(|output| output.output_index());
+        transparent_coins.sort_by_key(|output| output.output_index());
         (
             kind,
             value,
@@ -2047,6 +2192,7 @@ pub(crate) mod mocks {
         value: Option<u64>,
         memo: Option<Memo>,
         recipient_ua: Option<Option<String>>,
+        output_index: Option<Option<u64>>,
     }
 
     impl OutgoingTxDataBuilder {
@@ -2056,6 +2202,7 @@ pub(crate) mod mocks {
                 value: None,
                 memo: None,
                 recipient_ua: None,
+                output_index: None,
             }
         }
 
@@ -2064,6 +2211,7 @@ pub(crate) mod mocks {
         build_method!(value, u64);
         build_method!(memo, Memo);
         build_method!(recipient_ua, Option<String>);
+        build_method!(output_index, Option<u64>);
 
         pub(crate) fn build(&self) -> OutgoingTxData {
             OutgoingTxData {
@@ -2071,6 +2219,7 @@ pub(crate) mod mocks {
                 value: self.value.unwrap(),
                 memo: self.memo.clone().unwrap(),
                 recipient_ua: self.recipient_ua.clone().unwrap(),
+                output_index: self.output_index.unwrap(),
             }
         }
     }
@@ -2082,7 +2231,9 @@ pub(crate) mod mocks {
                 .recipient_address("default_address".to_string())
                 .value(50_000)
                 .memo(Memo::default())
-                .recipient_ua(None);
+                .recipient_ua(None)
+                .output_index(None);
+
             builder
         }
     }

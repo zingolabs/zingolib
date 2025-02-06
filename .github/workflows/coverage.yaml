@@ -12,7 +12,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:002
+      image: zingodevops/ci-build:004
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
