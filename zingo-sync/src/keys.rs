@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use getset::Getters;
 use incrementalmerkletree::Position;
 use orchard::{
-    keys::{FullViewingKey, IncomingViewingKey, Scope},
+    keys::{FullViewingKey, IncomingViewingKey},
     note_encryption::OrchardDomain,
 };
 use sapling_crypto::{
@@ -13,11 +13,38 @@ use sapling_crypto::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
+use zip32::Scope;
 
-pub(crate) type KeyId = (zcash_primitives::zip32::AccountId, Scope);
+/// Child index for the `address_index` path level in the BIP44 hierarchy.
+pub type AddressIndex = u32;
+
+/// Unique ID for shielded keys.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct KeyId {
+    account_id: zcash_primitives::zip32::AccountId,
+    scope: Scope,
+}
+
+pub mod transparent;
+
+impl KeyId {
+    pub(crate) fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
+        Self { account_id, scope }
+    }
+}
+
+impl memuse::DynamicUsage for KeyId {
+    fn dynamic_usage(&self) -> usize {
+        self.scope.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.scope.dynamic_usage_bounds()
+    }
+}
 
 /// A key that can be used to perform trial decryption and nullifier
-/// computation for a [`CompactSaplingOutput`] or [`CompactOrchardAction`].
+/// computation for a CompactSaplingOutput or CompactOrchardAction.
 pub trait ScanningKeyOps<D: Domain, Nf> {
     /// Prepare the key for use in batch trial decryption.
     fn prepare(&self) -> D::IncomingViewingKey;
@@ -58,7 +85,6 @@ impl<D: Domain, Nf, K: ScanningKeyOps<D, Nf>> ScanningKeyOps<D, Nf> for &K {
 pub(crate) struct ScanningKey<Ivk, Nk> {
     key_id: KeyId,
     ivk: Ivk,
-    // TODO: Ovk
     nk: Option<Nk>,
 }
 
@@ -74,11 +100,11 @@ impl ScanningKeyOps<SaplingDomain, sapling::Nullifier>
     }
 
     fn account_id(&self) -> &zcash_primitives::zip32::AccountId {
-        &self.key_id.0
+        &self.key_id.account_id
     }
 
     fn key_scope(&self) -> Option<Scope> {
-        Some(self.key_id.1)
+        Some(self.key_id.scope)
     }
 }
 
@@ -98,11 +124,11 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
     }
 
     fn account_id(&self) -> &zcash_primitives::zip32::AccountId {
-        &self.key_id.0
+        &self.key_id.account_id
     }
 
     fn key_scope(&self) -> Option<Scope> {
-        Some(self.key_id.1)
+        Some(self.key_id.scope)
     }
 }
 
@@ -130,10 +156,11 @@ impl ScanningKeys {
         for (account_id, ufvk) in ufvks {
             if let Some(dfvk) = ufvk.sapling() {
                 for scope in [Scope::External, Scope::Internal] {
+                    let key_id = KeyId::from_parts(account_id, scope);
                     sapling.insert(
-                        (account_id, scope),
+                        key_id,
                         ScanningKey {
-                            key_id: (account_id, scope),
+                            key_id,
                             ivk: dfvk.to_ivk(scope),
                             nk: Some(dfvk.to_nk(scope)),
                         },
@@ -143,10 +170,11 @@ impl ScanningKeys {
 
             if let Some(fvk) = ufvk.orchard() {
                 for scope in [Scope::External, Scope::Internal] {
+                    let key_id = KeyId::from_parts(account_id, scope);
                     orchard.insert(
-                        (account_id, scope),
+                        key_id,
                         ScanningKey {
-                            key_id: (account_id, scope),
+                            key_id,
                             ivk: fvk.to_ivk(scope),
                             nk: Some(fvk.clone()),
                         },

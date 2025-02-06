@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! TODO: Add Mod Description Here!
 use std::io;
 use zcash_primitives::consensus::NetworkConstants;
 
@@ -113,7 +113,7 @@ impl ExtendedPrivKey {
             .unwrap()
     }
 
-    fn sign_hardended_key(&self, index: u32) -> ring::hmac::Tag {
+    fn sign_hardened_key(&self, index: u32) -> ring::hmac::Tag {
         let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
         let mut h = Context::with_key(&signing_key);
         h.update(&[0x00]);
@@ -137,7 +137,7 @@ impl ExtendedPrivKey {
             return Err(Error::InvalidTweak);
         }
         let signature = match key_index {
-            KeyIndex::Hardened(index) => self.sign_hardended_key(index),
+            KeyIndex::Hardened(index) => self.sign_hardened_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
         let sig_bytes = signature.as_ref();

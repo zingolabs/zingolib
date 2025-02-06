@@ -89,12 +89,11 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
-                wc.unified_key_store(),
-            )
-            .ok()
-            .map(|key| key.derive_ivk());
-            let orchard_ivk = orchard::keys::FullViewingKey::try_from(wc.unified_key_store())
+            let sapling_ivk =
+                sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&wc.unified_key_store)
+                    .ok()
+                    .map(|key| key.derive_ivk());
+            let orchard_ivk = orchard::keys::FullViewingKey::try_from(&wc.unified_key_store)
                 .ok()
                 .map(|key| key.derive_ivk());
 
@@ -317,7 +316,7 @@ impl TrialDecryptions {
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::unified_key_store_to_fvk(wc.unified_key_store()) else {
+                        let Ok(fvk) = D::unified_key_store_to_fvk(&wc.unified_key_store) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
@@ -439,7 +438,7 @@ where
     for block in notes_to_mark_position.into_iter().rev() {
         if let Some(witness_tree) = D::transaction_metadata_set_to_shardtree(&*txmds_writelock) {
             let position = witness_tree
-                .max_leaf_position(0)
+                .max_leaf_position(None)
                 .unwrap()
                 .map(|pos| pos + 1)
                 .unwrap_or(Position::from(0));
@@ -452,7 +451,7 @@ where
                         transaction_id,
                         Some(output_index),
                         position + i as u64,
-                        &D::unified_key_store_to_fvk(wc.unified_key_store()).unwrap(),
+                        &D::unified_key_store_to_fvk(&wc.unified_key_store).unwrap(),
                     )?;
                 }
                 nodes_retention.push((node, retention));

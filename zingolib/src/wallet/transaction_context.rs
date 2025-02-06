@@ -1,4 +1,4 @@
-//! TODO: Add Mod Discription Here!
+//! TODO: Add Mod Description Here!
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -40,16 +40,22 @@ impl TransactionContext {
         &self,
         wallet_height: BlockHeight,
     ) -> Result<(), Vec<(TxId, BlockHeight)>> {
-        self.transaction_metadata_set
+        let tmdsrl = &self
+            .transaction_metadata_set
             .read()
             .await
-            .transaction_records_by_id
+            .transaction_records_by_id;
+        tmdsrl
             .get_spendable_note_ids_and_values(
                 &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
                 wallet_height,
                 &[],
             )
             .map(|_| ())
+            .map_err(|mut vec| {
+                vec.extend_from_slice(&tmdsrl.missing_outgoing_output_indexes());
+                vec
+            })
     }
 }
 
@@ -245,7 +251,7 @@ mod decrypt_transaction {
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 // Collect our t-addresses for easy checking
-                // the get_taddres method includes epehemeral 320 taddrs
+                // the get_taddrs method includes ephemeral 320 taddrs
                 let taddrs_set = self.key.get_taddrs(&self.config.chain);
                 for (n, vout) in t_bundle.vout.iter().enumerate() {
                     if let Some(taddr) = vout.recipient_address() {
@@ -289,7 +295,7 @@ mod decrypt_transaction {
                 None
             }
         }
-        // Za has ds-integration with the name "ephermal" address.
+        // Za has ds-integration with the name "ephemeral" address.
         fn identify_rejection_address(&self, spent_utxo: TransparentOutput) -> Option<String> {
             if self
                 .key
@@ -502,7 +508,7 @@ mod decrypt_transaction {
                     })
                     .collect::<Vec<_>>();
 
-            let Ok(fvk) = D::unified_key_store_to_fvk(self.key.unified_key_store()) else {
+            let Ok(fvk) = D::unified_key_store_to_fvk(&self.key.unified_key_store) else {
                 // skip scanning if wallet has no viewing capability
                 return;
             };
@@ -555,7 +561,7 @@ mod decrypt_transaction {
             //     1. There's more than one way to be "spent".
             //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
             //     <https://github.com/zingolabs/zingolib/issues/65>
-            for (_domain, output) in domain_tagged_outputs {
+            for (i, (_domain, output)) in domain_tagged_outputs.iter().enumerate() {
                 outgoing_metadatas.extend(
                     match try_output_recovery_with_ovk::<
                         D,
@@ -563,7 +569,7 @@ mod decrypt_transaction {
                     >(
                         &output.domain(status.get_height(), self.config.chain),
                         &ovk.ovk,
-                        &output,
+                        output,
                         &output.value_commitment(),
                         &output.out_ciphertext(),
                     ) {
@@ -611,6 +617,9 @@ mod decrypt_transaction {
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
                                             recipient_ua: None,
+                                            output_index: Some(
+                                                D::output_index_offset(transaction) + i as u64,
+                                            ),
                                         })
                                     }
                                 }
@@ -642,7 +651,7 @@ mod decrypt_transaction {
                     .transaction_kind(transaction_record, &self.config.chain)
                 {
                     if let Some(t_bundle) = transaction.transparent_bundle() {
-                        for vout in &t_bundle.vout {
+                        for (i, vout) in t_bundle.vout.iter().enumerate() {
                             if let Some(taddr) = vout.recipient_address().map(|raw_taddr| {
                                 match sent_to_tex {
                                     false => address_from_pubkeyhash(&self.config, raw_taddr),
@@ -661,6 +670,7 @@ mod decrypt_transaction {
                                         value: u64::from(vout.value),
                                         memo: Memo::Empty,
                                         recipient_ua: None,
+                                        output_index: Some(i as u64),
                                     });
                                 }
                             }

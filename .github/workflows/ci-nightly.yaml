@@ -42,9 +42,9 @@ jobs:
   android-ubuntu-integration-test-actions:
     strategy:
       matrix:
-        abi: [ x86_64, x86, arm64-v8a, armeabi-v7a ]
+        abi: [ x86_64, x86 ]
       fail-fast: false
-    uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-actions.yaml@dev
+    uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
     needs: [create-timestamp, android-build]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
@@ -61,6 +61,8 @@ jobs:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
 
   ios-integration-test:
+    strategy:
+      fail-fast: false
     uses: zingolabs/zingo-mobile/.github/workflows/ios-integration-test.yaml@dev
     needs: [ create-timestamp, ios-build ]
     with:

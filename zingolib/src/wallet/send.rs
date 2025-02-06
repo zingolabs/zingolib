@@ -5,7 +5,6 @@ use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
 use zcash_proofs::prover::LocalTxProver;
 
-use std::cmp;
 use std::ops::DerefMut as _;
 
 use zcash_client_backend::zip321::TransactionRequest;
@@ -29,7 +28,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<String, String>>,
+    pub last_result: Option<Result<serde_json::Value, String>>,
 }
 
 impl SendProgress {
@@ -46,34 +45,6 @@ impl SendProgress {
 }
 
 impl LightWallet {
-    /// Determines the target height for a transaction, and the offset from which to
-    /// select anchors, based on the current synchronised block chain.
-    pub(crate) async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
-        let range = {
-            let blocks = self.last_100_blocks.read().await;
-            (
-                blocks.last().map(|block| block.height as u32),
-                blocks.first().map(|block| block.height as u32),
-            )
-        };
-        match range {
-            (Some(min_height), Some(max_height)) => {
-                let target_height = max_height + 1;
-
-                // Select an anchor ANCHOR_OFFSET back from the target block,
-                // unless that would be before the earliest block we have.
-                let anchor_height = cmp::max(
-                    target_height
-                        .saturating_sub(self.transaction_context.config.reorg_buffer_offset),
-                    min_height,
-                );
-
-                Some((target_height, (target_height - anchor_height) as usize))
-            }
-            _ => None,
-        }
-    }
-
     // Reset the send progress status to blank
     pub(crate) async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
@@ -163,20 +134,18 @@ impl LightWallet {
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
     ) -> Result<(), BuildTransactionError> {
+        let mut wallet_db = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        let usk = &(&self.transaction_context.key.unified_key_store).try_into()?;
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
-            self.transaction_context
-                .transaction_metadata_set
-                .write()
-                .await
-                .deref_mut(),
+            wallet_db.deref_mut(),
             &self.transaction_context.config.chain,
             &sapling_prover,
             &sapling_prover,
-            &self
-                .transaction_context
-                .key
-                .unified_key_store()
-                .try_into()?,
+            usk,
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
             Some(self.wallet_capability().first_sapling_address()),

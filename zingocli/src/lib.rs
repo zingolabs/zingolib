@@ -1,5 +1,5 @@
 //! ZingoCli
-//! TODO: Add Crate Discription Here!
+//! TODO: Add Crate Description Here!
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -248,7 +248,8 @@ pub fn command_loop(
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
     std::thread::spawn(move || {
-        LightClient::start_mempool_monitor(lightclient.clone());
+        LightClient::start_mempool_monitor(lightclient.clone())
+            .expect("mempool monitor must start");
 
         while let Ok((cmd, args)) = command_receiver.recv() {
             let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();

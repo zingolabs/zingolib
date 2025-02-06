@@ -7,6 +7,7 @@ use zcash_client_backend::{
     wallet::{ReceivedNote, WalletTransparentOutput},
     ShieldedProtocol,
 };
+use zcash_keys::encoding::AddressCodec;
 use zcash_primitives::{
     legacy::Script,
     transaction::{
@@ -212,7 +213,7 @@ impl InputSource for TransactionRecordsById {
                 }
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
-                    // add the biggest note and reset the iteraton
+                    // add the biggest note and reset the iteration
                     selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
                     index_of_unselected = 0;
                 }
@@ -288,7 +289,7 @@ impl InputSource for TransactionRecordsById {
 
     fn get_spendable_transparent_outputs(
         &self,
-        _address: &zcash_primitives::legacy::TransparentAddress,
+        address: &zcash_primitives::legacy::TransparentAddress,
         target_height: zcash_primitives::consensus::BlockHeight,
         _min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
@@ -302,7 +303,12 @@ impl InputSource for TransactionRecordsById {
             })
             .flat_map(|tx| {
                 tx.transparent_outputs().iter().filter_map(|output| {
-                    if output.spending_tx_status().is_none() {
+                    if output.spending_tx_status().is_none()
+                        && (output.address
+                            == address.encode(&zcash_primitives::consensus::MAIN_NETWORK)
+                            || output.address
+                                == address.encode(&zcash_primitives::consensus::TEST_NETWORK))
+                    {
                         WalletTransparentOutput::from_parts(
                             output.to_outpoint(),
                             TxOut {

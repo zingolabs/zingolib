@@ -11,6 +11,7 @@ use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::{consensus::BlockHeight, transaction::fees::zip317::MINIMUM_FEE};
+use zingolib::lightclient::describe::UAReceivers;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{build_fvk_client, increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
@@ -19,8 +20,8 @@ use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::propose::ProposeSendError;
 use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
 
+use testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zingolib::config::{ChainType, RegtestNetwork, MAX_REORG};
-use zingolib::testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
 use zingolib::{
     lightclient::{LightClient, PoolBalances},
     utils,
@@ -70,7 +71,7 @@ fn check_view_capability_bounds(
     sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
-    let UnifiedKeyStore::View(ufvk) = watch_wc.unified_key_store() else {
+    let UnifiedKeyStore::View(ufvk) = &watch_wc.unified_key_store else {
         panic!("should be viewing key!")
     };
     //Orchard
@@ -115,33 +116,331 @@ fn check_view_capability_bounds(
 }
 
 mod fast {
+    use std::str::FromStr;
+
     use bip0039::Mnemonic;
     use zcash_address::{AddressKind, ZcashAddress};
     use zcash_client_backend::{
         zip321::{Payment, TransactionRequest},
         PoolType, ShieldedProtocol,
     };
-    use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
+    use zcash_primitives::{
+        memo::Memo,
+        transaction::{components::amount::NonNegativeAmount, TxId},
+    };
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::wallet::notes::OutputInterface as _;
     use zingolib::{
-        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS, wallet::data::summaries::SentValueTransfer,
-    };
-    use zingolib::{
-        testutils::lightclient::from_inputs, wallet::data::summaries::SelfSendValueTransfer,
-    };
-
-    use zingolib::{
-        utils::conversion::txid_from_hex_encoded_str, wallet::data::summaries::ValueTransferKind,
-        wallet::notes::ShieldedNoteInterface,
+        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        testutils::{
+            chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
+            lightclient::{from_inputs, get_base_address},
+        },
+        utils::conversion::txid_from_hex_encoded_str,
+        wallet::{
+            data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+            keys::unified::ReceiverSelection,
+            notes::{OutputInterface as _, ShieldedNoteInterface},
+        },
     };
 
     use super::*;
 
     #[tokio::test]
+    async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
+        async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
+            json::object! {
+                "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
+            }
+        }
+        let value = 100_000;
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
+            scenarios::faucet_funded_recipient(
+                Some(value),
+                None,
+                None,
+                PoolType::Shielded(ShieldedProtocol::Sapling),
+                regtest_network,
+                true,
+            )
+            .await;
+        let orig_transaction_id = orig_transaction_id.unwrap();
+        assert_eq!(
+            do_maybe_recent_txid(&recipient).await["last_txid"],
+            orig_transaction_id
+        );
+        // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
+        for _ in 0..5 {
+            zingolib::testutils::send_value_between_clients_and_sync(
+                &regtest_manager,
+                &faucet,
+                &faucet,
+                5_000,
+                "unified",
+            )
+            .await
+            .unwrap();
+        }
+
+        let sent_to_self = 10;
+        // Send recipient->recipient, to make tree equality check at the end simpler
+        zingolib::testutils::send_value_between_clients_and_sync(
+            &regtest_manager,
+            &recipient,
+            &recipient,
+            sent_to_self,
+            "unified",
+        )
+        .await
+        .unwrap();
+        let fees = zingolib::testutils::lightclient::get_fees_paid_by_client(&recipient).await;
+        assert_eq!(value - fees, 90_000);
+        let balance_minus_step_one_fees = value - fees;
+
+        // 3a. stash zcashd state
+        log::debug!(
+            "old zcashd chain info {}",
+            std::str::from_utf8(
+                &regtest_manager
+                    .get_cli_handle()
+                    .arg("getblockchaininfo")
+                    .output()
+                    .unwrap()
+                    .stdout
+            )
+            .unwrap()
+        );
+
+        // Turn zcashd off and on again, to write down the blocks
+        drop(_cph); // turn off zcashd and lightwalletd
+        let _cph = regtest_manager.launch(false).unwrap();
+        log::debug!(
+            "new zcashd chain info {}",
+            std::str::from_utf8(
+                &regtest_manager
+                    .get_cli_handle()
+                    .arg("getblockchaininfo")
+                    .output()
+                    .unwrap()
+                    .stdout
+            )
+            .unwrap()
+        );
+
+        let zcd_datadir = &regtest_manager.zcashd_data_dir;
+        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
+        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
+
+        log::debug!(
+            "The original zcashd directory is at: {}",
+            &original_zcashd_directory.to_string_lossy().to_string()
+        );
+
+        let source = &zcd_datadir.to_string_lossy().to_string();
+        let dest = &original_zcashd_directory.to_string_lossy().to_string();
+        std::process::Command::new("cp")
+            .arg("-rf")
+            .arg(source)
+            .arg(dest)
+            .output()
+            .expect("directory copy failed");
+
+        // 3. Send z-to-z transaction to external z address with a memo
+        let sent_value = 2000;
+        let outgoing_memo = "Outgoing Memo";
+
+        let sent_transaction_id = from_inputs::quick_send(
+            &recipient,
+            vec![(
+                &get_base_address_macro!(faucet, "sapling"),
+                sent_value,
+                Some(outgoing_memo),
+            )],
+        )
+        .await
+        .unwrap()
+        .first()
+        .to_string();
+
+        let second_transaction_fee;
+        {
+            let tmds = recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await;
+            let record = tmds
+                .transaction_records_by_id
+                .get(
+                    &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
+                        .unwrap(),
+                )
+                .unwrap();
+            second_transaction_fee = tmds
+                .transaction_records_by_id
+                .calculate_transaction_fee(record)
+                .unwrap();
+            // Sync recipient
+        } // drop transaction_record references and tmds read lock
+        recipient.do_sync(false).await.unwrap();
+
+        // 4b write down state before clearing the mempool
+        let notes_before = recipient.do_list_notes(true).await;
+        let transactions_before = recipient.do_list_transactions().await;
+
+        // Sync recipient again. We assert this should be a no-op, as we just synced
+        recipient.do_sync(false).await.unwrap();
+        let post_sync_notes_before = recipient.do_list_notes(true).await;
+        let post_sync_transactions_before = recipient.do_list_transactions().await;
+        assert_eq!(post_sync_notes_before, notes_before);
+        assert_eq!(post_sync_transactions_before, transactions_before);
+
+        drop(_cph); // Turn off zcashd and lightwalletd
+
+        // 5. check that the sent transaction is correctly marked in the client
+        let transactions = recipient.do_list_transactions().await;
+        let mempool_only_tx = transactions
+            .members()
+            .find(|tx| tx["txid"] == sent_transaction_id)
+            .unwrap()
+            .clone();
+        dbg!(&mempool_only_tx["txid"]);
+        assert_eq!(
+            mempool_only_tx["outgoing_metadata"][0]["memo"],
+            "Outgoing Memo"
+        );
+        assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
+
+        // 6. note that the client correctly considers the note pending
+        assert_eq!(mempool_only_tx["pending"], true);
+
+        std::process::Command::new("rm")
+            .arg("-rf")
+            .arg(source)
+            .output()
+            .expect("recursive rm failed");
+        std::process::Command::new("cp")
+            .arg("--recursive")
+            .arg("--remove-destination")
+            .arg(dest)
+            .arg(source)
+            .output()
+            .expect("directory copy failed");
+        assert_eq!(
+            source,
+            &regtest_manager
+                .zcashd_data_dir
+                .to_string_lossy()
+                .to_string()
+        );
+        let _cph = regtest_manager.launch(false).unwrap();
+        let notes_after = recipient.do_list_notes(true).await;
+        let transactions_after = recipient.do_list_transactions().await;
+
+        assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
+        assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
+
+        // 6. Mine 10 blocks, the pending transaction should still be there.
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        assert_eq!(recipient.wallet.last_synced_height().await, 12);
+
+        let notes = recipient.do_list_notes(true).await;
+
+        let transactions = recipient.do_list_transactions().await;
+
+        // There are 2 unspent notes, the pending transaction, and the final receipt
+        //println!("{}", json::stringify_pretty(notes.clone(), 4));
+        //println!("{}", json::stringify_pretty(transactions.clone(), 4));
+        // Two unspent notes: one change, pending, one from faucet, confirmed
+        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
+        assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+        let note = notes["unspent_orchard_notes"][1].clone();
+        assert_eq!(note["created_in_txid"], sent_transaction_id);
+        assert_eq!(
+            note["value"].as_u64().unwrap(),
+            balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
+        );
+        assert!(note["pending"].as_bool().unwrap());
+        assert_eq!(transactions.len(), 3);
+
+        // 7. Mine 3 blocks, so the 2 block pending_window is passed
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 3)
+            .await
+            .unwrap();
+        assert_eq!(recipient.wallet.last_synced_height().await, 15);
+
+        let notes = recipient.do_list_notes(true).await;
+        let transactions = recipient.do_list_transactions().await;
+
+        // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
+        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
+        assert_eq!(
+            notes["spent_orchard_notes"][0]["created_in_txid"],
+            orig_transaction_id
+        );
+        assert!(!notes["unspent_orchard_notes"][0]["pending"]
+            .as_bool()
+            .unwrap());
+        assert_eq!(notes["pending_orchard_notes"].len(), 0);
+        assert_eq!(transactions.len(), 2);
+        let read_lock = recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let wallet_trees = read_lock.witness_trees().unwrap();
+        let last_leaf = wallet_trees
+            .witness_tree_orchard
+            .max_leaf_position(None)
+            .unwrap();
+        let server_trees = zingolib::grpc_connector::get_trees(
+            recipient.get_server_uri(),
+            recipient.wallet.last_synced_height().await,
+        )
+        .await
+        .unwrap();
+        let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
+            MerkleHashOrchard,
+            &[u8],
+            { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
+        >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
+        .unwrap()
+        .to_frontier()
+        .take();
+        let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
+            ShardTree::new(
+                MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
+                MAX_REORG,
+            );
+        server_orchard_shardtree
+            .insert_frontier_nodes(
+                server_orchard_front.unwrap(),
+                zingolib::testutils::incrementalmerkletree::Retention::Marked,
+            )
+            .unwrap();
+        // This height doesn't matter, all we need is any arbitrary checkpoint ID
+        // as witness_at_checkpoint_depth requires a checkpoint to function now
+        server_orchard_shardtree
+            .checkpoint(BlockHeight::from_u32(0))
+            .unwrap();
+        assert_eq!(
+            wallet_trees
+                .witness_tree_orchard
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
+                .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
+            server_orchard_shardtree
+                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
+                .unwrap()
+        )
+    }
+    #[tokio::test]
     async fn create_send_to_self_with_zfz_active() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(5_000_000).await;
+            scenarios::faucet_funded_recipient_default(5_000_000).await;
 
         recipient
             .propose_send_all(
@@ -157,9 +456,7 @@ mod fast {
             .await
             .unwrap();
 
-        let value_transfers = &recipient.value_transfers().await;
-
-        dbg!(value_transfers);
+        let value_transfers = &recipient.sorted_value_transfers(true).await;
 
         assert!(value_transfers.iter().any(|vt| vt.kind()
             == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
@@ -168,6 +465,298 @@ mod fast {
         assert!(value_transfers.iter().any(|vt| vt.kind()
             == ValueTransferKind::Sent(SentValueTransfer::Send)
             && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+    }
+
+    /// This tests checks that messages_containing returns an empty vector when empty memos are included.
+    #[tokio::test]
+    async fn filter_empty_messages() {
+        let mut environment = LibtonodeEnvironment::setup().await;
+
+        let faucet = environment.create_faucet().await;
+        let recipient = environment.create_client().await;
+
+        environment.bump_chain().await;
+        faucet.do_sync(false).await.unwrap();
+
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        recipient.do_sync(false).await.unwrap();
+
+        let no_messages = &recipient.messages_containing(None).await;
+
+        assert_eq!(no_messages.len(), 0);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Hello"),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some(""),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        recipient.do_sync(false).await.unwrap();
+
+        let single_message = &recipient.messages_containing(None).await;
+
+        assert_eq!(single_message.len(), 1);
+    }
+
+    /// Test sending and receiving messages between three parties.
+    ///
+    /// This test case consists of the following sequence of events:
+    ///
+    /// 1. Alice sends a message to Bob.
+    /// 2. Alice sends another message to Bob.
+    /// 3. Bob sends a message to Alice.
+    /// 4. Alice sends a message to Charlie.
+    /// 5. Charlie sends a message to Alice.
+    ///
+    /// After the messages are sent, the test checks that the `messages_containing` method
+    /// returns the expected messages for each party in the correct order.
+    #[tokio::test]
+    async fn message_thread() {
+        // Begin test setup
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(10_000_000).await;
+        macro_rules! send_and_sync {
+            ($client:ident, $message:ident) => {
+                // Propose sending the message
+                $client.propose_send($message.clone()).await.unwrap();
+                // Complete and broadcast the stored proposal
+                $client
+                    .complete_and_broadcast_stored_proposal()
+                    .await
+                    .unwrap();
+                // Increase the height and wait for the client
+                increase_height_and_wait_for_client(&regtest_manager, &$client, 1)
+                    .await
+                    .unwrap();
+            };
+        }
+        // Addresses: alice, bob, charlie
+        let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
+        let bob = faucet
+            .wallet
+            .wallet_capability()
+            .new_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                false,
+            )
+            .unwrap();
+        let charlie = faucet
+            .wallet
+            .wallet_capability()
+            .new_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                false,
+            )
+            .unwrap();
+
+        // messages
+        let alice_to_bob = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+        let alice_to_bob_2 = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+        let alice_to_charlie = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice)).unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+        let charlie_to_alice = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&alice).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(
+                    &("Charlie->Alice #2\nReply to\n".to_string()
+                        + &charlie.encode(&faucet.config().chain)),
+                )
+                .unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+        let bob_to_alice = TransactionRequest::new(vec![Payment::new(
+            ZcashAddress::from_str(&alice).unwrap(),
+            NonNegativeAmount::from_u64(1_000).unwrap(),
+            Some(Memo::encode(
+                &Memo::from_str(
+                    &("Bob->Alice #2\nReply to\n".to_string()
+                        + &bob.encode(&faucet.config().chain)),
+                )
+                .unwrap(),
+            )),
+            None,
+            None,
+            vec![],
+        )
+        .unwrap()])
+        .unwrap();
+        // Complete test setup
+
+        // Message Sending
+        send_and_sync!(recipient, alice_to_bob);
+        send_and_sync!(recipient, alice_to_bob_2);
+        send_and_sync!(faucet, bob_to_alice);
+        send_and_sync!(recipient, alice_to_charlie);
+        send_and_sync!(faucet, charlie_to_alice);
+        // Final sync of recipient
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+
+        // Collect observations
+        let value_transfers_bob = &recipient
+            .messages_containing(Some(&bob.encode(&recipient.config().chain)))
+            .await;
+        let value_transfers_charlie = &recipient
+            .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
+            .await;
+        let all_vts = &recipient.sorted_value_transfers(true).await;
+        let all_messages = &recipient.messages_containing(None).await;
+
+        // Make assertions
+        assert_eq!(value_transfers_bob.len(), 3);
+        assert_eq!(value_transfers_charlie.len(), 2);
+
+        // Also asserting the order now (sorry juanky)
+        // ALL MESSAGES (First one should be the oldest one)
+        assert!(all_messages
+            .windows(2)
+            .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() }));
+        // ALL VTS (First one should be the most recent one)
+        assert!(all_vts
+            .windows(2)
+            .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() }));
+    }
+
+    /// Tests that value transfers are properly sorted by block height and index.
+    /// It also tests that retrieving the value transfers multiple times in a row returns the same results.
+    #[tokio::test]
+    async fn value_transfers() {
+        let mut environment = LibtonodeEnvironment::setup().await;
+
+        let faucet = environment.create_faucet().await;
+        let recipient = environment.create_client().await;
+
+        environment.bump_chain().await;
+        faucet.do_sync(false).await.unwrap();
+
+        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+
+        from_inputs::quick_send(
+            &faucet,
+            vec![
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Message #1"),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Message #2"),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Message #3"),
+                ),
+                (
+                    get_base_address_macro!(recipient, "unified").as_str(),
+                    5_000,
+                    Some("Message #4"),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+        environment.bump_chain().await;
+        recipient.do_sync(false).await.unwrap();
+
+        let value_transfers = &recipient.sorted_value_transfers(true).await;
+        let value_transfers1 = &recipient.sorted_value_transfers(true).await;
+        let value_transfers2 = &recipient.sorted_value_transfers(true).await;
+        let mut value_transfers3 = recipient.sorted_value_transfers(false).await;
+        let mut value_transfers4 = recipient.sorted_value_transfers(false).await;
+
+        assert_eq!(value_transfers[0].memos().len(), 4);
+
+        value_transfers3.reverse();
+        value_transfers4.reverse();
+
+        assert_eq!(value_transfers, value_transfers1);
+        assert_eq!(value_transfers, value_transfers2);
+        assert_eq!(value_transfers, &value_transfers3);
+        assert_eq!(value_transfers, &value_transfers4);
     }
 
     pub mod tex {
@@ -193,9 +782,9 @@ mod fast {
         #[tokio::test]
         async fn send_to_tex() {
             let (ref _regtest_manager, _cph, ref faucet, sender, _txid) =
-                scenarios::orchard_funded_recipient(5_000_000).await;
+                scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(&faucet);
+            let tex_addr_from_first = first_taddr_to_tex(faucet);
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
                 NonNegativeAmount::from_u64(100_000).unwrap(),
@@ -205,11 +794,11 @@ mod fast {
 
             let proposal = sender.propose_send(transaction_request).await.unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
-            let sent_txids_according_to_broadcast = sender
+            let _sent_txids_according_to_broadcast = sender
                 .complete_and_broadcast_stored_proposal()
                 .await
                 .unwrap();
-            let txids = sender
+            let _txids = sender
                 .wallet
                 .transactions()
                 .read()
@@ -218,8 +807,6 @@ mod fast {
                 .keys()
                 .cloned()
                 .collect::<Vec<TxId>>();
-            dbg!(&txids);
-            dbg!(sent_txids_according_to_broadcast);
             assert_eq!(
                 sender
                     .wallet
@@ -230,10 +817,10 @@ mod fast {
                     .len(),
                 3usize
             );
-            let val_tranfers = dbg!(sender.value_transfers().await);
+            let val_tranfers = dbg!(sender.sorted_value_transfers(true).await);
             // This fails, as we don't scan sends to tex correctly yet
             assert_eq!(
-                val_tranfers.0[2].recipient_address().unwrap(),
+                val_tranfers[0].recipient_address().unwrap(),
                 tex_addr_from_first.encode()
             );
         }
@@ -242,7 +829,7 @@ mod fast {
     #[tokio::test]
     async fn targeted_rescan() {
         let (regtest_manager, _cph, _faucet, recipient, txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         *recipient
             .wallet
@@ -270,7 +857,7 @@ mod fast {
     #[tokio::test]
     async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         let recipient = std::sync::Arc::new(recipient);
 
@@ -285,7 +872,7 @@ mod fast {
         .await
         .unwrap();
 
-        LightClient::start_mempool_monitor(recipient.clone());
+        LightClient::start_mempool_monitor(recipient.clone()).unwrap();
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         let transactions = &recipient.transaction_summaries().await.0;
@@ -436,7 +1023,7 @@ mod fast {
         for code in ["o", "zo", "z"] {
             recipient.do_new_address(code).await.unwrap();
         }
-        let addresses = recipient.do_addresses().await;
+        let addresses = recipient.do_addresses(UAReceivers::All).await;
         let address_5000_nonememo_tuples = addresses
             .members()
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
@@ -499,7 +1086,7 @@ mod fast {
 
         //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
         let new_address = recipient1.do_new_address("tzo").await.unwrap();
-        let ua_index_1 = recipient1.do_addresses().await[1].clone();
+        let ua_index_1 = recipient1.do_addresses(UAReceivers::All).await[1].clone();
         let ua_address_index_1 = ua_index_1["address"].clone().to_string();
         assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
         let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
@@ -561,10 +1148,10 @@ mod fast {
 
     #[tokio::test]
     async fn sync_all_epochs_from_sapling() {
-        let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+        let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9, 11);
         let (regtest_manager, _cph, lightclient) =
-            scenarios::unfunded_client(regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+            scenarios::unfunded_client(regtest_network, true).await;
+        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
     }
@@ -575,6 +1162,7 @@ mod fast {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
@@ -590,6 +1178,7 @@ mod fast {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
@@ -603,7 +1192,7 @@ mod fast {
     async fn mine_to_transparent() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -616,10 +1205,10 @@ mod fast {
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
+        let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11, 13);
         let (regtest_manager, _cph, lightclient) =
-            scenarios::unfunded_client(regtest_network).await;
-        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+            scenarios::unfunded_client(regtest_network, true).await;
+        increase_height_and_wait_for_client(&regtest_manager, &lightclient, 14)
             .await
             .unwrap();
     }
@@ -630,7 +1219,7 @@ mod fast {
     async fn mine_to_transparent_and_shield() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
@@ -640,10 +1229,43 @@ mod fast {
     async fn mine_to_transparent_and_propose_shielding() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network).await;
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
+        let proposal = faucet.propose_shield().await.unwrap();
+        let only_step = proposal.steps().first();
+
+        // Orchard action and dummy, plus 4 transparent inputs
+        let expected_fee = 30_000;
+
+        assert_eq!(proposal.steps().len(), 1);
+        assert_eq!(only_step.transparent_inputs().len(), 4);
+        assert_eq!(
+            only_step.balance().fee_required(),
+            NonNegativeAmount::const_from_u64(expected_fee)
+        );
+        // Only one change item. I guess change could be split between pools?
+        assert_eq!(only_step.balance().proposed_change().len(), 1);
+        assert_eq!(
+            only_step
+                .balance()
+                .proposed_change()
+                .first()
+                .unwrap()
+                .value(),
+            NonNegativeAmount::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
+        )
+    }
+    #[tokio::test]
+    async fn mine_to_transparent_and_propose_shielding_with_div_addr() {
+        let regtest_network = RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, _cph, faucet, _recipient) =
+            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        faucet.do_new_address("zto").await.unwrap();
         let proposal = faucet.propose_shield().await.unwrap();
         let only_step = proposal.steps().first();
 
@@ -672,6 +1294,7 @@ mod fast {
 mod slow {
     use bip0039::Mnemonic;
     use orchard::note_encryption::OrchardDomain;
+    use testvectors::TEST_TXID;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::{
         consensus::NetworkConstants, memo::Memo, transaction::fees::zip317::MARGINAL_FEE,
@@ -681,7 +1304,6 @@ mod slow {
         assert_transaction_summary_equality, assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
-    use zingolib::testvectors::TEST_TXID;
     use zingolib::{
         lightclient::send::send_with_proposal::QuickSendError,
         wallet::{
@@ -700,7 +1322,7 @@ mod slow {
     #[tokio::test]
     async fn zero_value_receipts() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         let sent_value = 0;
         let _sent_transaction_id = from_inputs::quick_send(
@@ -734,7 +1356,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers().await).pretty(4)
+            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(4)
         );
     }
     #[tokio::test]
@@ -742,7 +1364,7 @@ mod slow {
         // 1. Send an incoming transaction to fill the wallet
         let value = 100_000;
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(value).await;
+            scenarios::faucet_funded_recipient_default(value).await;
 
         let sent_value = value - u64::from(MINIMUM_FEE);
         let sent_transaction_id = from_inputs::quick_send(
@@ -786,7 +1408,7 @@ mod slow {
     #[tokio::test]
     async fn witness_clearing() {
         let (regtest_manager, _cph, faucet, recipient, txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
         let txid = utils::conversion::txid_from_hex_encoded_str(&txid).unwrap();
 
         // 3. Send z-to-z transaction to external z address with a memo
@@ -1065,11 +1687,8 @@ mod slow {
 
             watch_client.do_rescan().await.unwrap();
             assert!(matches!(
-                from_inputs::quick_send(
-                    &watch_client,
-                    vec![(zingolib::testvectors::EXT_TADDR, 1000, None)]
-                )
-                .await,
+                from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
+                    .await,
                 Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
                     zcash_client_backend::data_api::error::Error::DataSource(
                         TxMapTraitError::NoSpendCapability
@@ -1100,19 +1719,18 @@ mod slow {
         let list = recipient.do_list_transactions().await;
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 4);
         assert_eq!(
-            recipient.do_addresses().await[0]["receivers"]["transparent"].to_string(),
+            recipient.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"]
+                .to_string(),
             recipient_taddr
         );
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
-        let sent_transaction_error = from_inputs::quick_send(
-            &recipient,
-            vec![(zingolib::testvectors::EXT_TADDR, sent_value, None)],
-        )
-        .await
-        .unwrap_err();
+        let sent_transaction_error =
+            from_inputs::quick_send(&recipient, vec![(testvectors::EXT_TADDR, sent_value, None)])
+                .await
+                .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
             QuickSendError::ProposeSend(ProposeSendError::Proposal(
@@ -1122,6 +1740,63 @@ mod slow {
                 }
             ))
         ));
+    }
+    #[tokio::test]
+    async fn compare_shielded_only_vs_default_do_addresses() {
+        let (_regtest_manager, _cph, _faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        // All addresses
+        let all_addresses = recipient.do_addresses(UAReceivers::All).await[0].clone();
+        assert_eq!(all_addresses["receivers"].len(), 3usize);
+        assert_eq!(
+            all_addresses["receivers"]["transparent"],
+            "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i"
+        );
+        // Only Shielded
+        let only_shielded_addresses =
+            recipient.do_addresses(UAReceivers::Shielded).await[0].clone();
+        assert_eq!(
+            only_shielded_addresses["receivers"]["transparent"],
+            JsonValue::Null
+        );
+        // Both
+        assert_eq!(
+            only_shielded_addresses["receivers"]["sapling"],
+            all_addresses["receivers"]["sapling"],
+        );
+        assert_eq!(
+            only_shielded_addresses["receivers"]["orchard"],
+            all_addresses["receivers"]["orchard"],
+        );
+        let only_orchard_address = recipient.do_addresses(UAReceivers::Orchard).await[0].clone();
+        assert_eq!(
+            only_orchard_address["receivers"]["transparent"],
+            JsonValue::Null
+        );
+        assert_eq!(
+            only_orchard_address["receivers"]["sapling"],
+            JsonValue::Null
+        );
+
+        // Compare full UAs
+        let all_addresses_ua = all_addresses["address"].clone();
+        assert_eq!(all_addresses_ua.to_string().len(), 220usize);
+        assert_eq!(
+            all_addresses_ua,
+            "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8"
+        );
+        let only_shielded_addresses_ua = only_shielded_addresses["address"].clone();
+        assert_eq!(only_shielded_addresses_ua.to_string().len(), 185usize);
+        assert_eq!(
+            only_shielded_addresses_ua,
+            "uregtest1rm8kx0snrzfxw4z5uz34tdrg0slzu6ct94z479f8u95d3j46m4glj5xugensqwe5ume0zx8h9k0aprepyksffyyu8yd24cnvnmm2qh0sp5u93e4w2rjzpqjwd7fv32yfgql5yuqjs9l2kq60rchev3kv5j5p6u20ndgjmzs94vu50gy7"
+        );
+        let only_orchard_address_ua = only_orchard_address["address"].clone();
+        assert_eq!(only_orchard_address_ua.to_string().len(), 113usize);
+        assert_eq!(
+            only_orchard_address_ua,
+            "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9"
+        );
     }
 
     #[tokio::test]
@@ -1153,7 +1828,7 @@ mod slow {
         println!("{}", recipient.do_list_transactions().await.pretty(2));
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers().await).pretty(2)
+            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
         );
         recipient.do_rescan().await.unwrap();
         println!(
@@ -1163,7 +1838,7 @@ mod slow {
         println!("{}", recipient.do_list_transactions().await.pretty(2));
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers().await).pretty(2)
+            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
         );
         // TODO: Add asserts!
     }
@@ -1217,7 +1892,7 @@ mod slow {
         // Receipt of orchard funds
         let recipient_initial_funds = 100_000_000;
         let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(recipient_initial_funds).await;
+            scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
         let summary_orchard_receipt = TransactionSummaryBuilder::new()
             .blockheight(BlockHeight::from_u32(5))
@@ -1280,7 +1955,8 @@ mod slow {
                  recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  value: first_send_to_sapling,
                  memo: Memo::Empty,
-                 recipient_ua: None
+                 recipient_ua: None,
+                 output_index: None,
              }])
             .build()
             .unwrap();
@@ -1310,6 +1986,7 @@ mod slow {
                 value: first_send_to_transparent,
                 memo: Memo::Empty,
                 recipient_ua: None,
+                output_index: None,
             }])
             .build()
             .unwrap();
@@ -1423,6 +2100,7 @@ mod slow {
                 value: second_send_to_transparent,
                 memo: Memo::Empty,
                 recipient_ua: None,
+                output_index: None,
             }])
             .build()
             .unwrap();
@@ -1460,7 +2138,8 @@ mod slow {
                  recipient_address: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  value: second_send_to_sapling,
                  memo: Memo::Empty,
-                 recipient_ua: None
+                 recipient_ua: None,
+                 output_index: None,
              }])
             .build()
             .unwrap();
@@ -1502,6 +2181,7 @@ mod slow {
                 value: external_transparent_3,
                 memo: Memo::Empty,
                 recipient_ua: None,
+                output_index: None,
             }])
             .build()
             .unwrap();
@@ -1581,7 +2261,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.value_transfers().await).pretty(4)
+            JsonValue::from(faucet.sorted_value_transfers(true).await).pretty(4)
         );
         println!(
             "{}",
@@ -1629,6 +2309,7 @@ mod slow {
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         let amount_to_send = 5_000;
@@ -1656,10 +2337,11 @@ mod slow {
     }
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
+        let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5, 5);
         let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             regtest_network,
+            true,
         )
         .await;
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
@@ -1699,6 +2381,7 @@ mod slow {
             Some(100_000),
             PoolType::Shielded(ShieldedProtocol::Orchard),
             regtest_network,
+            true,
         )
         .await;
         check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
@@ -1869,7 +2552,7 @@ mod slow {
 
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
         let b = recipient.do_balance().await;
-        let addresses = recipient.do_addresses().await;
+        let addresses = recipient.do_addresses(UAReceivers::All).await;
         assert_eq!(b.sapling_balance.unwrap(), value);
         assert_eq!(b.unverified_sapling_balance.unwrap(), 0);
         assert_eq!(b.spendable_sapling_balance.unwrap(), value);
@@ -2052,7 +2735,7 @@ mod slow {
     #[tokio::test]
     async fn sandblast_filter_preserves_trees() {
         let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
         recipient
             .wallet
             .wallet_options
@@ -2099,7 +2782,7 @@ mod slow {
                 .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
-                .max_leaf_position(0),
+                .max_leaf_position(None),
             recipient
                 .wallet
                 .transaction_context
@@ -2109,7 +2792,7 @@ mod slow {
                 .witness_trees()
                 .unwrap()
                 .witness_tree_orchard
-                .max_leaf_position(0)
+                .max_leaf_position(None)
         );
     }
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
@@ -2187,7 +2870,7 @@ mod slow {
         async fn check_list_value_transfers_across_rescan() {
             let inital_value = 100_000;
             let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-                scenarios::orchard_funded_recipient(inital_value).await;
+                scenarios::faucet_funded_recipient_default(inital_value).await;
             from_inputs::quick_send(
                 recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
@@ -2198,10 +2881,10 @@ mod slow {
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.do_list_transactions().await;
-            let pre_rescan_summaries = recipient.value_transfers().await;
+            let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
             recipient.do_rescan().await.unwrap();
             let post_rescan_transactions = recipient.do_list_transactions().await;
-            let post_rescan_summaries = recipient.value_transfers().await;
+            let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
             let mut outgoing_metadata = pre_rescan_transactions
@@ -2219,7 +2902,7 @@ mod slow {
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
         let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-            scenarios::orchard_funded_recipient(inital_value).await;
+            scenarios::faucet_funded_recipient_default(inital_value).await;
         from_inputs::quick_send(
             recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
@@ -2367,297 +3050,10 @@ mod slow {
 
     // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
     #[tokio::test]
-    async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
-        async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
-            json::object! {
-                "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-            }
-        }
-        let value = 100_000;
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
-            scenarios::faucet_funded_recipient(
-                Some(value),
-                None,
-                None,
-                PoolType::Shielded(ShieldedProtocol::Sapling),
-                regtest_network,
-            )
-            .await;
-        let orig_transaction_id = orig_transaction_id.unwrap();
-        assert_eq!(
-            do_maybe_recent_txid(&recipient).await["last_txid"],
-            orig_transaction_id
-        );
-        // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
-        for _ in 0..5 {
-            zingolib::testutils::send_value_between_clients_and_sync(
-                &regtest_manager,
-                &faucet,
-                &faucet,
-                5_000,
-                "unified",
-            )
-            .await
-            .unwrap();
-        }
-
-        let sent_to_self = 10;
-        // Send recipient->recipient, to make tree equality check at the end simpler
-        zingolib::testutils::send_value_between_clients_and_sync(
-            &regtest_manager,
-            &recipient,
-            &recipient,
-            sent_to_self,
-            "unified",
-        )
-        .await
-        .unwrap();
-        let fees = get_fees_paid_by_client(&recipient).await;
-        assert_eq!(value - fees, 90_000);
-        let balance_minus_step_one_fees = value - fees;
-
-        // 3a. stash zcashd state
-        log::debug!(
-            "old zcashd chain info {}",
-            std::str::from_utf8(
-                &regtest_manager
-                    .get_cli_handle()
-                    .arg("getblockchaininfo")
-                    .output()
-                    .unwrap()
-                    .stdout
-            )
-            .unwrap()
-        );
-
-        // Turn zcashd off and on again, to write down the blocks
-        drop(_cph); // turn off zcashd and lightwalletd
-        let _cph = regtest_manager.launch(false).unwrap();
-        log::debug!(
-            "new zcashd chain info {}",
-            std::str::from_utf8(
-                &regtest_manager
-                    .get_cli_handle()
-                    .arg("getblockchaininfo")
-                    .output()
-                    .unwrap()
-                    .stdout
-            )
-            .unwrap()
-        );
-
-        let zcd_datadir = &regtest_manager.zcashd_data_dir;
-        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
-        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
-
-        log::debug!(
-            "The original zcashd directory is at: {}",
-            &original_zcashd_directory.to_string_lossy().to_string()
-        );
-
-        let source = &zcd_datadir.to_string_lossy().to_string();
-        let dest = &original_zcashd_directory.to_string_lossy().to_string();
-        std::process::Command::new("cp")
-            .arg("-rf")
-            .arg(source)
-            .arg(dest)
-            .output()
-            .expect("directory copy failed");
-
-        // 3. Send z-to-z transaction to external z address with a memo
-        let sent_value = 2000;
-        let outgoing_memo = "Outgoing Memo";
-
-        let sent_transaction_id = from_inputs::quick_send(
-            &recipient,
-            vec![(
-                &get_base_address_macro!(faucet, "sapling"),
-                sent_value,
-                Some(outgoing_memo),
-            )],
-        )
-        .await
-        .unwrap()
-        .first()
-        .to_string();
-
-        let second_transaction_fee;
-        {
-            let tmds = recipient
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .read()
-                .await;
-            let record = tmds
-                .transaction_records_by_id
-                .get(
-                    &crate::utils::conversion::txid_from_hex_encoded_str(&sent_transaction_id)
-                        .unwrap(),
-                )
-                .unwrap();
-            second_transaction_fee = tmds
-                .transaction_records_by_id
-                .calculate_transaction_fee(record)
-                .unwrap();
-            // Sync recipient
-        } // drop transaction_record references and tmds read lock
-        recipient.do_sync(false).await.unwrap();
-
-        // 4b write down state before clearing the mempool
-        let notes_before = recipient.do_list_notes(true).await;
-        let transactions_before = recipient.do_list_transactions().await;
-
-        // Sync recipient again. We assert this should be a no-op, as we just synced
-        recipient.do_sync(false).await.unwrap();
-        let post_sync_notes_before = recipient.do_list_notes(true).await;
-        let post_sync_transactions_before = recipient.do_list_transactions().await;
-        assert_eq!(post_sync_notes_before, notes_before);
-        assert_eq!(post_sync_transactions_before, transactions_before);
-
-        drop(_cph); // Turn off zcashd and lightwalletd
-
-        // 5. check that the sent transaction is correctly marked in the client
-        let transactions = recipient.do_list_transactions().await;
-        let mempool_only_tx = transactions
-            .members()
-            .find(|tx| tx["txid"] == sent_transaction_id)
-            .unwrap()
-            .clone();
-        log::debug!("the transactions are: {}", &mempool_only_tx);
-        assert_eq!(
-            mempool_only_tx["outgoing_metadata"][0]["memo"],
-            "Outgoing Memo"
-        );
-        assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
-
-        // 6. note that the client correctly considers the note pending
-        assert_eq!(mempool_only_tx["pending"], true);
-
-        std::process::Command::new("rm")
-            .arg("-rf")
-            .arg(source)
-            .output()
-            .expect("recursive rm failed");
-        std::process::Command::new("cp")
-            .arg("--recursive")
-            .arg("--remove-destination")
-            .arg(dest)
-            .arg(source)
-            .output()
-            .expect("directory copy failed");
-        assert_eq!(
-            source,
-            &regtest_manager
-                .zcashd_data_dir
-                .to_string_lossy()
-                .to_string()
-        );
-        let _cph = regtest_manager.launch(false).unwrap();
-        let notes_after = recipient.do_list_notes(true).await;
-        let transactions_after = recipient.do_list_transactions().await;
-
-        assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
-        assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
-
-        // 6. Mine 10 blocks, the pending transaction should still be there.
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
-            .await
-            .unwrap();
-        assert_eq!(recipient.wallet.last_synced_height().await, 21);
-
-        let notes = recipient.do_list_notes(true).await;
-
-        let transactions = recipient.do_list_transactions().await;
-
-        // There are 2 unspent notes, the pending transaction, and the final receipt
-        println!("{}", json::stringify_pretty(notes.clone(), 4));
-        println!("{}", json::stringify_pretty(transactions.clone(), 4));
-        // Two unspent notes: one change, pending, one from faucet, confirmed
-        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-        assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-        let note = notes["unspent_orchard_notes"][1].clone();
-        assert_eq!(note["created_in_txid"], sent_transaction_id);
-        assert_eq!(
-            note["value"].as_u64().unwrap(),
-            balance_minus_step_one_fees - sent_value - second_transaction_fee - sent_to_self
-        );
-        assert!(note["pending"].as_bool().unwrap());
-        assert_eq!(transactions.len(), 3);
-
-        // 7. Mine 100 blocks, so the mempool expires
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 100)
-            .await
-            .unwrap();
-        assert_eq!(recipient.wallet.last_synced_height().await, 121);
-
-        let notes = recipient.do_list_notes(true).await;
-        let transactions = recipient.do_list_transactions().await;
-
-        // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
-        assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-        assert_eq!(
-            notes["spent_orchard_notes"][0]["created_in_txid"],
-            orig_transaction_id
-        );
-        assert!(!notes["unspent_orchard_notes"][0]["pending"]
-            .as_bool()
-            .unwrap());
-        assert_eq!(notes["pending_orchard_notes"].len(), 0);
-        assert_eq!(transactions.len(), 2);
-        let read_lock = recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let wallet_trees = read_lock.witness_trees().unwrap();
-        let last_leaf = wallet_trees
-            .witness_tree_orchard
-            .max_leaf_position(0)
-            .unwrap();
-        let server_trees = zingolib::grpc_connector::get_trees(
-            recipient.get_server_uri(),
-            recipient.wallet.last_synced_height().await,
-        )
-        .await
-        .unwrap();
-        let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
-            MerkleHashOrchard,
-            &[u8],
-            { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
-        >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
-        .unwrap()
-        .to_frontier()
-        .take();
-        let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
-            ShardTree::new(
-                MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
-                MAX_REORG,
-            );
-        server_orchard_shardtree
-            .insert_frontier_nodes(
-                server_orchard_front.unwrap(),
-                zingolib::testutils::incrementalmerkletree::Retention::Marked,
-            )
-            .unwrap();
-        assert_eq!(
-            wallet_trees
-                .witness_tree_orchard
-                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-                .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
-            server_orchard_shardtree
-                .witness_at_checkpoint_depth(last_leaf.unwrap(), 0)
-                .unwrap()
-        )
-    }
-    // FIXME: it seems this test makes assertions on mempool but mempool monitoring is off?
-    #[tokio::test]
     async fn mempool_and_balance() {
         let value = 100_000;
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(value).await;
+            scenarios::faucet_funded_recipient_default(value).await;
 
         let bal = recipient.do_balance().await;
         println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -2795,7 +3191,7 @@ mod slow {
             .await;
         let seed_of_recipient_restored = {
             recipient_restored.do_sync(true).await.unwrap();
-            let restored_addresses = recipient_restored.do_addresses().await;
+            let restored_addresses = recipient_restored.do_addresses(UAReceivers::All).await;
             assert_eq!(
                 &restored_addresses[0]["address"],
                 &original_recipient_address
@@ -3206,7 +3602,7 @@ mod slow {
     #[tokio::test]
     async fn dust_sends_change_correctly() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         // Send of less that transaction fee
         let sent_value = 1000;
@@ -3266,7 +3662,7 @@ mod slow {
     #[tokio::test]
     async fn zero_value_change_to_orchard_created() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
@@ -3320,7 +3716,7 @@ mod slow {
     #[ignore = "test does not correspond to real-world case"]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(500_000).await;
+            scenarios::faucet_funded_recipient_default(500_000).await;
 
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
             .await
@@ -3429,7 +3825,7 @@ mod slow {
     #[tokio::test]
     async fn mempool_spends_correctly_marked_pending_spent() {
         let (_regtest_manager, _cph, _faucet, recipient, _txid) =
-            scenarios::orchard_funded_recipient(1_000_000).await;
+            scenarios::faucet_funded_recipient_default(1_000_000).await;
         from_inputs::quick_send(
             &recipient,
             vec![(
@@ -3446,7 +3842,7 @@ mod slow {
                 .await
                 .unwrap(),
         );
-        LightClient::start_mempool_monitor(recipient_loaded.clone());
+        LightClient::start_mempool_monitor(recipient_loaded.clone()).unwrap();
         // This seems to be long enough for the mempool monitor to kick in.
         // One second is insufficient. Even if this fails, this can only ever be
         // a false negative, giving us a balance of 100_000. Still, could be improved.
@@ -3483,7 +3879,7 @@ mod slow {
         zingolib::testutils::increase_server_height(&regtest_manager, 1).await;
 
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_sim = recipient.list_value_transfers().await;
+        // let summ_sim = recipient.list_value_transfers(true).await;
         let bala_sim = recipient.do_balance().await;
 
         recipient.clear_state().await;
@@ -3502,10 +3898,10 @@ mod slow {
             }
         }
 
-        // let summ_int = recipient.list_value_transfers().await;
+        // let summ_int = recipient.list_value_transfers(true).await;
         // let bala_int = recipient.do_balance().await;
         let _synciiyur = recipient.do_sync(false).await;
-        // let summ_syn = recipient.list_value_transfers().await;
+        // let summ_syn = recipient.list_value_transfers(true).await;
         let bala_syn = recipient.do_balance().await;
 
         dbg!(
@@ -3915,7 +4311,7 @@ async fn proxy_server_worky() {
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
     let (regtest_manager, _cph, faucet, recipient, _) =
-        scenarios::orchard_funded_recipient(100_000).await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
 
     from_inputs::quick_send(
         &faucet,
@@ -3993,7 +4389,7 @@ mod send_all {
     #[tokio::test]
     async fn ptfm_general() {
         let (regtest_manager, _cph, faucet, recipient, _) =
-            scenarios::orchard_funded_recipient(100_000).await;
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
         from_inputs::quick_send(
             &faucet,
@@ -4073,7 +4469,7 @@ mod send_all {
     #[tokio::test]
     async fn ptfm_insufficient_funds() {
         let (_regtest_manager, _cph, faucet, recipient, _) =
-            scenarios::orchard_funded_recipient(10_000).await;
+            scenarios::faucet_funded_recipient_default(10_000).await;
 
         let proposal_error = recipient
             .propose_send_all(
@@ -4100,7 +4496,7 @@ mod send_all {
     #[tokio::test]
     async fn ptfm_zero_value() {
         let (_regtest_manager, _cph, faucet, recipient, _) =
-            scenarios::orchard_funded_recipient(10_000).await;
+            scenarios::faucet_funded_recipient_default(10_000).await;
 
         let proposal_error = recipient
             .propose_send_all(

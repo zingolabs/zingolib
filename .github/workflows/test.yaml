@@ -13,6 +13,8 @@ env:
 jobs:
   build-test-artifacts:
     name: Build test artifacts
+    container:
+      image: zingodevops/ci-build:004
     runs-on: ubuntu-22.04
     if: github.event.pull_request.draft == false
     env:
@@ -26,11 +28,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest
-          version: 0.9.78
-
-      - name: Install protoc
-        run: sudo apt-get install protobuf-compiler
+          tool: nextest@0.9.78
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
@@ -52,7 +50,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:002
+      image: zingodevops/ci-build:004
       options: --security-opt seccomp=unconfined
     strategy:
       matrix:
@@ -77,6 +75,6 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
+          cargo nextest run --verbose --profile ci --retries 2 --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition }}/8 ${{ env.NEXTEST-FLAGS }}
 

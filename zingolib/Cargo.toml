@@ -8,14 +8,12 @@ edition = "2021"
 
 [features]
 ci = []
+darkside_tests = []
+default = ["sync"]
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
-darkside_tests = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
-testvectors = []
-tempfile = ["dep:tempfile"]
-default = ["sync"]
-sync = ['dep:zingo-sync']
+sync = ['zingo-sync']
 zaino-test = ['test-elevation']
 
 [dependencies]
@@ -23,6 +21,7 @@ zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-sync = { path = "../zingo-sync", optional = true }
+testvectors = { path = "../testvectors", optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -51,7 +50,6 @@ dirs.workspace = true
 enum_dispatch = { workspace = true }
 ff = { workspace = true }
 futures = { workspace = true }
-getset = { workspace = true }
 group = { workspace = true }
 hex = { workspace = true }
 http.workspace = true
@@ -69,6 +67,7 @@ rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
+rustls.workspace = true
 sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
@@ -83,11 +82,10 @@ thiserror = { workspace = true }
 tokio =  { workspace = true, features = ["full"] }
 tonic = { workspace = true }
 tracing-subscriber = { workspace = true }
-bech32 = "0.11.0"
+bech32 = { workspace = true }
 
 [dev-dependencies]
 portpicker = { workspace = true }
-tempfile = { workspace = true }
 concat-idents = { workspace = true }
 
 [build-dependencies]

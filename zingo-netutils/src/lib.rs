@@ -132,7 +132,7 @@ impl GrpcConnector {
                         let uri = Uri::builder()
                             .scheme(scheme.clone())
                             .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC sever and
+                            //here. The Request's uri contains the path to the GRPC server and
                             //the method being called
                             .path_and_query(path_and_query)
                             .build()
@@ -158,7 +158,7 @@ impl GrpcConnector {
                         let uri = Uri::builder()
                             .scheme(scheme.clone())
                             .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC sever and
+                            //here. The Request's uri contains the path to the GRPC server and
                             //the method being called
                             .path_and_query(path_and_query)
                             .build()
@@ -182,7 +182,9 @@ fn add_test_cert_to_roots(roots: &mut RootCertStore) {
     const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
     let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
-    let certs_bytes = rustls_pemfile::certs(&mut buf).unwrap();
+    let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
+        .filter_map(Result::ok)
+        .collect();
     let certs: Vec<CertificateDer<'_>> =
         certs_bytes.into_iter().map(CertificateDer::from).collect();
 

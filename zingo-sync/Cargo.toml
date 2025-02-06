@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 # Zingo
 zingo-netutils = { path = "../zingo-netutils" }
+zingo-memo = { path = "../zingo-memo" }
+zingo-status = { path = "../zingo-status" }
 
 # Zcash
 zcash_client_backend.workspace = true
@@ -16,6 +18,7 @@ sapling-crypto.workspace = true
 orchard.workspace = true
 incrementalmerkletree.workspace = true
 shardtree.workspace = true
+zip32.workspace = true
 
 # Async
 futures.workspace = true
@@ -36,3 +39,11 @@ rayon.workspace = true
 
 # Minimise boilerplate
 getset.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# temp
+zcash_address.workspace = true
+sha2.workspace = true
+base58.workspace = true

@@ -197,7 +197,12 @@ async fn shielded_note_marked_as_change_test() {
         json::stringify_pretty(scenario.get_lightclient(0).do_list_notes(true).await, 4)
     );
     println!("do list tx summaries:");
-    dbg!(scenario.get_lightclient(0).value_transfers().await);
+    dbg!(
+        scenario
+            .get_lightclient(0)
+            .sorted_value_transfers(true)
+            .await
+    );
 
     // assert the balance is correct
     assert_eq!(

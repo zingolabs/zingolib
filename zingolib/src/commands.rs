@@ -29,15 +29,17 @@ lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
-/// TODO: Add Doc Comment Here!
+/// This command interface is used both by cli and also consumers.
 pub trait Command {
-    /// TODO: Add Doc Comment Here!
+    /// display command help (in cli)
     fn help(&self) -> &'static str;
 
-    /// TODO: Add Doc Comment Here!
+    /// TODO: Add Doc Comment for this!
     fn short_help(&self) -> &'static str;
 
-    /// TODO: Add Doc Comment Here!
+    /// in zingocli, this string is printed to console
+    /// consumers occasionally make assumptions about this
+    /// e. expect it to be a json object
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
 
@@ -83,12 +85,22 @@ impl Command for ChangeServerCommand {
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         match args.len() {
+            0 => {
+                lightclient.set_server(http::Uri::default());
+                "server set".to_string()
+            }
             1 => match http::Uri::from_str(args[0]) {
                 Ok(uri) => {
                     lightclient.set_server(uri);
                     "server set"
                 }
-                Err(_) => "invalid server uri",
+                Err(_) => match args[0] {
+                    "" => {
+                        lightclient.set_server(http::Uri::default());
+                        "server set"
+                    }
+                    _ => "invalid server uri",
+                },
             }
             .to_string(),
             _ => self.help().to_string(),
@@ -142,7 +154,7 @@ impl Command for WalletKindCommand {
                 }
                 .pretty(4)
             } else {
-                match lightclient.wallet.wallet_capability().unified_key_store() {
+                match &lightclient.wallet.wallet_capability().unified_key_store {
                     UnifiedKeyStore::Spend(_) => object! {
                         "kind" => "Loaded from unified spending key",
                         "transparent" => true,
@@ -204,7 +216,7 @@ impl Command for ParseAddressCommand {
         indoc! {r#"
             Parse an address
             Usage:
-            parse_address [address]
+            parse_address <address>
 
             Example
             parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
@@ -216,71 +228,86 @@ impl Command for ParseAddressCommand {
     }
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
-        match args.len() {
-            1 => json::stringify_pretty(
-                [
-                    crate::config::ChainType::Mainnet,
-                    crate::config::ChainType::Testnet,
-                    crate::config::ChainType::Regtest(
-                        crate::config::RegtestNetwork::all_upgrades_active(),
-                    ),
-                ]
-                .iter()
-                .find_map(|chain| Address::decode(chain, args[0]).zip(Some(chain)))
-                .map_or(
-                    object! {
-                        "status" => "Invalid address",
-                        "chain_name" => json::JsonValue::Null,
-                        "address_kind" => json::JsonValue::Null,
-                    },
-                    |(recipient_address, chain_name)| {
-                        let chain_name_string = match chain_name {
-                            crate::config::ChainType::Mainnet => "main",
-                            crate::config::ChainType::Testnet => "test",
-                            crate::config::ChainType::Regtest(_) => "regtest",
-                        };
-                        match recipient_address {
-                            Address::Sapling(_) => object! {
-                                "status" => "success",
-                                "chain_name" => chain_name_string,
-                                "address_kind" => "sapling",
-                            },
-                            Address::Transparent(_) => object! {
-                                "status" => "success",
-                                "chain_name" => chain_name_string,
-                                "address_kind" => "transparent",
-                            },
-                            Address::Unified(ua) => {
-                                let mut receivers_available = vec![];
-                                if ua.orchard().is_some() {
-                                    receivers_available.push("orchard")
-                                }
-                                if ua.sapling().is_some() {
-                                    receivers_available.push("sapling")
-                                }
-                                if ua.transparent().is_some() {
-                                    receivers_available.push("transparent")
-                                }
-                                object! {
-                                    "status" => "success",
-                                    "chain_name" => chain_name_string,
-                                    "address_kind" => "unified",
-                                    "receivers_available" => receivers_available,
-                                }
-                            }
-                            Address::Tex(_) => {
-                                object! {
-                                    "status" => "success",
-                                    "chain_name" => chain_name_string,
-                                    "address_kind" => "tex",
-                                }
-                            }
-                        }
-                    },
+        if args.len() > 1 || args.is_empty() {
+            return self.help().to_string();
+        }
+        fn make_decoded_chain_pair(
+            address: &str,
+        ) -> Option<(
+            zcash_client_backend::address::Address,
+            crate::config::ChainType,
+        )> {
+            [
+                crate::config::ChainType::Mainnet,
+                crate::config::ChainType::Testnet,
+                crate::config::ChainType::Regtest(
+                    crate::config::RegtestNetwork::all_upgrades_active(),
                 ),
-                4,
-            ),
-            _ => self.help().to_string(),
+            ]
+            .iter()
+            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+        }
+        if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
+            let chain_name_string = match chain_name {
+                crate::config::ChainType::Mainnet => "main",
+                crate::config::ChainType::Testnet => "test",
+                crate::config::ChainType::Regtest(_) => "regtest",
+            };
+            match recipient_address {
+                Address::Sapling(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "sapling",
+                }
+                .to_string(),
+                Address::Transparent(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "transparent",
+                }
+                .to_string(),
+                Address::Tex(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "tex",
+                }
+                .to_string(),
+                Address::Unified(ua) => {
+                    let mut receivers_available = vec![];
+                    if ua.sapling().is_some() {
+                        receivers_available.push("sapling")
+                    }
+                    if ua.transparent().is_some() {
+                        receivers_available.push("transparent")
+                    }
+                    if ua.orchard().is_some() {
+                        receivers_available.push("orchard");
+                        object! {
+                            "status" => "success",
+                            "chain_name" => chain_name_string,
+                            "address_kind" => "unified",
+                            "receivers_available" => receivers_available,
+                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                        }
+                        .to_string()
+                    } else {
+                        object! {
+                            "status" => "success",
+                            "chain_name" => chain_name_string,
+                            "address_kind" => "unified",
+                            "receivers_available" => receivers_available,
+                        }
+                        .to_string()
+                    }
+                }
+            }
+        } else {
+            object! {
+                "status" => "Invalid address",
+                "chain_name" => json::JsonValue::Null,
+                "address_kind" => json::JsonValue::Null,
+            }
+            .to_string()
         }
     }
 }
@@ -609,8 +636,30 @@ impl Command for UpdateCurrentPriceCommand {
     }
 }
 
+/// assumed by consumers to be JSON
 struct BalanceCommand {}
 impl Command for BalanceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Return the current ZEC balance in the wallet as a JSON object.
+
+            Transparent and Shielded balances, along with the addresses they belong to are displayed
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Return the current ZEC balance in the wallet"
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+        })
+    }
+}
+
+struct PrintBalanceCommand {}
+impl Command for PrintBalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Show the current ZEC balance in the wallet
@@ -626,9 +675,7 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
-        })
+        RT.block_on(async move { lightclient.do_balance().await.to_string() })
     }
 }
 
@@ -689,9 +736,9 @@ struct AddressCommand {}
 impl Command for AddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            List current addresses in the wallet
+            List current addresses in the wallet, shielded excludes t-addresses.
             Usage:
-            address
+            addresses [shielded|orchard]
 
         "#}
     }
@@ -700,8 +747,29 @@ impl Command for AddressCommand {
         "List all addresses in the wallet"
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_addresses().await.pretty(2) })
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        use crate::lightclient::describe::UAReceivers;
+        match args.len() {
+            0 => RT.block_on(
+                async move { lightclient.do_addresses(UAReceivers::All).await.pretty(2) },
+            ),
+            1 => match args[0] {
+                "shielded" => RT.block_on(async move {
+                    lightclient
+                        .do_addresses(UAReceivers::Shielded)
+                        .await
+                        .pretty(2)
+                }),
+                "orchard" => RT.block_on(async move {
+                    lightclient
+                        .do_addresses(UAReceivers::Orchard)
+                        .await
+                        .pretty(2)
+                }),
+                _ => self.help().to_string(),
+            },
+            _ => self.help().to_string(),
+        }
     }
 }
 
@@ -724,15 +792,11 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let ufvk: UnifiedFullViewingKey = match lightclient
-            .wallet
-            .wallet_capability()
-            .unified_key_store()
-            .try_into()
-        {
-            Ok(ufvk) => ufvk,
-            Err(e) => return e.to_string(),
-        };
+        let ufvk: UnifiedFullViewingKey =
+            match (&lightclient.wallet.wallet_capability().unified_key_store).try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
         object! {
             "ufvk" => ufvk.encode(&lightclient.config().chain),
             "birthday" => RT.block_on(lightclient.wallet.get_birthday())
@@ -1247,7 +1311,7 @@ impl Command for ValueTransfersCommand {
             A value transfer is a group of all notes to a specific receiver in a transaction.
 
             Usage:
-            valuetransfers
+            valuetransfers [bool]
         "#}
     }
 
@@ -1256,12 +1320,53 @@ impl Command for ValueTransfersCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if !args.is_empty() {
+        if args.len() > 1 {
             return "Error: invalid arguments\nTry 'help valuetransfers' for correct usage and examples"
                 .to_string();
         }
 
-        RT.block_on(async move { format!("{}", lightclient.value_transfers().await) })
+        let newer_first = args
+            .first()
+            .map(|s| s.parse())
+            .unwrap_or(Ok(false))
+            .unwrap_or(false);
+
+        RT.block_on(
+            async move { format!("{}", lightclient.sorted_value_transfers(newer_first).await) },
+        )
+    }
+}
+
+struct MessagesFilterCommand {}
+impl Command for MessagesFilterCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            List memo-containing value transfers sent to/from wallet. If an address is provided,
+            only messages to/from that address will be provided. If a string is provided,
+            messages containing that string are displayed. Otherwise, all memos are displayed.
+            Currently, for received messages, this relies on the reply-to address contained in the memo.
+            A value transfer is a group of all notes to a specific receiver in a transaction.
+
+            Usage:
+            messages [address]/[string]
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List memos for this wallet."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return "Error: invalid arguments\nTry 'help messages' for correct usage and examples"
+                .to_string();
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.messages_containing(args.first().copied()).await)
+                .pretty(2)
+                .to_string()
+        })
     }
 }
 
@@ -1623,9 +1728,7 @@ impl Command for NotesCommand {
             Show all shielded notes and transparent coins in this wallet
             Usage:
             notes [all]
-
             If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
-
         "#}
     }
 
@@ -1751,6 +1854,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("clear", Box::new(ClearCommand {})),
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
+        ("print_balance", Box::new(PrintBalanceCommand {})),
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
@@ -1763,6 +1867,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
+        ("messages", Box::new(MessagesFilterCommand {})),
         (
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),

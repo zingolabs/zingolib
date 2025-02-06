@@ -35,7 +35,7 @@ impl LightWallet {
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
     }
-    /// parses a wallet as an testnet wallet, aimed at a default testnet server
+    /// parses a wallet as an mainnet wallet, aimed at a default mainnet server
     pub async fn unsafe_from_buffer_mainnet(data: &[u8]) -> Self {
         let config = crate::config::ZingoConfig::create_mainnet();
         Self::read_internal(data, &config)
@@ -81,12 +81,12 @@ pub async fn assert_wallet_capability_matches_seed(
     let wc = wallet.wallet_capability();
 
     // Compare USK
-    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store() else {
+    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
         panic!("Expected Unified Spending Key");
     };
     assert_eq!(
         usk.to_bytes(Era::Orchard),
-        UnifiedSpendingKey::try_from(expected_wc.unified_key_store())
+        UnifiedSpendingKey::try_from(&expected_wc.unified_key_store)
             .unwrap()
             .to_bytes(Era::Orchard)
     );
