@@ -6,12 +6,12 @@
 pub mod interrupts;
 pub mod scenarios;
 
-use crate::lightclient::describe::UAReceivers;
+// use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
-    OrchardNoteSummary, SaplingNoteSummary, SpendSummary, TransactionSummary,
-    TransactionSummaryInterface as _, TransparentCoinSummary,
+    NoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::notes::SpendStatus;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
@@ -28,7 +28,7 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use json::JsonValue;
-use log::debug;
+// use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
 
@@ -162,39 +162,18 @@ pub fn check_transaction_summary_equality(
         && first.value() == second.value()
         && first.fee() == second.fee()
         && first.zec_price() == second.zec_price()
-        && check_orchard_note_summary_equality(first.orchard_notes(), second.orchard_notes())
-        && check_sapling_note_summary_equality(first.sapling_notes(), second.sapling_notes())
+        && check_note_summary_equality(first.orchard_notes(), second.orchard_notes())
+        && check_note_summary_equality(first.sapling_notes(), second.sapling_notes())
         && check_transparent_coin_summary_equality(
             first.transparent_coins(),
             second.transparent_coins(),
         )
-        && first.outgoing_tx_data() == second.outgoing_tx_data()
+        && first.outgoing_orchard_notes() == second.outgoing_orchard_notes()
+        && first.outgoing_sapling_notes() == second.outgoing_sapling_notes()
 }
 
 /// TODO: doc comment
-fn check_orchard_note_summary_equality(
-    first: &[OrchardNoteSummary],
-    second: &[OrchardNoteSummary],
-) -> bool {
-    if first.len() != second.len() {
-        return false;
-    };
-    for i in 0..first.len() {
-        if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
-            && first[i].memo() == second[i].memo())
-        {
-            return false;
-        }
-    }
-    true
-}
-
-/// TODO: doc comment
-fn check_sapling_note_summary_equality(
-    first: &[SaplingNoteSummary],
-    second: &[SaplingNoteSummary],
-) -> bool {
+fn check_note_summary_equality(first: &[NoteSummary], second: &[NoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
     };
@@ -227,45 +206,46 @@ fn check_transparent_coin_summary_equality(
     true
 }
 
-fn check_spend_status_equality(first: SpendSummary, second: SpendSummary) -> bool {
+fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool {
     matches!(
         (first, second),
-        (SpendSummary::Unspent, SpendSummary::Unspent)
-            | (SpendSummary::Spent(_), SpendSummary::Spent(_))
+        (SpendStatus::Unspent, SpendStatus::Unspent)
+            | (SpendStatus::Spent(_), SpendStatus::Spent(_))
             | (
-                SpendSummary::TransmittedSpent(_),
-                SpendSummary::TransmittedSpent(_)
+                SpendStatus::TransmittedSpent(_),
+                SpendStatus::TransmittedSpent(_)
             )
-            | (SpendSummary::MempoolSpent(_), SpendSummary::MempoolSpent(_))
+            | (SpendStatus::MempoolSpent(_), SpendStatus::MempoolSpent(_))
     )
 }
 
-/// Send from sender to recipient and then sync the recipient
-pub async fn send_value_between_clients_and_sync(
-    manager: &RegtestManager,
-    sender: &LightClient,
-    recipient: &LightClient,
-    value: u64,
-    address_type: &str,
-) -> Result<String, String> {
-    debug!(
-        "recipient address is: {}",
-        &recipient.do_addresses(UAReceivers::All).await[0]["address"]
-    );
-    let txid = lightclient::from_inputs::quick_send(
-        sender,
-        vec![(
-            &crate::get_base_address_macro!(recipient, address_type),
-            value,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(manager, sender, 1).await?;
-    recipient.do_sync(false).await?;
-    Ok(txid.first().to_string())
-}
+// FIXME: zingo2
+// /// Send from sender to recipient and then sync the recipient
+// pub async fn send_value_between_clients_and_sync(
+//     manager: &RegtestManager,
+//     sender: &LightClient,
+//     recipient: &LightClient,
+//     value: u64,
+//     address_type: &str,
+// ) -> Result<String, String> {
+//     debug!(
+//         "recipient address is: {}",
+//         &recipient.do_addresses(UAReceivers::All).await[0]["address"]
+//     );
+//     let txid = lightclient::from_inputs::quick_send(
+//         sender,
+//         vec![(
+//             &crate::get_base_address_macro!(recipient, address_type),
+//             value,
+//             None,
+//         )],
+//     )
+//     .await
+//     .unwrap();
+//     increase_height_and_wait_for_client(manager, sender, 1).await?;
+//     recipient.do_sync(false).await?;
+//     Ok(txid.first().to_string())
+// }
 
 /// This function increases the chain height reliably (with polling) but
 /// it _also_ ensures that the client state is synced.

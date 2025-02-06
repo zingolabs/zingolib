@@ -2,12 +2,13 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
+use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::KeyError;
+use error::{KeyError, WalletError};
 use keys::unified::UnifiedKeyStore;
-use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::memo::Memo;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};
 use rand::rngs::OsRng;
@@ -22,27 +23,21 @@ use zingo_sync::{
 use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
 use std::{
-    io::{self, Error, ErrorKind, Read, Write},
+    io::{self, Read, Write},
     sync::Arc,
     time::SystemTime,
 };
 use tokio::sync::RwLock;
 
-use crate::config::ZingoConfig;
+use crate::config::ChainType;
 use zcash_encoding::Optional;
 
-use self::keys::unified::WalletCapability;
-
-use self::{
-    data::WalletZecPriceInfo, message::Message, transaction_context::TransactionContext,
-    tx_map::TxMap,
-};
+use self::{data::WalletZecPriceInfo, message::Message};
 
 pub mod data;
 pub mod error;
 pub mod keys;
 pub(crate) mod message;
-pub mod notes;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;
@@ -53,9 +48,11 @@ pub mod utils;
 //these mods contain pieces of the impl LightWallet
 pub mod describe;
 pub mod disk;
+pub mod notes;
 pub mod propose;
 pub mod send;
 pub mod sync;
+pub mod transaction;
 
 pub(crate) use send::SendProgress;
 
@@ -146,23 +143,23 @@ impl WalletOptions {
 
 /// Data used to initialize new instance of LightWallet
 pub enum WalletBase {
-    /// TODO: Add Doc Comment Here!
+    /// Generate a wallet with a new seed.
     FreshEntropy,
-    /// TODO: Add Doc Comment Here!
+    /// Generate a wallet from a seed (account index = 0).
     SeedBytes([u8; 32]),
-    /// TODO: Add Doc Comment Here!
+    /// Generate a wallet from a mnemonic phrase (account index = 0).
     MnemonicPhrase(String),
-    /// TODO: Add Doc Comment Here!
+    /// Generate a wallet from a mnemonic (account index = 0).
     Mnemonic(Mnemonic),
-    /// TODO: Add Doc Comment Here!
-    SeedBytesAndIndex([u8; 32], u32),
-    /// TODO: Add Doc Comment Here!
-    MnemonicPhraseAndIndex(String, u32),
-    /// TODO: Add Doc Comment Here!
-    MnemonicAndIndex(Mnemonic, u32),
-    /// Unified full viewing key
+    /// Generate a wallet from a seed and account index.
+    SeedBytesAndAccount([u8; 32], u32),
+    /// Generate a wallet from a mnemonic phrase and account index.
+    MnemonicPhraseAndAccount(String, u32),
+    /// Generate a wallet from a mnemonic and account index.
+    MnemonicAndAccount(Mnemonic, u32),
+    /// Generate a wallet from a unified full viewing key.
     Ufvk(String),
-    /// Unified spending key
+    /// Generate a wallet from a unified spending key.
     Usk(Vec<u8>),
 }
 
@@ -187,7 +184,8 @@ pub struct LightWallet {
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     /// Can be `None` in case of wallet without spending capability
     /// or created directly from spending keys.
-    // TODO: what is the meaning of account index here? the number of accounts keys are generated from the seed?
+    // TODO: we seem to support generating keys for a single account of choice which is stored here, this should be
+    // reworked to support multiple accounts during sync integration
     mnemonic: Option<(Mnemonic, u32)>,
     /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
@@ -197,15 +195,10 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
-
-    /// Local state needed to submit (compact)block-requests to the proxy
-    /// and interpret responses
-    pub transaction_context: TransactionContext, // TODO: to be removed
-
-    /// Wallet compact blocks
+    /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
-    pub wallet_transactions: HashMap<zcash_primitives::transaction::TxId, WalletTransaction>,
+    pub wallet_transactions: HashMap<TxId, WalletTransaction>,
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
@@ -216,27 +209,31 @@ pub struct LightWallet {
     pub sync_state: SyncState,
     /// Transparent addresses
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    /// Unified_addresses
+    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
+    /// Network type
+    pub network: ChainType,
 }
 
 impl LightWallet {
     /// Clears all the downloaded blocks and resets the state back to the initial block.
     /// After this, the wallet's initial state will need to be set
     /// and the wallet will need to be rescanned
-    pub async fn clear_all(&self) {
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .clear();
+    pub fn clear_all(&mut self) {
+        self.wallet_blocks.clear();
+        self.wallet_transactions.clear();
+        self.nullifier_map.sapling_mut().clear();
+        self.nullifier_map.orchard_mut().clear();
+        self.outpoint_map.clear();
+        self.sync_state = SyncState::new();
     }
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let ufvk: UnifiedFullViewingKey =
-            match (&self.wallet_capability().unified_key_store).try_into() {
-                Ok(ufvk) => ufvk,
-                Err(e) => return Err(e.to_string()),
-            };
+        let ufvk: UnifiedFullViewingKey = match (&self.unified_key_store).try_into() {
+            Ok(ufvk) => ufvk,
+            Err(e) => return Err(e.to_string()),
+        };
         let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
             ivk.to_external_ivk().prepare()
         } else {
@@ -261,116 +258,82 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
-        let (wc, mnemonic) = match base {
+    pub fn new(
+        network: ChainType,
+        wallet_base: WalletBase,
+        height: BlockHeight,
+    ) -> Result<Self, WalletError> {
+        let (unified_key_store, mnemonic) = match wallet_base {
             WalletBase::FreshEntropy => {
                 let mut seed_bytes = [0u8; 32];
                 // Create a random seed.
                 let mut system_rng = OsRng;
                 system_rng.fill(&mut seed_bytes);
-                return Self::new(config, WalletBase::SeedBytes(seed_bytes), height);
+                return Self::new(network, WalletBase::SeedBytes(seed_bytes), height);
             }
             WalletBase::SeedBytes(seed_bytes) => {
-                return Self::new(config, WalletBase::SeedBytesAndIndex(seed_bytes, 0), height);
-            }
-            WalletBase::SeedBytesAndIndex(seed_bytes, position) => {
-                let mnemonic = Mnemonic::from_entropy(seed_bytes).map_err(|e| {
-                    Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Error parsing phrase: {}", e),
-                    )
-                })?;
                 return Self::new(
-                    config,
-                    WalletBase::MnemonicAndIndex(mnemonic, position),
+                    network,
+                    WalletBase::SeedBytesAndAccount(seed_bytes, 0),
+                    height,
+                );
+            }
+            WalletBase::SeedBytesAndAccount(seed_bytes, account_index) => {
+                let mnemonic = Mnemonic::from_entropy(seed_bytes)?;
+                return Self::new(
+                    network,
+                    WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     height,
                 );
             }
             WalletBase::MnemonicPhrase(phrase) => {
                 return Self::new(
-                    config,
-                    WalletBase::MnemonicPhraseAndIndex(phrase, 0),
+                    network,
+                    WalletBase::MnemonicPhraseAndAccount(phrase, 0),
                     height,
                 );
             }
-            WalletBase::MnemonicPhraseAndIndex(phrase, position) => {
-                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)
-                    .and_then(|m| Mnemonic::from_entropy(m.entropy()))
-                    .map_err(|e| {
-                        Error::new(
-                            ErrorKind::InvalidData,
-                            format!("Error parsing phrase: {}", e),
-                        )
-                    })?;
-                // Notice that `.and_then(|m| Mnemonic::from_entropy(m.entropy()))`
-                // should be a no-op, but seems to be needed on android for some reason
-                // TODO: Test the this cfg actually works
-                //#[cfg(target_os = "android")]
+            WalletBase::MnemonicPhraseAndAccount(phrase, account_index) => {
+                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)?;
                 return Self::new(
-                    config,
-                    WalletBase::MnemonicAndIndex(mnemonic, position),
+                    network,
+                    WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     height,
                 );
             }
             WalletBase::Mnemonic(mnemonic) => {
-                return Self::new(config, WalletBase::MnemonicAndIndex(mnemonic, 0), height);
+                return Self::new(network, WalletBase::MnemonicAndAccount(mnemonic, 0), height);
             }
-            WalletBase::MnemonicAndIndex(mnemonic, position) => {
-                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, position)
-                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-                (wc, Some((mnemonic, position)))
+            WalletBase::MnemonicAndAccount(mnemonic, account_index) => {
+                let unified_key_store =
+                    UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_index)?;
+                (unified_key_store, Some((mnemonic, account_index)))
             }
             WalletBase::Ufvk(ufvk_encoded) => {
-                let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
-                    Error::new(ErrorKind::InvalidData, format!("Error parsing UFVK: {}", e))
-                })?;
-                (wc, None)
+                let unified_key_store = UnifiedKeyStore::new_from_ufvk(&network, ufvk_encoded)?;
+                (unified_key_store, None)
             }
             WalletBase::Usk(unified_spending_key) => {
-                let wc = WalletCapability::new_from_usk(unified_spending_key.as_slice()).map_err(
-                    |e| {
-                        Error::new(
-                            ErrorKind::InvalidData,
-                            format!("Error parsing unified spending key: {}", e),
-                        )
-                    },
-                )?;
-                (wc, None)
+                let unified_key_store =
+                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?;
+                (unified_key_store, None)
             }
         };
 
-        if let Err(e) = wc.new_address(wc.can_view(), false) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("could not create initial address: {e}"),
-            ));
-        };
-        let transaction_metadata_set = if wc.unified_key_store.is_spending_key() {
-            Arc::new(RwLock::new(TxMap::new_with_witness_trees(
-                wc.transparent_child_addresses().clone(),
-                wc.get_rejection_addresses().clone(),
-                wc.rejection_ivk().map_err(|e| {
-                    Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Error with transparent key: {e}"),
-                    )
-                })?,
-            )))
-        } else {
-            Arc::new(RwLock::new(TxMap::new_treeless(
-                wc.transparent_child_addresses().clone(),
-            )))
-        };
-        let transaction_context =
-            TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
+        let unified_addresses = AppendOnlyVec::new();
+        unified_addresses.push(unified_key_store.generate_unified_address(
+            0,
+            unified_key_store.can_view(),
+            false,
+        )?);
+
         Ok(Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            birthday: BlockHeight::from_u32(height.try_into().expect("should never overflow")),
+            birthday: BlockHeight::from_u32(height.into()),
             unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
-            transaction_context,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: zingo_sync::primitives::NullifierMap::new(),
@@ -378,6 +341,8 @@ impl LightWallet {
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             sync_state: zingo_sync::primitives::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
+            unified_addresses: AppendOnlyVec::new(),
+            network,
         })
     }
 
@@ -398,6 +363,8 @@ impl LightWallet {
     }
 
     // Set the previous send's status as an error or success
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
         let mut p = self.send_progress.write().await;
 

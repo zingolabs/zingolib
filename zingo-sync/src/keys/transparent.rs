@@ -125,7 +125,8 @@ fn derive_refund_address(
         .unwrap()
 }
 
-pub(crate) fn encode_address<P>(consensus_parameters: &P, address: TransparentAddress) -> String
+/// Encodes transparent address
+pub fn encode_address<P>(consensus_parameters: &P, address: TransparentAddress) -> String
 where
     P: consensus::Parameters,
 {

@@ -1,6 +1,6 @@
 //! All things needed to create, manaage, and use notes
 pub mod interface;
-pub use interface::OutputInterface;
+pub use interface::OutputInterface as OldOutputInterface;
 pub use interface::ShieldedNoteInterface;
 pub mod transparent;
 pub use transparent::TransparentOutput;
@@ -10,16 +10,140 @@ pub mod orchard;
 pub use orchard::OrchardNote;
 pub mod query;
 
-use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::TxId;
+use zingo_sync::primitives::OutputInterface;
+use zingo_sync::primitives::WalletTransaction;
 
-use crate::wallet::notes::query::OutputPoolQuery;
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use super::LightWallet;
+
+/// Spend status of an output
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum SpendStatus {
+    /// Output is not spent.
+    Unspent,
+    /// Output is pending spent.
+    /// The transaction consuming this output has been calculated.
+    CalculatedSpent(TxId),
+    /// Output is pending spent.
+    /// The transaction consuming this output has been transmitted.
+    TransmittedSpent(TxId),
+    /// Output is pending spent.
+    /// The transaction consuming this output has been detected in the mempool.
+    MempoolSpent(TxId),
+    /// Output is spent.
+    /// The transaction consuming this output is confirmed.
+    Spent(TxId),
+}
+
+impl std::fmt::Display for SpendStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpendStatus::Unspent => write!(f, "unspent"),
+            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated: spent in {}", txid),
+            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted: spent in {}", txid),
+            SpendStatus::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
+            SpendStatus::Spent(txid) => write!(f, "confirmed: spent in {}", txid),
+        }
+    }
+}
+
+impl LightWallet {
+    /// Returns [self::SpendStatus] for the given `output`.
+    pub fn output_spend_status(&self, output: &impl OutputInterface) -> SpendStatus {
+        if let Some(txid) = output.spending_transaction() {
+            match self
+                .wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(txid),
+                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
+                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
+                ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
+            }
+        } else {
+            SpendStatus::Unspent
+        }
+    }
+
+    /// Gets all outputs of a given type in the wallet.
+    pub(super) fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
+        self.wallet_transactions
+            .values()
+            .flat_map(|transaction| Op::transaction_outputs(transaction))
+            .collect()
+    }
+
+    /// Sum the values of all outputs in the wallet which match the given `query`.
+    pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
+        self.wallet_transactions
+            .values()
+            .fold(0, |acc, transaction| {
+                acc + self.sum_queried_transaction_output_values(transaction, query)
+            })
+    }
+
+    /// Sum the values of all outputs in the `transaction` which match the given `query`.
+    pub fn sum_queried_transaction_output_values(
+        &self,
+        transaction: &WalletTransaction,
+        query: OutputQuery,
+    ) -> u64 {
+        let mut sum = 0;
+        if query.transparent() {
+            for output in transaction.transparent_coins().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.sapling() {
+            for output in transaction.sapling_notes().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.orchard() {
+            for output in transaction.orchard_notes().iter() {
+                if self.query_output_spend_status(query.spend_status, output) {
+                    sum += output.value();
+                }
+            }
+        }
+        sum
+    }
+
+    /// Returns `true` if `output` spend status matches the `query`. Otherwise, returns `false`.
+    fn query_output_spend_status(
+        &self,
+        query: OutputSpendStatusQuery,
+        output: &impl OutputInterface,
+    ) -> bool {
+        if let Some(txid) = output.spending_transaction() {
+            match self
+                .wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Confirmed(_) => query.spent,
+                _confirmation_pending if query.pending_spent => true,
+                _ => false,
+            }
+        } else {
+            query.unspent
+        }
+    }
+}
+
 /// An interface for accessing all the common functionality of all the outputs
-#[enum_dispatch::enum_dispatch(OutputInterface)]
+#[enum_dispatch::enum_dispatch(OldOutputInterface)]
 #[non_exhaustive] // We can add new pools later
 #[derive(Clone, Debug)]
 pub enum Output {
@@ -79,11 +203,6 @@ impl Output {
                     .map(|output| Self::OrchardNote(output.clone())),
             )
             .collect()
-    }
-
-    /// this sums the value of a vec of outputs, ignoring marginal fees
-    pub fn sum_gross_value(list: Vec<Self>) -> u64 {
-        list.iter().fold(0, |total, output| total + output.value())
     }
 }
 
@@ -150,7 +269,7 @@ pub mod tests {
         mocks::default_txid,
         wallet::notes::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
-            transparent::mocks::TransparentOutputBuilder, OutputInterface,
+            transparent::mocks::TransparentOutputBuilder, OldOutputInterface as _,
         },
     };
 

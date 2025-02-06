@@ -188,7 +188,7 @@ pub(super) fn collect_transparent_output_ids(
     wallet_transactions
         .values()
         .flat_map(|tx| tx.transparent_coins())
-        .map(|coin| coin.output_id())
+        .map(|coin| coin.output_id)
         .collect()
 }
 
@@ -213,8 +213,8 @@ pub(super) fn update_spent_coins(
         .values_mut()
         .flat_map(|tx| tx.transparent_coins_mut())
         .for_each(|coin| {
-            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id()) {
-                coin.set_spending_transaction(Some(*txid));
+            if let Some((_, txid)) = transparent_spend_locators.get(&coin.output_id) {
+                coin.spending_transaction = Some(*txid);
             }
         });
 }

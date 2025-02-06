@@ -7,7 +7,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::wallet::notes::interface::OutputConstructor;
 
 use super::{
-    super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
+    super::data::TransactionRecord, query::OutputSpendStatusQuery, OldOutputInterface,
     ShieldedNoteInterface,
 };
 
@@ -41,7 +41,7 @@ pub struct OrchardNote {
     pub have_spending_key: bool,
 }
 
-impl OutputInterface for OrchardNote {
+impl OldOutputInterface for OrchardNote {
     fn pool_type(&self) -> PoolType {
         PoolType::Shielded(ShieldedProtocol::Orchard)
     }

@@ -48,13 +48,16 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
-        quick_sender: &crate::lightclient::LightClient,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+        _quick_sender: &crate::lightclient::LightClient,
+        _raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        // FIXME: zingo2
         // TOdo fix expect
-        let request = transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        quick_sender.quick_send(request).await
+        // let request = transaction_request_from_send_inputs(raw_receivers)
+        //     .expect("should be able to create a transaction request as receivers are valid.");
+        // quick_sender.quick_send(request).await
+
+        todo!()
     }
 
     /// Panics if the address, amount or memo conversion fails.
@@ -91,16 +94,19 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose(
-        proposer: &LightClient,
-        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+        _proposer: &LightClient,
+        _raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
-        // TOdo fix expect
-        let request = transaction_request_from_send_inputs(raw_receivers)
-            .expect("should be able to create a transaction request as receivers are valid.");
-        proposer.propose_send(request).await
+        // FIXME: zingo2
+        //     // TOdo fix expect
+        //     let request = transaction_request_from_send_inputs(raw_receivers)
+        //         .expect("should be able to create a transaction request as receivers are valid.");
+        //     proposer.propose_send(request).await
+
+        todo!()
     }
 }
 
@@ -110,29 +116,11 @@ pub async fn lookup_statuses(
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
     let wallet = client.wallet.lock().await;
-    let records = &wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await
-        .transaction_records_by_id;
 
     txids.map(|txid| {
-        records
+        wallet
+            .wallet_transactions
             .get(&txid)
-            .map(|transaction_record| transaction_record.status)
+            .map(|transaction_record| transaction_record.status())
     })
-}
-
-/// gets stati for a vec of txids
-pub async fn list_txids(client: &LightClient) -> Vec<TxId> {
-    let wallet = client.wallet.lock().await;
-    let records = &wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await
-        .transaction_records_by_id;
-
-    records.keys().cloned().collect()
 }

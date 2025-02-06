@@ -28,11 +28,15 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::{
+        self,
+        transparent::{self, TransparentAddressId},
+        KeyId,
+    },
     primitives::{
-        Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingOrchardNote, OutgoingSaplingNote,
-        OutputId, SaplingNote, SyncOutgoingNotes, TransparentCoin, WalletBlock, WalletNote,
-        WalletTransaction,
+        Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
+        OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
+        WalletBlock, WalletNote, WalletTransaction,
     },
     traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
     utils,
@@ -291,12 +295,12 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         }
     }
 
-    // TODO: consider adding nullifiers and transparent outpoint data for efficiency
-
     Ok(WalletTransaction::from_parts(
         transaction.txid(),
         transaction,
         confirmation_status,
+        0,    // TODO: add datetime
+        None, // TODO: implement
         transparent_coins,
         sapling_notes,
         orchard_notes,
@@ -448,7 +452,7 @@ fn add_recipient_unified_address<P, Nz>(
     outgoing_notes: &mut [OutgoingNote<Nz>],
 ) where
     P: consensus::Parameters + NetworkConstants,
-    OutgoingNote<Nz>: SyncOutgoingNotes,
+    OutgoingNote<Nz>: OutgoingNoteInterface,
 {
     for ua in unified_addresses {
         let ua_receivers = [
@@ -457,14 +461,14 @@ fn add_recipient_unified_address<P, Nz>(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),
-            utils::address_from_pubkeyhash(parameters, ua.transparent().unwrap()),
+            transparent::encode_address(parameters, *ua.transparent().unwrap()),
             ua.encode(parameters),
         ];
         outgoing_notes
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.set_recipient_ua(Some(ua.clone()));
+                note.set_recipient_unified_address(Some(ua.clone()));
             });
     }
 }
@@ -511,10 +515,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .iter()
         .map(|txin| &txin.prevout)
         .for_each(|outpoint| {
-            outpoint_map.insert(
-                OutputId::from_parts(*outpoint.txid(), outpoint.n() as usize),
-                (block_height, txid),
-            );
+            outpoint_map.insert(OutputId::from(outpoint), (block_height, txid));
         });
 }
 

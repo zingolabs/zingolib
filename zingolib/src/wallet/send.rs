@@ -2,10 +2,8 @@
 
 use log::error;
 use zcash_address::AddressKind;
-use zcash_client_backend::proposal::Proposal;
-use zcash_proofs::prover::LocalTxProver;
-
-use std::ops::DerefMut as _;
+// use zcash_client_backend::proposal::Proposal;
+// use zcash_proofs::prover::LocalTxProver;
 
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::UnifiedAddress;
@@ -46,6 +44,8 @@ impl SendProgress {
 
 impl LightWallet {
     // Reset the send progress status to blank
+    // FIXME: zingo2
+    #[allow(dead_code)]
     pub(crate) async fn reset_send_progress(&self) {
         let mut g = self.send_progress.write().await;
         let next_id = g.id + 1;
@@ -83,78 +83,81 @@ pub enum BuildTransactionError {
     NonTexMultiStep,
 }
 
-impl LightWallet {
-    pub(crate) async fn create_transaction<NoteRef>(
-        &self,
-        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<(), BuildTransactionError> {
-        if self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees()
-            .is_none()
-        {
-            return Err(BuildTransactionError::NoSpendCapability);
-        }
+// FIXME: zingo2
+// impl LightWallet {
+//     pub(crate) async fn create_transaction<NoteRef>(
+//         &self,
+//         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+//     ) -> Result<(), BuildTransactionError> {
+//         if self
+//             .transaction_context
+//             .transaction_metadata_set
+//             .read()
+//             .await
+//             .witness_trees()
+//             .is_none()
+//         {
+//             return Err(BuildTransactionError::NoSpendCapability);
+//         }
 
-        // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
+//         // Reset the progress to start. Any errors will get recorded here
+//         self.reset_send_progress().await;
 
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params()
-                .map_err(BuildTransactionError::SaplingParams)?;
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+//         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+//             crate::wallet::utils::read_sapling_params()
+//                 .map_err(BuildTransactionError::SaplingParams)?;
+//         let sapling_prover =
+//             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-        match proposal.steps().len() {
-            1 => {
-                self.create_transaction_helper(sapling_prover, proposal)
-                    .await
-            }
-            2 if proposal.steps()[1]
-                .transaction_request()
-                .payments()
-                .values()
-                .any(|payment| {
-                    matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
-                }) =>
-            {
-                self.create_transaction_helper(sapling_prover, proposal)
-                    .await
-            }
+//         match proposal.steps().len() {
+//             1 => {
+//                 self.create_transaction_helper(sapling_prover, proposal)
+//                     .await
+//             }
+//             2 if proposal.steps()[1]
+//                 .transaction_request()
+//                 .payments()
+//                 .values()
+//                 .any(|payment| {
+//                     matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
+//                 }) =>
+//             {
+//                 self.create_transaction_helper(sapling_prover, proposal)
+//                     .await
+//             }
 
-            _ => Err(BuildTransactionError::NonTexMultiStep),
-        }
-    }
+//             _ => Err(BuildTransactionError::NonTexMultiStep),
+//         }
+//     }
 
-    async fn create_transaction_helper<NoteRef>(
-        &self,
-        sapling_prover: LocalTxProver,
-        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<(), BuildTransactionError> {
-        let mut wallet_db = self
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-        let usk = &(&self.transaction_context.key.unified_key_store).try_into()?;
-        zcash_client_backend::data_api::wallet::create_proposed_transactions(
-            wallet_db.deref_mut(),
-            &self.transaction_context.config.chain,
-            &sapling_prover,
-            &sapling_prover,
-            usk,
-            zcash_client_backend::wallet::OvkPolicy::Sender,
-            proposal,
-            Some(self.wallet_capability().first_sapling_address()),
-        )?;
-        Ok(())
-    }
-}
+//     async fn create_transaction_helper<NoteRef>(
+//         &self,
+//         sapling_prover: LocalTxProver,
+//         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+//     ) -> Result<(), BuildTransactionError> {
+//         let mut wallet_db = self
+//             .transaction_context
+//             .transaction_metadata_set
+//             .write()
+//             .await;
+//         let usk = &(&self.transaction_context.key.unified_key_store).try_into()?;
+//         zcash_client_backend::data_api::wallet::create_proposed_transactions(
+//             wallet_db.deref_mut(),
+//             &self.transaction_context.config.chain,
+//             &sapling_prover,
+//             &sapling_prover,
+//             usk,
+//             zcash_client_backend::wallet::OvkPolicy::Sender,
+//             proposal,
+//             Some(self.wallet_capability().first_sapling_address()),
+//         )?;
+//         Ok(())
+//     }
+// }
 
 // TODO: move to a more suitable place
+// FIXME: zingo2
+#[allow(dead_code)]
 pub(crate) fn change_memo_from_transaction_request(
     request: &TransactionRequest,
     mut number_of_rejection_addresses: u32,

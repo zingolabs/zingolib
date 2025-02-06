@@ -8,7 +8,7 @@ use zcash_primitives::transaction::{components::OutPoint, TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::notes::{
-    interface::OutputConstructor, query::OutputSpendStatusQuery, OutputInterface,
+    interface::OutputConstructor, query::OutputSpendStatusQuery, OldOutputInterface,
 };
 use crate::wallet::transaction_record::TransactionRecord;
 
@@ -30,7 +30,7 @@ pub struct TransparentOutput {
     spend: Option<(TxId, ConfirmationStatus)>,
 }
 
-impl OutputInterface for TransparentOutput {
+impl OldOutputInterface for TransparentOutput {
     fn pool_type(&self) -> PoolType {
         PoolType::Transparent
     }

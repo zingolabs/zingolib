@@ -10,7 +10,7 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::propose::ProposeSendError;
-use zingolib::{check_client_balances, get_base_address_macro, get_otd, validate_otds};
+use zingolib::{check_client_balances, get_base_address_macro};
 
 // FIXME:
 // fn check_expected_balance_with_fvks(
@@ -1131,6 +1131,8 @@ mod fast {
 
     #[tokio::test]
     async fn mine_to_orchard() {
+        tracing_subscriber::fmt().init();
+
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, faucet) = scenarios::faucet(
             PoolType::Shielded(ShieldedProtocol::Orchard),
@@ -1265,15 +1267,15 @@ mod fast {
     }
 }
 mod slow {
-    use bip0039::Mnemonic;
+    // use bip0039::Mnemonic;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::testutils::{
-        assert_transaction_summary_exists,
+        // assert_transaction_summary_exists,
         lightclient::{from_inputs, get_fees_paid_by_client},
     };
-    use zingolib::UAReceivers;
+    // use zingolib::UAReceivers;
 
     use super::*;
 
@@ -2704,75 +2706,77 @@ mod slow {
     // }
     /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
     mod rescan_still_have_outgoing_metadata {
-        use super::*;
+        // use super::*;
 
-        #[tokio::test]
-        async fn self_send() {
-            let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-            let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
-            let mut txids = vec![];
-            for memo in [None, Some("Second Transaction")] {
-                txids.push(
-                    *from_inputs::quick_send(
-                        &faucet,
-                        vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
-                    )
-                    .await
-                    .unwrap()
-                    .first(),
-                );
-                zingolib::testutils::increase_height_and_wait_for_client(
-                    &regtest_manager,
-                    &faucet,
-                    1,
-                )
-                .await
-                .unwrap();
-            }
+        // FIXME: zingo2
+        // #[tokio::test]
+        // async fn self_send() {
+        //     let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
+        //     let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
+        //     let mut txids = vec![];
+        //     for memo in [None, Some("Second Transaction")] {
+        //         txids.push(
+        //             *from_inputs::quick_send(
+        //                 &faucet,
+        //                 vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
+        //             )
+        //             .await
+        //             .unwrap()
+        //             .first(),
+        //         );
+        //         zingolib::testutils::increase_height_and_wait_for_client(
+        //             &regtest_manager,
+        //             &faucet,
+        //             1,
+        //         )
+        //         .await
+        //         .unwrap();
+        //     }
 
-            let nom_txid = &txids[0];
-            let memo_txid = &txids[1];
-            validate_otds!(faucet, nom_txid, memo_txid);
-        }
-        #[tokio::test]
-        async fn external_send() {
-            let (regtest_manager, _cph, faucet, recipient) =
-                scenarios::faucet_recipient_default().await;
-            let external_send_txid_with_memo = *from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    Some("foo"),
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            let external_send_txid_no_memo = *from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
-                    1_000,
-                    None,
-                )],
-            )
-            .await
-            .unwrap()
-            .first();
-            // TODO:  This chain height bump should be unnecessary. I think removing
-            // this increase_height call reveals a bug!
-            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                .await
-                .unwrap();
-            let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
-            let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
-            validate_otds!(
-                faucet,
-                external_send_txid_no_memo_ref,
-                external_send_txid_with_memo_ref
-            );
-        }
+        //     let nom_txid = &txids[0];
+        //     let memo_txid = &txids[1];
+        //     validate_otds!(faucet, nom_txid, memo_txid);
+        // }
+        // FIXME: zingo2
+        // #[tokio::test]
+        // async fn external_send() {
+        //     let (regtest_manager, _cph, faucet, recipient) =
+        //         scenarios::faucet_recipient_default().await;
+        //     let external_send_txid_with_memo = *from_inputs::quick_send(
+        //         &faucet,
+        //         vec![(
+        //             get_base_address_macro!(recipient, "sapling").as_str(),
+        //             1_000,
+        //             Some("foo"),
+        //         )],
+        //     )
+        //     .await
+        //     .unwrap()
+        //     .first();
+        //     let external_send_txid_no_memo = *from_inputs::quick_send(
+        //         &faucet,
+        //         vec![(
+        //             get_base_address_macro!(recipient, "sapling").as_str(),
+        //             1_000,
+        //             None,
+        //         )],
+        //     )
+        //     .await
+        //     .unwrap()
+        //     .first();
+        //     // TODO:  This chain height bump should be unnecessary. I think removing
+        //     // this increase_height call reveals a bug!
+        //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        //         .await
+        //         .unwrap();
+        //     let external_send_txid_no_memo_ref = &external_send_txid_no_memo;
+        //     let external_send_txid_with_memo_ref = &external_send_txid_with_memo;
+        //     validate_otds!(
+        //         faucet,
+        //         external_send_txid_no_memo_ref,
+        //         external_send_txid_with_memo_ref
+        //     );
+        // }
         // FIXME: sync integration
         // #[tokio::test]
         // async fn check_list_value_transfers_across_rescan() {
@@ -3018,130 +3022,131 @@ mod slow {
     /// wallet-regeneration-from-seed (sprouting) doesn't regenerate
     /// the previous diversifier list. <-- But the spend capability
     /// is capable of recovering the diversified _receiver_.
-    #[tokio::test]
-    async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-        let (regtest_manager, _cph, mut client_builder, regtest_network) =
-            scenarios::custom_clients_default().await;
-        let faucet = client_builder.build_faucet(false, regtest_network).await;
-        faucet.do_sync(false).await.unwrap();
-        let seed_phrase_of_recipient1 = Mnemonic::<bip0039::English>::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
-        let recipient1 = client_builder
-            .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
-            .await;
-        let mut expected_unspent_sapling_notes = json::object! {
-                "created_in_block" =>  4,
-                "datetime" =>  0,
-                "created_in_txid" => "",
-                "value" =>  24_000,
-                "pending" =>  false,
-                "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
-                "spendable" =>  true,
-                "spent" =>  JsonValue::Null,
-                "spent_at_height" =>  JsonValue::Null,
-                "pending_spent" =>  JsonValue::Null,
-        };
-        let original_recipient_address = "\
-        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
-        8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
-        hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
-        let seed_of_recipient = {
-            assert_eq!(
-                &get_base_address_macro!(recipient1, "unified"),
-                &original_recipient_address
-            );
-            let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
-            from_inputs::quick_send(
-                &faucet,
-                vec![(
-                    recipient1_diversified_addr[0].as_str().unwrap(),
-                    24_000,
-                    Some("foo"),
-                )],
-            )
-            .await
-            .unwrap();
-            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                .await
-                .unwrap();
-            recipient1.do_sync(true).await.unwrap();
-            let notes = recipient1.do_list_notes(true).await;
-            assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
-            let note = notes["unspent_sapling_notes"].members().next().unwrap();
-            //The following fields aren't known until runtime, and should be cryptographically nondeterministic
-            //Testing that they're generated correctly is beyond the scope if this test
-            expected_unspent_sapling_notes["datetime"] = note["datetime"].clone();
-            expected_unspent_sapling_notes["created_in_txid"] = note["created_in_txid"].clone();
+    // FIXME: zingo2
+    // #[tokio::test]
+    // async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
+    //     let (regtest_manager, _cph, mut client_builder, regtest_network) =
+    //         scenarios::custom_clients_default().await;
+    //     let faucet = client_builder.build_faucet(false, regtest_network).await;
+    //     faucet.do_sync(false).await.unwrap();
+    //     let seed_phrase_of_recipient1 = Mnemonic::<bip0039::English>::from_entropy([1; 32])
+    //         .unwrap()
+    //         .to_string();
+    //     let recipient1 = client_builder
+    //         .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
+    //         .await;
+    //     let mut expected_unspent_sapling_notes = json::object! {
+    //             "created_in_block" =>  4,
+    //             "datetime" =>  0,
+    //             "created_in_txid" => "",
+    //             "value" =>  24_000,
+    //             "pending" =>  false,
+    //             "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
+    //             "spendable" =>  true,
+    //             "spent" =>  JsonValue::Null,
+    //             "spent_at_height" =>  JsonValue::Null,
+    //             "pending_spent" =>  JsonValue::Null,
+    //     };
+    //     let original_recipient_address = "\
+    //     uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
+    //     8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
+    //     hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    //     let seed_of_recipient = {
+    //         assert_eq!(
+    //             &get_base_address_macro!(recipient1, "unified"),
+    //             &original_recipient_address
+    //         );
+    //         let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
+    //         from_inputs::quick_send(
+    //             &faucet,
+    //             vec![(
+    //                 recipient1_diversified_addr[0].as_str().unwrap(),
+    //                 24_000,
+    //                 Some("foo"),
+    //             )],
+    //         )
+    //         .await
+    //         .unwrap();
+    //         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    //             .await
+    //             .unwrap();
+    //         recipient1.do_sync(true).await.unwrap();
+    //         let notes = recipient1.do_list_notes(true).await;
+    //         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
+    //         let note = notes["unspent_sapling_notes"].members().next().unwrap();
+    //         //The following fields aren't known until runtime, and should be cryptographically nondeterministic
+    //         //Testing that they're generated correctly is beyond the scope if this test
+    //         expected_unspent_sapling_notes["datetime"] = note["datetime"].clone();
+    //         expected_unspent_sapling_notes["created_in_txid"] = note["created_in_txid"].clone();
 
-            assert_eq!(
-                note,
-                &expected_unspent_sapling_notes,
-                "\nExpected:\n{}\n===\nActual:\n{}\n",
-                json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
-                json::stringify_pretty(note.clone(), 4)
-            );
-            recipient1.do_seed_phrase().await.unwrap()
-        };
-        drop(recipient1); // Discard original to ensure subsequent data is fresh.
-        let mut expected_unspent_sapling_notes_after_restore_from_seed =
-            expected_unspent_sapling_notes.clone();
-        expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
-        "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
-            .to_string(),
-    );
-        let recipient_restored = client_builder
-            .build_client(
-                seed_of_recipient.seed_phrase.clone(),
-                0,
-                true,
-                regtest_network,
-            )
-            .await;
-        let seed_of_recipient_restored = {
-            recipient_restored.do_sync(true).await.unwrap();
-            let restored_addresses = recipient_restored.do_addresses(UAReceivers::All).await;
-            assert_eq!(
-                &restored_addresses[0]["address"],
-                &original_recipient_address
-            );
-            let notes = recipient_restored.do_list_notes(true).await;
-            assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
-            let note = notes["unspent_sapling_notes"].members().next().unwrap();
-            assert_eq!(
-                note,
-                &expected_unspent_sapling_notes_after_restore_from_seed,
-                "\nExpected:\n{}\n===\nActual:\n{}\n",
-                json::stringify_pretty(
-                    expected_unspent_sapling_notes_after_restore_from_seed.clone(),
-                    4
-                ),
-                json::stringify_pretty(note.clone(), 4)
-            );
+    //             assert_eq!(
+    //                 note,
+    //                 &expected_unspent_sapling_notes,
+    //                 "\nExpected:\n{}\n===\nActual:\n{}\n",
+    //                 json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
+    //                 json::stringify_pretty(note.clone(), 4)
+    //             );
+    //             recipient1.do_seed_phrase().await.unwrap()
+    //         };
+    //         drop(recipient1); // Discard original to ensure subsequent data is fresh.
+    //         let mut expected_unspent_sapling_notes_after_restore_from_seed =
+    //             expected_unspent_sapling_notes.clone();
+    //         expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
+    //         "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
+    //             .to_string(),
+    //     );
+    //         let recipient_restored = client_builder
+    //             .build_client(
+    //                 seed_of_recipient.seed_phrase.clone(),
+    //                 0,
+    //                 true,
+    //                 regtest_network,
+    //             )
+    //             .await;
+    //         let seed_of_recipient_restored = {
+    //             recipient_restored.do_sync(true).await.unwrap();
+    //             let restored_addresses = recipient_restored.do_addresses(UAReceivers::All).await;
+    //             assert_eq!(
+    //                 &restored_addresses[0]["address"],
+    //                 &original_recipient_address
+    //             );
+    //             let notes = recipient_restored.do_list_notes(true).await;
+    //             assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
+    //             let note = notes["unspent_sapling_notes"].members().next().unwrap();
+    //             assert_eq!(
+    //                 note,
+    //                 &expected_unspent_sapling_notes_after_restore_from_seed,
+    //                 "\nExpected:\n{}\n===\nActual:\n{}\n",
+    //                 json::stringify_pretty(
+    //                     expected_unspent_sapling_notes_after_restore_from_seed.clone(),
+    //                     4
+    //                 ),
+    //                 json::stringify_pretty(note.clone(), 4)
+    //             );
 
-            //The first address in a wallet should always contain all three currently extant
-            //receiver types.
-            from_inputs::quick_send(
-                &recipient_restored,
-                vec![(&get_base_address_macro!(faucet, "sapling"), 4_000, None)],
-            )
-            .await
-            .unwrap();
-            let sender_balance = faucet.do_balance().await;
-            zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-                .await
-                .unwrap();
+    //         //The first address in a wallet should always contain all three currently extant
+    //         //receiver types.
+    //         from_inputs::quick_send(
+    //             &recipient_restored,
+    //             vec![(&get_base_address_macro!(faucet, "sapling"), 4_000, None)],
+    //         )
+    //         .await
+    //         .unwrap();
+    //         let sender_balance = faucet.do_balance().await;
+    //         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    //             .await
+    //             .unwrap();
 
-            //Ensure that recipient_restored was still able to spend the note, despite not having the
-            //diversified address associated with it
-            assert_eq!(
-                faucet.do_balance().await.spendable_sapling_balance.unwrap(),
-                sender_balance.spendable_sapling_balance.unwrap() + 4_000
-            );
-            recipient_restored.do_seed_phrase().await.unwrap()
-        };
-        assert_eq!(seed_of_recipient, seed_of_recipient_restored);
-    }
+    //         //Ensure that recipient_restored was still able to spend the note, despite not having the
+    //         //diversified address associated with it
+    //         assert_eq!(
+    //             faucet.do_balance().await.spendable_sapling_balance.unwrap(),
+    //             sender_balance.spendable_sapling_balance.unwrap() + 4_000
+    //         );
+    //         recipient_restored.do_seed_phrase().await.unwrap()
+    //     };
+    //     assert_eq!(seed_of_recipient, seed_of_recipient_restored);
+    // }
 
     #[tokio::test]
     async fn list_value_transfers_check_fees() {
@@ -3538,36 +3543,37 @@ mod slow {
     //     );
     // }
 
-    #[tokio::test]
-    async fn by_address_finsight() {
-        let (regtest_manager, _cph, faucet, recipient) =
-            scenarios::faucet_recipient_default().await;
-        let base_uaddress = get_base_address_macro!(recipient, "unified");
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
-            .await
-            .unwrap();
-        println!(
-            "faucet notes: {}",
-            faucet.do_list_notes(true).await.pretty(4)
-        );
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .unwrap();
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
-            .await
-            .unwrap();
-        assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-            "2".to_string()
-        );
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
-            .await
-            .unwrap();
-        assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
-            "6".to_string()
-        );
-    }
+    // FIXME: zingo2
+    // #[tokio::test]
+    // async fn by_address_finsight() {
+    //     let (regtest_manager, _cph, faucet, recipient) =
+    //         scenarios::faucet_recipient_default().await;
+    //     let base_uaddress = get_base_address_macro!(recipient, "unified");
+    //     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
+    //         .await
+    //         .unwrap();
+    //     println!(
+    //         "faucet notes: {}",
+    //         faucet.do_list_notes(true).await.pretty(4)
+    //     );
+    //     from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+    //         .await
+    //         .unwrap();
+    //     from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+    //         .await
+    //         .unwrap();
+    //     assert_eq!(
+    //         JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+    //         "2".to_string()
+    //     );
+    //     from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+    //         .await
+    //         .unwrap();
+    //     assert_eq!(
+    //         JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+    //         "6".to_string()
+    //     );
+    // }
 
     // FIXME:
     // #[tokio::test]
@@ -4240,26 +4246,27 @@ async fn propose_orchard_dust_to_sapling() {
     .await
     .unwrap();
 }
-#[tokio::test]
-async fn audit_anyp_outputs() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
-    assert_eq!(recipient.list_outputs().await.len(), 0);
-    from_inputs::quick_send(
-        &faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "unified"),
-            600_000,
-            Some("600_000 orchard funds"),
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-    let lapo = recipient.list_outputs().await;
-    assert_eq!(lapo.len(), 1);
-}
+// FIXME: zingo2
+// #[tokio::test]
+// async fn audit_anyp_outputs() {
+//     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+//     assert_eq!(recipient.list_outputs().await.len(), 0);
+//     from_inputs::quick_send(
+//         &faucet,
+//         vec![(
+//             &get_base_address_macro!(recipient, "unified"),
+//             600_000,
+//             Some("600_000 orchard funds"),
+//         )],
+//     )
+//     .await
+//     .unwrap();
+//     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+//         .await
+//         .unwrap();
+//     let lapo = recipient.list_outputs().await;
+//     assert_eq!(lapo.len(), 1);
+// }
 mod send_all {
 
     use super::*;

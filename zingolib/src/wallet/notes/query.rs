@@ -62,7 +62,7 @@ impl OutputSpendStatusQuery {
 /// Selects received notes by pool
 #[derive(Clone, Copy)]
 pub struct OutputPoolQuery {
-    /// will the query include transparent notes? (coins)
+    /// will the query include transparent coins?
     pub transparent: bool,
     /// will the query include sapling notes?
     pub sapling: bool,

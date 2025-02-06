@@ -4,40 +4,14 @@
 use bip0039::Mnemonic;
 use zcash_keys::keys::{Era, UnifiedSpendingKey};
 
-use crate::wallet::keys::unified::UnifiedKeyStore;
+use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
 
 use super::LightWallet;
 
 impl LightWallet {
     /// connects a wallet to a local regtest node.
-    pub async fn unsafe_from_buffer_regtest(data: &[u8]) -> Self {
-        // this step starts a TestEnvironment and picks a new port!
-        let lightwalletd_uri =
-            crate::testutils::scenarios::setup::TestEnvironmentGenerator::new(None)
-                .get_lightwalletd_uri();
-        let config = crate::config::load_clientconfig(
-            lightwalletd_uri,
-            None,
-            crate::config::ChainType::Regtest(crate::config::RegtestNetwork::all_upgrades_active()),
-        )
-        .unwrap();
-        Self::read_internal(data, &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap()
-    }
-    /// parses a wallet as an testnet wallet, aimed at a default testnet server
-    pub async fn unsafe_from_buffer_testnet(data: &[u8]) -> Self {
-        let config = crate::config::ZingoConfig::create_testnet();
-        Self::read_internal(data, &config)
-            .await
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap()
-    }
-    /// parses a wallet as an mainnet wallet, aimed at a default mainnet server
-    pub async fn unsafe_from_buffer_mainnet(data: &[u8]) -> Self {
-        let config = crate::config::ZingoConfig::create_mainnet();
-        Self::read_internal(data, &config)
+    pub async fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
+        Self::read_internal(data, network)
             .await
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
@@ -71,21 +45,20 @@ pub async fn assert_wallet_capability_matches_seed(
         0,
     );
 
-    let expected_wc = crate::wallet::keys::unified::WalletCapability::new_from_phrase(
-        &wallet.transaction_context.config,
+    let expected_keys = crate::wallet::keys::unified::UnifiedKeyStore::new_from_mnemonic(
+        &wallet.network,
         &expected_mnemonic.0,
         expected_mnemonic.1,
     )
     .unwrap();
-    let wc = wallet.wallet_capability();
 
     // Compare USK
-    let UnifiedKeyStore::Spend(usk) = &wc.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
         panic!("Expected Unified Spending Key");
     };
     assert_eq!(
         usk.to_bytes(Era::Orchard),
-        UnifiedSpendingKey::try_from(&expected_wc.unified_key_store)
+        UnifiedSpendingKey::try_from(&expected_keys)
             .unwrap()
             .to_bytes(Era::Orchard)
     );
@@ -96,10 +69,8 @@ pub async fn assert_wallet_capability_contains_n_triple_pool_receivers(
     wallet: &LightWallet,
     expected_num_addresses: usize,
 ) {
-    let wc = wallet.wallet_capability();
-
-    assert_eq!(wc.addresses().len(), expected_num_addresses);
-    for addr in wc.addresses().iter() {
+    assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
+    for addr in wallet.unified_addresses.iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());

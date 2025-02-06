@@ -7,7 +7,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::wallet::notes::interface::OutputConstructor;
 
 use super::{
-    super::data::TransactionRecord, query::OutputSpendStatusQuery, OutputInterface,
+    super::data::TransactionRecord, query::OutputSpendStatusQuery, OldOutputInterface,
     ShieldedNoteInterface,
 };
 
@@ -55,7 +55,7 @@ impl std::fmt::Debug for SaplingNote {
     }
 }
 
-impl OutputInterface for SaplingNote {
+impl OldOutputInterface for SaplingNote {
     fn pool_type(&self) -> PoolType {
         PoolType::Shielded(ShieldedProtocol::Sapling)
     }

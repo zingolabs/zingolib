@@ -1,6 +1,9 @@
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use crate::config::ChainType;
+use crate::lightclient::LightClient;
+
 use super::super::LightWallet;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
@@ -116,39 +119,50 @@ pub enum AbsurdAmountVersion {
 }
 
 impl NetworkSeedVersion {
-    /// loads test wallets
-    /// this function can be improved by a macro. even better would be to derive directly from the enum.
-    /// loads any one of the test wallets included in the examples
-    pub async fn load_example_wallet(&self) -> LightWallet {
+    /// Loads wallet from test wallet files.
+    // TODO: improve with macro
+    pub async fn load_example_wallet(&self, network: ChainType) -> LightWallet {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(version) => match version {
                     HospitalMuseumVersion::V27 => {
-                        LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                            "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
                 RegtestSeedVersion::AbandonAbandon(version) => match version {
                     AbandonAbandonVersion::V26 => {
-                        LightWallet::unsafe_from_buffer_regtest(include_bytes!(
-                            "examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
                 RegtestSeedVersion::AbsurdAmount(version) => match version {
                     AbsurdAmountVersion::OrchAndSapl => {
-                        LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
                         "examples/regtest/aadaalacaadaalacaadaalac/orch_and_sapl/zingo-wallet.dat"
-                    ))
+                    ),
+                        )
                         .await
                     }
                     AbsurdAmountVersion::OrchOnly => {
-                        LightWallet::unsafe_from_buffer_regtest(include_bytes!(
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
                             "examples/regtest/aadaalacaadaalacaadaalac/orch_only/zingo-wallet.dat"
-                        ))
+                        ),
+                        )
                         .await
                     }
                 },
@@ -156,82 +170,141 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(version) => match version {
                     ChimneyBetterVersion::V26 => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                            "examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                     ChimneyBetterVersion::V27 => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                            "examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                     ChimneyBetterVersion::V28 => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                            "examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                     ChimneyBetterVersion::Latest => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                            "examples/testnet/cbbhrwiilgbrababsshsmtpr/latest/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/testnet/cbbhrwiilgbrababsshsmtpr/latest/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
                 TestnetSeedVersion::MobileShuffle(version) => match version {
                     MobileShuffleVersion::Gab72a38b => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
                             "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
-                        ))
+                        ),
+                        )
                         .await
                     }
                     MobileShuffleVersion::G93738061a => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
                             "examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat"
-                        ))
+                        ),
+                        )
                         .await
                     }
                     MobileShuffleVersion::Latest => {
-                        LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                            "examples/testnet/mskmgdbhotbpetcjwcspgopp/latest/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/testnet/mskmgdbhotbpetcjwcspgopp/latest/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
                 TestnetSeedVersion::GloryGoddess => {
-                    LightWallet::unsafe_from_buffer_testnet(include_bytes!(
-                        "examples/testnet/glory_goddess/latest/zingo-wallet.dat"
-                    ))
+                    LightWallet::unsafe_from_buffer(
+                        network,
+                        include_bytes!("examples/testnet/glory_goddess/latest/zingo-wallet.dat"),
+                    )
                     .await
                 }
             },
             NetworkSeedVersion::Mainnet(seed) => match seed {
                 MainnetSeedVersion::VillageTarget(version) => match version {
                     VillageTargetVersion::V28 => {
-                        LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
-                            "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
                 MainnetSeedVersion::HotelHumor(version) => match version {
                     HotelHumorVersion::Gf0aaf9347 => {
-                        LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
                             "examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat"
-                        ))
+                        ),
+                        )
                         .await
                     }
                     HotelHumorVersion::Latest => {
-                        LightWallet::unsafe_from_buffer_mainnet(include_bytes!(
-                            "examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat"
-                        ))
+                        LightWallet::unsafe_from_buffer(
+                            network,
+                            include_bytes!(
+                                "examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat"
+                            ),
+                        )
                         .await
                     }
                 },
             },
         }
+    }
+
+    /// Loads light client from test wallet files.
+    // TODO: improve with macro
+    pub async fn load_example_wallet_with_client(&self) -> LightClient {
+        let config = match self {
+            NetworkSeedVersion::Regtest(_) => {
+                let lightwalletd_uri =
+                    crate::testutils::scenarios::setup::TestEnvironmentGenerator::new(None)
+                        .get_lightwalletd_uri();
+                crate::config::load_clientconfig(
+                    lightwalletd_uri,
+                    None,
+                    crate::config::ChainType::Regtest(
+                        crate::config::RegtestNetwork::all_upgrades_active(),
+                    ),
+                )
+                .unwrap()
+            }
+            NetworkSeedVersion::Testnet(_) => crate::config::ZingoConfig::create_testnet(),
+            NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
+        };
+
+        let wallet = self.load_example_wallet(config.chain).await;
+
+        LightClient::create_from_wallet_async(config, wallet)
+            .await
+            .unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     pub fn example_wallet_base(&self) -> String {

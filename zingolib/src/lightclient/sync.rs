@@ -2,7 +2,11 @@
 //! LightClient sync stuff.
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
+use std::time::Duration;
+
 use log::{debug, error};
+use zingo_sync::sync::sync;
+use zingo_sync::sync::sync_status;
 
 use super::LightClient;
 use super::SyncResult;
@@ -22,23 +26,54 @@ pub enum StartMempoolMonitorError {
 }
 
 impl LightClient {
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_sync(&self, _print_updates: bool) -> Result<SyncResult, String> {
-        todo!();
+    /// Sync the wallet to the latest state of the block chain.
+    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+        let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
+            .get_client()
+            .await
+            .unwrap();
+        let wallet = self.wallet.clone();
+        let network = self.config.chain;
+        let sync_handle = tokio::spawn(async move {
+            sync(client, &network, wallet).await.unwrap();
+        });
+
+        if print_updates {
+            let wallet = self.wallet.clone();
+            tokio::spawn(async move {
+                loop {
+                    let sync_status = sync_status(wallet.clone()).await;
+                    println!("{}", sync_status);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            });
+        }
+
+        sync_handle.await.unwrap();
+
+        let final_sync_state = sync_status(self.wallet.clone()).await;
+
+        Ok(SyncResult {
+            success: true,
+            latest_block: (final_sync_state
+                .scan_ranges
+                .last()
+                .expect("should be non-empty after syncing")
+                .block_range()
+                .end
+                - 1)
+            .into(),
+            total_blocks_synced: final_sync_state.scanned_blocks as u64,
+        })
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Clear the wallet state and rescan from wallet birthday.
     pub async fn do_rescan(&self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
-        self.clear_state().await;
+        self.wallet.lock().await.clear_all();
 
-        // Then, do a sync, which will force a full rescan from the initial state
-        let response = self.do_sync(true).await;
-
-        if response.is_ok() {
-            // self.save_internal_rust().await?;
-        }
+        let response = self.do_sync(false).await;
 
         debug!("Rescan finished");
 
@@ -61,8 +96,8 @@ pub mod test {
             log::error!("Error installing crypto provider: {:?}", e)
         };
 
-        let wallet = wallet_case.load_example_wallet().await;
-        let lc = LightClient::create_from_wallet_async(wallet).await.unwrap();
+        let lc = wallet_case.load_example_wallet_with_client().await;
+
         lc.do_sync(true).await.unwrap();
         println!("{:?}", lc.do_balance().await);
         lc

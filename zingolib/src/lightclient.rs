@@ -1,7 +1,7 @@
 //! TODO: Add Mod Description Here!
 
 use json::{array, object, JsonValue};
-use log::{debug, error};
+use log::error;
 use serde::Serialize;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::sync::{Mutex, RwLock};
@@ -12,7 +12,7 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::config::{ChainType, ZingoConfig};
+use crate::config::ZingoConfig;
 
 use crate::wallet::{
     keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
@@ -294,16 +294,13 @@ pub struct UserBalances {
 ///      *
 #[allow(dead_code)] // TODO: remove after sync integration
 pub struct LightClient {
-    /// URI for creating gRPC client to connect to server.
-    pub indexer_uri: Option<http::Uri>,
-    /// Network type.
-    pub network: ChainType,
+    // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     syncing: Arc<AtomicBool>, // TODO: add interrupt to sync engine
-    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>,
-    save_buffer: ZingoSaveBuffer,
+    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
+    save_buffer: ZingoSaveBuffer, // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
@@ -317,6 +314,7 @@ pub mod instantiation {
         runtime::Runtime,
         sync::{Mutex, RwLock},
     };
+    use zcash_primitives::consensus::BlockHeight;
 
     use crate::config::ZingoConfig;
 
@@ -327,15 +325,15 @@ pub mod instantiation {
         // toDo rework ZingoConfig.
 
         /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
-        pub async fn create_from_wallet_async(wallet: LightWallet) -> io::Result<Self> {
+        pub async fn create_from_wallet_async(
+            config: ZingoConfig,
+            wallet: LightWallet,
+        ) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer).await?;
-            let config = wallet.transaction_context.config.clone();
             Ok(LightClient {
-                indexer_uri: None,                          // TODO: not yet integrated
-                network: crate::config::ChainType::Mainnet, // TODO: not yet integrated
+                config,
                 wallet: Arc::new(Mutex::new(wallet)),
-                config: config.clone(),
                 syncing: Arc::new(AtomicBool::new(false)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
@@ -347,7 +345,7 @@ pub mod instantiation {
         /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
         pub fn create_from_wallet_base(
             wallet_base: WalletBase,
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             birthday: u64,
             overwrite: bool,
         ) -> io::Result<Self> {
@@ -361,7 +359,7 @@ pub mod instantiation {
         /// a spend authority.
         pub async fn create_from_wallet_base_async(
             wallet_base: WalletBase,
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             birthday: u64,
             overwrite: bool,
         ) -> io::Result<Self> {
@@ -377,11 +375,17 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
+            let lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
-                wallet_base,
-                birthday,
-            )?)
+                LightWallet::new(
+                    config.chain,
+                    wallet_base,
+                    BlockHeight::from_u32(birthday.try_into().expect("should never overflow")),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(ErrorKind::Other, format!("wallet creation failed: {}", e))
+                })?,
+            )
             .await?;
 
             lightclient
@@ -396,15 +400,21 @@ pub mod instantiation {
 
         /// TODO: Add Doc Comment Here!
         pub async fn create_unconnected(
-            config: &ZingoConfig,
+            config: &ZingoConfig, // TODO: take owned config not reference
             wallet_base: WalletBase,
             height: u64,
         ) -> io::Result<Self> {
-            let lightclient = LightClient::create_from_wallet_async(LightWallet::new(
+            let lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
-                wallet_base,
-                height,
-            )?)
+                LightWallet::new(
+                    config.chain,
+                    wallet_base,
+                    BlockHeight::from_u32(height.try_into().expect("should never overflow")),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(ErrorKind::Other, format!("wallet creation failed: {}", e))
+                })?,
+            )
             .await?;
             Ok(lightclient)
         }
@@ -459,16 +469,6 @@ pub mod propose;
 // other functions
 impl LightClient {
     /// TODO: Add Doc Comment Here!
-    pub async fn clear_state(&self) {
-        let wallet = self.wallet.lock().await;
-
-        // First, clear the state from the wallet
-        wallet.clear_all().await;
-
-        debug!("Cleared wallet state");
-    }
-
-    /// TODO: Add Doc Comment Here!
     pub fn config(&self) -> &ZingoConfig {
         &self.config
     }
@@ -517,7 +517,7 @@ impl LightClient {
         }
     }
 
-    /// Create a new address, deriving it from the seed.
+    /// Generates a new unified address from the given `addr_type`.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
@@ -530,8 +530,8 @@ impl LightClient {
             .wallet
             .lock()
             .await
-            .wallet_capability()
-            .new_address(desired_receivers, false)?;
+            .generate_unified_address(desired_receivers)
+            .map_err(|e| e.to_string())?;
 
         // self.save_internal_rust().await?;
 
@@ -561,6 +561,8 @@ impl LightClient {
     /// unspent
     /// spend_is_pending
     /// spend_is_confirmed
+    // FIXME: zingo2
+    #[allow(dead_code)]
     fn unspent_pending_spent(
         &self,
         note: JsonValue,
