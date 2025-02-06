@@ -1,7 +1,7 @@
 //! LightClient function do_propose generates a proposal to send to specified addresses.
 
 use zcash_address::ZcashAddress;
-// use zcash_client_backend::zip321::TransactionRequest;
+use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 use crate::config::ChainType;
@@ -13,7 +13,7 @@ use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
-// use crate::data::proposal::ZingoProposal;
+use crate::data::proposal::ZingoProposal;
 // use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
@@ -35,30 +35,29 @@ impl LightClient {
         receivers.push(dev_donation_receiver);
     }
 
-    // FIXME: zingo2
-    // /// Stores a proposal in the `latest_proposal` field of the LightClient.
-    // /// This field must be populated in order to then send a transaction.
-    // async fn store_proposal(&self, proposal: ZingoProposal) {
-    //     let mut latest_proposal_lock = self.latest_proposal.write().await;
-    //     *latest_proposal_lock = Some(proposal);
-    // }
+    /// Stores a proposal in the `latest_proposal` field of the LightClient.
+    /// This field must be populated in order to then send a transaction.
+    async fn store_proposal(&self, proposal: ZingoProposal) {
+        let mut latest_proposal_guard = self.latest_proposal.write().await;
+        *latest_proposal_guard = Some(proposal);
+    }
 
-    // FIXME: zingo2
-    // /// Creates and stores a proposal from a transaction request.
-    // pub async fn propose_send(
-    //     &self,
-    //     request: TransactionRequest,
-    // ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
-    //     let proposal = self
-    //         .wallet
-    //         .lock()
-    //         .await
-    //         .create_send_proposal(request)
-    //         .await?;
-    //     self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-    //         .await;
-    //     Ok(proposal)
-    // }
+    /// Creates and stores a proposal from a transaction request.
+    pub async fn propose_send(
+        &self,
+        request: TransactionRequest,
+    ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_send_proposal(request)
+            .await?;
+        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
+            .await;
+
+        Ok(proposal)
+    }
 
     // /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(

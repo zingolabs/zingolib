@@ -156,14 +156,13 @@ pub enum BuildTransactionError {
 // }
 
 // TODO: move to a more suitable place
-// FIXME: zingo2
-#[allow(dead_code)]
+// TODO: only need to encode highest used refund address index, not all of them
 pub(crate) fn change_memo_from_transaction_request(
     request: &TransactionRequest,
-    mut number_of_rejection_addresses: u32,
+    mut refund_address_count: u32,
 ) -> MemoBytes {
     let mut recipient_uas = Vec::new();
-    let mut rejection_address_indexes = Vec::new();
+    let mut refund_address_indexes = Vec::new();
     for payment in request.payments().values() {
         match payment.recipient_address().kind() {
             AddressKind::Unified(ua) => {
@@ -172,16 +171,16 @@ pub(crate) fn change_memo_from_transaction_request(
                 }
             }
             AddressKind::Tex(_) => {
-                rejection_address_indexes.push(number_of_rejection_addresses);
+                refund_address_indexes.push(refund_address_count);
 
-                number_of_rejection_addresses += 1;
+                refund_address_count += 1;
             }
             _ => (),
         }
     }
     let uas_bytes = match create_wallet_internal_memo_version_1(
         recipient_uas.as_slice(),
-        rejection_address_indexes.as_slice(),
+        refund_address_indexes.as_slice(),
     ) {
         Ok(bytes) => bytes,
         Err(e) => {

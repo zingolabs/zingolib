@@ -53,6 +53,7 @@ pub mod propose;
 pub mod send;
 pub mod sync;
 pub mod transaction;
+mod zcb_traits;
 
 pub(crate) use send::SendProgress;
 

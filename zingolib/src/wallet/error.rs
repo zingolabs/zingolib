@@ -1,7 +1,8 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
+use zcash_client_backend::wallet::NoteId;
 use zcash_keys::keys::DerivationError;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
@@ -125,4 +126,18 @@ impl From<bip32::Error> for KeyError {
     fn from(value: bip32::Error) -> Self {
         Self::KeyDerivationError(DerivationError::Transparent(value))
     }
+}
+
+/// Error type used by InputSource trait
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum InputSourceError {
+    /// No witness position found for note. Note cannot be spent.
+    #[error("No witness position found for note. Note cannot be spent: {0:?}")]
+    WitnessPositionNotFound(NoteId),
+    /// Value outside the valid range of zatoshis
+    #[error("Value outside valid range of zatoshis. {0:?}")]
+    InvalidValue(zcash_primitives::transaction::components::amount::BalanceError),
+    /// Wallet data is out of date
+    #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
+    MissingOutputIndexes(Vec<(TxId, BlockHeight)>),
 }

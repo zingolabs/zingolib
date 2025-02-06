@@ -877,66 +877,65 @@ impl Command for DecryptMessageCommand {
     }
 }
 
-// FIXME: zingo2
-// struct SendCommand {}
-// impl Command for SendCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Propose a transfer of ZEC to the given address(es).
-//             The fee required to send this transaction will be added to the proposal and displayed to the user.
-//             The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
+struct SendCommand {}
+impl Command for SendCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Propose a transfer of ZEC to the given address(es).
+            The fee required to send this transaction will be added to the proposal and displayed to the user.
+            The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
 
-//             Usage:
-//                 send <address> <amount in zatoshis> "<optional memo>"
-//                 OR
-//                 send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-//             Example:
-//                 send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-//                 confirm
+            Usage:
+                send <address> <amount in zatoshis> "<optional memo>"
+                OR
+                send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
+            Example:
+                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+                confirm
 
-//         "#}
-//     }
+        "#}
+    }
 
-//     fn short_help(&self) -> &'static str {
-//         "Propose a transfer of ZEC to the given address(es) and display a proposal for confirmation."
-//     }
+    fn short_help(&self) -> &'static str {
+        "Propose a transfer of ZEC to the given address(es) and display a proposal for confirmation."
+    }
 
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         let receivers = match utils::parse_send_args(args) {
-//             Ok(receivers) => receivers,
-//             Err(e) => {
-//                 return format!(
-//                     "Error: {}\nTry 'help send' for correct usage and examples.",
-//                     e
-//                 )
-//             }
-//         };
-//         let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
-//             Ok(request) => request,
-//             Err(e) => {
-//                 return format!(
-//                     "Error: {}\nTry 'help send' for correct usage and examples.",
-//                     e
-//                 )
-//             }
-//         };
-//         RT.block_on(async move {
-//             match lightclient.propose_send(request).await {
-//                 Ok(proposal) => {
-//                     let fee = match proposal::total_fee(&proposal) {
-//                         Ok(fee) => fee,
-//                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-//                     };
-//                     object! { "fee" => fee.into_u64() }
-//                 }
-//                 Err(e) => {
-//                     object! { "error" => e.to_string() }
-//                 }
-//             }
-//             .pretty(2)
-//         })
-//     }
-// }
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let receivers = match utils::parse_send_args(args) {
+            Ok(receivers) => receivers,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
+            Ok(request) => request,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help send' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        RT.block_on(async move {
+            match lightclient.propose_send(request).await {
+                Ok(proposal) => {
+                    let fee = match crate::data::proposal::total_fee(&proposal) {
+                        Ok(fee) => fee,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    object! { "fee" => fee.into_u64() }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
 
 // FIXME: zingo2
 // struct SendAllCommand {}
@@ -1854,7 +1853,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
-        // ("send", Box::new(SendCommand {})),
+        ("send", Box::new(SendCommand {})),
         // ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
