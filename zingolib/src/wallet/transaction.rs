@@ -1,8 +1,7 @@
-use zcash_client_backend::{wallet::NoteId, ShieldedProtocol};
 use zcash_primitives::transaction::components::Amount;
 use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
-use crate::ShieldedDomain;
+use crate::WalletDomain;
 
 use super::{
     error::{FeeError, KindError},
@@ -89,33 +88,31 @@ impl LightWallet {
             .expect("fee should not be negative"))
     }
 
+    /// Returns all spendable outputs of the specified pool in the given `transaction`.
+    ///
+    /// Any output IDs in `exclude` will not be returned.
     // TODO: this is a method on the wallet so we can implement checking the witness can be constructed also
-    pub(crate) fn transaction_spendable_notes<D: ShieldedDomain>(
+    pub(crate) fn transaction_spendable_outputs<'a, D>(
         &self,
-        sources: &[ShieldedProtocol],
-        exclude: &[NoteId],
-        transaction: &WalletTransaction,
-    ) {
-        if sources.contains(&D::SHIELDED_PROTOCOL) {
-            D::Output::transaction_outputs(transaction)
-                .iter()
-                .filter_map(|note| {
-                    if note.spending_transaction().is_none() {
-                        let id = NoteId::new(
-                            transaction.txid(),
-                            D::SHIELDED_PROTOCOL,
-                            note.output_id().output_index() as u16,
-                        );
-                        if !exclude.contains(&id) {
-                            Some((id, note.value()))
-                        } else {
-                            None
-                        }
-                    } else {
+        transaction: &'a WalletTransaction,
+        exclude: &'a [OutputId],
+    ) -> impl Iterator<Item = &'a D::Output> + 'a
+    where
+        D: WalletDomain,
+        D::Output: 'a,
+    {
+        D::Output::transaction_outputs(transaction)
+            .iter()
+            .filter_map(|output| {
+                if output.spending_transaction().is_none() {
+                    if exclude.contains(&output.output_id()) {
                         None
+                    } else {
+                        Some(output)
                     }
-                });
-            // TODO: return iterator or empty if else
-        }
+                } else {
+                    None
+                }
+            })
     }
 }

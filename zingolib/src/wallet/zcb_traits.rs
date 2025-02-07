@@ -8,7 +8,7 @@ use zcash_client_backend::{
         scanning::ScanRange, Account, BlockMetadata, InputSource, NullifierQuery, SpendableNotes,
         TransactionDataRequest, WalletRead, WalletSummary,
     },
-    wallet::{NoteId, TransparentAddressMetadata, WalletTransparentOutput},
+    wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
     ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
@@ -19,11 +19,20 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
+        fees::zip317::MARGINAL_FEE,
         Transaction, TxId,
     },
 };
 
-use super::{error::WalletError, LightWallet};
+use super::{
+    error::{InputSourceError, WalletError},
+    LightWallet,
+};
+
+enum RemainingNeeded {
+    Positive(NonNegativeAmount),
+    GracelessChangeAmount(NonNegativeAmount),
+}
 
 pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 
@@ -240,6 +249,8 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 
+    // TODO: rework to operate on notes themselves so its not needed to find them in the wallet and more info is
+    // available for advanced selection
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
@@ -248,13 +259,8 @@ impl InputSource for LightWallet {
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let mut unselected = self
-            .get_spendable_note_ids_and_values(sources, anchor_height, exclude)
-            .map_err(InputSourceError::MissingOutputIndexes)?
-            .into_iter()
-            .map(|(id, value)| NonNegativeAmount::from_u64(value).map(|value| (id, value)))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(InputSourceError::InvalidValue)?;
+        let mut unselected =
+            self.get_spendable_note_ids_and_values(sources, anchor_height, exclude);
 
         unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
         let dust_spendable_index =
@@ -272,12 +278,13 @@ impl InputSource for LightWallet {
             let selected_notes_total_value = selected
                 .iter()
                 .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
-                .ok_or(InputSourceError::InvalidValue(BalanceError::Overflow))?;
+                .ok_or(InputSourceError::InvalidValue(
+                    zcash_primitives::transaction::components::amount::BalanceError::Overflow,
+                ))?;
             let updated_target_value =
                 match calculate_remaining_needed(target_value, selected_notes_total_value) {
                     RemainingNeeded::Positive(updated_target_value) => updated_target_value,
                     RemainingNeeded::GracelessChangeAmount(_change) => {
-                        //println!("{:?}", change);
                         break;
                     }
                 };
@@ -339,17 +346,18 @@ impl InputSource for LightWallet {
 
         // transform each NoteId to a ReceivedNote
         selected.iter().try_for_each(|(id, _value)| {
-            let transaction_record = self
+            let transaction = self
+                .wallet_transactions
                 .get(id.txid())
                 .expect("should exist as note_id is created from the record itself");
             let output_index = id.output_index() as u32;
             match id.protocol() {
-                zcash_client_backend::ShieldedProtocol::Sapling => transaction_record
+                ShieldedProtocol::Sapling => transaction
                     .get_received_note::<SaplingDomain>(output_index)
                     .map(|received_note| {
                         selected_sapling.push(received_note);
                     }),
-                zcash_client_backend::ShieldedProtocol::Orchard => transaction_record
+                ShieldedProtocol::Orchard => transaction
                     .get_received_note::<OrchardDomain>(output_index)
                     .map(|received_note| {
                         selected_orchard.push(received_note);
@@ -359,8 +367,6 @@ impl InputSource for LightWallet {
         })?;
 
         Ok(SpendableNotes::new(selected_sapling, selected_orchard))
-
-        // unimplemented!()
     }
 
     fn get_unspent_transparent_output(
@@ -377,5 +383,32 @@ impl InputSource for LightWallet {
         _min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
         unimplemented!()
+    }
+}
+
+/// Calculate remaining difference between target and selected.
+/// There are two mutually exclusive cases:
+///    (Change) There's no more needed so we've selected 0 or more change
+///    (Positive) We need > 0 more value.
+/// This function represents the NonPositive case as None, which then serves to signal a break in the note selection
+/// for where this helper is uniquely called.
+fn calculate_remaining_needed(
+    target_value: NonNegativeAmount,
+    selected_value: NonNegativeAmount,
+) -> RemainingNeeded {
+    if let Some(amount) = target_value - selected_value {
+        if amount == NonNegativeAmount::ZERO {
+            // Case (Change) target_value == total_selected_value
+            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
+        } else {
+            // Case (Positive) target_value > total_selected_value
+            RemainingNeeded::Positive(amount)
+        }
+    } else {
+        // Case (Change) target_value < total_selected_value
+        // Return the non-zero change quantity
+        RemainingNeeded::GracelessChangeAmount(
+            (selected_value - target_value).expect("This is guaranteed positive"),
+        )
     }
 }

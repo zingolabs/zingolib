@@ -221,6 +221,7 @@ pub struct OutputId {
     /// ID of associated transaction
     txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
+    // TODO: change to u16
     output_index: usize,
 }
 

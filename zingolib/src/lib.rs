@@ -51,11 +51,11 @@ pub trait WalletDomain {
     type Output: zingo_sync::primitives::OutputInterface;
 }
 
-pub trait ShieldedDomain: WalletDomain {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
+// pub trait ShieldedDomain: WalletDomain {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol;
 
-    type Note: zingo_sync::primitives::NoteInterface;
-}
+//     type Note: zingo_sync::primitives::NoteInterface;
+// }
 
 pub(crate) struct Transparent {}
 
@@ -73,11 +73,11 @@ impl WalletDomain for Sapling {
     type Output = zingo_sync::primitives::SaplingNote;
 }
 
-impl ShieldedDomain for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+// impl ShieldedDomain for Sapling {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
-    type Note = zingo_sync::primitives::SaplingNote;
-}
+//     type Note = zingo_sync::primitives::SaplingNote;
+// }
 
 pub(crate) struct Orchard {}
 
@@ -87,8 +87,8 @@ impl WalletDomain for Orchard {
     type Output = zingo_sync::primitives::OrchardNote;
 }
 
-impl ShieldedDomain for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+// impl ShieldedDomain for Orchard {
+//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
-    type Note = zingo_sync::primitives::OrchardNote;
-}
+//     type Note = zingo_sync::primitives::OrchardNote;
+// }

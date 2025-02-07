@@ -13,6 +13,9 @@ pub enum WalletError {
     /// Mnemonic error
     #[error("{0}")]
     MnemonicError(#[from] bip0039::Error),
+    /// Input source error
+    #[error("{0}")]
+    InputSourceError(#[from] InputSourceError),
 }
 
 /// Errors associated with calculating transaction fee
@@ -136,7 +139,7 @@ pub enum InputSourceError {
     WitnessPositionNotFound(NoteId),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
-    InvalidValue(zcash_primitives::transaction::components::amount::BalanceError),
+    InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
     /// Wallet data is out of date
     #[error("Output index data is missing! Wallet data is out of date, please rescan.")]
     MissingOutputIndexes(Vec<(TxId, BlockHeight)>),

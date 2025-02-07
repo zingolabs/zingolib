@@ -1,28 +1,33 @@
 //! All things needed to create, manaage, and use notes
-pub mod interface;
-pub use interface::OutputInterface as OldOutputInterface;
-pub use interface::ShieldedNoteInterface;
-pub mod transparent;
-pub use transparent::TransparentOutput;
-pub mod sapling;
-pub use sapling::SaplingNote;
-pub mod orchard;
-pub use orchard::OrchardNote;
-pub mod query;
 
 use zcash_client_backend::wallet::NoteId;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::TxId;
+use zingo_sync::primitives::OutputId;
 use zingo_sync::primitives::OutputInterface;
 use zingo_sync::primitives::WalletTransaction;
 
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
-use crate::ShieldedDomain;
+use crate::Orchard;
+use crate::Sapling;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
+
+pub use interface::OutputInterface as OldOutputInterface;
+pub use interface::ShieldedNoteInterface;
+pub use orchard::OrchardNote;
+pub use sapling::SaplingNote;
+pub use transparent::TransparentOutput;
+
+pub mod interface;
+pub mod orchard;
+pub mod query;
+pub mod sapling;
+pub mod transparent;
 
 /// Spend status of an output
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -146,12 +151,18 @@ impl LightWallet {
     }
 
     /// Returns a list of spendable [`zcash_client_backend::wallet::NoteId`]s with associated note values
+    // TODO: refactor to use a method that gets all spendable outputs of a specified pool and iterate over sources
     pub(crate) fn get_spendable_note_ids_and_values(
         &self,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
         exclude: &[NoteId],
-    ) -> Vec<(NoteId, u64)> {
+    ) -> Vec<(NoteId, NonNegativeAmount)> {
+        let exclude = exclude
+            .iter()
+            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .collect::<Vec<_>>();
+
         self.wallet_transactions
             .values()
             .flat_map(|transaction| {
@@ -161,32 +172,38 @@ impl LightWallet {
                 {
                     let mut spendable_notes = vec![];
                     if sources.contains(&ShieldedProtocol::Sapling) {
-                        transaction.sapling_notes().iter().for_each(|note| {
-                            if note.spending_transaction().is_none() {
-                                let id = NoteId::new(
-                                    transaction.txid(),
-                                    ShieldedProtocol::Sapling,
-                                    note.output_id().output_index() as u16,
-                                );
-                                if !exclude.contains(&id) {
-                                    spendable_notes.push((id, note.value()));
-                                }
-                            }
-                        });
+                        let mut spendable_sapling_notes = self
+                            .transaction_spendable_outputs::<Sapling>(transaction, &exclude)
+                            .map(|note| {
+                                (
+                                    NoteId::new(
+                                        transaction.txid(),
+                                        ShieldedProtocol::Sapling,
+                                        note.output_id().output_index() as u16,
+                                    ),
+                                    NonNegativeAmount::from_u64(note.value()).expect("values should be checked to be in valid range on note creation"),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+
+                        spendable_notes.append(&mut spendable_sapling_notes);
                     }
                     if sources.contains(&ShieldedProtocol::Orchard) {
-                        transaction.orchard_notes().iter().for_each(|note| {
-                            if note.spending_transaction().is_none() {
-                                let id = NoteId::new(
-                                    transaction.txid(),
-                                    ShieldedProtocol::Orchard,
-                                    note.output_id().output_index() as u16,
-                                );
-                                if !exclude.contains(&id) {
-                                    spendable_notes.push((id, note.value()));
-                                }
-                            }
-                        });
+                        let mut spendable_orchard_notes = self
+                            .transaction_spendable_outputs::<Orchard>(transaction, &exclude)
+                            .map(|note| {
+                                (
+                                    NoteId::new(
+                                        transaction.txid(),
+                                        ShieldedProtocol::Orchard,
+                                        note.output_id().output_index() as u16,
+                                    ),
+                                    NonNegativeAmount::from_u64(note.value()).expect("values should be checked to be in valid range on note creation"),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+
+                        spendable_notes.append(&mut spendable_orchard_notes);
                     }
 
                     spendable_notes
