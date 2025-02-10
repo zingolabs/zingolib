@@ -3,6 +3,7 @@
 
 use std::{collections::HashMap, num::NonZeroU32, ops::Range};
 
+use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         scanning::ScanRange, Account, BlockMetadata, InputSource, NullifierQuery, SpendableNotes,
@@ -14,8 +15,8 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::BlockHeight,
-    legacy::TransparentAddress,
+    consensus::{BlockHeight, Parameters as _},
+    legacy::{keys::NonHardenedChildIndex, TransparentAddress},
     memo::Memo,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
@@ -23,7 +24,7 @@ use zcash_primitives::{
     },
 };
 use zingo_sync::{
-    keys::transparent,
+    keys::transparent::{self, TransparentScope},
     primitives::{NoteInterface, OutputId, OutputInterface},
 };
 
@@ -59,7 +60,7 @@ impl WalletRead for LightWallet {
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(vec![(Self::AccountId::ZERO)])
     }
 
     fn get_account(
@@ -96,7 +97,7 @@ impl WalletRead for LightWallet {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        unimplemented!()
+        Ok(Some(ZingoAccount(Self::AccountId::ZERO, ufvk.clone())))
     }
 
     fn get_current_address(
@@ -122,7 +123,7 @@ impl WalletRead for LightWallet {
     }
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        unimplemented!()
+        Ok(self.sync_state.wallet_height())
     }
 
     fn get_block_hash(&self, block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
@@ -153,11 +154,23 @@ impl WalletRead for LightWallet {
         &self,
         min_confirmations: NonZeroU32,
     ) -> Result<Option<(BlockHeight, BlockHeight)>, Self::Error> {
-        unimplemented!()
+        let target_height = if let Some(height) = self.sync_state.wallet_height() {
+            height + 1
+        } else {
+            return Ok(None);
+        };
+
+        Ok(Some((
+            target_height,
+            std::cmp::max(1.into(), target_height - u32::from(min_confirmations)),
+        )))
     }
 
     fn get_tx_height(&self, txid: TxId) -> Result<Option<BlockHeight>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .wallet_transactions
+            .get(&txid)
+            .and_then(|transaction| transaction.status().get_confirmed_height()))
     }
 
     fn get_unified_full_viewing_keys(
@@ -190,9 +203,31 @@ impl WalletRead for LightWallet {
 
     fn get_transparent_receivers(
         &self,
-        _account: Self::AccountId,
+        account: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .transparent_addresses
+            .iter()
+            .filter_map(|(address_id, encoded_address)| {
+                if address_id.account_id() != account
+                    || address_id.scope() == TransparentScope::Refund
+                {
+                    return None;
+                }
+
+                let address = ZcashAddress::try_from_encoded(encoded_address)
+                    .unwrap()
+                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .expect("incorrect network should be checked on wallet load");
+                let address_metadata = TransparentAddressMetadata::new(
+                    address_id.scope().into(),
+                    NonHardenedChildIndex::from_index(address_id.address_index())
+                        .expect("checked on address derivation"),
+                );
+
+                Some((address, Some(address_metadata)))
+            })
+            .collect())
     }
 
     fn get_transparent_balances(
@@ -213,10 +248,38 @@ impl WalletRead for LightWallet {
 
     fn get_known_ephemeral_addresses(
         &self,
-        _account: Self::AccountId,
-        _index_range: Option<Range<u32>>,
+        account: Self::AccountId,
+        index_range: Option<Range<u32>>,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .transparent_addresses
+            .iter()
+            .filter_map(|(address_id, encoded_address)| {
+                if address_id.account_id() != account
+                    || address_id.scope() != TransparentScope::Refund
+                {
+                    return None;
+                }
+
+                if let Some(range) = index_range.clone() {
+                    if !range.contains(&address_id.address_index()) {
+                        return None;
+                    }
+                }
+
+                let address = ZcashAddress::try_from_encoded(encoded_address)
+                    .unwrap()
+                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .expect("incorrect network should be checked on wallet load");
+                let address_metadata = TransparentAddressMetadata::new(
+                    address_id.scope().into(),
+                    NonHardenedChildIndex::from_index(address_id.address_index())
+                        .expect("checked on address derivation"),
+                );
+
+                Some((address, address_metadata))
+            })
+            .collect())
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {

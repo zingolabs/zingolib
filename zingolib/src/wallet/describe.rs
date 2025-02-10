@@ -242,6 +242,8 @@ impl LightWallet {
     }
 
     /// lists the transparent addresses known by the wallet.
+    // TODO: consider splitting refund addresses, taking scope as paramter or returning address id data
+    // TODO: error handling
     pub fn get_transparent_addresses(&self) -> Vec<TransparentAddress> {
         self.transparent_addresses
             .values()
