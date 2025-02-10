@@ -1,6 +1,3 @@
-// FIXME: zingo2
-#![allow(unused_variables)]
-
 use std::{collections::HashMap, num::NonZeroU32, ops::Range};
 
 use zcash_address::ZcashAddress;
@@ -65,30 +62,30 @@ impl WalletRead for LightWallet {
 
     fn get_account(
         &self,
-        account_id: Self::AccountId,
+        _account_id: Self::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
         unimplemented!()
     }
 
     fn get_derived_account(
         &self,
-        seed: &zip32::fingerprint::SeedFingerprint,
-        account_id: zip32::AccountId,
+        _seed: &zip32::fingerprint::SeedFingerprint,
+        _account_id: zip32::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
         unimplemented!()
     }
 
     fn validate_seed(
         &self,
-        account_id: Self::AccountId,
-        seed: &secrecy::SecretVec<u8>,
+        _account_id: Self::AccountId,
+        _seed: &secrecy::SecretVec<u8>,
     ) -> Result<bool, Self::Error> {
         unimplemented!()
     }
 
     fn seed_relevance_to_derived_accounts(
         &self,
-        seed: &secrecy::SecretVec<u8>,
+        _seed: &secrecy::SecretVec<u8>,
     ) -> Result<zcash_client_backend::data_api::SeedRelevance<Self::AccountId>, Self::Error> {
         unimplemented!()
     }
@@ -102,12 +99,12 @@ impl WalletRead for LightWallet {
 
     fn get_current_address(
         &self,
-        account: Self::AccountId,
+        _account: Self::AccountId,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
         unimplemented!()
     }
 
-    fn get_account_birthday(&self, account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
+    fn get_account_birthday(&self, _account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
         unimplemented!()
     }
 
@@ -117,7 +114,7 @@ impl WalletRead for LightWallet {
 
     fn get_wallet_summary(
         &self,
-        min_confirmations: u32,
+        _min_confirmations: u32,
     ) -> Result<Option<WalletSummary<Self::AccountId>>, Self::Error> {
         unimplemented!()
     }
@@ -126,11 +123,11 @@ impl WalletRead for LightWallet {
         Ok(self.sync_state.wallet_height())
     }
 
-    fn get_block_hash(&self, block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
+    fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
         unimplemented!()
     }
 
-    fn block_metadata(&self, height: BlockHeight) -> Result<Option<BlockMetadata>, Self::Error> {
+    fn block_metadata(&self, _height: BlockHeight) -> Result<Option<BlockMetadata>, Self::Error> {
         unimplemented!()
     }
 
@@ -179,24 +176,24 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn get_memo(&self, note_id: NoteId) -> Result<Option<Memo>, Self::Error> {
+    fn get_memo(&self, _note_id: NoteId) -> Result<Option<Memo>, Self::Error> {
         unimplemented!()
     }
 
-    fn get_transaction(&self, txid: TxId) -> Result<Option<Transaction>, Self::Error> {
+    fn get_transaction(&self, _txid: TxId) -> Result<Option<Transaction>, Self::Error> {
         unimplemented!()
     }
 
     fn get_sapling_nullifiers(
         &self,
-        query: NullifierQuery,
+        _query: NullifierQuery,
     ) -> Result<Vec<(Self::AccountId, sapling_crypto::Nullifier)>, Self::Error> {
         unimplemented!()
     }
 
     fn get_orchard_nullifiers(
         &self,
-        query: NullifierQuery,
+        _query: NullifierQuery,
     ) -> Result<Vec<(Self::AccountId, orchard::note::Nullifier)>, Self::Error> {
         unimplemented!()
     }
@@ -240,8 +237,8 @@ impl WalletRead for LightWallet {
 
     fn get_transparent_address_metadata(
         &self,
-        account: Self::AccountId,
-        address: &TransparentAddress,
+        _account: Self::AccountId,
+        _address: &TransparentAddress,
     ) -> Result<Option<TransparentAddressMetadata>, Self::Error> {
         unimplemented!()
     }
