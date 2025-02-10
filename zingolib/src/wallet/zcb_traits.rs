@@ -371,12 +371,12 @@ impl InputSource for LightWallet {
         &self,
         address: &TransparentAddress,
         target_height: BlockHeight,
-        _min_confirmations: u32,
+        min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
         let address = transparent::encode_address(&self.network, *address);
 
         Ok(self
-            .spendable_transparent_coins(target_height, &[])
+            .spendable_transparent_coins(target_height, &[], min_confirmations)
             .into_iter()
             .filter(|&output| output.address == address)
             .flat_map(|output| {

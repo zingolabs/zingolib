@@ -16,7 +16,6 @@ use crate::ShieldedDomain;
 use crate::Transparent;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::error::InputSourceError;
 use super::error::WalletError;
 use super::transaction::transaction_unspent_outputs;
 use super::LightWallet;
@@ -191,18 +190,30 @@ impl LightWallet {
             .collect()
     }
 
-    /// Returns all spendable transparent coins in the wallet confirmed at or below `anchor_height`.
+    /// Returns all spendable transparent coins in the wallet confirmed at or below `target_height`.
     ///
     /// Any coins with output IDs in `exclude` will not be returned.
     /// Any coins from a coinbase transaction will not be returned without 100 additional confirmations.
     pub(crate) fn spendable_transparent_coins<'a>(
         &'a self,
-        anchor_height: BlockHeight,
+        target_height: BlockHeight,
         exclude: &'a [OutputId],
+        min_confirmations: u32,
     ) -> Vec<&'a TransparentCoin> {
         self.wallet_transactions
             .values()
             .flat_map(|transaction| {
+                if self.sync_state.wallet_height().unwrap_or(self.birthday)
+                    - transaction
+                        .status()
+                        .get_confirmed_height()
+                        .expect("output must be confirmed in this scope")
+                    + 1
+                    < min_confirmations
+                {
+                    return Vec::new();
+                }
+
                 let additional_confirmations = transaction
                     .transaction()
                     .transparent_bundle()
@@ -210,7 +221,7 @@ impl LightWallet {
 
                 if transaction
                     .status()
-                    .is_confirmed_before_or_at(&(anchor_height - additional_confirmations))
+                    .is_confirmed_before_or_at(&(target_height - additional_confirmations))
                 {
                     transaction_unspent_outputs::<Transparent>(transaction, &exclude).collect()
                 } else {
@@ -259,8 +270,7 @@ impl LightWallet {
                 selected_notes
                     .iter()
                     .fold(0, |acc, output: &&D::Output| acc + output.value()),
-            )
-            .map_err(InputSourceError::InvalidValue)?;
+            )?;
 
             *remaining_value_needed =
                 calculate_remaining_needed(target_value, total_selected_note_value);
@@ -286,7 +296,7 @@ impl LightWallet {
                 None => {
                     // the iterator went off the end of the vector without finding a note big enough to complete the transaction
                     // add the biggest note and reset the iteration
-                    selected_notes.push(unselected_notes.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
+                    selected_notes.push(unselected_notes.pop().expect("should be nonempty"));
                     unselected_note_index = 0;
                 }
             }
