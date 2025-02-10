@@ -19,20 +19,17 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
-        fees::zip317::MARGINAL_FEE,
         Transaction, TxId,
     },
 };
-
-use super::{
-    error::{InputSourceError, WalletError},
-    LightWallet,
+use zingo_sync::{
+    keys::transparent,
+    primitives::{NoteInterface, OutputId, OutputInterface},
 };
 
-enum RemainingNeeded {
-    Positive(NonNegativeAmount),
-    GracelessChangeAmount(NonNegativeAmount),
-}
+use crate::{wallet::notes::RemainingNeeded, Orchard, Sapling};
+
+use super::{error::WalletError, LightWallet};
 
 pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 
@@ -249,8 +246,6 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 
-    // TODO: rework to operate on notes themselves so its not needed to find them in the wallet and more info is
-    // available for advanced selection
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
@@ -259,55 +254,36 @@ impl InputSource for LightWallet {
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let mut unselected =
-            self.get_spendable_note_ids_and_values(sources, anchor_height, exclude);
+        let exclude_sapling = exclude
+            .iter()
+            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
+            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .collect::<Vec<_>>();
+        let exclude_orchard = exclude
+            .iter()
+            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
+            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .collect::<Vec<_>>();
+        let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
-        unselected.sort_by_key(|(_id, value)| *value); // from smallest to largest
-        let dust_spendable_index =
-            unselected.partition_point(|(_id, value)| *value <= MARGINAL_FEE);
-        let _dust_notes: Vec<_> = unselected.drain(..dust_spendable_index).collect();
-        let mut selected = vec![];
-        let mut index_of_unselected = 0;
-
-        loop {
-            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
-            if unselected.is_empty() {
-                break;
-            }
-            // update target value for further note selection
-            let selected_notes_total_value = selected
-                .iter()
-                .try_fold(NonNegativeAmount::ZERO, |acc, (_id, value)| acc + *value)
-                .ok_or(InputSourceError::InvalidValue(
-                    zcash_primitives::transaction::components::amount::BalanceError::Overflow,
-                ))?;
-            let updated_target_value =
-                match calculate_remaining_needed(target_value, selected_notes_total_value) {
-                    RemainingNeeded::Positive(updated_target_value) => updated_target_value,
-                    RemainingNeeded::GracelessChangeAmount(_change) => {
-                        break;
-                    }
-                };
-
-            match unselected.get(index_of_unselected) {
-                Some(smallest_unselected) => {
-                    // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.1 >= updated_target_value {
-                        selected.push(*smallest_unselected);
-                        unselected.remove(index_of_unselected);
-                    } else {
-                        // this note is not big enough. try the next
-                        index_of_unselected += 1;
-                    }
-                }
-                None => {
-                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction
-                    // add the biggest note and reset the iteration
-                    selected.push(unselected.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
-                    index_of_unselected = 0;
-                }
-            }
-        }
+        let selected_sapling_notes = if sources.contains(&ShieldedProtocol::Sapling) {
+            self.select_spendable_notes_by_pool::<Sapling>(
+                &mut remaining_value_needed,
+                anchor_height,
+                &exclude_sapling,
+            )?
+        } else {
+            Vec::new()
+        };
+        let selected_orchard_notes = if sources.contains(&ShieldedProtocol::Orchard) {
+            self.select_spendable_notes_by_pool::<Orchard>(
+                &mut remaining_value_needed,
+                anchor_height,
+                &exclude_orchard,
+            )?
+        } else {
+            Vec::new()
+        };
 
         /* TODO: Priority
         if selected
@@ -341,32 +317,47 @@ impl InputSource for LightWallet {
         }
         */
 
-        let mut selected_sapling = Vec::<ReceivedNote<NoteId, sapling_crypto::Note>>::new();
-        let mut selected_orchard = Vec::<ReceivedNote<NoteId, orchard::Note>>::new();
+        let sapling_recieved_notes = selected_sapling_notes
+            .iter()
+            .map(|note| {
+                ReceivedNote::from_parts(
+                    NoteId::new(
+                        note.output_id().txid(),
+                        ShieldedProtocol::Sapling,
+                        note.output_id().output_index() as u16,
+                    ),
+                    note.output_id().txid(),
+                    note.output_id().output_index() as u16,
+                    note.note().clone(),
+                    note.key_id().scope,
+                    note.position()
+                        .expect("note selection should filter on notes with positions"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let orchard_recieved_notes = selected_orchard_notes
+            .iter()
+            .map(|note| {
+                ReceivedNote::from_parts(
+                    NoteId::new(
+                        note.output_id().txid(),
+                        ShieldedProtocol::Orchard,
+                        note.output_id().output_index() as u16,
+                    ),
+                    note.output_id().txid(),
+                    note.output_id().output_index() as u16,
+                    note.note().clone(),
+                    note.key_id().scope,
+                    note.position()
+                        .expect("note selection should filter on notes with positions"),
+                )
+            })
+            .collect::<Vec<_>>();
 
-        // transform each NoteId to a ReceivedNote
-        selected.iter().try_for_each(|(id, _value)| {
-            let transaction = self
-                .wallet_transactions
-                .get(id.txid())
-                .expect("should exist as note_id is created from the record itself");
-            let output_index = id.output_index() as u32;
-            match id.protocol() {
-                ShieldedProtocol::Sapling => transaction
-                    .get_received_note::<SaplingDomain>(output_index)
-                    .map(|received_note| {
-                        selected_sapling.push(received_note);
-                    }),
-                ShieldedProtocol::Orchard => transaction
-                    .get_received_note::<OrchardDomain>(output_index)
-                    .map(|received_note| {
-                        selected_orchard.push(received_note);
-                    }),
-            }
-            .ok_or(InputSourceError::WitnessPositionNotFound(*id))
-        })?;
-
-        Ok(SpendableNotes::new(selected_sapling, selected_orchard))
+        Ok(SpendableNotes::new(
+            sapling_recieved_notes,
+            orchard_recieved_notes,
+        ))
     }
 
     fn get_unspent_transparent_output(
@@ -378,37 +369,31 @@ impl InputSource for LightWallet {
 
     fn get_spendable_transparent_outputs(
         &self,
-        _address: &TransparentAddress,
-        _target_height: BlockHeight,
+        address: &TransparentAddress,
+        target_height: BlockHeight,
         _min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
-        unimplemented!()
-    }
-}
+        let address = transparent::encode_address(&self.network, *address);
 
-/// Calculate remaining difference between target and selected.
-/// There are two mutually exclusive cases:
-///    (Change) There's no more needed so we've selected 0 or more change
-///    (Positive) We need > 0 more value.
-/// This function represents the NonPositive case as None, which then serves to signal a break in the note selection
-/// for where this helper is uniquely called.
-fn calculate_remaining_needed(
-    target_value: NonNegativeAmount,
-    selected_value: NonNegativeAmount,
-) -> RemainingNeeded {
-    if let Some(amount) = target_value - selected_value {
-        if amount == NonNegativeAmount::ZERO {
-            // Case (Change) target_value == total_selected_value
-            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
-        } else {
-            // Case (Positive) target_value > total_selected_value
-            RemainingNeeded::Positive(amount)
-        }
-    } else {
-        // Case (Change) target_value < total_selected_value
-        // Return the non-zero change quantity
-        RemainingNeeded::GracelessChangeAmount(
-            (selected_value - target_value).expect("This is guaranteed positive"),
-        )
+        Ok(self
+            .spendable_transparent_coins(target_height, &[])
+            .into_iter()
+            .filter(|&output| output.address == address)
+            .flat_map(|output| {
+                WalletTransparentOutput::from_parts(
+                    output.output_id().into(),
+                    zcash_primitives::transaction::components::TxOut {
+                        value: output.value,
+                        script_pubkey: output.script.clone(),
+                    },
+                    Some(
+                        self.output_transaction(output)
+                            .status()
+                            .get_confirmed_height()
+                            .expect("output must be confirmed in this scope"),
+                    ),
+                )
+            })
+            .collect())
     }
 }

@@ -87,32 +87,30 @@ impl LightWallet {
             .try_into()
             .expect("fee should not be negative"))
     }
+}
 
-    /// Returns all spendable outputs of the specified pool in the given `transaction`.
-    ///
-    /// Any output IDs in `exclude` will not be returned.
-    // TODO: this is a method on the wallet so we can implement checking the witness can be constructed also
-    pub(crate) fn transaction_spendable_outputs<'a, D>(
-        &self,
-        transaction: &'a WalletTransaction,
-        exclude: &'a [OutputId],
-    ) -> impl Iterator<Item = &'a D::Output> + 'a
-    where
-        D: WalletDomain,
-        D::Output: 'a,
-    {
-        D::Output::transaction_outputs(transaction)
-            .iter()
-            .filter_map(|output| {
-                if output.spending_transaction().is_none() {
-                    if exclude.contains(&output.output_id()) {
-                        None
-                    } else {
-                        Some(output)
-                    }
-                } else {
+/// Returns all unspent outputs of the specified pool in the given `transaction`.
+///
+/// Any output IDs in `exclude` will not be returned.
+pub(crate) fn transaction_unspent_outputs<'a, D>(
+    transaction: &'a WalletTransaction,
+    exclude: &'a [OutputId],
+) -> impl Iterator<Item = &'a D::Output> + 'a
+where
+    D: WalletDomain,
+    D::Output: 'a,
+{
+    D::Output::transaction_outputs(transaction)
+        .iter()
+        .filter_map(|output| {
+            if output.spending_transaction().is_none() {
+                if exclude.contains(&output.output_id()) {
                     None
+                } else {
+                    Some(output)
                 }
-            })
-    }
+            } else {
+                None
+            }
+        })
 }

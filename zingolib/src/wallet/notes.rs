@@ -1,20 +1,24 @@
 //! All things needed to create, manaage, and use notes
 
-use zcash_client_backend::wallet::NoteId;
-use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::TxId;
+use zingo_sync::primitives::NoteInterface;
 use zingo_sync::primitives::OutputId;
 use zingo_sync::primitives::OutputInterface;
+use zingo_sync::primitives::TransparentCoin;
 use zingo_sync::primitives::WalletTransaction;
 
 use crate::wallet::notes::query::OutputQuery;
 use crate::wallet::notes::query::OutputSpendStatusQuery;
-use crate::Orchard;
-use crate::Sapling;
+use crate::ShieldedDomain;
+use crate::Transparent;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
+use super::error::InputSourceError;
+use super::error::WalletError;
+use super::transaction::transaction_unspent_outputs;
 use super::LightWallet;
 
 pub use interface::OutputInterface as OldOutputInterface;
@@ -61,6 +65,13 @@ impl std::fmt::Display for SpendStatus {
 }
 
 impl LightWallet {
+    /// Returns the transaction the given `output` belongs to.
+    pub fn output_transaction(&self, output: &impl OutputInterface) -> &WalletTransaction {
+        self.wallet_transactions
+            .get(&output.output_id().txid())
+            .expect("transaction should exist in the wallet")
+    }
+
     /// Returns [self::SpendStatus] for the given `output`.
     pub fn output_spend_status(&self, output: &impl OutputInterface) -> SpendStatus {
         if let Some(txid) = output.spending_transaction() {
@@ -150,19 +161,19 @@ impl LightWallet {
         }
     }
 
-    /// Returns a list of spendable [`zcash_client_backend::wallet::NoteId`]s with associated note values
-    // TODO: refactor to use a method that gets all spendable outputs of a specified pool and iterate over sources
-    pub(crate) fn get_spendable_note_ids_and_values(
-        &self,
-        sources: &[ShieldedProtocol],
+    /// Returns all spendable notes of the specified shielded pool in the wallet confirmed at or below `anchor_height`.
+    ///
+    /// Any notes with output IDs in `exclude` will not be returned.
+    /// Any notes without a nullifier or commitment tree position will not be returned.
+    // TODO: implement checking the witness can be constructed also
+    pub(crate) fn spendable_notes<'a, D: ShieldedDomain>(
+        &'a self,
         anchor_height: BlockHeight,
-        exclude: &[NoteId],
-    ) -> Vec<(NoteId, NonNegativeAmount)> {
-        let exclude = exclude
-            .iter()
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
-            .collect::<Vec<_>>();
-
+        exclude: &'a [OutputId],
+    ) -> Vec<&'a D::Output>
+    where
+        D::Output: NoteInterface,
+    {
         self.wallet_transactions
             .values()
             .flat_map(|transaction| {
@@ -170,48 +181,118 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    let mut spendable_notes = vec![];
-                    if sources.contains(&ShieldedProtocol::Sapling) {
-                        let mut spendable_sapling_notes = self
-                            .transaction_spendable_outputs::<Sapling>(transaction, &exclude)
-                            .map(|note| {
-                                (
-                                    NoteId::new(
-                                        transaction.txid(),
-                                        ShieldedProtocol::Sapling,
-                                        note.output_id().output_index() as u16,
-                                    ),
-                                    NonNegativeAmount::from_u64(note.value()).expect("values should be checked to be in valid range on note creation"),
-                                )
-                            })
-                            .collect::<Vec<_>>();
-
-                        spendable_notes.append(&mut spendable_sapling_notes);
-                    }
-                    if sources.contains(&ShieldedProtocol::Orchard) {
-                        let mut spendable_orchard_notes = self
-                            .transaction_spendable_outputs::<Orchard>(transaction, &exclude)
-                            .map(|note| {
-                                (
-                                    NoteId::new(
-                                        transaction.txid(),
-                                        ShieldedProtocol::Orchard,
-                                        note.output_id().output_index() as u16,
-                                    ),
-                                    NonNegativeAmount::from_u64(note.value()).expect("values should be checked to be in valid range on note creation"),
-                                )
-                            })
-                            .collect::<Vec<_>>();
-
-                        spendable_notes.append(&mut spendable_orchard_notes);
-                    }
-
-                    spendable_notes
+                    transaction_unspent_outputs::<D>(transaction, &exclude).collect()
                 } else {
-                    vec![]
+                    Vec::new()
+                }
+            })
+            .into_iter()
+            .filter(|&note| note.nullifier().is_some() && note.position().is_some())
+            .collect()
+    }
+
+    /// Returns all spendable transparent coins in the wallet confirmed at or below `anchor_height`.
+    ///
+    /// Any coins with output IDs in `exclude` will not be returned.
+    /// Any coins from a coinbase transaction will not be returned without 100 additional confirmations.
+    pub(crate) fn spendable_transparent_coins<'a>(
+        &'a self,
+        anchor_height: BlockHeight,
+        exclude: &'a [OutputId],
+    ) -> Vec<&'a TransparentCoin> {
+        self.wallet_transactions
+            .values()
+            .flat_map(|transaction| {
+                let additional_confirmations = transaction
+                    .transaction()
+                    .transparent_bundle()
+                    .map_or(0, |bundle| if bundle.is_coinbase() { 100 } else { 0 });
+
+                if transaction
+                    .status()
+                    .is_confirmed_before_or_at(&(anchor_height - additional_confirmations))
+                {
+                    transaction_unspent_outputs::<Transparent>(transaction, &exclude).collect()
+                } else {
+                    Vec::new()
                 }
             })
             .collect()
+    }
+
+    /// Selects spendable notes for a given pool confirmed at or below `anchor_height` up to the total value of
+    /// `remaining_value_needed`.
+    ///
+    /// Any notes with output IDs in `exclude` will not be selected.
+    /// Selects notes with smallest value that satisfies the target value. Otherwise, selects the note with the largest
+    /// value and repeats.
+    pub(crate) fn select_spendable_notes_by_pool<'a, D: ShieldedDomain>(
+        &'a self,
+        remaining_value_needed: &mut RemainingNeeded,
+        anchor_height: BlockHeight,
+        exclude: &'a [OutputId],
+    ) -> Result<Vec<&'a D::Output>, WalletError>
+    where
+        D::Output: NoteInterface,
+    {
+        let target_value = match remaining_value_needed {
+            RemainingNeeded::Positive(value) => *value,
+            RemainingNeeded::GracelessChangeAmount(_) => return Ok(Vec::new()),
+        };
+
+        let mut selected_notes: Vec<&'a D::Output> = Vec::new();
+        let mut unselected_notes = self.spendable_notes::<D>(anchor_height, &exclude);
+        unselected_notes.sort_by_key(|&output| output.value()); // from smallest to largest
+        let dust_index =
+            unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
+        let _dust_notes = unselected_notes.drain(..dust_index).collect::<Vec<_>>();
+        let mut unselected_note_index = 0;
+        let mut total_selected_note_value: NonNegativeAmount;
+
+        loop {
+            // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
+            if unselected_notes.is_empty() {
+                break;
+            }
+            // update target value for further note selection
+            total_selected_note_value = NonNegativeAmount::from_u64(
+                selected_notes
+                    .iter()
+                    .fold(0, |acc, output: &&D::Output| acc + output.value()),
+            )
+            .map_err(InputSourceError::InvalidValue)?;
+
+            *remaining_value_needed =
+                calculate_remaining_needed(target_value, total_selected_note_value);
+
+            let updated_target_value = match remaining_value_needed {
+                RemainingNeeded::Positive(updated_target_value) => updated_target_value.into_u64(),
+                RemainingNeeded::GracelessChangeAmount(_change) => {
+                    break;
+                }
+            };
+
+            match unselected_notes.get(unselected_note_index) {
+                Some(&smallest_unselected) => {
+                    // selected a note to test if it has enough value to complete the transaction on its own
+                    if smallest_unselected.value() >= updated_target_value {
+                        selected_notes.push(smallest_unselected);
+                        unselected_notes.remove(unselected_note_index);
+                    } else {
+                        // this note is not big enough. try the next
+                        unselected_note_index += 1;
+                    }
+                }
+                None => {
+                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction
+                    // add the biggest note and reset the iteration
+                    selected_notes.push(unselected_notes.pop().expect("should be nonempty")); // TODO:  Add soundness proving unit-test
+                    unselected_note_index = 0;
+                }
+            }
+        }
+
+        Ok(selected_notes)
     }
 }
 
@@ -276,6 +357,38 @@ impl Output {
                     .map(|output| Self::OrchardNote(output.clone())),
             )
             .collect()
+    }
+}
+
+pub(crate) enum RemainingNeeded {
+    Positive(NonNegativeAmount),
+    GracelessChangeAmount(NonNegativeAmount),
+}
+
+/// Calculate remaining difference between target and selected.
+/// There are two mutually exclusive cases:
+///    (Change) There's no more needed so we've selected 0 or more change
+///    (Positive) We need > 0 more value.
+/// This function represents the NonPositive case as None, which then serves to signal a break in the note selection
+/// for where this helper is uniquely called.
+fn calculate_remaining_needed(
+    target_value: NonNegativeAmount,
+    selected_value: NonNegativeAmount,
+) -> RemainingNeeded {
+    if let Some(amount) = target_value - selected_value {
+        if amount == NonNegativeAmount::ZERO {
+            // Case (Change) target_value == total_selected_value
+            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
+        } else {
+            // Case (Positive) target_value > total_selected_value
+            RemainingNeeded::Positive(amount)
+        }
+    } else {
+        // Case (Change) target_value < total_selected_value
+        // Return the non-zero change quantity
+        RemainingNeeded::GracelessChangeAmount(
+            (selected_value - target_value).expect("This is guaranteed positive"),
+        )
     }
 }
 

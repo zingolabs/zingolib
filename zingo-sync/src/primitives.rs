@@ -744,14 +744,14 @@ impl OutputInterface for OrchardNote {
 
 impl NoteInterface for OrchardNote {
     type ZcashNote = orchard::Note;
-    type Nullifier = orchard::note::Nullifier;
+    type Nullifier = Self::Input;
 
     fn note(&self) -> &Self::ZcashNote {
         &self.note
     }
 
     fn nullifier(&self) -> Option<Self::Nullifier> {
-        self.nullifier
+        self.spend_link()
     }
 
     fn position(&self) -> Option<Position> {
