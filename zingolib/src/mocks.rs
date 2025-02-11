@@ -163,7 +163,7 @@ mod sapling_crypto_note {
     use super::default_zaddr;
 
     /// A struct to build a mock sapling_crypto::Note from scratch.
-    /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::notes::SaplingNote`]. The latter wraps the former with some other attributes.
+    /// Distinguish [`sapling_crypto::Note`] from [`crate::wallet::output::SaplingNote`]. The latter wraps the former with some other attributes.
     #[derive(Clone)]
     pub struct SaplingCryptoNoteBuilder {
         recipient: Option<PaymentAddress>,
@@ -229,7 +229,7 @@ pub mod orchard_note {
     use crate::utils::build_method;
 
     /// A struct to build a mock orchard::Note from scratch.
-    /// Distinguish [`orchard::Note`] from [`crate::wallet::notes::OrchardNote`]. The latter wraps the former with some other attributes.
+    /// Distinguish [`orchard::Note`] from [`crate::wallet::output::OrchardNote`]. The latter wraps the former with some other attributes.
     #[derive(Clone)]
     pub struct OrchardCryptoNoteBuilder {
         recipient: Option<Address>,
