@@ -13,8 +13,6 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
-// FIXME: zingo2
-#[allow(dead_code)]
 pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> {
     // Check for a single argument that can be parsed as JSON
     let send_args = if args.len() == 1 {

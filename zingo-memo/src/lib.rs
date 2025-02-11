@@ -66,7 +66,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
 /// one byte.
 pub fn create_wallet_internal_memo_version_1(
     uas: &[UnifiedAddress],
-    ephemeral_address_indexes: &[u32],
+    refund_address_indexes: &[u32],
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
     CompactSize::write(&mut memo_bytes_vec, 1usize)?;
@@ -75,7 +75,7 @@ pub fn create_wallet_internal_memo_version_1(
     })?;
     Vector::write(
         &mut memo_bytes_vec,
-        ephemeral_address_indexes,
+        refund_address_indexes,
         |w, ea_index| CompactSize::write(w, *ea_index as usize),
     )?;
     let mut memo_bytes = [0u8; 511];

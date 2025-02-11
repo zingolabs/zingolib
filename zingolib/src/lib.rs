@@ -4,8 +4,6 @@
 //! Zingo backend code base
 //! Use this high level API to do things like submit transactions to the zcash blockchain
 
-use zcash_client_backend::{PoolType, ShieldedProtocol};
-
 pub use lightclient::describe::UAReceivers;
 
 #[macro_use]
@@ -43,58 +41,4 @@ pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
         })
         .map(|ld_info| ld_info.block_height)
-}
-
-pub trait WalletDomain {
-    const POOL_TYPE: PoolType;
-
-    type Output: zingo_sync::primitives::OutputInterface;
-}
-
-// pub trait ShieldedDomain: WalletDomain {
-//     const SHIELDED_PROTOCOL: ShieldedProtocol;
-
-//     type Note: zingo_sync::primitives::NoteInterface;
-// }
-
-pub(crate) struct Transparent {}
-
-impl WalletDomain for Transparent {
-    const POOL_TYPE: PoolType = PoolType::Transparent;
-
-    type Output = zingo_sync::primitives::TransparentCoin;
-}
-
-pub(crate) struct Sapling {}
-
-impl WalletDomain for Sapling {
-    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Sapling);
-
-    type Output = zingo_sync::primitives::SaplingNote;
-}
-
-// impl ShieldedDomain for Sapling {
-//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
-
-//     type Note = zingo_sync::primitives::SaplingNote;
-// }
-
-pub(crate) struct Orchard {}
-
-impl WalletDomain for Orchard {
-    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Orchard);
-
-    type Output = zingo_sync::primitives::OrchardNote;
-}
-
-// impl ShieldedDomain for Orchard {
-//     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
-
-//     type Note = zingo_sync::primitives::OrchardNote;
-// }
-
-pub trait ShieldedDomain: WalletDomain {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
-
-    type Note: zingo_sync::primitives::NoteInterface;
 }

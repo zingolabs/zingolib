@@ -4,7 +4,9 @@ use zcash_address::{ToAddress as _, ZcashAddress};
 use zcash_primitives::{
     consensus,
     legacy::{
-        keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex},
+        keys::{
+            AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
+        },
         TransparentAddress,
     },
     zip32::AccountId,
@@ -58,6 +60,16 @@ pub enum TransparentScope {
     Internal,
     /// Refund scope (a.k.a. ephemeral)
     Refund,
+}
+
+impl From<TransparentScope> for TransparentKeyScope {
+    fn from(value: TransparentScope) -> Self {
+        match value {
+            TransparentScope::External => TransparentKeyScope::EXTERNAL,
+            TransparentScope::Internal => TransparentKeyScope::INTERNAL,
+            TransparentScope::Refund => TransparentKeyScope::EPHEMERAL,
+        }
+    }
 }
 
 pub(crate) fn derive_address<P>(

@@ -4,7 +4,7 @@ use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::{memo::Memo, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::output::interface::OutputConstructor;
 
 use super::{
     super::data::TransactionRecord, query::OutputSpendStatusQuery, OldOutputInterface,
@@ -205,7 +205,7 @@ pub mod mocks {
 
     use crate::{
         mocks::orchard_note::OrchardCryptoNoteBuilder, utils::build_method,
-        wallet::notes::ShieldedNoteInterface,
+        wallet::output::ShieldedNoteInterface,
     };
 
     use super::OrchardNote;

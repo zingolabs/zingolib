@@ -490,7 +490,7 @@ pub mod summaries {
         error::BuildError,
         utils::build_method,
         wallet::{
-            notes::SpendStatus,
+            output::SpendStatus,
             transaction_record::{SendType, TransactionKind},
         },
     };

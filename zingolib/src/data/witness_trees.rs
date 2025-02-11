@@ -26,7 +26,7 @@ pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
 
 use crate::wallet::{
-    notes,
+    output,
     traits::{self, DomainWalletExt},
 };
 
@@ -247,7 +247,7 @@ fn get_legacy_frontier<D: DomainWalletExt>(
     trees: &TreeState,
 ) -> Option<
     incrementalmerkletree::frontier::NonEmptyFrontier<
-        <D::WalletNote as notes::ShieldedNoteInterface>::Node,
+        <D::WalletNote as output::ShieldedNoteInterface>::Node,
     >,
 >
 where
@@ -255,7 +255,7 @@ where
     <D as Domain>::Recipient: traits::Recipient,
 {
     zcash_primitives::merkle_tree::read_commitment_tree::<
-        <D::WalletNote as notes::ShieldedNoteInterface>::Node,
+        <D::WalletNote as output::ShieldedNoteInterface>::Node,
         &[u8],
         COMMITMENT_TREE_LEVELS,
     >(&hex::decode(D::get_tree(trees)).unwrap()[..])

@@ -7,7 +7,7 @@ use zcash_client_backend::PoolType;
 use zcash_primitives::transaction::{components::OutPoint, TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::wallet::notes::{
+use crate::wallet::output::{
     interface::OutputConstructor, query::OutputSpendStatusQuery, OldOutputInterface,
 };
 use crate::wallet::transaction_record::TransactionRecord;
@@ -219,7 +219,7 @@ pub mod mocks {
     use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
-    use crate::{utils::build_method, wallet::notes::TransparentOutput};
+    use crate::{utils::build_method, wallet::output::TransparentOutput};
 
     /// to create a mock TransparentOutput
     #[derive(Clone)]

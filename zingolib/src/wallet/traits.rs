@@ -1,18 +1,18 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::output::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use crate::config::ChainType;
 use crate::data::witness_trees::WitnessTrees;
-use crate::wallet::notes::OldOutputInterface;
-use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::output::OldOutputInterface;
+use crate::wallet::output::ShieldedNoteInterface;
 use crate::wallet::{
     data::{
         PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
         COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
-    notes::{OrchardNote, SaplingNote},
+    output::{OrchardNote, SaplingNote},
     tx_map::TxMap,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -1312,7 +1312,7 @@ mod test {
         mocks::orchard_note::OrchardCryptoNoteBuilder,
         wallet::{
             keys::unified::WalletCapability,
-            notes::{orchard::mocks::OrchardNoteBuilder, OrchardNote},
+            output::{orchard::mocks::OrchardNoteBuilder, OrchardNote},
         },
     };
     use testvectors::seeds::ABANDON_ART_SEED;

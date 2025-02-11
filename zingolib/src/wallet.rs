@@ -48,11 +48,12 @@ pub mod utils;
 //these mods contain pieces of the impl LightWallet
 pub mod describe;
 pub mod disk;
-pub mod notes;
+pub mod output;
 pub mod propose;
 pub mod send;
 pub mod sync;
 pub mod transaction;
+mod zcb_traits;
 
 pub(crate) use send::SendProgress;
 

@@ -17,7 +17,9 @@ use zcash_primitives::{
     },
 };
 
-use crate::wallet::{notes::OldOutputInterface, transaction_records_by_id::TransactionRecordsById};
+use crate::wallet::{
+    output::OldOutputInterface, transaction_records_by_id::TransactionRecordsById,
+};
 
 use std::fmt::Debug;
 
@@ -148,8 +150,7 @@ impl InputSource for TransactionRecordsById {
     /// the trait method below is used as a TxMap trait method by propose_transaction.
     /// this function is used inside a loop that calculates a fee and balances change
     /// this algorithm influences strategy for user fee minimization
-    // FIXME: zingo2
-    // /// see [crate::wallet::LightWallet::create_send_proposal]
+    /// see [crate::wallet::LightWallet::create_send_proposal]
     /// TRAIT DOCUMENTATION
     /// Returns a list of spendable notes sufficient to cover the specified target value, if
     /// possible. Only spendable notes corresponding to the specified shielded protocol will
@@ -340,7 +341,7 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::orchard::mocks::OrchardNoteBuilder,
+        output::orchard::mocks::OrchardNoteBuilder,
         transaction_record::mocks::TransactionRecordBuilder,
         transaction_records_by_id::TransactionRecordsById,
     };

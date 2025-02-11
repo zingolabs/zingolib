@@ -2,7 +2,7 @@
 //! conspicuously absent is the set of transparent inputs to the transaction.
 //! by its`nature this evolves through, different states of completeness.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::output::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
@@ -20,7 +20,7 @@ use crate::{
     wallet::{
         data::{OutgoingTxData, PoolNullifier, COMMITMENT_TREE_LEVELS},
         keys::unified::WalletCapability,
-        notes::{
+        output::{
             query::OutputQuery, OldOutputInterface, OrchardNote, SaplingNote,
             ShieldedNoteInterface, TransparentOutput,
         },
@@ -540,7 +540,7 @@ pub mod mocks {
         utils::{build_method, build_method_push, build_push_list},
         wallet::{
             data::mocks::OutgoingTxDataBuilder,
-            notes::{
+            output::{
                 orchard::mocks::OrchardNoteBuilder, sapling::mocks::SaplingNoteBuilder,
                 transparent::mocks::TransparentOutputBuilder,
             },
@@ -774,7 +774,7 @@ mod tests {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::ShieldedProtocol::{Orchard, Sapling};
 
-    use crate::wallet::notes::query::OutputQuery;
+    use crate::wallet::output::query::OutputQuery;
     use crate::wallet::transaction_record::mocks::{
         nine_note_transaction_record, nine_note_transaction_record_default,
         TransactionRecordBuilder,

@@ -1,9 +1,9 @@
 //! The lookup for transaction id indexed data.  Currently this provides the
 //! transaction record.
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::output::interface::OutputConstructor;
 use crate::wallet::{
-    notes::{
+    output::{
         interface::ShieldedNoteInterface,
         query::{OutputQuery, OutputSpendStatusQuery},
         OldOutputInterface,
@@ -265,7 +265,7 @@ impl TransactionRecordsById {
             }
         }
     }
-    fn mark_notes_as_change_for_pool<Note: crate::wallet::notes::ShieldedNoteInterface>(
+    fn mark_notes_as_change_for_pool<Note: crate::wallet::output::ShieldedNoteInterface>(
         notes: &mut [Note],
     ) {
         notes.iter_mut().for_each(|n| {
@@ -387,7 +387,7 @@ impl TransactionRecordsById {
             // If it already exists, it is likely an mempool tx, so update the height
         } else {
             transaction_metadata.transparent_outputs.push(
-                crate::wallet::notes::TransparentOutput::from_parts(
+                crate::wallet::output::TransparentOutput::from_parts(
                     taddr,
                     txid,
                     output_num as u64,
@@ -474,7 +474,7 @@ mod tests {
     use crate::{
         mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
         wallet::{
-            notes::{
+            output::{
                 orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
                 sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
                 OldOutputInterface,

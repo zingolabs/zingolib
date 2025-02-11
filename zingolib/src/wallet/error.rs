@@ -12,6 +12,9 @@ pub enum WalletError {
     /// Mnemonic error
     #[error("{0}")]
     MnemonicError(#[from] bip0039::Error),
+    /// Value outside the valid range of zatoshis
+    #[error("Value outside valid range of zatoshis. {0:?}")]
+    InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
 }
 
 /// Errors associated with calculating transaction fee

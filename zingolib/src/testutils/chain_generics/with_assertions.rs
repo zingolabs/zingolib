@@ -6,7 +6,7 @@ use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 // use crate::testutils::lightclient::from_inputs;
 // use crate::testutils::lightclient::get_base_address;
-use crate::wallet::notes::query::OutputQuery;
+use crate::wallet::output::query::OutputQuery;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 // use zcash_client_backend::PoolType;
