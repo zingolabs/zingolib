@@ -39,10 +39,7 @@ use crate::wallet::traits::DomainWalletExt;
 use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
-use crate::Orchard;
-use crate::Sapling;
 use crate::UAReceivers;
-use crate::WalletDomain;
 
 use super::data::summaries::NoteSummary;
 use super::data::summaries::OutgoingNoteSummary;
@@ -109,14 +106,14 @@ impl LightWallet {
     /// Returns the total balance of the all outputs of a given pool type in the wallet matching the output and transaction
     /// criteria specified by the `filter_function`.
     /// Returns `None` if the wallet does not have viewing capability for the given pool type.
-    pub async fn get_filtered_balance<D, F>(&self, filter_function: F) -> Option<u64>
+    pub async fn get_filtered_balance<Op, F>(&self, filter_function: F) -> Option<u64>
     where
-        D: WalletDomain,
-        F: Fn(&D::Output, &WalletTransaction) -> bool,
+        Op: OutputInterface,
+        F: Fn(&Op, &WalletTransaction) -> bool,
     {
         match &self.unified_key_store {
             UnifiedKeyStore::Spend(_) => (),
-            UnifiedKeyStore::View(ufvk) => match D::POOL_TYPE {
+            UnifiedKeyStore::View(ufvk) => match Op::POOL_TYPE {
                 PoolType::Transparent => {
                     ufvk.transparent()?;
                 }
@@ -134,7 +131,7 @@ impl LightWallet {
             self.wallet_transactions
                 .values()
                 .fold(0, |acc, transaction| {
-                    acc + D::Output::transaction_outputs(transaction)
+                    acc + Op::transaction_outputs(transaction)
                         .iter()
                         .filter(|&note| {
                             filter_function(note, transaction)
@@ -147,11 +144,11 @@ impl LightWallet {
     }
 
     /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool.
-    pub async fn confirmed_balance<D>(&self) -> Option<u64>
+    pub async fn confirmed_balance<Op>(&self) -> Option<u64>
     where
-        D: WalletDomain,
+        Op: OutputInterface,
     {
-        self.get_filtered_balance::<D, _>(|_, transaction: &WalletTransaction| {
+        self.get_filtered_balance::<Op, _>(|_, transaction: &WalletTransaction| {
             transaction.status().is_confirmed()
         })
         .await
@@ -160,23 +157,23 @@ impl LightWallet {
     /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool.
     /// Returns `None` if the wallet does not have spend capability.
     // TODO: also calculate whether notes in the wallet have the necessary info (i.e. commitment trees) to spend
-    pub async fn spendable_balance<D>(&self) -> Option<u64>
+    pub async fn spendable_balance<Op>(&self) -> Option<u64>
     where
-        D: WalletDomain,
+        Op: OutputInterface,
     {
         if let UnifiedKeyStore::Spend(_) = self.unified_key_store {
-            self.confirmed_balance::<D>().await
+            self.confirmed_balance::<Op>().await
         } else {
             None
         }
     }
 
     /// Returns total wallet balance of unspent notes not yet confirmed on the block chain for a given shielded pool.
-    pub async fn pending_balance<D>(&self) -> Option<u64>
+    pub async fn pending_balance<Op>(&self) -> Option<u64>
     where
-        D: WalletDomain,
+        Op: OutputInterface,
     {
-        self.get_filtered_balance::<D, _>(|_, transaction: &WalletTransaction| {
+        self.get_filtered_balance::<Op, _>(|_, transaction: &WalletTransaction| {
             !transaction.status().is_confirmed()
         })
         .await
@@ -184,12 +181,12 @@ impl LightWallet {
 
     /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool excluding any notes
     /// with value less than marginal fee (5_000).
-    pub async fn confirmed_balance_excluding_dust<D>(&self) -> Option<u64>
+    pub async fn confirmed_balance_excluding_dust<Op>(&self) -> Option<u64>
     where
-        D: WalletDomain,
+        Op: OutputInterface,
     {
-        self.get_filtered_balance::<D, _>(|note, transaction: &WalletTransaction| {
-            D::Output::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
+        self.get_filtered_balance::<Op, _>(|note, transaction: &WalletTransaction| {
+            Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
         })
         .await
     }
@@ -205,11 +202,11 @@ impl LightWallet {
         &self,
     ) -> Result<NonNegativeAmount, BalanceError> {
         Ok(utils::conversion::zatoshis_from_u64(
-            self.confirmed_balance_excluding_dust::<Orchard>()
+            self.confirmed_balance_excluding_dust::<OrchardNote>()
                 .await
                 .ok_or(BalanceError::NoFullViewingKey)?
                 + self
-                    .confirmed_balance_excluding_dust::<Sapling>()
+                    .confirmed_balance_excluding_dust::<SaplingNote>()
                     .await
                     .ok_or(BalanceError::NoFullViewingKey)?,
         )?)

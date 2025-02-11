@@ -10,8 +10,6 @@ use zingo_sync::primitives::OutputInterface;
 use zingo_sync::primitives::TransparentCoin;
 use zingo_sync::primitives::WalletTransaction;
 
-use crate::ShieldedDomain;
-use crate::Transparent;
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -165,14 +163,11 @@ impl LightWallet {
     /// Any notes with output IDs in `exclude` will not be returned.
     /// Any notes without a nullifier or commitment tree position will not be returned.
     // TODO: implement checking the witness can be constructed also
-    pub(crate) fn spendable_notes<'a, D: ShieldedDomain>(
+    pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
-    ) -> Vec<&'a D::Output>
-    where
-        D::Output: NoteInterface,
-    {
+    ) -> Vec<&'a N> {
         self.wallet_transactions
             .values()
             .flat_map(|transaction| {
@@ -180,7 +175,7 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_unspent_outputs::<D>(transaction, exclude).collect()
+                    transaction_unspent_outputs::<N>(transaction, exclude).collect()
                 } else {
                     Vec::new()
                 }
@@ -222,7 +217,7 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&(target_height - additional_confirmations))
                 {
-                    transaction_unspent_outputs::<Transparent>(transaction, exclude).collect()
+                    transaction_unspent_outputs::<TransparentCoin>(transaction, exclude).collect()
                 } else {
                     Vec::new()
                 }
@@ -236,22 +231,19 @@ impl LightWallet {
     /// Any notes with output IDs in `exclude` will not be selected.
     /// Selects notes with smallest value that satisfies the target value. Otherwise, selects the note with the largest
     /// value and repeats.
-    pub(crate) fn select_spendable_notes_by_pool<'a, D: ShieldedDomain>(
+    pub(crate) fn select_spendable_notes_by_pool<'a, N: NoteInterface>(
         &'a self,
         remaining_value_needed: &mut RemainingNeeded,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
-    ) -> Result<Vec<&'a D::Output>, WalletError>
-    where
-        D::Output: NoteInterface,
-    {
+    ) -> Result<Vec<&'a N>, WalletError> {
         let target_value = match remaining_value_needed {
             RemainingNeeded::Positive(value) => *value,
             RemainingNeeded::GracelessChangeAmount(_) => return Ok(Vec::new()),
         };
 
-        let mut selected_notes: Vec<&'a D::Output> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<D>(anchor_height, exclude);
+        let mut selected_notes: Vec<&'a N> = Vec::new();
+        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude);
         unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
@@ -268,7 +260,7 @@ impl LightWallet {
             total_selected_note_value = NonNegativeAmount::from_u64(
                 selected_notes
                     .iter()
-                    .fold(0, |acc, output: &&D::Output| acc + output.value()),
+                    .fold(0, |acc, output: &&N| acc + output.value()),
             )?;
 
             *remaining_value_needed =

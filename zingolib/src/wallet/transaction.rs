@@ -1,8 +1,6 @@
 use zcash_primitives::transaction::components::Amount;
 use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
-use crate::WalletDomain;
-
 use super::{
     error::{FeeError, KindError},
     LightWallet,
@@ -92,15 +90,11 @@ impl LightWallet {
 /// Returns all unspent outputs of the specified pool in the given `transaction`.
 ///
 /// Any output IDs in `exclude` will not be returned.
-pub(crate) fn transaction_unspent_outputs<'a, D>(
+pub(crate) fn transaction_unspent_outputs<'a, Op: OutputInterface + 'a>(
     transaction: &'a WalletTransaction,
     exclude: &'a [OutputId],
-) -> impl Iterator<Item = &'a D::Output> + 'a
-where
-    D: WalletDomain,
-    D::Output: 'a,
-{
-    D::Output::transaction_outputs(transaction)
+) -> impl Iterator<Item = &'a Op> + 'a {
+    Op::transaction_outputs(transaction)
         .iter()
         .filter(|&output| {
             output.spending_transaction().is_none() && !exclude.contains(&output.output_id())

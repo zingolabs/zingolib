@@ -2,6 +2,7 @@
 use json::{object, JsonValue};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
+use zingo_sync::primitives::{OrchardNote, SaplingNote, TransparentCoin};
 
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},
@@ -9,7 +10,6 @@ use crate::{
         finsight,
         summaries::{SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers},
     },
-    Orchard, Sapling, Transparent,
 };
 
 #[allow(missing_docs)]
@@ -37,16 +37,16 @@ impl LightClient {
     pub async fn do_balance(&self) -> PoolBalances {
         let wallet = self.wallet.lock().await;
 
-        let transparent_balance = wallet.confirmed_balance::<Transparent>().await;
+        let transparent_balance = wallet.confirmed_balance::<TransparentCoin>().await;
 
-        let verified_sapling_balance = wallet.confirmed_balance::<Sapling>().await;
-        let unverified_sapling_balance = wallet.pending_balance::<Sapling>().await;
-        let spendable_sapling_balance = wallet.spendable_balance::<Sapling>().await;
+        let verified_sapling_balance = wallet.confirmed_balance::<SaplingNote>().await;
+        let unverified_sapling_balance = wallet.pending_balance::<SaplingNote>().await;
+        let spendable_sapling_balance = wallet.spendable_balance::<SaplingNote>().await;
         let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
 
-        let verified_orchard_balance = wallet.confirmed_balance::<Orchard>().await;
-        let unverified_orchard_balance = wallet.pending_balance::<Orchard>().await;
-        let spendable_orchard_balance = wallet.spendable_balance::<Orchard>().await;
+        let verified_orchard_balance = wallet.confirmed_balance::<OrchardNote>().await;
+        let unverified_orchard_balance = wallet.pending_balance::<OrchardNote>().await;
+        let spendable_orchard_balance = wallet.spendable_balance::<OrchardNote>().await;
         let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
 
         PoolBalances {

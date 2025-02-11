@@ -9,7 +9,10 @@ use std::{
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::{
+    data_api::scanning::{ScanPriority, ScanRange},
+    PoolType, ShieldedProtocol,
+};
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -533,6 +536,8 @@ pub trait OutputInterface: Sized {
     type KeyId;
     type Input: Clone + Debug + PartialEq + Eq + PartialOrd + Ord;
 
+    const POOL_TYPE: PoolType;
+
     /// Output ID
     fn output_id(&self) -> OutputId;
 
@@ -605,6 +610,8 @@ impl OutputInterface for TransparentCoin {
     type KeyId = TransparentAddressId;
     type Input = OutPoint;
 
+    const POOL_TYPE: PoolType = PoolType::Transparent;
+
     fn output_id(&self) -> OutputId {
         self.output_id
     }
@@ -638,6 +645,8 @@ pub trait NoteInterface: OutputInterface + Sized {
     type ZcashNote;
     type Nullifier: Copy;
 
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+
     /// Decrypted note with recipient and value
     fn note(&self) -> &Self::ZcashNote;
 
@@ -656,6 +665,8 @@ pub type SaplingNote = WalletNote<sapling_crypto::Note, sapling_crypto::Nullifie
 impl OutputInterface for SaplingNote {
     type KeyId = KeyId;
     type Input = sapling_crypto::Nullifier;
+
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Sapling);
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -690,6 +701,8 @@ impl NoteInterface for SaplingNote {
     type ZcashNote = sapling_crypto::Note;
     type Nullifier = sapling_crypto::Nullifier;
 
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+
     fn note(&self) -> &Self::ZcashNote {
         &self.note
     }
@@ -712,6 +725,8 @@ pub type OrchardNote = WalletNote<orchard::Note, orchard::note::Nullifier>;
 impl OutputInterface for OrchardNote {
     type KeyId = KeyId;
     type Input = orchard::note::Nullifier;
+
+    const POOL_TYPE: PoolType = PoolType::Shielded(ShieldedProtocol::Orchard);
 
     fn output_id(&self) -> OutputId {
         self.output_id
@@ -746,6 +761,8 @@ impl NoteInterface for OrchardNote {
     type ZcashNote = orchard::Note;
     type Nullifier = Self::Input;
 
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+
     fn note(&self) -> &Self::ZcashNote {
         &self.note
     }
@@ -765,6 +782,8 @@ impl NoteInterface for OrchardNote {
 
 pub trait OutgoingNoteInterface: Sized {
     type ZcashNote;
+
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
 
     /// Output ID
     fn output_id(&self) -> OutputId;
@@ -838,6 +857,8 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 impl OutgoingNoteInterface for OutgoingSaplingNote {
     type ZcashNote = sapling_crypto::Note;
 
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+
     fn output_id(&self) -> OutputId {
         self.output_id
     }
@@ -886,6 +907,8 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 impl OutgoingNoteInterface for OutgoingOrchardNote {
     type ZcashNote = orchard::Note;
+
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
     fn output_id(&self) -> OutputId {
         self.output_id

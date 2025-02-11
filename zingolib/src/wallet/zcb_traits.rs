@@ -22,10 +22,10 @@ use zcash_primitives::{
 };
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
-    primitives::{NoteInterface, OutputId, OutputInterface},
+    primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
 };
 
-use crate::{wallet::output::RemainingNeeded, Orchard, Sapling};
+use crate::wallet::output::RemainingNeeded;
 
 use super::{error::WalletError, LightWallet};
 
@@ -327,7 +327,7 @@ impl InputSource for LightWallet {
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
         let selected_sapling_notes = if sources.contains(&ShieldedProtocol::Sapling) {
-            self.select_spendable_notes_by_pool::<Sapling>(
+            self.select_spendable_notes_by_pool::<SaplingNote>(
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_sapling,
@@ -336,7 +336,7 @@ impl InputSource for LightWallet {
             Vec::new()
         };
         let selected_orchard_notes = if sources.contains(&ShieldedProtocol::Orchard) {
-            self.select_spendable_notes_by_pool::<Orchard>(
+            self.select_spendable_notes_by_pool::<OrchardNote>(
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_orchard,
