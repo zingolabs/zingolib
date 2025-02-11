@@ -1,10 +1,12 @@
-use std::{collections::HashMap, num::NonZeroU32, ops::Range};
+use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
+use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
-        scanning::ScanRange, Account, BlockMetadata, InputSource, NullifierQuery, SpendableNotes,
-        TransactionDataRequest, WalletRead, WalletSummary,
+        chain::CommitmentTreeRoot, scanning::ScanRange, Account, BlockMetadata, InputSource,
+        NullifierQuery, SpendableNotes, TransactionDataRequest, WalletCommitmentTrees, WalletRead,
+        WalletSummary, WalletWrite, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
     ShieldedProtocol,
@@ -23,6 +25,7 @@ use zcash_primitives::{
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
     primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
+    witness::{OrchardShardStore, SaplingShardStore},
 };
 
 use crate::wallet::output::RemainingNeeded;
@@ -281,6 +284,169 @@ impl WalletRead for LightWallet {
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
         unimplemented!()
+    }
+}
+
+impl WalletWrite for LightWallet {
+    type UtxoRef = u32;
+
+    fn create_account(
+        &mut self,
+        seed: &secrecy::SecretVec<u8>,
+        birthday: &zcash_client_backend::data_api::AccountBirthday,
+    ) -> Result<(Self::AccountId, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
+        unimplemented!()
+    }
+
+    fn import_account_hd(
+        &mut self,
+        seed: &secrecy::SecretVec<u8>,
+        account_index: zip32::AccountId,
+        birthday: &zcash_client_backend::data_api::AccountBirthday,
+    ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
+        unimplemented!()
+    }
+
+    fn import_account_ufvk(
+        &mut self,
+        unified_key: &UnifiedFullViewingKey,
+        birthday: &zcash_client_backend::data_api::AccountBirthday,
+        purpose: zcash_client_backend::data_api::AccountPurpose,
+    ) -> Result<Self::Account, Self::Error> {
+        unimplemented!()
+    }
+
+    fn get_next_available_address(
+        &mut self,
+        account: Self::AccountId,
+        request: zcash_keys::keys::UnifiedAddressRequest,
+    ) -> Result<Option<UnifiedAddress>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn update_chain_tip(&mut self, tip_height: BlockHeight) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn put_blocks(
+        &mut self,
+        from_state: &zcash_client_backend::data_api::chain::ChainState,
+        blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn put_received_transparent_utxo(
+        &mut self,
+        output: &WalletTransparentOutput,
+    ) -> Result<Self::UtxoRef, Self::Error> {
+        unimplemented!()
+    }
+
+    fn store_decrypted_tx(
+        &mut self,
+        received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn store_transactions_to_be_sent(
+        &mut self,
+        transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn truncate_to_height(&mut self, max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+        unimplemented!()
+    }
+
+    fn reserve_next_n_ephemeral_addresses(
+        &mut self,
+        _account_id: Self::AccountId,
+        _n: usize,
+    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn set_transaction_status(
+        &mut self,
+        _txid: TxId,
+        _status: zcash_client_backend::data_api::TransactionStatus,
+    ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+}
+
+impl WalletCommitmentTrees for LightWallet {
+    type Error = Infallible;
+    type SaplingShardStore<'a> = SaplingShardStore;
+    type OrchardShardStore<'a> = OrchardShardStore;
+
+    fn with_sapling_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+    where
+        for<'a> F: FnMut(
+            &'a mut ShardTree<
+                Self::SaplingShardStore<'a>,
+                { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                { SAPLING_SHARD_HEIGHT },
+            >,
+        ) -> Result<A, E>,
+        E: From<ShardTreeError<Self::Error>>,
+    {
+        callback(self.shard_trees.sapling_mut())
+    }
+
+    fn put_sapling_subtree_roots(
+        &mut self,
+        start_index: u64,
+        roots: &[CommitmentTreeRoot<sapling_crypto::Node>],
+    ) -> Result<(), ShardTreeError<Self::Error>> {
+        self.with_sapling_tree_mut(|t| {
+            for (root, i) in roots.iter().zip(0u64..) {
+                let root_addr = incrementalmerkletree::Address::from_parts(
+                    SAPLING_SHARD_HEIGHT.into(),
+                    start_index + i,
+                );
+                t.insert(root_addr, *root.root_hash())?;
+            }
+            Ok::<_, ShardTreeError<Self::Error>>(())
+        })?;
+
+        Ok(())
+    }
+
+    fn with_orchard_tree_mut<F, A, E>(&mut self, mut callback: F) -> Result<A, E>
+    where
+        for<'a> F: FnMut(
+            &'a mut ShardTree<
+                Self::OrchardShardStore<'a>,
+                { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                { ORCHARD_SHARD_HEIGHT },
+            >,
+        ) -> Result<A, E>,
+        E: From<ShardTreeError<Self::Error>>,
+    {
+        callback(self.shard_trees.orchard_mut())
+    }
+
+    fn put_orchard_subtree_roots(
+        &mut self,
+        start_index: u64,
+        roots: &[CommitmentTreeRoot<orchard::tree::MerkleHashOrchard>],
+    ) -> Result<(), ShardTreeError<Self::Error>> {
+        self.with_orchard_tree_mut(|t| {
+            for (root, i) in roots.iter().zip(0u64..) {
+                let root_addr = incrementalmerkletree::Address::from_parts(
+                    ORCHARD_SHARD_HEIGHT.into(),
+                    start_index + i,
+                );
+                t.insert(root_addr, *root.root_hash())?;
+            }
+            Ok::<_, ShardTreeError<Self::Error>>(())
+        })?;
+
+        Ok(())
     }
 }
 

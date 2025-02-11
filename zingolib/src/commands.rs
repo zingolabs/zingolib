@@ -1162,51 +1162,50 @@ impl Command for SendCommand {
 //     }
 // }
 
-// FIXME: zingo2
-// struct ConfirmCommand {}
-// impl Command for ConfirmCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Confirms the latest proposal, completing and broadcasting the transaction(s).
-//             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
-//             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
+struct ConfirmCommand {}
+impl Command for ConfirmCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Confirms the latest proposal, completing and broadcasting the transaction(s).
+            Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
+            Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
-//             Usage:
-//                 confirm
-//             Example:
-//                 send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-//                 confirm
+            Usage:
+                confirm
+            Example:
+                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+                confirm
 
-//         "#}
-//     }
+        "#}
+    }
 
-//     fn short_help(&self) -> &'static str {
-//         "Confirms the latest proposal, completing and broadcasting the transaction(s)."
-//     }
+    fn short_help(&self) -> &'static str {
+        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
+    }
 
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         if !args.is_empty() {
-//             return format!(
-//                 "Error: {}\nTry 'help confirm' for correct usage and examples.",
-//                 error::CommandError::InvalidArguments
-//             );
-//         }
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if !args.is_empty() {
+            return format!(
+                "Error: {}\nTry 'help confirm' for correct usage and examples.",
+                error::CommandError::InvalidArguments
+            );
+        }
 
-//         RT.block_on(async move {
-//             match lightclient
-//                 .complete_and_broadcast_stored_proposal()
-//                 .await {
-//                 Ok(txids) => {
-//                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
-//                 }
-//                 Err(e) => {
-//                     object! { "error" => e.to_string() }
-//                 }
-//             }
-//             .pretty(2)
-//         })
-//     }
-// }
+        RT.block_on(async move {
+            match lightclient
+                .complete_and_broadcast_stored_proposal()
+                .await {
+                Ok(txids) => {
+                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
 
 // TODO: add a decline command which deletes latest proposal?
 
@@ -1870,7 +1869,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         // entries.push(("sendall", Box::new(SendAllCommand {})));
         // entries.push(("quicksend", Box::new(QuickSendCommand {})));
         // entries.push(("quickshield", Box::new(QuickShieldCommand {})));
-        // entries.push(("confirm", Box::new(ConfirmCommand {})));
+        entries.push(("confirm", Box::new(ConfirmCommand {})));
     }
     entries.into_iter().collect()
 }

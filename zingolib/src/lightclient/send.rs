@@ -27,18 +27,20 @@ impl LightClient {
 
 /// patterns for newfangled propose flow
 pub mod send_with_proposal {
-    // use std::convert::Infallible;
+    use std::convert::Infallible;
 
     use nonempty::NonEmpty;
 
-    // use zcash_client_backend::proposal::Proposal;
-    // use zcash_client_backend::wallet::NoteId;
+    use zcash_client_backend::proposal::Proposal;
+    use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
+    use zcash_primitives::transaction::fees::zip317;
     use zcash_primitives::transaction::TxId;
 
     // use zingo_status::confirmation_status::ConfirmationStatus;
 
+    use crate::data::proposal::ZingoProposal;
     use crate::lightclient::LightClient;
     // use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
@@ -305,59 +307,55 @@ pub mod send_with_proposal {
         //     Ok(txids)
         // }
 
-        // FIXME: zingo2
-        // async fn complete_and_broadcast<NoteRef>(
-        //     &self,
-        //     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-        // ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-        //     let wallet = self.wallet.lock().await;
-        //     wallet.create_transaction(proposal).await?;
+        async fn complete_and_broadcast<NoteRef>(
+            &self,
+            proposal: &Proposal<zip317::FeeRule, NoteRef>,
+        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            let wallet = self.wallet.lock().await;
+            wallet.create_transaction(proposal).await?;
 
-        //     self.record_created_transactions().await?;
+            self.record_created_transactions().await?;
 
-        //     let broadcast_result = self.broadcast_created_transactions().await;
+            let broadcast_result = self.broadcast_created_transactions().await;
 
-        //     wallet
-        //         .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
-        //             |vec_txids| {
-        //                 serde_json::Value::Array(
-        //                     vec_txids
-        //                         .iter()
-        //                         .map(|txid| serde_json::Value::String(txid.to_string()))
-        //                         .collect::<Vec<serde_json::Value>>(),
-        //                 )
-        //             },
-        //         ))
-        //         .await;
+            wallet
+                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
+                    |vec_txids| {
+                        serde_json::Value::Array(
+                            vec_txids
+                                .iter()
+                                .map(|txid| serde_json::Value::String(txid.to_string()))
+                                .collect::<Vec<serde_json::Value>>(),
+                        )
+                    },
+                ))
+                .await;
 
-        //     let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
-        //         .ok_or(CompleteAndBroadcastError::EmptyList)?;
+            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
+                .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-        //     Ok(broadcast_txids)
-        // }
+            Ok(broadcast_txids)
+        }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
         pub async fn complete_and_broadcast_stored_proposal(
             &self,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
-            // FIXME: zingo2
-            //     if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
-            //         match proposal {
-            //             crate::lightclient::ZingoProposal::Transfer(transfer_proposal) => {
-            //                 self.complete_and_broadcast::<NoteId>(transfer_proposal)
-            //                     .await
-            //             }
-            //             crate::lightclient::ZingoProposal::Shield(shield_proposal) => {
-            //                 self.complete_and_broadcast::<Infallible>(shield_proposal)
-            //                     .await
-            //             }
-            //         }
-            //         .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
-            //     } else {
-            //         Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
-            //     }
-
-            todo!()
+            if let Some(proposal) = self.latest_proposal.read().await.as_ref() {
+                match proposal {
+                    ZingoProposal::Transfer(transfer_proposal) => {
+                        self.complete_and_broadcast::<NoteId>(transfer_proposal)
+                            .await
+                    }
+                    ZingoProposal::Shield(shield_proposal) => {
+                        self.complete_and_broadcast::<Infallible>(shield_proposal)
+                            .await
+                    }
+                }
+                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
+            } else {
+                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
+            }
         }
 
         /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
