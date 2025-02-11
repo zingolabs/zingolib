@@ -29,7 +29,7 @@ use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::utils;
-use crate::wallet::notes::ShieldedNoteInterface;
+use crate::wallet::output::ShieldedNoteInterface;
 
 use crate::wallet::traits::Diversifiable as _;
 

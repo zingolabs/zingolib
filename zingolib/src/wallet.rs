@@ -48,7 +48,7 @@ pub mod utils;
 //these mods contain pieces of the impl LightWallet
 pub mod describe;
 pub mod disk;
-pub mod notes;
+pub mod output;
 pub mod propose;
 pub mod send;
 pub mod sync;

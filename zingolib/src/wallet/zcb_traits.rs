@@ -25,7 +25,7 @@ use zingo_sync::{
     primitives::{NoteInterface, OutputId, OutputInterface},
 };
 
-use crate::{wallet::notes::RemainingNeeded, Orchard, Sapling};
+use crate::{wallet::output::RemainingNeeded, Orchard, Sapling};
 
 use super::{error::WalletError, LightWallet};
 
@@ -291,9 +291,9 @@ impl InputSource for LightWallet {
 
     fn get_spendable_note(
         &self,
-        txid: &TxId,
-        protocol: ShieldedProtocol,
-        index: u32,
+        _txid: &TxId,
+        _protocol: ShieldedProtocol,
+        _index: u32,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -308,7 +308,7 @@ impl InputSource for LightWallet {
 
     fn select_spendable_notes(
         &self,
-        account: Self::AccountId,
+        _account: Self::AccountId,
         target_value: NonNegativeAmount,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
@@ -406,7 +406,7 @@ impl InputSource for LightWallet {
                     ),
                     note.output_id().txid(),
                     note.output_id().output_index() as u16,
-                    note.note().clone(),
+                    *note.note(),
                     note.key_id().scope,
                     note.position()
                         .expect("note selection should filter on notes with positions"),

@@ -17,7 +17,9 @@ use zcash_primitives::{
     },
 };
 
-use crate::wallet::{notes::OldOutputInterface, transaction_records_by_id::TransactionRecordsById};
+use crate::wallet::{
+    output::OldOutputInterface, transaction_records_by_id::TransactionRecordsById,
+};
 
 use std::fmt::Debug;
 
@@ -339,7 +341,7 @@ mod tests {
     use zip32::AccountId;
 
     use crate::wallet::{
-        notes::orchard::mocks::OrchardNoteBuilder,
+        output::orchard::mocks::OrchardNoteBuilder,
         transaction_record::mocks::TransactionRecordBuilder,
         transaction_records_by_id::TransactionRecordsById,
     };

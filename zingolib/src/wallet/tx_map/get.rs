@@ -4,11 +4,11 @@
 use zcash_note_encryption::Domain;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::notes::interface::OutputConstructor;
+use crate::wallet::output::interface::OutputConstructor;
 use crate::wallet::{
     data::{PoolNullifier, TransactionRecord},
-    notes::OldOutputInterface,
-    notes::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
+    output::OldOutputInterface,
+    output::{query::OutputSpendStatusQuery, ShieldedNoteInterface},
     traits::{DomainWalletExt, Recipient},
 };
 

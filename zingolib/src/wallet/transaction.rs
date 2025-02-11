@@ -102,15 +102,7 @@ where
 {
     D::Output::transaction_outputs(transaction)
         .iter()
-        .filter_map(|output| {
-            if output.spending_transaction().is_none() {
-                if exclude.contains(&output.output_id()) {
-                    None
-                } else {
-                    Some(output)
-                }
-            } else {
-                None
-            }
+        .filter(|&output| {
+            output.spending_transaction().is_none() && !exclude.contains(&output.output_id())
         })
 }

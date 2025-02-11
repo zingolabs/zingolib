@@ -11,7 +11,7 @@ use crate::wallet::data::summaries::{
     NoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use crate::wallet::keys::unified::WalletCapability;
-use crate::wallet::notes::SpendStatus;
+use crate::wallet::output::SpendStatus;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;

@@ -10,10 +10,10 @@ use zingo_sync::primitives::OutputInterface;
 use zingo_sync::primitives::TransparentCoin;
 use zingo_sync::primitives::WalletTransaction;
 
-use crate::wallet::notes::query::OutputQuery;
-use crate::wallet::notes::query::OutputSpendStatusQuery;
 use crate::ShieldedDomain;
 use crate::Transparent;
+use query::OutputQuery;
+use query::OutputSpendStatusQuery;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::error::WalletError;
@@ -180,12 +180,11 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_unspent_outputs::<D>(transaction, &exclude).collect()
+                    transaction_unspent_outputs::<D>(transaction, exclude).collect()
                 } else {
                     Vec::new()
                 }
             })
-            .into_iter()
             .filter(|&note| note.nullifier().is_some() && note.position().is_some())
             .collect()
     }
@@ -223,7 +222,7 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&(target_height - additional_confirmations))
                 {
-                    transaction_unspent_outputs::<Transparent>(transaction, &exclude).collect()
+                    transaction_unspent_outputs::<Transparent>(transaction, exclude).collect()
                 } else {
                     Vec::new()
                 }
@@ -252,8 +251,8 @@ impl LightWallet {
         };
 
         let mut selected_notes: Vec<&'a D::Output> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<D>(anchor_height, &exclude);
-        unselected_notes.sort_by_key(|&output| output.value()); // from smallest to largest
+        let mut unselected_notes = self.spendable_notes::<D>(anchor_height, exclude);
+        unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
         let _dust_notes = unselected_notes.drain(..dust_index).collect::<Vec<_>>();
@@ -463,7 +462,7 @@ pub mod tests {
 
     use crate::{
         mocks::default_txid,
-        wallet::notes::{
+        wallet::output::{
             query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
             transparent::mocks::TransparentOutputBuilder, OldOutputInterface as _,
         },
