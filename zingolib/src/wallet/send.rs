@@ -13,6 +13,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::fees::zip317;
 use zingo_memo::create_wallet_internal_memo_version_1;
 
+use super::error::WalletError;
 use super::LightWallet;
 
 /// TODO: Add Doc Comment Here!
@@ -50,7 +51,7 @@ impl LightWallet {
         let next_id = g.id + 1;
 
         // Discard the old value, since we are replacing it
-        std::mem::replace(&mut *g, SendProgress::new(next_id));
+        let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
     }
 
     /// Get the current sending status.
@@ -72,7 +73,7 @@ pub enum BuildTransactionError {
     Calculation(
         #[from]
         zcash_client_backend::data_api::error::Error<
-            crate::wallet::tx_map::TxMapTraitError,
+            WalletError,
             std::convert::Infallible,
             std::convert::Infallible,
             zcash_primitives::transaction::fees::zip317::FeeError,
@@ -84,7 +85,7 @@ pub enum BuildTransactionError {
 
 impl LightWallet {
     pub(crate) async fn create_transaction<NoteRef>(
-        &self,
+        &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
     ) -> Result<(), BuildTransactionError> {
         if !self.unified_key_store.is_spending_key() {

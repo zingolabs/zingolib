@@ -23,7 +23,8 @@ pub struct TransparentAddressId {
 }
 
 impl TransparentAddressId {
-    pub(crate) fn from_parts(
+    /// Construct from parts
+    pub fn from_parts(
         account_id: zcash_primitives::zip32::AccountId,
         scope: TransparentScope,
         address_index: AddressIndex,

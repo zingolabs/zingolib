@@ -14,17 +14,23 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, Parameters as _},
-    legacy::{keys::NonHardenedChildIndex, TransparentAddress},
+    consensus::{self, BlockHeight, Parameters as _},
+    legacy::{
+        keys::{NonHardenedChildIndex, TransparentKeyScope},
+        TransparentAddress,
+    },
     memo::Memo,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
         Transaction, TxId,
     },
 };
+use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
-    primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
+    primitives::{
+        NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote, WalletTransaction,
+    },
     witness::{OrchardShardStore, SaplingShardStore},
 };
 
@@ -292,60 +298,60 @@ impl WalletWrite for LightWallet {
 
     fn create_account(
         &mut self,
-        seed: &secrecy::SecretVec<u8>,
-        birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _seed: &secrecy::SecretVec<u8>,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
     ) -> Result<(Self::AccountId, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
 
     fn import_account_hd(
         &mut self,
-        seed: &secrecy::SecretVec<u8>,
-        account_index: zip32::AccountId,
-        birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _seed: &secrecy::SecretVec<u8>,
+        _account_index: zip32::AccountId,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
     ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
 
     fn import_account_ufvk(
         &mut self,
-        unified_key: &UnifiedFullViewingKey,
-        birthday: &zcash_client_backend::data_api::AccountBirthday,
-        purpose: zcash_client_backend::data_api::AccountPurpose,
+        _unified_key: &UnifiedFullViewingKey,
+        _birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _purpose: zcash_client_backend::data_api::AccountPurpose,
     ) -> Result<Self::Account, Self::Error> {
         unimplemented!()
     }
 
     fn get_next_available_address(
         &mut self,
-        account: Self::AccountId,
-        request: zcash_keys::keys::UnifiedAddressRequest,
+        _account: Self::AccountId,
+        _request: zcash_keys::keys::UnifiedAddressRequest,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
         unimplemented!()
     }
 
-    fn update_chain_tip(&mut self, tip_height: BlockHeight) -> Result<(), Self::Error> {
+    fn update_chain_tip(&mut self, _tip_height: BlockHeight) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
     fn put_blocks(
         &mut self,
-        from_state: &zcash_client_backend::data_api::chain::ChainState,
-        blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
+        _from_state: &zcash_client_backend::data_api::chain::ChainState,
+        _blocks: Vec<zcash_client_backend::data_api::ScannedBlock<Self::AccountId>>,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
     fn put_received_transparent_utxo(
         &mut self,
-        output: &WalletTransparentOutput,
+        _output: &WalletTransparentOutput,
     ) -> Result<Self::UtxoRef, Self::Error> {
         unimplemented!()
     }
 
     fn store_decrypted_tx(
         &mut self,
-        received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
+        _received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }
@@ -354,19 +360,61 @@ impl WalletWrite for LightWallet {
         &mut self,
         transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
     ) -> Result<(), Self::Error> {
-        unimplemented!()
+        for sent_transaction in transactions {
+            let txid = sent_transaction.tx().txid();
+
+            // this is a workaround as Transaction does not implement Clone
+            let mut raw_transaction = vec![];
+            sent_transaction.tx().write(&mut raw_transaction)?;
+            let transaction = Transaction::read(
+                raw_transaction.as_slice(),
+                consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
+            )?;
+
+            self.wallet_transactions
+                .entry(txid)
+                .or_insert(WalletTransaction::from_parts(
+                    txid,
+                    transaction,
+                    ConfirmationStatus::Calculated(sent_transaction.target_height()),
+                    sent_transaction.created().unix_timestamp() as u32,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ));
+
+            // FIXME: zingo2, sync calculated tx to mark notes spent
+        }
+
+        Ok(())
     }
 
-    fn truncate_to_height(&mut self, max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
+    fn truncate_to_height(&mut self, _max_height: BlockHeight) -> Result<BlockHeight, Self::Error> {
         unimplemented!()
     }
 
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
         _account_id: Self::AccountId,
-        _n: usize,
+        n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        unimplemented!()
+        Ok(self
+            .generate_refund_addresses(n)?
+            .into_iter()
+            .map(|(address_id, address)| {
+                (
+                    address,
+                    TransparentAddressMetadata::new(
+                        TransparentKeyScope::EPHEMERAL,
+                        NonHardenedChildIndex::from_index(address_id.address_index())
+                            .expect("non-hardened bit should be checked on derivation"),
+                    ),
+                )
+            })
+            .collect())
     }
 
     fn set_transaction_status(

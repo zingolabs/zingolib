@@ -15,6 +15,9 @@ pub enum WalletError {
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
+    /// Failed to write transaxction.
+    #[error("Failed to write transaction. {0:?}")]
+    TransactionWrite(#[from] std::io::Error),
 }
 
 /// Errors associated with calculating transaction fee
@@ -96,7 +99,7 @@ pub enum KeyError {
     /// Key derivation failed
     // TODO: add std::Error to zcash_keys::keys::DerivationError in LRZ fork and add thiserror #[from] macro
     #[error("Key derivation failed")]
-    KeyDerivationError(DerivationError),
+    KeyDerivationError(#[from] DerivationError),
     /// Key decoding failed
     // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
     #[error("Key decoding failed")]

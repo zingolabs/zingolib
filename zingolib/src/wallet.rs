@@ -14,6 +14,7 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
+use zingo_sync::keys::transparent::{self, TransparentScope};
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
     primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
@@ -328,11 +329,25 @@ impl LightWallet {
             false,
         )?);
 
+        let mut transparent_addresses = BTreeMap::new();
+        unified_addresses.iter().for_each(|unified_address| {
+            if let Some(transparent_address) = unified_address.transparent() {
+                transparent_addresses.insert(
+                    TransparentAddressId::from_parts(
+                        zip32::AccountId::ZERO,
+                        TransparentScope::External,
+                        0,
+                    ),
+                    transparent::encode_address(&network, *transparent_address),
+                );
+            }
+        });
+
         Ok(Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: BlockHeight::from_u32(height.into()),
-            unified_key_store: UnifiedKeyStore::Empty, // TODO: not yet integrated
+            unified_key_store,
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             wallet_blocks: BTreeMap::new(),
@@ -341,8 +356,8 @@ impl LightWallet {
             outpoint_map: BTreeMap::new(),
             shard_trees: zingo_sync::witness::ShardTrees::new(),
             sync_state: zingo_sync::primitives::SyncState::new(),
-            transparent_addresses: BTreeMap::new(),
-            unified_addresses: AppendOnlyVec::new(),
+            transparent_addresses,
+            unified_addresses,
             network,
         })
     }

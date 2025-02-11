@@ -1,21 +1,9 @@
 //! TODO: Add Mod Description Here!
 
-use zcash_primitives::consensus::BlockHeight;
-
 use super::LightClient;
 use super::LightWalletSendProgress;
 
 impl LightClient {
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    pub(crate) async fn get_latest_block_height(&self) -> Result<BlockHeight, String> {
-        Ok(BlockHeight::from_u32(
-            crate::grpc_connector::get_latest_block(self.config.get_lightwalletd_uri())
-                .await?
-                .height as u32,
-        ))
-    }
-
     /// TODO: Add Doc Comment Here!
     pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.lock().await.get_send_progress().await;
@@ -121,78 +109,6 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        // FIXME: zingo2
-        // /// When a transactions are created, they are added to "spending_data".
-        // /// This step records all cached transactions into TransactionRecord s.
-        // /// This overwrites confirmation status to Calculated (not Broadcast)
-        // /// so only call this immediately after creating the transaction
-        // ///
-        // /// With the introduction of multistep transactions to support ZIP320
-        // /// we begin ordering transactions in the "spending_data" cache such
-        // /// that any output that's used to fund a subsequent transaction is
-        // /// added prior to that fund-requiring transaction.
-        // /// After some consideration we don't see why the spending_data should
-        // /// be stored out-of-order with respect to earlier transactions funding
-        // /// later ones in the cache, so we implement an in order cache.
-        // async fn record_created_transactions(
-        //     &self,
-        // ) -> Result<Vec<TxId>, RecordCachedTransactionsError> {
-        //     let wallet = self.wallet.lock().await;
-        //     let mut tx_map = wallet
-        //         .transaction_context
-        //         .transaction_metadata_set
-        //         .write()
-        //         .await;
-        //     let current_height = self
-        //         .get_latest_block_height()
-        //         .await
-        //         .map_err(RecordCachedTransactionsError::Height)?;
-        //     let mut transactions_to_record = vec![];
-        //     if let Some(spending_data) = &mut tx_map.spending_data {
-        //         for (_txid, raw_tx) in spending_data.cached_raw_transactions.iter() {
-        //             transactions_to_record.push(Transaction::read(
-        //                 raw_tx.as_slice(),
-        //                 zcash_primitives::consensus::BranchId::for_height(
-        //                     &wallet.transaction_context.config.chain,
-        //                     current_height + 1,
-        //                 ),
-        //             )?);
-        //         }
-        //     } else {
-        //         return Err(RecordCachedTransactionsError::Cache(
-        //             TransactionCacheError::NoSpendCapability,
-        //         ));
-        //     }
-        //     drop(tx_map);
-        //     let mut txids = vec![];
-        //     for transaction in transactions_to_record {
-        //         wallet
-        //             .transaction_context
-        //             .scan_full_tx(
-        //                 &transaction,
-        //                 ConfirmationStatus::Calculated(current_height + 1),
-        //                 Some(now() as u32),
-        //                 crate::wallet::utils::get_price(now(), &wallet.price.read().await.clone()),
-        //             )
-        //             .await;
-        //         wallet
-        //             .transaction_context
-        //             .transaction_metadata_set
-        //             .write()
-        //             .await
-        //             .transaction_records_by_id
-        //             .update_note_spend_statuses(
-        //                 transaction.txid(),
-        //                 Some((
-        //                     transaction.txid(),
-        //                     ConfirmationStatus::Calculated(current_height + 1),
-        //                 )),
-        //             );
-        //         txids.push(transaction.txid());
-        //     }
-        //     Ok(txids)
-        // }
-
         // /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
         // /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
         // FIXME: zingo2
@@ -311,30 +227,31 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            let wallet = self.wallet.lock().await;
+            let mut wallet = self.wallet.lock().await;
             wallet.create_transaction(proposal).await?;
 
-            self.record_created_transactions().await?;
+            // FIXME: zingo2
+            // let broadcast_result = self.broadcast_created_transactions().await;
 
-            let broadcast_result = self.broadcast_created_transactions().await;
+            // wallet
+            //     .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
+            //         |vec_txids| {
+            //             serde_json::Value::Array(
+            //                 vec_txids
+            //                     .iter()
+            //                     .map(|txid| serde_json::Value::String(txid.to_string()))
+            //                     .collect::<Vec<serde_json::Value>>(),
+            //             )
+            //         },
+            //     ))
+            //     .await;
 
-            wallet
-                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
-                    |vec_txids| {
-                        serde_json::Value::Array(
-                            vec_txids
-                                .iter()
-                                .map(|txid| serde_json::Value::String(txid.to_string()))
-                                .collect::<Vec<serde_json::Value>>(),
-                        )
-                    },
-                ))
-                .await;
+            // let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
+            //     .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
-                .ok_or(CompleteAndBroadcastError::EmptyList)?;
+            // Ok(broadcast_txids)
 
-            Ok(broadcast_txids)
+            todo!()
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.

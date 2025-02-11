@@ -10,7 +10,10 @@ use sapling_crypto::{
 use sha2::Sha256;
 use unified::ReceiverSelection;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::NetworkConstants, zip32::ChildIndex};
+use zcash_primitives::{
+    consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
+};
+use zingo_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
 
 use super::{error::KeyError, LightWallet};
 
@@ -20,8 +23,9 @@ pub mod unified;
 impl LightWallet {
     /// Returns a new unified address for the given `receivers`.
     /// Also adds this new unified address to the wallet.
+    /// If the unified address contains a transparent receiver, this is also added to transparent addresses.
     pub fn generate_unified_address(
-        &self,
+        &mut self,
         receivers: ReceiverSelection,
     ) -> Result<UnifiedAddress, KeyError> {
         let unified_address = self.unified_key_store.generate_unified_address(
@@ -30,9 +34,52 @@ impl LightWallet {
             false,
         )?;
 
+        if let Some(transparent_address) = unified_address.transparent() {
+            self.transparent_addresses.insert(
+                TransparentAddressId::from_parts(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    self.unified_addresses.len() as u32,
+                ),
+                transparent::encode_address(&self.network, *transparent_address),
+            );
+        }
+
         self.unified_addresses.push(unified_address.clone());
 
         Ok(unified_address)
+    }
+
+    /// Generates 'n' new refund addresses and adds them to the wallet.
+    pub fn generate_refund_addresses(
+        &mut self,
+        n: usize,
+    ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
+        let refund_address_count = self
+            .transparent_addresses
+            .keys()
+            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
+            .count();
+
+        (refund_address_count..(refund_address_count + n))
+            .map(|address_index| {
+                let transparent_address_id = TransparentAddressId::from_parts(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::Refund,
+                    address_index as u32,
+                );
+                let refund_address = self
+                    .unified_key_store
+                    .generate_refund_address(address_index as u32)?;
+
+                self.transparent_addresses.insert(
+                    transparent_address_id.clone(),
+                    transparent::encode_address(&self.network, refund_address.clone()),
+                );
+
+                Ok((transparent_address_id, refund_address))
+            })
+            .collect()
     }
 }
 
