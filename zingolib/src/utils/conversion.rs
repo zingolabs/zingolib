@@ -5,22 +5,13 @@ use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId}
 
 use super::error::ConversionError;
 
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
-pub enum TxIdFromHexEncodedStrError {
-    #[error("{0}")]
-    Decode(hex::FromHexError),
-    #[error("{0:?}")]
-    Code(Vec<u8>),
-}
-
 /// Converts txid from hex-encoded `&str` to `zcash_primitives::transaction::TxId`.
 ///
 /// TxId byte order is displayed in the reverse order to how it's encoded.
-pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, TxIdFromHexEncodedStrError> {
-    let txid_bytes = hex::decode(txid).map_err(TxIdFromHexEncodedStrError::Decode)?;
-    let mut txid_bytes =
-        <[u8; 32]>::try_from(txid_bytes).map_err(TxIdFromHexEncodedStrError::Code)?;
+pub fn txid_from_hex_encoded_str(txid: &str) -> Result<TxId, ConversionError> {
+    let txid_bytes = hex::decode(txid).map_err(ConversionError::DecodeHexFailed)?;
+    let mut txid_bytes = <[u8; 32]>::try_from(txid_bytes)
+        .map_err(|e| ConversionError::InvalidTxidLength(e.len()))?;
     txid_bytes.reverse();
     Ok(TxId::from_bytes(txid_bytes))
 }

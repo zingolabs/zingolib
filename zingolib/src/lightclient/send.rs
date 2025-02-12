@@ -23,8 +23,11 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
+    use zcash_primitives::consensus;
     use zcash_primitives::transaction::fees::zip317;
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::transaction::{Transaction, TxId};
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_sync::primitives::WalletTransaction;
 
     // use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -109,149 +112,145 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        // /// When a transaction is created, it is added to a cache. This step broadcasts the cache and sets its status to transmitted.
-        // /// only broadcasts transactions marked as calculated (not broadcast). when it broadcasts them, it marks them as broadcast.
-        // FIXME: zingo2
-        // async fn broadcast_created_transactions(
-        //     &self,
-        // ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
-        //     let wallet = self.wallet.lock().await;
-        //     let mut tx_map = wallet
-        //         .transaction_context
-        //         .transaction_metadata_set
-        //         .write()
-        //         .await;
-        //     let current_height = self
-        //         .get_latest_block_height()
-        //         .await
-        //         .map_err(BroadcastCachedTransactionsError::Height)?;
-        //     let calculated_tx_cache = tx_map
-        //         .spending_data
-        //         .as_ref()
-        //         .ok_or(BroadcastCachedTransactionsError::Cache(
-        //             TransactionCacheError::NoSpendCapability,
-        //         ))?
-        //         .cached_raw_transactions
-        //         .clone();
-        //     let mut txids = vec![];
-        //     for (mut txid, raw_tx) in calculated_tx_cache {
-        //         let mut spend_status = None;
-        //         if let Some(&mut ref mut transaction_record) =
-        //             tx_map.transaction_records_by_id.get_mut(&txid)
-        //         {
-        //             // only send the txid if its status is Calculated. when we do, change its status to Transmitted.
-        //             if matches!(transaction_record.status, ConfirmationStatus::Calculated(_)) {
-        //                 match crate::grpc_connector::send_transaction(
-        //                     self.get_server_uri(),
-        //                     raw_tx.into_boxed_slice(),
-        //                 )
-        //                 .await
-        //                 {
-        //                     Ok(serverz_txid_string) => {
-        //                         let new_status =
-        //                             ConfirmationStatus::Transmitted(current_height + 1);
+        /// Broadcasts calculated transactions in order of time calculated and sets confirmation status to transmitted.
+        async fn broadcast_created_transactions(
+            &self,
+        ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
+            let mut txids = Vec::new();
+            let mut wallet = self.wallet.lock().await;
 
-        //                         transaction_record.status = new_status;
+            #[cfg(feature = "darkside_tests")]
+            let mut mismatched_txids = Vec::new();
 
-        //                         match crate::utils::conversion::txid_from_hex_encoded_str(
-        //                             serverz_txid_string.as_str(),
-        //                         ) {
-        //                             Ok(reported_txid) => {
-        //                                 if txid != reported_txid {
-        //                                     println!(
-        //                                         "served txid {} does not match calulated txid {}",
-        //                                         reported_txid, txid,
-        //                                     );
-        //                                     // during darkside tests, the server may generate a new txid.
-        //                                     // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-        //                                     #[cfg(feature = "darkside_tests")]
-        //                                     {
-        //                                         // now we reconfigure the tx_map to align with the server
-        //                                         // switch the TransactionRecord to the new txid
-        //                                         if let Some(mut transaction_record) =
-        //                                             tx_map.transaction_records_by_id.remove(&txid)
-        //                                         {
-        //                                             transaction_record.txid = reported_txid;
-        //                                             tx_map
-        //                                                 .transaction_records_by_id
-        //                                                 .insert(reported_txid, transaction_record);
-        //                                         }
-        //                                         txid = reported_txid;
-        //                                     }
-        //                                     #[cfg(not(feature = "darkside_tests"))]
-        //                                     {
-        //                                         // did the server generate a new txid? is this related to the rebroadcast bug?
-        //                                         // crash
-        //                                         todo!();
-        //                                     }
-        //                                 };
-        //                             }
-        //                             Err(e) => {
-        //                                 println!("server returned invalid txid {}", e);
-        //                                 todo!();
-        //                             }
-        //                         }
+            let mut calculated_transactions = wallet
+                .wallet_transactions
+                .values_mut()
+                .filter(|transaction| {
+                    matches!(transaction.status(), ConfirmationStatus::Calculated(_))
+                })
+                .collect::<Vec<_>>();
 
-        //                         spend_status = Some((txid, new_status));
+            calculated_transactions.sort_by_key(|transaction| transaction.datetime());
 
-        //                         txids.push(txid);
-        //                     }
-        //                     Err(server_err) => {
-        //                         return Err(BroadcastCachedTransactionsError::Broadcast(server_err))
-        //                     }
-        //                 };
-        //             }
-        //         } else {
-        //             return Err(BroadcastCachedTransactionsError::Unrecorded(txid));
-        //         }
-        //         if let Some(s) = spend_status {
-        //             tx_map
-        //                 .transaction_records_by_id
-        //                 .update_note_spend_statuses(s.0, spend_status);
-        //         }
-        //     }
+            for wallet_transaction in calculated_transactions {
+                let mut txid = wallet_transaction.txid();
 
-        //     tx_map
-        //         .spending_data
-        //         .as_mut()
-        //         .ok_or(BroadcastCachedTransactionsError::Cache(
-        //             TransactionCacheError::NoSpendCapability,
-        //         ))?
-        //         .cached_raw_transactions
-        //         .clear();
+                let mut transaction_bytes = vec![];
+                wallet_transaction
+                    .transaction()
+                    .write(&mut transaction_bytes)
+                    .unwrap();
 
-        //     Ok(txids)
-        // }
+                let txid_from_server = crate::grpc_connector::send_transaction(
+                    self.get_server_uri(),
+                    transaction_bytes.into_boxed_slice(),
+                )
+                .await
+                .unwrap();
+
+                wallet_transaction.set_status(ConfirmationStatus::Transmitted(
+                    wallet_transaction.status().get_height(),
+                ));
+
+                let txid_from_server =
+                    crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
+                        .unwrap();
+
+                if txid != txid_from_server {
+                    println!(
+                        "txid reported by the server does not match calulated txid.\ncalculated txid:\n{}\ntxid from server: {}",
+                        txid, txid_from_server,
+                    );
+                    // during darkside tests, the server may generate a new txid.
+                    // If this feature is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+                    #[cfg(feature = "darkside_tests")]
+                    {
+                        mismatched_txids.push((txid, txid_from_server));
+                        txid = txid_from_server;
+                    }
+                    #[cfg(not(feature = "darkside_tests"))]
+                    {
+                        // did the server generate a new txid? is this related to the rebroadcast bug?
+                        // TODO: handle gracefully
+                        panic!("server reported incorrect txid");
+                    }
+                }
+
+                txids.push(txid);
+            }
+
+            #[cfg(feature = "darkside_tests")]
+            for (txid, txid_from_server) in mismatched_txids {
+                if let Some(wallet_transaction) = wallet.wallet_transactions.remove(&txid) {
+                    let height = wallet_transaction.status().get_height();
+
+                    // this is a workaround as Transaction does not implement Clone
+                    let mut transaction_bytes = vec![];
+                    wallet_transaction
+                        .transaction()
+                        .write(&mut transaction_bytes)
+                        .unwrap();
+                    let transaction = Transaction::read(
+                        transaction_bytes.as_slice(),
+                        consensus::BranchId::for_height(&wallet.network, height),
+                    )
+                    .unwrap();
+
+                    wallet
+                        .wallet_transactions
+                        .entry(txid_from_server)
+                        .or_insert(WalletTransaction::from_parts(
+                            txid_from_server,
+                            transaction,
+                            ConfirmationStatus::Transmitted(height),
+                            wallet_transaction.datetime(),
+                            None,
+                            Vec::new(),
+                            Vec::new(),
+                            Vec::new(),
+                            Vec::new(),
+                            Vec::new(),
+                        ));
+
+                    // FIXME: zingo2, scan tx
+                }
+            }
+
+            Ok(txids)
+        }
 
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            let mut wallet = self.wallet.lock().await;
-            wallet.create_transaction(proposal).await?;
+            // FIXME: zingo2 manage wallet guard, move send methods to wallet with parameters for lightclient parts
+            self.wallet
+                .lock()
+                .await
+                .create_transaction(proposal)
+                .await?;
 
-            // FIXME: zingo2
-            // let broadcast_result = self.broadcast_created_transactions().await;
+            let broadcast_result = self.broadcast_created_transactions().await;
 
-            // wallet
-            //     .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
-            //         |vec_txids| {
-            //             serde_json::Value::Array(
-            //                 vec_txids
-            //                     .iter()
-            //                     .map(|txid| serde_json::Value::String(txid.to_string()))
-            //                     .collect::<Vec<serde_json::Value>>(),
-            //             )
-            //         },
-            //     ))
-            //     .await;
+            self.wallet
+                .lock()
+                .await
+                .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
+                    |vec_txids| {
+                        serde_json::Value::Array(
+                            vec_txids
+                                .iter()
+                                .map(|txid| serde_json::Value::String(txid.to_string()))
+                                .collect::<Vec<serde_json::Value>>(),
+                        )
+                    },
+                ))
+                .await;
 
-            // let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
-            //     .ok_or(CompleteAndBroadcastError::EmptyList)?;
+            let broadcast_txids = NonEmpty::from_vec(broadcast_result?)
+                .ok_or(CompleteAndBroadcastError::EmptyList)?;
 
-            // Ok(broadcast_txids)
-
-            todo!()
+            Ok(broadcast_txids)
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.

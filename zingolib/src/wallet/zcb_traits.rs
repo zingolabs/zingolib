@@ -364,10 +364,10 @@ impl WalletWrite for LightWallet {
             let txid = sent_transaction.tx().txid();
 
             // this is a workaround as Transaction does not implement Clone
-            let mut raw_transaction = vec![];
-            sent_transaction.tx().write(&mut raw_transaction)?;
+            let mut transaction_bytes = vec![];
+            sent_transaction.tx().write(&mut transaction_bytes)?;
             let transaction = Transaction::read(
-                raw_transaction.as_slice(),
+                transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
@@ -386,7 +386,7 @@ impl WalletWrite for LightWallet {
                     Vec::new(),
                 ));
 
-            // FIXME: zingo2, sync calculated tx to mark notes spent
+            // FIXME: zingo2, scan calculated tx
         }
 
         Ok(())

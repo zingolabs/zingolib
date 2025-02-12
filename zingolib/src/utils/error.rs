@@ -8,7 +8,7 @@ pub enum ConversionError {
     /// Failed to decode hex
     DecodeHexFailed(hex::FromHexError),
     /// Invalid string length
-    InvalidStringLength,
+    InvalidTxidLength(usize),
     /// Invalid recipient address
     InvalidAddress(#[from] zcash_address::ParseError),
     /// Amount is outside the valid range of zatoshis
@@ -19,7 +19,13 @@ impl fmt::Display for ConversionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ConversionError::DecodeHexFailed(e) => write!(f, "failed to decode hex. {}", e),
-            ConversionError::InvalidStringLength => write!(f, "invalid string length"),
+            ConversionError::InvalidTxidLength(len) => {
+                write!(
+                    f,
+                    "invalid txid length. should be 32 bytes. length: {}",
+                    len
+                )
+            }
             ConversionError::InvalidAddress(e) => {
                 write!(f, "invalid recipient address. {}", e)
             }

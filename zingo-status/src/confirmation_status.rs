@@ -2,11 +2,11 @@
 //!  Confirmed === on-record on-chain at BlockHeight
 
 use zcash_primitives::consensus::BlockHeight;
-/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 
+/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfirmationStatus {
-    /// the transaction has been calculated but not yet broadcast to the chain.
+    /// The transaction has been calculated but not yet broadcast to the chain.
     Calculated(BlockHeight),
 
     /// The transaction has been sent to the zcash blockchain. It could be in the mempool.

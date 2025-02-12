@@ -361,6 +361,10 @@ impl WalletTransaction {
         }
     }
 
+    pub fn set_status(&mut self, status: ConfirmationStatus) {
+        self.status = status;
+    }
+
     pub fn transparent_coins(&self) -> &[TransparentCoin] {
         &self.transparent_coins
     }
