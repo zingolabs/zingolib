@@ -73,8 +73,8 @@ impl LightWallet {
                     .generate_refund_address(address_index as u32)?;
 
                 self.transparent_addresses.insert(
-                    transparent_address_id.clone(),
-                    transparent::encode_address(&self.network, refund_address.clone()),
+                    transparent_address_id,
+                    transparent::encode_address(&self.network, refund_address),
                 );
 
                 Ok((transparent_address_id, refund_address))

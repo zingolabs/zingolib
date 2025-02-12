@@ -1,8 +1,14 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
+use std::time::SystemTime;
+
 use log::error;
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
+use zcash_primitives::consensus;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 
 use zcash_client_backend::zip321::TransactionRequest;
@@ -12,6 +18,10 @@ use zcash_primitives::memo::MemoBytes;
 
 use zcash_primitives::transaction::fees::zip317;
 use zingo_memo::create_wallet_internal_memo_version_1;
+use zingo_status::confirmation_status::ConfirmationStatus;
+use zingo_sync::traits::SyncWallet as _;
+
+use crate::lightclient::send::send_with_proposal::BroadcastCachedTransactionsError;
 
 use super::error::WalletError;
 use super::LightWallet;
@@ -143,6 +153,101 @@ impl LightWallet {
             None,
         )?;
         Ok(())
+    }
+
+    /// Broadcasts calculated transactions in order of time calculated and sets confirmation status to transmitted.
+    pub(crate) async fn broadcast_created_transactions(
+        &mut self,
+        server_uri: http::Uri,
+    ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
+        struct SentTransaction {
+            txid: TxId,
+            height: BlockHeight,
+            transaction: Transaction,
+        }
+
+        let mut sent_transactions = Vec::new();
+        let network = self.network;
+
+        let mut calculated_transactions = self
+            .wallet_transactions
+            .values_mut()
+            .filter(|transaction| matches!(transaction.status(), ConfirmationStatus::Calculated(_)))
+            .collect::<Vec<_>>();
+        calculated_transactions.sort_by_key(|transaction| transaction.datetime());
+
+        for wallet_transaction in calculated_transactions {
+            let height = wallet_transaction.status().get_height();
+
+            let mut transaction_bytes = vec![];
+            wallet_transaction
+                .transaction()
+                .write(&mut transaction_bytes)
+                .unwrap();
+            let transaction = Transaction::read(
+                transaction_bytes.as_slice(),
+                consensus::BranchId::for_height(&network, height),
+            )
+            .unwrap();
+
+            let txid_from_server = crate::grpc_connector::send_transaction(
+                server_uri.clone(),
+                transaction_bytes.into_boxed_slice(),
+            )
+            .await
+            .unwrap();
+
+            let txid_from_server =
+                crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
+                    .unwrap();
+
+            sent_transactions.push(SentTransaction {
+                txid: txid_from_server,
+                height,
+                transaction,
+            });
+        }
+
+        let txids = sent_transactions
+                .into_iter()
+                .map(|sent_transaction| {
+                    let txid_from_server = sent_transaction.txid;
+                    let calculated_txid = sent_transaction.transaction.txid();
+
+                    if txid_from_server == calculated_txid {
+                        zingo_sync::sync::scan_pending_transaction(
+                            &network,
+                            &self.get_unified_full_viewing_keys().unwrap(),
+                            self,
+                            sent_transaction.transaction,
+                            ConfirmationStatus::Transmitted(sent_transaction.height),
+                            SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs() as u32,
+                            None,
+                        );
+                    } else {
+                        eprintln!(
+                            "txid reported by the server does not match calulated txid.\ncalculated txid:\n{}\ntxid from server: {}",
+                            calculated_txid, txid_from_server,
+                        );
+                        #[cfg(not(feature = "darkside_tests"))]
+                        {
+                            panic!("server error: server reported different txid to the one calculated!");
+                        }
+                        // during darkside tests, the server may report a different txid to the one calculated.
+                        #[cfg(feature = "darkside_tests")]
+                        {
+                            todo!("find a way to override txids without unecessary kruft in sync engine")
+                        }
+                    }
+
+                    sent_transaction.txid
+                })
+                .collect();
+
+        Ok(txids)
     }
 }
 

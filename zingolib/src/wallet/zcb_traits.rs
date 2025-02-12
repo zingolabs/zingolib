@@ -28,9 +28,7 @@ use zcash_primitives::{
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
-    primitives::{
-        NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote, WalletTransaction,
-    },
+    primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
     witness::{OrchardShardStore, SaplingShardStore},
 };
 
@@ -360,9 +358,9 @@ impl WalletWrite for LightWallet {
         &mut self,
         transactions: &[zcash_client_backend::data_api::SentTransaction<Self::AccountId>],
     ) -> Result<(), Self::Error> {
-        for sent_transaction in transactions {
-            let txid = sent_transaction.tx().txid();
+        let network = self.network;
 
+        for sent_transaction in transactions {
             // this is a workaround as Transaction does not implement Clone
             let mut transaction_bytes = vec![];
             sent_transaction.tx().write(&mut transaction_bytes)?;
@@ -371,22 +369,15 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            self.wallet_transactions
-                .entry(txid)
-                .or_insert(WalletTransaction::from_parts(
-                    txid,
-                    transaction,
-                    ConfirmationStatus::Calculated(sent_transaction.target_height()),
-                    sent_transaction.created().unix_timestamp() as u32,
-                    None,
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                ));
-
-            // FIXME: zingo2, scan tx
+            zingo_sync::sync::scan_pending_transaction(
+                &network,
+                &self.get_unified_full_viewing_keys().unwrap(),
+                self,
+                transaction,
+                ConfirmationStatus::Calculated(sent_transaction.target_height()),
+                sent_transaction.created().unix_timestamp() as u32,
+                None,
+            );
         }
 
         Ok(())

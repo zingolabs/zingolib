@@ -23,11 +23,8 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
-    use zcash_primitives::consensus::{self, BlockHeight};
     use zcash_primitives::transaction::fees::zip317;
-    use zcash_primitives::transaction::{Transaction, TxId};
-    use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingo_sync::traits::SyncWallet;
+    use zcash_primitives::transaction::TxId;
 
     // use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -112,116 +109,17 @@ pub mod send_with_proposal {
     }
 
     impl LightClient {
-        /// Broadcasts calculated transactions in order of time calculated and sets confirmation status to transmitted.
-        async fn broadcast_created_transactions(
-            &self,
-        ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
-            struct SentTransaction {
-                txid: TxId,
-                height: BlockHeight,
-                transaction: Transaction,
-            }
-
-            let mut sent_transactions = Vec::new();
-            let mut wallet = self.wallet.lock().await;
-            let network = wallet.network;
-
-            let mut calculated_transactions = wallet
-                .wallet_transactions
-                .values_mut()
-                .filter(|transaction| {
-                    matches!(transaction.status(), ConfirmationStatus::Calculated(_))
-                })
-                .collect::<Vec<_>>();
-
-            calculated_transactions.sort_by_key(|transaction| transaction.datetime());
-
-            for wallet_transaction in calculated_transactions {
-                let height = wallet_transaction.status().get_height();
-
-                let mut transaction_bytes = vec![];
-                wallet_transaction
-                    .transaction()
-                    .write(&mut transaction_bytes)
-                    .unwrap();
-                let transaction = Transaction::read(
-                    transaction_bytes.as_slice(),
-                    consensus::BranchId::for_height(&network, height),
-                )
-                .unwrap();
-
-                let txid_from_server = crate::grpc_connector::send_transaction(
-                    self.get_server_uri(),
-                    transaction_bytes.into_boxed_slice(),
-                )
-                .await
-                .unwrap();
-
-                let txid_from_server =
-                    crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
-                        .unwrap();
-
-                sent_transactions.push(SentTransaction {
-                    txid: txid_from_server,
-                    height,
-                    transaction,
-                });
-            }
-
-            let txids = sent_transactions
-                .into_iter()
-                .map(|sent_transaction| {
-                    let txid_from_server = sent_transaction.txid;
-                    let calculated_txid = sent_transaction.transaction.txid();
-
-                if txid_from_server == calculated_txid {
-                    zingo_sync::sync::scan_pending_transaction(
-                        &network,
-                        &wallet.get_unified_full_viewing_keys().unwrap(),
-                        &mut *wallet,
-                        sent_transaction.transaction,
-                        ConfirmationStatus::Transmitted(sent_transaction.height),
-                    );
-                } else {
-                    eprintln!(
-                        "txid reported by the server does not match calulated txid.\ncalculated txid:\n{}\ntxid from server: {}",
-                        calculated_txid, txid_from_server,
-                    );
-                    #[cfg(not(feature = "darkside_tests"))]
-                    {
-                        panic!("server error: server reported different txid to the one calculated!");
-                    }
-                    // during darkside tests, the server may report a different txid to the one calculated.
-                    #[cfg(feature = "darkside_tests")]
-                    {
-                        todo!("find a way to override txids without unecessary kruft in sync engine")
-                    }
-                }
-
-
-                    sent_transaction.txid
-                })
-                .collect();
-
-            Ok(txids)
-        }
-
         async fn complete_and_broadcast<NoteRef>(
             &self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            // FIXME: zingo2 manage wallet guard, move send methods to wallet with parameters for lightclient parts
-            self.wallet
-                .lock()
-                .await
-                .create_transaction(proposal)
-                .await?;
+            let mut wallet = self.wallet.lock().await;
+            wallet.create_transaction(proposal).await?;
+            let broadcast_result = wallet
+                .broadcast_created_transactions(self.get_server_uri())
+                .await;
 
-            let broadcast_result = self.broadcast_created_transactions().await;
-
-            self.wallet
-                .lock()
-                .await
+            wallet
                 .set_send_result(broadcast_result.clone().map_err(|e| e.to_string()).map(
                     |vec_txids| {
                         serde_json::Value::Array(
