@@ -16,6 +16,7 @@ use zcash_client_backend::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{self, BlockHeight};
+use zcash_primitives::transaction::Transaction;
 use zcash_primitives::zip32::AccountId;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -258,6 +259,86 @@ where
     }
 }
 
+/// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.
+///
+/// Used both internally for scanning mempool transactions and externally for scanning calculated and transmitted
+/// transactions during send.
+///
+/// Fails if `status` is of `Confirmed` variant.
+pub fn scan_pending_transaction<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    wallet: &mut W,
+    transaction: Transaction,
+    status: ConfirmationStatus,
+) where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+{
+    if matches!(status, ConfirmationStatus::Confirmed(_)) {
+        panic!("this fn is for unconfirmed transactions only");
+    }
+
+    let mut pending_transaction_nullifiers = NullifierMap::new();
+    let mut pending_transaction_outpoints = BTreeMap::new();
+    let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
+        .get_transparent_addresses()
+        .unwrap()
+        .iter()
+        .map(|(id, address)| (address.clone(), *id))
+        .collect();
+    let pending_transaction = scan_transaction(
+        consensus_parameters,
+        ufvks,
+        transaction,
+        status,
+        &DecryptedNoteData::new(),
+        &mut pending_transaction_nullifiers,
+        &mut pending_transaction_outpoints,
+        &transparent_addresses,
+    )
+    .unwrap();
+
+    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
+    let transparent_output_ids = spend::collect_transparent_output_ids(wallet_transactions);
+    let transparent_spend_locators = spend::detect_transparent_spends(
+        &mut pending_transaction_outpoints,
+        transparent_output_ids,
+    );
+    let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
+        spend::collect_derived_nullifiers(wallet_transactions);
+    let (sapling_spend_locators, orchard_spend_locators) = spend::detect_shielded_spends(
+        &mut pending_transaction_nullifiers,
+        sapling_derived_nullifiers,
+        orchard_derived_nullifiers,
+    );
+
+    // return if transaction is not relevant to the wallet
+    if pending_transaction.transparent_coins().is_empty()
+        && pending_transaction.sapling_notes().is_empty()
+        && pending_transaction.orchard_notes().is_empty()
+        && pending_transaction.outgoing_orchard_notes().is_empty()
+        && pending_transaction.outgoing_sapling_notes().is_empty()
+        && transparent_spend_locators.is_empty()
+        && sapling_spend_locators.is_empty()
+        && orchard_spend_locators.is_empty()
+    {
+        return;
+    }
+
+    wallet
+        .insert_wallet_transaction(pending_transaction)
+        .unwrap();
+    spend::update_spent_coins(
+        wallet.get_wallet_transactions_mut().unwrap(),
+        transparent_spend_locators,
+    );
+    spend::update_spent_notes(
+        wallet.get_wallet_transactions_mut().unwrap(),
+        sapling_spend_locators,
+        orchard_spend_locators,
+    );
+}
+
 /// Returns true if sync is complete.
 ///
 /// Sync is complete when:
@@ -382,65 +463,12 @@ async fn process_mempool_transaction<W>(
         }
     }
 
-    let confirmation_status = ConfirmationStatus::Mempool(block_height);
-    let mut mempool_transaction_nullifiers = NullifierMap::new();
-    let mut mempool_transaction_outpoints = BTreeMap::new();
-    let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
-        .get_transparent_addresses()
-        .unwrap()
-        .iter()
-        .map(|(id, address)| (address.clone(), *id))
-        .collect();
-    let mempool_transaction = scan_transaction(
+    scan_pending_transaction(
         consensus_parameters,
         ufvks,
+        wallet,
         transaction,
-        confirmation_status,
-        &DecryptedNoteData::new(),
-        &mut mempool_transaction_nullifiers,
-        &mut mempool_transaction_outpoints,
-        &transparent_addresses,
-    )
-    .unwrap();
-
-    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
-    let transparent_output_ids = spend::collect_transparent_output_ids(wallet_transactions);
-    let transparent_spend_locators = spend::detect_transparent_spends(
-        &mut mempool_transaction_outpoints,
-        transparent_output_ids,
-    );
-    let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
-        spend::collect_derived_nullifiers(wallet_transactions);
-    let (sapling_spend_locators, orchard_spend_locators) = spend::detect_shielded_spends(
-        &mut mempool_transaction_nullifiers,
-        sapling_derived_nullifiers,
-        orchard_derived_nullifiers,
-    );
-
-    // return if transaction is not relevant to the wallet
-    if mempool_transaction.transparent_coins().is_empty()
-        && mempool_transaction.sapling_notes().is_empty()
-        && mempool_transaction.orchard_notes().is_empty()
-        && mempool_transaction.outgoing_orchard_notes().is_empty()
-        && mempool_transaction.outgoing_sapling_notes().is_empty()
-        && transparent_spend_locators.is_empty()
-        && sapling_spend_locators.is_empty()
-        && orchard_spend_locators.is_empty()
-    {
-        return;
-    }
-
-    wallet
-        .insert_wallet_transaction(mempool_transaction)
-        .unwrap();
-    spend::update_spent_coins(
-        wallet.get_wallet_transactions_mut().unwrap(),
-        transparent_spend_locators,
-    );
-    spend::update_spent_notes(
-        wallet.get_wallet_transactions_mut().unwrap(),
-        sapling_spend_locators,
-        orchard_spend_locators,
+        ConfirmationStatus::Mempool(block_height),
     );
 
     // TODO: consider logic for pending spent being set back to None when txs are evicted / never make it on chain

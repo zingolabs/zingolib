@@ -386,7 +386,7 @@ impl WalletWrite for LightWallet {
                     Vec::new(),
                 ));
 
-            // FIXME: zingo2, scan calculated tx
+            // FIXME: zingo2, scan tx
         }
 
         Ok(())
