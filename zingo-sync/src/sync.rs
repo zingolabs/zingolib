@@ -581,12 +581,12 @@ where
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .sapling_mut()
+        .sapling
         .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .orchard_mut()
+        .orchard
         .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_sync_state_mut()

@@ -396,7 +396,7 @@ fn collect_nullifiers(
         .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()).unwrap())
         .for_each(|nullifier| {
             nullifier_map
-                .sapling_mut()
+                .sapling
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     transaction
@@ -408,7 +408,7 @@ fn collect_nullifiers(
         })
         .for_each(|nullifier| {
             nullifier_map
-                .orchard_mut()
+                .orchard
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     Ok(())

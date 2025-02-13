@@ -493,7 +493,7 @@ fn collect_nullifiers(
             .map(|spend| spend.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .sapling_mut()
+                    .sapling
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }
@@ -504,7 +504,7 @@ fn collect_nullifiers(
             .map(|action| action.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .orchard_mut()
+                    .orchard
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }

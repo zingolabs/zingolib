@@ -258,11 +258,10 @@ impl From<OutputId> for OutPoint {
 }
 
 /// Binary tree map of nullifiers from transaction spends or actions
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
+#[derive(Debug)]
 pub struct NullifierMap {
-    sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
-    orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    pub(crate) sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    pub(crate) orchard: BTreeMap<orchard::note::Nullifier, Locator>,
 }
 
 impl NullifierMap {
@@ -271,6 +270,11 @@ impl NullifierMap {
             sapling: BTreeMap::new(),
             orchard: BTreeMap::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.sapling.clear();
+        self.orchard.clear();
     }
 }
 
@@ -281,14 +285,12 @@ impl Default for NullifierMap {
 }
 
 /// Wallet block data
-#[derive(Debug, Clone, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, Clone)]
 pub struct WalletBlock {
     block_height: BlockHeight,
     block_hash: BlockHash,
     prev_hash: BlockHash,
     time: u32,
-    #[getset(skip)]
     txids: Vec<TxId>,
     tree_boundaries: TreeBoundaries,
     // TODO: optional price
@@ -313,8 +315,28 @@ impl WalletBlock {
         }
     }
 
+    pub fn block_height(&self) -> BlockHeight {
+        self.block_height
+    }
+
+    pub fn block_hash(&self) -> BlockHash {
+        self.block_hash
+    }
+
+    pub fn prev_hash(&self) -> BlockHash {
+        self.prev_hash
+    }
+
+    pub fn time(&self) -> u32 {
+        self.time
+    }
+
     pub fn txids(&self) -> &[TxId] {
         &self.txids
+    }
+
+    pub fn tree_boundaries(&self) -> TreeBoundaries {
+        self.tree_boundaries
     }
 }
 

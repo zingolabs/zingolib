@@ -224,8 +224,7 @@ impl LightWallet {
     pub fn clear_all(&mut self) {
         self.wallet_blocks.clear();
         self.wallet_transactions.clear();
-        self.nullifier_map.sapling_mut().clear();
-        self.nullifier_map.orchard_mut().clear();
+        self.nullifier_map.clear();
         self.outpoint_map.clear();
         self.sync_state = SyncState::new();
     }

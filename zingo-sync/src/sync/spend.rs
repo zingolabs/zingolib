@@ -117,11 +117,11 @@ pub(super) fn detect_shielded_spends(
 ) {
     let sapling_spend_locators = sapling_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.sapling_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
         .collect();
     let orchard_spend_locators = orchard_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.orchard_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
         .collect();
 
     (sapling_spend_locators, orchard_spend_locators)
