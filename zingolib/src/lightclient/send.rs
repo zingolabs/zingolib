@@ -33,39 +33,28 @@ pub mod send_with_proposal {
     // use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Clone, Debug, thiserror::Error)]
-    pub enum TransactionCacheError {
-        #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-        NoSpendCapability,
-        #[error("No Tx in cached!")]
-        NoCachedTx,
-        #[error("Multistep transaction with non-tex steps")]
-        InvalidMultiStep,
-    }
+    // TODO: untangle errors and fix send result so clone is not needed so we can impl from on std::error
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Clone, Debug, thiserror::Error)]
-    pub enum BroadcastCachedTransactionsError {
-        #[error("Cant broadcast: {0:?}")]
-        Cache(#[from] TransactionCacheError),
-        #[error("Transaction not recorded. Call record_created_transactions first: {0:?}")]
-        Unrecorded(TxId),
-        #[error("Couldnt fetch server height: {0:?}")]
-        Height(String),
+    pub enum BroadcastTransactionsError {
         #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum RecordCachedTransactionsError {
-        #[error("Cant record: {0:?}")]
-        Cache(#[from] TransactionCacheError),
-        #[error("Couldnt fetch server height: {0:?}")]
-        Height(String),
-        #[error("Decoding failed: {0:?}")]
-        Decode(#[from] std::io::Error),
+        /// Failed to read transaction.
+        #[error("Failed to read transaction.")]
+        TransactionRead,
+        /// Failed to write transaction.
+        #[error("Failed to write transaction.")]
+        TransactionWrite,
+        /// Conversion failed
+        #[error("Conversion failed. {0}")]
+        ConversionFailed(#[from] crate::utils::error::ConversionError),
+        /// No view capability
+        #[error("No view capability")]
+        NoViewCapability,
+        /// Txid reported by server does not match calculated txid.
+        #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
+        IncorrectTxidFromServer(TxId, TxId),
     }
 
     #[allow(missing_docs)] // error types document themselves
@@ -73,10 +62,8 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastError {
         #[error("The transaction could not be calculated: {0:?}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Recording created transaction failed: {0:?}")]
-        Record(#[from] RecordCachedTransactionsError),
         #[error("Broadcast failed: {0:?}")]
-        Broadcast(#[from] BroadcastCachedTransactionsError),
+        Broadcast(#[from] BroadcastTransactionsError),
         #[error("TxIds did not work through?")]
         EmptyList,
     }

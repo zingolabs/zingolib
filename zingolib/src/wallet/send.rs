@@ -21,7 +21,7 @@ use zingo_memo::create_wallet_internal_memo_version_1;
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::traits::SyncWallet as _;
 
-use crate::lightclient::send::send_with_proposal::BroadcastCachedTransactionsError;
+use crate::lightclient::send::send_with_proposal::BroadcastTransactionsError;
 
 use super::error::WalletError;
 use super::LightWallet;
@@ -159,16 +159,15 @@ impl LightWallet {
     pub(crate) async fn broadcast_created_transactions(
         &mut self,
         server_uri: http::Uri,
-    ) -> Result<Vec<TxId>, BroadcastCachedTransactionsError> {
+    ) -> Result<Vec<TxId>, BroadcastTransactionsError> {
         struct SentTransaction {
             txid: TxId,
             height: BlockHeight,
             transaction: Transaction,
         }
 
-        let mut sent_transactions = Vec::new();
         let network = self.network;
-
+        let mut sent_transactions = Vec::new();
         let mut calculated_transactions = self
             .wallet_transactions
             .values_mut()
@@ -183,23 +182,22 @@ impl LightWallet {
             wallet_transaction
                 .transaction()
                 .write(&mut transaction_bytes)
-                .unwrap();
+                .map_err(|_| BroadcastTransactionsError::TransactionWrite)?;
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(&network, height),
             )
-            .unwrap();
+            .map_err(|_| BroadcastTransactionsError::TransactionRead)?;
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),
                 transaction_bytes.into_boxed_slice(),
             )
             .await
-            .unwrap();
+            .map_err(BroadcastTransactionsError::Broadcast)?;
 
             let txid_from_server =
-                crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
-                    .unwrap();
+                crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())?;
 
             sent_transactions.push(SentTransaction {
                 txid: txid_from_server,
@@ -209,43 +207,44 @@ impl LightWallet {
         }
 
         let txids = sent_transactions
-                .into_iter()
-                .map(|sent_transaction| {
-                    let txid_from_server = sent_transaction.txid;
-                    let calculated_txid = sent_transaction.transaction.txid();
+            .into_iter()
+            .map(|sent_transaction| {
+                let txid_from_server = sent_transaction.txid;
+                let calculated_txid = sent_transaction.transaction.txid();
 
-                    if txid_from_server == calculated_txid {
-                        zingo_sync::sync::scan_pending_transaction(
-                            &network,
-                            &self.get_unified_full_viewing_keys().unwrap(),
-                            self,
-                            sent_transaction.transaction,
-                            ConfirmationStatus::Transmitted(sent_transaction.height),
-                            SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs() as u32,
-                            None,
+                if txid_from_server == calculated_txid {
+                    zingo_sync::sync::scan_pending_transaction(
+                        &network,
+                        &self
+                            .get_unified_full_viewing_keys()
+                            .map_err(|_| BroadcastTransactionsError::NoViewCapability)?,
+                        self,
+                        sent_transaction.transaction,
+                        ConfirmationStatus::Transmitted(sent_transaction.height),
+                        SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as u32,
+                        None,
+                    );
+                } else {
+                    #[cfg(not(feature = "darkside_tests"))]
+                    {
+                        return BroadcastTransactionsError::IncorrectTxidFromServer(
+                            calculated_txid,
+                            txid_from_server,
                         );
-                    } else {
-                        eprintln!(
-                            "txid reported by the server does not match calulated txid.\ncalculated txid:\n{}\ntxid from server: {}",
-                            calculated_txid, txid_from_server,
-                        );
-                        #[cfg(not(feature = "darkside_tests"))]
-                        {
-                            panic!("server error: server reported different txid to the one calculated!");
-                        }
-                        // during darkside tests, the server may report a different txid to the one calculated.
-                        #[cfg(feature = "darkside_tests")]
-                        {
-                            todo!("find a way to override txids without unecessary kruft in sync engine")
-                        }
                     }
+                    // during darkside tests, the server may report a different txid to the one calculated.
+                    #[cfg(feature = "darkside_tests")]
+                    {
+                        // TODO:
+                    }
+                }
 
-                    sent_transaction.txid
-                })
-                .collect();
+                Ok(sent_transaction.txid)
+            })
+            .collect::<Result<Vec<TxId>, BroadcastTransactionsError>>()?;
 
         Ok(txids)
     }

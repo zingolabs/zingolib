@@ -1,7 +1,7 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
 use zcash_keys::keys::DerivationError;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
@@ -15,9 +15,12 @@ pub enum WalletError {
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
-    /// Failed to write transaxction.
+    /// Failed to write transaction.
     #[error("Failed to write transaction. {0:?}")]
     TransactionWrite(#[from] std::io::Error),
+    /// Wallet block not found in the wallet.
+    #[error("Wallet block at height {0} not found in the wallet.")]
+    BlockNotFound(BlockHeight),
 }
 
 /// Errors associated with calculating transaction fee
