@@ -59,11 +59,11 @@ mod zcb_traits;
 pub(crate) use send::SendProgress;
 
 /// TODO: Add Doc Comment Here!
-pub fn now() -> u64 {
+pub fn now() -> u32 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .expect("should never fail when comparing with an instant so far in the past")
+        .as_secs() as u32
 }
 
 /// TODO: Add Doc Comment Here!
@@ -374,7 +374,7 @@ impl LightWallet {
             return;
         }
 
-        self.price.write().await.zec_price = Some((now(), price));
+        self.price.write().await.zec_price = Some((now() as u64, price));
         info!("Set current ZEC Price to USD {}", price);
     }
 

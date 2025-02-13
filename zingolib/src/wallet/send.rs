@@ -1,8 +1,7 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
-use std::time::SystemTime;
-
 use log::error;
+use nonempty::NonEmpty;
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus;
@@ -22,6 +21,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::traits::SyncWallet as _;
 
 use crate::lightclient::send::send_with_proposal::BroadcastTransactionsError;
+use crate::wallet::now;
 
 use super::error::WalletError;
 use super::LightWallet;
@@ -94,10 +94,11 @@ pub enum BuildTransactionError {
 }
 
 impl LightWallet {
-    pub(crate) async fn create_transaction<NoteRef>(
+    /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
+    pub(crate) async fn create_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    ) -> Result<(), BuildTransactionError> {
+    ) -> Result<NonEmpty<TxId>, BuildTransactionError> {
         if !self.unified_key_store.is_spending_key() {
             return Err(BuildTransactionError::NoSpendCapability);
         }
@@ -136,29 +137,33 @@ impl LightWallet {
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<(), BuildTransactionError> {
+    ) -> Result<NonEmpty<TxId>, BuildTransactionError> {
         let network = self.network;
         let usk = (&self.unified_key_store)
             .try_into()
             .map_err(BuildTransactionError::UnifiedSpendKey)?;
 
-        zcash_client_backend::data_api::wallet::create_proposed_transactions(
-            self,
-            &network,
-            &sapling_prover,
-            &sapling_prover,
-            &usk,
-            zcash_client_backend::wallet::OvkPolicy::Sender,
-            proposal,
-            None,
-        )?;
-        Ok(())
+        Ok(
+            zcash_client_backend::data_api::wallet::create_proposed_transactions(
+                self,
+                &network,
+                &sapling_prover,
+                &sapling_prover,
+                &usk,
+                zcash_client_backend::wallet::OvkPolicy::Sender,
+                proposal,
+                None,
+            )?,
+        )
     }
 
-    /// Broadcasts calculated transactions in order of time calculated and sets confirmation status to transmitted.
-    pub(crate) async fn broadcast_created_transactions(
+    /// Broadcasts calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
+    /// Rescans each transaction with an updated confirmation status of `Transmitted`, updating spent statuses of all
+    /// outputs in the wallet.
+    pub(crate) async fn broadcast_calculated_transactions(
         &mut self,
         server_uri: http::Uri,
+        calculated_txids: NonEmpty<TxId>,
     ) -> Result<Vec<TxId>, BroadcastTransactionsError> {
         struct SentTransaction {
             txid: TxId,
@@ -168,18 +173,24 @@ impl LightWallet {
 
         let network = self.network;
         let mut sent_transactions = Vec::new();
-        let mut calculated_transactions = self
-            .wallet_transactions
-            .values_mut()
-            .filter(|transaction| matches!(transaction.status(), ConfirmationStatus::Calculated(_)))
-            .collect::<Vec<_>>();
-        calculated_transactions.sort_by_key(|transaction| transaction.datetime());
 
-        for wallet_transaction in calculated_transactions {
-            let height = wallet_transaction.status().get_height();
+        for txid in calculated_txids {
+            let calculated_transaction = self
+                .wallet_transactions
+                .get_mut(&txid)
+                .ok_or(BroadcastTransactionsError::TransactionNotFound(txid))?;
+
+            if !matches!(
+                calculated_transaction.status(),
+                ConfirmationStatus::Calculated(_)
+            ) {
+                return Err(BroadcastTransactionsError::IncorrectTransactionStatus(txid));
+            }
+
+            let height = calculated_transaction.status().get_height();
 
             let mut transaction_bytes = vec![];
-            wallet_transaction
+            calculated_transaction
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|_| BroadcastTransactionsError::TransactionWrite)?;
@@ -199,8 +210,23 @@ impl LightWallet {
             let txid_from_server =
                 crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())?;
 
+            if txid_from_server != txid {
+                #[cfg(not(feature = "darkside_tests"))]
+                {
+                    return BroadcastTransactionsError::IncorrectTxidFromServer(
+                        calculated_txid,
+                        txid_from_server,
+                    );
+                }
+                // during darkside tests, the server may report a different txid to the one calculated.
+                #[cfg(feature = "darkside_tests")]
+                {
+                    // TODO:
+                }
+            }
+
             sent_transactions.push(SentTransaction {
-                txid: txid_from_server,
+                txid,
                 height,
                 transaction,
             });
@@ -209,38 +235,17 @@ impl LightWallet {
         let txids = sent_transactions
             .into_iter()
             .map(|sent_transaction| {
-                let txid_from_server = sent_transaction.txid;
-                let calculated_txid = sent_transaction.transaction.txid();
-
-                if txid_from_server == calculated_txid {
-                    zingo_sync::sync::scan_pending_transaction(
-                        &network,
-                        &self
-                            .get_unified_full_viewing_keys()
-                            .map_err(|_| BroadcastTransactionsError::NoViewCapability)?,
-                        self,
-                        sent_transaction.transaction,
-                        ConfirmationStatus::Transmitted(sent_transaction.height),
-                        SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs() as u32,
-                        None,
-                    );
-                } else {
-                    #[cfg(not(feature = "darkside_tests"))]
-                    {
-                        return BroadcastTransactionsError::IncorrectTxidFromServer(
-                            calculated_txid,
-                            txid_from_server,
-                        );
-                    }
-                    // during darkside tests, the server may report a different txid to the one calculated.
-                    #[cfg(feature = "darkside_tests")]
-                    {
-                        // TODO:
-                    }
-                }
+                zingo_sync::sync::scan_pending_transaction(
+                    &network,
+                    &self
+                        .get_unified_full_viewing_keys()
+                        .map_err(|_| BroadcastTransactionsError::NoViewCapability)?,
+                    self,
+                    sent_transaction.transaction,
+                    ConfirmationStatus::Transmitted(sent_transaction.height),
+                    now(),
+                    None,
+                );
 
                 Ok(sent_transaction.txid)
             })

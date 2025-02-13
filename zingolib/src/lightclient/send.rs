@@ -40,6 +40,10 @@ pub mod send_with_proposal {
     pub enum BroadcastTransactionsError {
         #[error("Broadcast failed: {0:?}")]
         Broadcast(String),
+        #[error("Transaction not found in the wallet: {0}")]
+        TransactionNotFound(TxId),
+        #[error("Transaction associated with given txid to broadcast does not have `Calculated` status: {0}")]
+        IncorrectTransactionStatus(TxId),
         /// Failed to read transaction.
         #[error("Failed to read transaction.")]
         TransactionRead,
@@ -101,9 +105,9 @@ pub mod send_with_proposal {
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             let mut wallet = self.wallet.lock().await;
-            wallet.create_transaction(proposal).await?;
+            let calculated_txids = wallet.create_transactions(proposal).await?;
             let broadcast_result = wallet
-                .broadcast_created_transactions(self.get_server_uri())
+                .broadcast_calculated_transactions(self.get_server_uri(), calculated_txids)
                 .await;
 
             wallet
