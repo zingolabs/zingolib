@@ -361,7 +361,7 @@ where
             let output_id = OutputId::from_parts(txid, output_index);
             let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
                 m.get(&output_id)
-                    .map(|(nf, pos)| (Some(nf.clone()), Some(pos.clone())))
+                    .map(|(nf, pos)| (Some(*nf), Some(*pos)))
                     .unwrap()
             });
             wallet_notes.push(WalletNote::from_parts(
