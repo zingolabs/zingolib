@@ -243,14 +243,6 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn get_transparent_address_metadata(
-        &self,
-        _account: Self::AccountId,
-        _address: &TransparentAddress,
-    ) -> Result<Option<TransparentAddressMetadata>, Self::Error> {
-        unimplemented!()
-    }
-
     fn get_known_ephemeral_addresses(
         &self,
         account: Self::AccountId,

@@ -177,7 +177,7 @@ impl Command for WalletKindCommand {
     }
 }
 
-// FIXME:
+// FIXME: zingo2
 // struct InterruptCommand {}
 // impl Command for InterruptCommand {
 //     fn help(&self) -> &'static str {
@@ -1461,7 +1461,7 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-// FIXME:
+// FIXME: zingo2
 // struct SetOptionCommand {}
 // impl Command for SetOptionCommand {
 //     fn help(&self) -> &'static str {
@@ -1545,7 +1545,7 @@ impl Command for SendsToAddressCommand {
 //     }
 // }
 
-// FIXME:
+// FIXME: zingo2
 // struct GetOptionCommand {}
 // impl Command for GetOptionCommand {
 //     fn help(&self) -> &'static str {
