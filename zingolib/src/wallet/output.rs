@@ -1,5 +1,7 @@
 //! All things needed to create, manaage, and use notes
 
+use std::num::NonZeroU32;
+
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -192,7 +194,7 @@ impl LightWallet {
         &'a self,
         target_height: BlockHeight,
         exclude: &'a [OutputId],
-        min_confirmations: u32,
+        min_confirmations: NonZeroU32,
     ) -> Vec<&'a TransparentCoin> {
         self.wallet_transactions
             .values()
@@ -203,7 +205,7 @@ impl LightWallet {
                         .get_confirmed_height()
                         .expect("output must be confirmed in this scope")
                     + 1
-                    < min_confirmations
+                    < min_confirmations.get()
                 {
                     return Vec::new();
                 }

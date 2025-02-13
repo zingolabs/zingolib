@@ -29,6 +29,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
     primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
+    traits::SyncWallet,
     witness::{OrchardShardStore, SaplingShardStore},
 };
 
@@ -166,7 +167,7 @@ impl WalletRead for LightWallet {
 
         Ok(Some((
             target_height,
-            std::cmp::max(1.into(), target_height - u32::from(min_confirmations)),
+            std::cmp::max(1.into(), target_height - min_confirmations.get()),
         )))
     }
 
@@ -371,7 +372,7 @@ impl WalletWrite for LightWallet {
 
             zingo_sync::sync::scan_pending_transaction(
                 &network,
-                &self.get_unified_full_viewing_keys().unwrap(),
+                &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
                 ConfirmationStatus::Calculated(sent_transaction.target_height()),
@@ -641,7 +642,11 @@ impl InputSource for LightWallet {
         let address = transparent::encode_address(&self.network, *address);
 
         Ok(self
-            .spendable_transparent_coins(target_height, &[], min_confirmations)
+            .spendable_transparent_coins(
+                target_height,
+                &[],
+                NonZeroU32::new(min_confirmations).ok_or(WalletError::MinimumConfirmationError)?,
+            )
             .into_iter()
             .filter(|&output| output.address == address)
             .flat_map(|output| {

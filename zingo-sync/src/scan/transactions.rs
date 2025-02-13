@@ -107,7 +107,7 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             ufvks,
             transaction,
             confirmation_status,
-            &decrypted_note_data,
+            Some(&decrypted_note_data),
             &mut NullifierMap::new(),
             outpoint_map,
             &transparent_addresses,
@@ -121,13 +121,15 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     Ok(wallet_transactions)
 }
 
+/// Scans the given `transaction` to the wallet, decrypting all notes and adding any transparent coins.
+/// Updates the spend status of all other ouputs in the wallet that were spent in `transaction`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scan_transaction<P: consensus::Parameters>(
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transaction: Transaction,
     confirmation_status: ConfirmationStatus,
-    decrypted_note_data: &DecryptedNoteData,
+    decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
@@ -206,7 +208,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
             transaction.txid(),
             sapling_ivks,
             &sapling_outputs,
-            &decrypted_note_data.sapling_nullifiers_and_positions,
+            decrypted_note_data.map(|d| &d.sapling_nullifiers_and_positions),
         )
         .unwrap();
 
@@ -238,7 +240,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
             transaction.txid(),
             orchard_ivks,
             &orchard_actions,
-            &decrypted_note_data.orchard_nullifiers_and_positions,
+            decrypted_note_data.map(|d| &d.orchard_nullifiers_and_positions),
         )
         .unwrap();
 
@@ -341,7 +343,7 @@ fn scan_incoming_notes<D, Op, N, Nf>(
     txid: TxId,
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
-    nullifiers_and_positions: &HashMap<OutputId, (Nf, Position)>,
+    nullifiers_and_positions: Option<&HashMap<OutputId, (Nf, Position)>>,
 ) -> Result<(), ()>
 where
     D: BatchDomain<Note = N>,
@@ -357,13 +359,17 @@ where
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
             let output_id = OutputId::from_parts(txid, output_index);
-            let (nullifier, position) = nullifiers_and_positions.get(&output_id).unwrap();
+            let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
+                m.get(&output_id)
+                    .map(|(nf, pos)| (Some(nf.clone()), Some(pos.clone())))
+                    .unwrap()
+            });
             wallet_notes.push(WalletNote::from_parts(
                 output_id,
                 key_ids[key_index],
                 note,
-                Some(*nullifier),
-                Some(*position),
+                nullifier,
+                position,
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
                 None,
             ));

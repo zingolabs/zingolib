@@ -1267,6 +1267,7 @@ mod fast {
     }
 }
 mod slow {
+    use shardtree::store::ShardStore;
     // use bip0039::Mnemonic;
     use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -2218,6 +2219,27 @@ mod slow {
             true,
         )
         .await;
+
+        dbg!(faucet.wallet.lock().await.sync_state.wallet_height());
+        dbg!(faucet
+            .wallet
+            .lock()
+            .await
+            .shard_trees
+            .orchard()
+            .store()
+            .max_checkpoint_id()
+            .unwrap());
+        dbg!(faucet
+            .wallet
+            .lock()
+            .await
+            .shard_trees
+            .sapling()
+            .store()
+            .max_checkpoint_id()
+            .unwrap());
+
         let amount_to_send = 5_000;
         from_inputs::quick_send(
             &faucet,

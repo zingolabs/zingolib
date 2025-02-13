@@ -21,6 +21,9 @@ pub enum WalletError {
     /// Wallet block not found in the wallet.
     #[error("Wallet block at height {0} not found in the wallet.")]
     BlockNotFound(BlockHeight),
+    /// Minimum confirmations must be non-zero.
+    #[error("Minimum confirmations must be non-zero.")]
+    MinimumConfirmationError,
 }
 
 /// Errors associated with calculating transaction fee

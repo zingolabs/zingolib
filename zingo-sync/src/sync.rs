@@ -28,7 +28,7 @@ use crate::primitives::{NullifierMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
-use crate::scan::{DecryptedNoteData, ScanResults};
+use crate::scan::ScanResults;
 use crate::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
@@ -293,7 +293,7 @@ pub fn scan_pending_transaction<W>(
         ufvks,
         transaction,
         status,
-        &DecryptedNoteData::new(),
+        None,
         &mut pending_transaction_nullifiers,
         &mut pending_transaction_outpoints,
         &transparent_addresses,

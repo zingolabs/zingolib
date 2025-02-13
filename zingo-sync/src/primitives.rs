@@ -135,6 +135,7 @@ impl SyncState {
                 .expect("scan ranges always non-empty")
                 .block_range()
                 .end
+                - 1
         }
     }
 

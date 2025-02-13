@@ -143,7 +143,7 @@ impl LightWallet {
             &input_selector,
             NonNegativeAmount::const_from_u64(10_000),
             &self.get_transparent_addresses(),
-            0,
+            1,
         )
         .map_err(ProposeShieldError::Component)?;
 
