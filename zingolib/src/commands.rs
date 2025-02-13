@@ -1,6 +1,7 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
+use crate::data::proposal;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -934,71 +935,70 @@ impl Command for SendCommand {
     }
 }
 
-// FIXME: zingo2
-// struct SendAllCommand {}
-// impl Command for SendAllCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Propose to transfer all ZEC from shielded pools to a given address.
-//             The fee required to send this transaction will be added to the proposal and displayed to the user.
-//             The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
-//             If invoked with a JSON arg "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT
-//             will be sent to the zingolabs developer address with each transaction.
+struct SendAllCommand {}
+impl Command for SendAllCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Propose to transfer all ZEC from shielded pools to a given address.
+            The fee required to send this transaction will be added to the proposal and displayed to the user.
+            The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
+            If invoked with a JSON arg "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT
+            will be sent to the zingolabs developer address with each transaction.
 
-//             Warning:
-//                 Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
-//             Usage:
-//                 sendall <address> "<optional memo>"
-//                 OR
-//                 sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
-//             Example:
-//                 sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
-//                 confirm
+            Warning:
+                Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
+            Usage:
+                sendall <address> "<optional memo>"
+                OR
+                sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
+            Example:
+                sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
+                confirm
 
-//         "#}
-//     }
+        "#}
+    }
 
-//     fn short_help(&self) -> &'static str {
-//         "Propose to transfer all ZEC from shielded pools to a given address and display a proposal for confirmation."
-//     }
+    fn short_help(&self) -> &'static str {
+        "Propose to transfer all ZEC from shielded pools to a given address and display a proposal for confirmation."
+    }
 
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
-//             Ok(parse_results) => parse_results,
-//             Err(e) => {
-//                 return format!(
-//                     "Error: {}\nTry 'help sendall' for correct usage and examples.",
-//                     e
-//                 )
-//             }
-//         };
-//         RT.block_on(async move {
-//             match lightclient
-//                 .propose_send_all(address, zennies_for_zingo, memo)
-//                 .await
-//             {
-//                 Ok(proposal) => {
-//                     let amount = match proposal::total_payment_amount(&proposal) {
-//                         Ok(amount) => amount,
-//                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-//                     };
-//                     let fee = match proposal::total_fee(&proposal) {
-//                         Ok(fee) => fee,
-//                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
-//                     };
-//                     object! {
-//                         "amount" => amount.into_u64(),
-//                         "fee" => fee.into_u64(),
-//                     }
-//                 }
-//                 Err(e) => {
-//                     object! { "error" => e.to_string() }
-//                 }
-//             }
-//             .pretty(2)
-//         })
-//     }
-// }
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
+            Ok(parse_results) => parse_results,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
+                    e
+                )
+            }
+        };
+        RT.block_on(async move {
+            match lightclient
+                .propose_send_all(address, zennies_for_zingo, memo)
+                .await
+            {
+                Ok(proposal) => {
+                    let amount = match proposal::total_payment_amount(&proposal) {
+                        Ok(amount) => amount,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    let fee = match proposal::total_fee(&proposal) {
+                        Ok(fee) => fee,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    object! {
+                        "amount" => amount.into_u64(),
+                        "fee" => fee.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
 
 // FIXME: zingo2
 // struct QuickSendCommand {}
@@ -1862,8 +1862,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("delete", Box::new(DeleteCommand {})),
     ];
     {
-        // entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
-        // entries.push(("sendall", Box::new(SendAllCommand {})));
+        entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
+        entries.push(("sendall", Box::new(SendAllCommand {})));
         // entries.push(("quicksend", Box::new(QuickSendCommand {})));
         // entries.push(("quickshield", Box::new(QuickShieldCommand {})));
         entries.push(("confirm", Box::new(ConfirmCommand {})));

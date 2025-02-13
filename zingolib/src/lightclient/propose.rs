@@ -57,37 +57,35 @@ impl LightClient {
         Ok(proposal)
     }
 
-    // /// Creates and stores a proposal for sending all shielded funds to a given address.
+    /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
         &self,
-        _address: ZcashAddress,
-        _zennies_for_zingo: bool,
-        _memo: Option<zcash_primitives::memo::MemoBytes>,
+        address: ZcashAddress,
+        zennies_for_zingo: bool,
+        memo: Option<zcash_primitives::memo::MemoBytes>,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
-        // FIXME: zingo2
-        // let spendable_balance = self
-        //     .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
-        //     .await?;
-        // if spendable_balance == NonNegativeAmount::ZERO {
-        //     return Err(ProposeSendError::ZeroValueSendAll);
-        // }
-        // let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
-        // if zennies_for_zingo {
-        //     self.append_zingo_zenny_receiver(&mut receivers);
-        // }
-        // let request = transaction_request_from_receivers(receivers)
-        //     .map_err(ProposeSendError::TransactionRequestFailed)?;
-        // let proposal = self
-        //     .wallet
-        //     .lock()
-        //     .await
-        //     .create_send_proposal(request)
-        //     .await?;
-        // self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-        //     .await;
-        // Ok(proposal)
+        let spendable_balance = self
+            .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
+            .await?;
+        if spendable_balance == NonNegativeAmount::ZERO {
+            return Err(ProposeSendError::ZeroValueSendAll);
+        }
+        let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
+        if zennies_for_zingo {
+            self.append_zingo_zenny_receiver(&mut receivers);
+        }
+        let request = transaction_request_from_receivers(receivers)
+            .map_err(ProposeSendError::TransactionRequestFailed)?;
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_send_proposal(request)
+            .await?;
+        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
+            .await;
 
-        todo!()
+        Ok(proposal)
     }
 
     /// Returns the total confirmed shielded balance minus any fees required to send those funds to
