@@ -15,9 +15,7 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
-/// Errors associated with the commands interface
 mod error;
-/// Utilities associated with the commands interface
 mod utils;
 
 lazy_static! {
@@ -642,59 +640,58 @@ impl Command for PrintBalanceCommand {
     }
 }
 
-// FIXME: zingo2
-// struct SpendableBalanceCommand {}
-// impl Command for SpendableBalanceCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Display the wallet's spendable balance.
-//             Calculated as the confirmed shielded balance minus the fee required to send all funds to
-//             the given address.
-//             An address must be specified as fees, and therefore spendable balance, depends on the receiver
-//             type.
-//             zennies_for_zingo must also be specified as "true"|"false".  If set to "true" 1_000_000 ZAT will
-//             earmarked to the zingolabs developer fund with each transaction.
+struct SpendableBalanceCommand {}
+impl Command for SpendableBalanceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Display the wallet's spendable balance.
+            Calculated as the confirmed shielded balance minus the fee required to send all funds to
+            the given address.
+            An address must be specified as fees, and therefore spendable balance, depends on the receiver
+            type.
+            zennies_for_zingo must also be specified as "true"|"false".  If set to "true" 1_000_000 ZAT will
+            earmarked to the zingolabs developer fund with each transaction.
 
-//             Usage:
-//             spendablebalance <address>
-//             OR
-//             spendablebalance { "address": "<address>", "zennies_for_zingo": <true|false> }
+            Usage:
+            spendablebalance <address>
+            OR
+            spendablebalance { "address": "<address>", "zennies_for_zingo": <true|false> }
 
-//         "#}
-//     }
+        "#}
+    }
 
-//     fn short_help(&self) -> &'static str {
-//         "Display the wallet's spendable balance."
-//     }
+    fn short_help(&self) -> &'static str {
+        "Display the wallet's spendable balance."
+    }
 
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         let (address, zennies_for_zingo) = match parse_spendable_balance_args(args) {
-//             Ok(address_and_zennies) => address_and_zennies,
-//             Err(e) => {
-//                 return format!(
-//                     "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
-//                     e
-//                 );
-//             }
-//         };
-//         RT.block_on(async move {
-//             match lightclient
-//                 .get_spendable_shielded_balance(address, zennies_for_zingo)
-//                 .await
-//             {
-//                 Ok(bal) => {
-//                     object! {
-//                         "balance" => bal.into_u64(),
-//                     }
-//                 }
-//                 Err(e) => {
-//                     object! { "error" => e.to_string() }
-//                 }
-//             }
-//             .pretty(2)
-//         })
-//     }
-// }
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        let (address, zennies_for_zingo) = match utils::parse_spendable_balance_args(args) {
+            Ok(address_and_zennies) => address_and_zennies,
+            Err(e) => {
+                return format!(
+                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    e
+                );
+            }
+        };
+        RT.block_on(async move {
+            match lightclient
+                .get_spendable_shielded_balance(address, zennies_for_zingo)
+                .await
+            {
+                Ok(bal) => {
+                    object! {
+                        "balance" => bal.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
 
 struct AddressCommand {}
 impl Command for AddressCommand {

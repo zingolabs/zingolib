@@ -1,8 +1,8 @@
+//! Errors associated with the commands interface
+
 use std::fmt;
 
 #[derive(Debug)]
-// FIXME: zingo2
-#[allow(dead_code)]
 pub(crate) enum CommandError {
     ArgsNotJson(json::Error),
     ArgNotJsonOrValidAddress,
