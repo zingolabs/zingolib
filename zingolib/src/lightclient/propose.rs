@@ -154,20 +154,16 @@ impl LightClient {
     pub async fn propose_shield(
         &self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        // FIXME: zingo2
-        //     let proposal = self.wallet.lock().await.create_shield_proposal().await?;
-        //     self.store_proposal(ZingoProposal::Shield(proposal.clone()))
-        //         .await;
-        //     Ok(proposal)
+        let proposal = self.wallet.lock().await.create_shield_proposal().await?;
+        self.store_proposal(ZingoProposal::Shield(proposal.clone()))
+            .await;
 
-        todo!()
+        Ok(proposal)
     }
 }
 
 #[cfg(test)]
 mod shielding {
-    // use crate::lightclient::propose::ProposeShieldError;
-
     async fn create_basic_client() -> crate::lightclient::LightClient {
         crate::lightclient::LightClient::create_unconnected(
             &crate::config::ZingoConfigBuilder::default().create(),
