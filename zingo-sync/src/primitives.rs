@@ -222,26 +222,32 @@ impl std::fmt::Display for SyncStatus {
 }
 
 /// Output ID for a given pool type
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, CopyGetters)]
-#[getset(get_copy = "pub")]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct OutputId {
     /// ID of associated transaction
     txid: TxId,
     /// Index of output within the transactions bundle of the given pool type.
-    // TODO: change to u16
-    output_index: usize,
+    output_index: u16,
 }
 
 impl OutputId {
     /// Creates new OutputId from parts
-    pub fn from_parts(txid: TxId, output_index: usize) -> Self {
+    pub fn from_parts(txid: TxId, output_index: u16) -> Self {
         OutputId { txid, output_index }
+    }
+
+    pub fn txid(&self) -> TxId {
+        self.txid
+    }
+
+    pub fn output_index(&self) -> u16 {
+        self.output_index
     }
 }
 
 impl From<&OutPoint> for OutputId {
     fn from(value: &OutPoint) -> Self {
-        OutputId::from_parts(*value.txid(), value.n() as usize)
+        OutputId::from_parts(*value.txid(), value.n() as u16)
     }
 }
 

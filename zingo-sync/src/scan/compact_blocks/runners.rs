@@ -596,7 +596,7 @@ where
                              output_index,
                              value,
                          }| {
-                            (OutputId::from_parts(txid, output_index), value)
+                            (OutputId::from_parts(txid, output_index as u16), value)
                         },
                     )
                     .collect()
