@@ -294,11 +294,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
+    let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
-        .collect();
+        .collect::<Vec<_>>();
 
     if outputs.is_empty() {
         Ok(Vec::new())
@@ -314,7 +314,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
 
                 let last_output_in_block: bool =
                     last_outputs_in_block && output_index == last_output_index;
-                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
@@ -342,11 +342,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
+    let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
-        .collect();
+        .collect::<Vec<_>>();
 
     if actions.is_empty() {
         Ok(Vec::new())
@@ -362,7 +362,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 
                 let last_output_in_block: bool =
                     last_outputs_in_block && output_index == last_output_index;
-                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,

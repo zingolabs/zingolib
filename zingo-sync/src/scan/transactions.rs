@@ -323,7 +323,7 @@ fn scan_incoming_coins<P: consensus::Parameters>(
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
             if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::from_parts(txid, output_index);
+                let output_id = OutputId::from_parts(txid, output_index as u16);
 
                 transparent_coins.push(TransparentCoin::from_parts(
                     output_id,
@@ -358,7 +358,7 @@ where
         .enumerate()
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
-            let output_id = OutputId::from_parts(txid, output_index);
+            let output_id = OutputId::from_parts(txid, output_index as u16);
             let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
@@ -401,7 +401,7 @@ where
             &output.out_ciphertext(),
         ) {
             outgoing_notes.push(OutgoingNote::from_parts(
-                OutputId::from_parts(txid, output_index),
+                OutputId::from_parts(txid, output_index as u16),
                 key_ids[key_index],
                 note,
                 Memo::from_bytes(memo_bytes.as_ref()).unwrap(),

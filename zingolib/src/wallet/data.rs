@@ -1771,7 +1771,7 @@ pub mod summaries {
     /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct OutgoingNoteSummary {
-        pub output_index: usize,
+        pub output_index: u16,
         pub key_id: KeyId,
         pub value: u64,
         pub memo: Option<String>,

@@ -515,12 +515,12 @@ impl InputSource for LightWallet {
         let exclude_sapling = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let exclude_orchard = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
