@@ -66,7 +66,7 @@ where
 /// Returns the locators for a given `block_range` from the wallet's [`crate::primitives::SyncState`]
 fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BTreeSet<Locator> {
     sync_state
-        .locators()
+        .locators
         .range(
             (block_range.start, TxId::from_bytes([0; 32]))
                 ..(block_range.end, TxId::from_bytes([0; 32])),
@@ -85,7 +85,7 @@ pub(super) async fn update_scan_ranges(
     merge_scanned_ranges(sync_state);
     reset_scan_ranges(sync_state)?;
     create_scan_range(wallet_height, chain_height, sync_state).await?;
-    let locators = sync_state.locators().clone();
+    let locators = sync_state.locators.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
@@ -130,7 +130,7 @@ fn merge_scanned_ranges(sync_state: &mut SyncState) {
 
     assert_eq!(first_range_index, 0);
 
-    sync_state.scan_ranges_mut().splice(
+    sync_state.scan_ranges.splice(
         first_range_index..=last_range_index,
         vec![ScanRange::from_parts(
             Range {
@@ -152,8 +152,6 @@ async fn create_scan_range(
         return Ok(());
     }
 
-    let scan_ranges = sync_state.scan_ranges_mut();
-
     let new_scan_range = ScanRange::from_parts(
         Range {
             start: wallet_height + 1,
@@ -161,10 +159,7 @@ async fn create_scan_range(
         },
         ScanPriority::Historic,
     );
-    scan_ranges.push(new_scan_range);
-    if scan_ranges.is_empty() {
-        panic!("scan ranges should never be empty after updating");
-    }
+    sync_state.scan_ranges.push(new_scan_range);
 
     Ok(())
 }
@@ -174,10 +169,10 @@ async fn create_scan_range(
 /// A range that was previously scanning when sync was last interrupted should be set to `Verify` in the case that
 /// the scanner may have been in the verification state.
 fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
-    let previously_scanning_scan_ranges = scan_ranges
+    let previously_scanning_scan_ranges = sync_state
+        .scan_ranges
         .iter()
-        .filter(|range| range.priority() == ScanPriority::Ignored)
+        .filter(|&range| range.priority() == ScanPriority::Ignored)
         .cloned()
         .collect::<Vec<_>>();
     for scan_range in previously_scanning_scan_ranges {
@@ -230,9 +225,7 @@ pub(super) fn set_verify_scan_range(
             .clone(),
     };
 
-    sync_state
-        .scan_ranges_mut()
-        .splice(index..=index, split_ranges);
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
 
     scan_range_to_verify
 }
@@ -307,12 +300,16 @@ pub(super) fn set_scanned_scan_range(
     sync_state: &mut SyncState,
     scanned_range: Range<BlockHeight>,
 ) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
-
-    let Some((index, scan_range)) = scan_ranges.iter().enumerate().find(|(_, scan_range)| {
-        scan_range.block_range().contains(&scanned_range.start)
-            && scan_range.block_range().contains(&(scanned_range.end - 1))
-    }) else {
+    let Some((index, scan_range)) =
+        sync_state
+            .scan_ranges
+            .iter()
+            .enumerate()
+            .find(|(_, scan_range)| {
+                scan_range.block_range().contains(&scanned_range.start)
+                    && scan_range.block_range().contains(&(scanned_range.end - 1))
+            })
+    else {
         panic!("scan range containing scanned range should exist!");
     };
 
@@ -321,9 +318,7 @@ pub(super) fn set_scanned_scan_range(
         scanned_range.clone(),
         ScanPriority::Scanned,
     );
-    sync_state
-        .scan_ranges_mut()
-        .splice(index..=index, split_ranges);
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
 
     Ok(())
 }
@@ -336,14 +331,14 @@ pub(super) fn set_scan_priority(
     block_range: &Range<BlockHeight>,
     scan_priority: ScanPriority,
 ) -> Result<(), ()> {
-    let scan_ranges = sync_state.scan_ranges_mut();
-
-    if let Some((index, range)) = scan_ranges
+    if let Some((index, range)) = sync_state
+        .scan_ranges
         .iter()
         .enumerate()
         .find(|(_, range)| range.block_range() == block_range)
     {
-        scan_ranges[index] = ScanRange::from_parts(range.block_range().clone(), scan_priority);
+        sync_state.scan_ranges[index] =
+            ScanRange::from_parts(range.block_range().clone(), scan_priority);
     } else {
         panic!("scan range with block range {:?} not found!", block_range)
     }
@@ -397,9 +392,7 @@ fn punch_scan_priority(
     // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
     for (index, scan_range) in scan_ranges_for_splitting.into_iter().rev() {
         let split_ranges = split_out_scan_range(scan_range, block_range.clone(), scan_priority);
-        sync_state
-            .scan_ranges_mut()
-            .splice(index..=index, split_ranges);
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
     }
 
     Ok(())
@@ -444,8 +437,8 @@ fn determine_block_range(
     }
 
     let shard_ranges = match shielded_protocol {
-        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges(),
-        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges(),
+        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_slice(),
+        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_slice(),
     };
 
     let target_ranges = shard_ranges
@@ -549,13 +542,11 @@ fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
 ) -> Option<ScanRange> {
-    let scan_ranges = sync_state.scan_ranges_mut();
-
     // scan ranges are sorted from lowest to highest priority
     // scan ranges with the same priority are sorted in reverse block height order
     // the highest priority scan range is the last in the list, the highest priority with lowest starting block height
     let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
-        scan_ranges.iter().cloned().enumerate().collect();
+        sync_state.scan_ranges.iter().cloned().enumerate().collect();
     scan_ranges_priority_sorted
         .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
     scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
@@ -589,14 +580,12 @@ fn select_scan_range(
             .expect("split ranges should always be non-empty")
             .block_range()
             .clone();
-        sync_state
-            .scan_ranges_mut()
-            .splice(index..=index, split_ranges);
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
 
         selected_block_range
     } else {
         let selected_scan_range = sync_state
-            .scan_ranges_mut()
+            .scan_ranges
             .get_mut(index)
             .expect("scan range should exist due to previous logic");
 
@@ -676,17 +665,14 @@ pub(super) async fn set_initial_state<W>(
     )
     .await;
 
-    let initial_sync_state = wallet
-        .get_sync_state_mut()
-        .unwrap()
-        .initial_sync_state_mut();
-    initial_sync_state.set_sync_start_height(fully_scanned_height + 1);
-    initial_sync_state.set_sync_tree_boundaries(TreeBoundaries {
+    let sync_state = wallet.get_sync_state_mut().unwrap();
+    sync_state.initial_sync_state.sync_start_height = fully_scanned_height + 1;
+    sync_state.initial_sync_state.sync_tree_boundaries = TreeBoundaries {
         sapling_initial_tree_size: sync_start_sapling_tree_size,
         sapling_final_tree_size: chain_tip_sapling_tree_size,
         orchard_initial_tree_size: sync_start_orchard_tree_size,
         orchard_final_tree_size: chain_tip_orchard_tree_size,
-    });
+    };
 
     let (total_sapling_outputs_to_scan, total_orchard_outputs_to_scan) =
         calculate_unscanned_outputs(wallet);
@@ -701,10 +687,9 @@ pub(super) async fn set_initial_state<W>(
             acc + (block_range.end - block_range.start)
         });
 
-    let initial_sync_state = sync_state.initial_sync_state_mut();
-    initial_sync_state.set_total_blocks_to_scan(total_blocks_to_scan);
-    initial_sync_state.set_total_sapling_outputs_to_scan(total_sapling_outputs_to_scan);
-    initial_sync_state.set_total_orchard_outputs_to_scan(total_orchard_outputs_to_scan);
+    sync_state.initial_sync_state.total_blocks_to_scan = total_blocks_to_scan;
+    sync_state.initial_sync_state.total_sapling_outputs_to_scan = total_sapling_outputs_to_scan;
+    sync_state.initial_sync_state.total_orchard_outputs_to_scan = total_orchard_outputs_to_scan;
 }
 
 pub(super) fn calculate_unscanned_outputs<W>(wallet: &W) -> (u32, u32)
@@ -712,7 +697,7 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().unwrap();
-    let sync_start_height = sync_state.initial_sync_state().sync_start_height();
+    let sync_start_height = sync_state.initial_sync_state.sync_start_height;
 
     let nonlinear_scanned_block_ranges = sync_state
         .scan_ranges()
@@ -738,19 +723,23 @@ where
                 )
             });
 
-    let initial_sync_state = wallet.get_sync_state().unwrap().initial_sync_state();
-    let unscanned_sapling_outputs = initial_sync_state
-        .sync_tree_boundaries()
+    let sync_state = wallet.get_sync_state().unwrap();
+    let unscanned_sapling_outputs = sync_state
+        .initial_sync_state
+        .sync_tree_boundaries
         .sapling_final_tree_size
-        - initial_sync_state
-            .sync_tree_boundaries()
+        - sync_state
+            .initial_sync_state
+            .sync_tree_boundaries
             .sapling_initial_tree_size
         - nonlinear_scanned_sapling_outputs;
-    let unscanned_orchard_outputs = initial_sync_state
-        .sync_tree_boundaries()
+    let unscanned_orchard_outputs = sync_state
+        .initial_sync_state
+        .sync_tree_boundaries
         .orchard_final_tree_size
-        - initial_sync_state
-            .sync_tree_boundaries()
+        - sync_state
+            .initial_sync_state
+            .sync_tree_boundaries
             .orchard_initial_tree_size
         - nonlinear_scanned_orchard_outputs;
 
@@ -844,9 +833,9 @@ pub(super) fn add_shard_ranges(
             .expect("activation height should exist for this network upgrade!"),
     };
 
-    let shard_ranges = match shielded_protocol {
-        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges_mut(),
-        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges_mut(),
+    let shard_ranges: &mut Vec<Range<BlockHeight>> = match shielded_protocol {
+        ShieldedProtocol::Sapling => sync_state.sapling_shard_ranges.as_mut(),
+        ShieldedProtocol::Orchard => sync_state.orchard_shard_ranges.as_mut(),
     };
 
     let highest_subtree_completing_height = if let Some(shard_range) = shard_ranges.last() {

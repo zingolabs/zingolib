@@ -24,6 +24,7 @@ use zcash_primitives::{
         TxId,
     },
 };
+
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
@@ -38,19 +39,18 @@ pub type Locator = (BlockHeight, TxId);
 /// Initial sync state.
 ///
 /// All fields will be reset when a new sync session starts.
-#[derive(Debug, Clone, CopyGetters, Setters)]
-#[getset(get_copy = "pub", set = "pub")]
+#[derive(Debug, Clone)]
 pub struct InitialSyncState {
     /// One block above the fully scanned wallet height at start of sync session.
-    sync_start_height: BlockHeight,
+    pub(crate) sync_start_height: BlockHeight,
     /// The tree sizes of the fully scanned height and chain tip at start of sync session.
-    sync_tree_boundaries: TreeBoundaries,
+    pub(crate) sync_tree_boundaries: TreeBoundaries,
     /// Total number of blocks to scan.
-    total_blocks_to_scan: u32,
+    pub(crate) total_blocks_to_scan: u32,
     /// Total number of sapling outputs to scan.
-    total_sapling_outputs_to_scan: u32,
+    pub(crate) total_sapling_outputs_to_scan: u32,
     /// Total number of orchard outputs to scan.
-    total_orchard_outputs_to_scan: u32,
+    pub(crate) total_orchard_outputs_to_scan: u32,
 }
 
 impl InitialSyncState {
@@ -78,26 +78,25 @@ impl Default for InitialSyncState {
 }
 
 /// Encapsulates the current state of sync
-#[derive(Debug, Clone, Getters, MutGetters, CopyGetters, Setters)]
-#[getset(get = "pub", get_mut = "pub")]
+#[derive(Debug, Clone)]
 pub struct SyncState {
     /// A vec of block ranges with scan priorities from wallet birthday to chain tip.
     /// In block height order with no overlaps or gaps.
-    scan_ranges: Vec<ScanRange>,
+    pub(crate) scan_ranges: Vec<ScanRange>,
     /// The block ranges that contain all sapling outputs of complete sapling shards.
     ///
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
     /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
-    sapling_shard_ranges: Vec<Range<BlockHeight>>,
+    pub(crate) sapling_shard_ranges: Vec<Range<BlockHeight>>,
     /// The block ranges that contain all orchard outputs of complete orchard shards.
     ///
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
     /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
-    orchard_shard_ranges: Vec<Range<BlockHeight>>,
+    pub(crate) orchard_shard_ranges: Vec<Range<BlockHeight>>,
     /// Locators for relevant transactions to the wallet.
-    locators: BTreeSet<Locator>,
+    pub(crate) locators: BTreeSet<Locator>,
     /// Initial sync state.
-    initial_sync_state: InitialSyncState,
+    pub(crate) initial_sync_state: InitialSyncState,
 }
 
 impl SyncState {
@@ -112,9 +111,13 @@ impl SyncState {
         }
     }
 
+    pub fn scan_ranges(&self) -> &[ScanRange] {
+        &self.scan_ranges
+    }
+
     /// Returns true if all scan ranges are scanned.
     pub(crate) fn scan_complete(&self) -> bool {
-        self.scan_ranges()
+        self.scan_ranges
             .iter()
             .all(|scan_range| scan_range.priority() == ScanPriority::Scanned)
     }
@@ -124,13 +127,13 @@ impl SyncState {
     /// Will panic if called before scan ranges are updated for the first time.
     pub fn fully_scanned_height(&self) -> BlockHeight {
         if let Some(scan_range) = self
-            .scan_ranges()
+            .scan_ranges
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
             scan_range.block_range().start - 1
         } else {
-            self.scan_ranges()
+            self.scan_ranges
                 .last()
                 .expect("scan ranges always non-empty")
                 .block_range()
@@ -145,7 +148,7 @@ impl SyncState {
     /// Will panic if called before scan ranges are updated for the first time.
     pub fn highest_scanned_height(&self) -> BlockHeight {
         if let Some(last_scanned_range) = self
-            .scan_ranges()
+            .scan_ranges
             .iter()
             .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
             .last()
@@ -162,14 +165,14 @@ impl SyncState {
     ///
     /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     pub fn wallet_birthday(&self) -> Option<BlockHeight> {
-        self.scan_ranges()
+        self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
     }
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
     pub fn wallet_height(&self) -> Option<BlockHeight> {
-        self.scan_ranges()
+        self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
     }

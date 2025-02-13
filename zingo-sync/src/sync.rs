@@ -220,34 +220,29 @@ where
             acc + (block_range.end - block_range.start)
         });
     let scanned_blocks = sync_state
-        .initial_sync_state()
-        .total_blocks_to_scan()
+        .initial_sync_state
+        .total_blocks_to_scan
         .saturating_sub(unscanned_blocks);
-    let percentage_blocks_scanned = (scanned_blocks as f32
-        / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
-        * 100.0;
+    let percentage_blocks_scanned =
+        (scanned_blocks as f32 / sync_state.initial_sync_state.total_blocks_to_scan as f32) * 100.0;
 
     let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
         state::calculate_unscanned_outputs(&*wallet_guard);
     let scanned_sapling_outputs = sync_state
-        .initial_sync_state()
-        .total_sapling_outputs_to_scan()
+        .initial_sync_state
+        .total_sapling_outputs_to_scan
         .saturating_sub(unscanned_sapling_outputs);
     let scanned_orchard_outputs = sync_state
-        .initial_sync_state()
-        .total_orchard_outputs_to_scan()
+        .initial_sync_state
+        .total_orchard_outputs_to_scan
         .saturating_sub(unscanned_orchard_outputs);
     let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
-        / (sync_state
-            .initial_sync_state()
-            .total_sapling_outputs_to_scan()
-            + sync_state
-                .initial_sync_state()
-                .total_orchard_outputs_to_scan()) as f32)
+        / (sync_state.initial_sync_state.total_sapling_outputs_to_scan
+            + sync_state.initial_sync_state.total_orchard_outputs_to_scan) as f32)
         * 100.0;
 
     SyncStatus {
-        scan_ranges: sync_state.scan_ranges().clone(),
+        scan_ranges: sync_state.scan_ranges.clone(),
         scanned_blocks,
         unscanned_blocks,
         percentage_blocks_scanned,
@@ -553,7 +548,7 @@ where
     let sync_state = wallet.get_sync_state().unwrap();
     let fully_scanned_height = sync_state.fully_scanned_height();
     let highest_scanned_height = sync_state.highest_scanned_height();
-    let sync_start_height = sync_state.initial_sync_state().sync_start_height();
+    let sync_start_height = sync_state.initial_sync_state.sync_start_height;
 
     let scanned_block_range_boundaries = sync_state
         .scan_ranges()
@@ -596,7 +591,7 @@ where
     wallet
         .get_sync_state_mut()
         .unwrap()
-        .locators_mut()
+        .locators
         .retain(|(height, _)| *height > fully_scanned_height);
 
     Ok(())
