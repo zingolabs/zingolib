@@ -15,7 +15,7 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
-    primitives::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
+    wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 

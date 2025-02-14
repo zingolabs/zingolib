@@ -13,9 +13,9 @@ use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
-    primitives::{Locator, NullifierMap, OutputId, WalletTransaction},
     scan::transactions::scan_spending_transactions,
-    traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+    wallet::{Locator, NullifierMap, OutputId, WalletTransaction},
 };
 
 use super::state;

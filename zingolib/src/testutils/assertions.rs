@@ -4,7 +4,7 @@ use nonempty::NonEmpty;
 
 use zcash_client_backend::proposal::{Proposal, Step};
 use zcash_primitives::transaction::TxId;
-use zingo_sync::primitives::WalletTransaction;
+use zingo_sync::wallet::WalletTransaction;
 
 use crate::{lightclient::LightClient, wallet::LightWallet};
 

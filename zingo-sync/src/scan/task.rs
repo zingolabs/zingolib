@@ -25,9 +25,9 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, WalletBlock},
     sync,
-    traits::{SyncBlocks, SyncWallet},
+    wallet::traits::{SyncBlocks, SyncWallet},
+    wallet::{Locator, WalletBlock},
     MAX_BATCH_OUTPUTS,
 };
 

@@ -21,9 +21,9 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, SyncState, TreeBounds, WalletTransaction},
     scan::task::ScanTask,
-    traits::{SyncBlocks, SyncWallet},
+    wallet::traits::{SyncBlocks, SyncWallet},
+    wallet::{Locator, SyncState, TreeBounds, WalletTransaction},
 };
 
 use super::VERIFY_BLOCK_RANGE_SIZE;

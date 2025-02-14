@@ -18,7 +18,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::fees::zip317;
 use zingo_memo::create_wallet_internal_memo_version_1;
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingo_sync::traits::SyncWallet as _;
+use zingo_sync::wallet::traits::SyncWallet as _;
 
 use crate::lightclient::send::send_with_proposal::BroadcastTransactionsError;
 use crate::wallet::now;

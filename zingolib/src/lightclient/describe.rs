@@ -2,7 +2,7 @@
 use json::{object, JsonValue};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
-use zingo_sync::primitives::{OrchardNote, SaplingNote, TransparentCoin};
+use zingo_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
 
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},

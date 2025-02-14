@@ -6,11 +6,10 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock},
-    traits::{
+    wallet::traits::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
-    witness::ShardTrees,
+    wallet::{Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock},
 };
 use zip32::AccountId;
 
@@ -74,7 +73,7 @@ impl SyncTransactions for LightWallet {
     fn get_wallet_transactions(
         &self,
     ) -> Result<
-        &HashMap<zcash_primitives::transaction::TxId, zingo_sync::primitives::WalletTransaction>,
+        &HashMap<zcash_primitives::transaction::TxId, zingo_sync::wallet::WalletTransaction>,
         Self::Error,
     > {
         Ok(&self.wallet_transactions)
@@ -83,10 +82,7 @@ impl SyncTransactions for LightWallet {
     fn get_wallet_transactions_mut(
         &mut self,
     ) -> Result<
-        &mut HashMap<
-            zcash_primitives::transaction::TxId,
-            zingo_sync::primitives::WalletTransaction,
-        >,
+        &mut HashMap<zcash_primitives::transaction::TxId, zingo_sync::wallet::WalletTransaction>,
         Self::Error,
     > {
         Ok(&mut self.wallet_transactions)

@@ -13,9 +13,7 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
-use zcash_keys::{
-    address::UnifiedAddress, encoding::encode_payment_address, keys::UnifiedFullViewingKey,
-};
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::{self, BlockHeight, NetworkConstants},
@@ -33,13 +31,12 @@ use crate::{
         transparent::{self, TransparentAddressId},
         KeyId,
     },
-    primitives::{
+    wallet::traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
+    wallet::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
         WalletBlock, WalletNote, WalletTransaction,
     },
-    traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
-    utils,
 };
 
 use super::DecryptedNoteData;
@@ -466,8 +463,8 @@ fn add_recipient_unified_address<P, Nz>(
 {
     for ua in unified_addresses {
         let ua_receivers = [
-            utils::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
-            encode_payment_address(
+            keys::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
+            zcash_keys::encoding::encode_payment_address(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),

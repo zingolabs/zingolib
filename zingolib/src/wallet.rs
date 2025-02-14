@@ -15,10 +15,10 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use zingo_sync::keys::transparent::{self, TransparentScope};
+use zingo_sync::wallet::ShardTrees;
 use zingo_sync::{
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
-    witness::ShardTrees,
+    wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
 
 use bip0039::Mnemonic;
@@ -332,7 +332,7 @@ impl LightWallet {
         unified_addresses.iter().for_each(|unified_address| {
             if let Some(transparent_address) = unified_address.transparent() {
                 transparent_addresses.insert(
-                    TransparentAddressId::from_parts(
+                    TransparentAddressId::new(
                         zip32::AccountId::ZERO,
                         TransparentScope::External,
                         0,
@@ -351,10 +351,10 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
-            nullifier_map: zingo_sync::primitives::NullifierMap::new(),
+            nullifier_map: zingo_sync::wallet::NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
-            shard_trees: zingo_sync::witness::ShardTrees::new(),
-            sync_state: zingo_sync::primitives::SyncState::new(),
+            shard_trees: zingo_sync::wallet::ShardTrees::new(),
+            sync_state: zingo_sync::wallet::SyncState::new(),
             transparent_addresses,
             unified_addresses,
             network,

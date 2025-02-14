@@ -21,7 +21,7 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, TreeBounds, WalletBlock},
+    wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
     MAX_BATCH_OUTPUTS,
 };
@@ -116,13 +116,13 @@ where
 
             calculate_nullifiers_and_positions(
                 sapling_final_tree_size,
-                scanning_keys.sapling(),
+                &scanning_keys.sapling,
                 &incoming_sapling_outputs,
                 &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_final_tree_size,
-                scanning_keys.orchard(),
+                &scanning_keys.orchard,
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
@@ -277,9 +277,8 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     incoming_decrypted_outputs
         .iter()
         .for_each(|(output_id, incoming_output)| {
-            let position = Position::from(u64::from(
-                tree_size + u32::try_from(output_id.output_index()).unwrap(),
-            ));
+            let position =
+                Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
             let key = keys
                 .get(&incoming_output.ivk_tag)
                 .expect("key should be available as it was used to decrypt output");

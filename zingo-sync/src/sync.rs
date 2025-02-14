@@ -24,14 +24,14 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
 use crate::scan::ScanResults;
-use crate::traits::{
+use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
+use crate::wallet::{NullifierMap, SyncStatus};
 use crate::witness;
 
 pub(crate) mod spend;
@@ -604,7 +604,7 @@ async fn update_subtree_roots<W>(
     let sapling_start_index = wallet
         .get_shard_trees()
         .unwrap()
-        .sapling()
+        .sapling
         .store()
         .get_shard_roots()
         .unwrap()
@@ -612,7 +612,7 @@ async fn update_subtree_roots<W>(
     let orchard_start_index = wallet
         .get_shard_trees()
         .unwrap()
-        .orchard()
+        .orchard
         .store()
         .get_shard_roots()
         .unwrap()
@@ -640,8 +640,8 @@ async fn update_subtree_roots<W>(
     );
 
     let shard_trees = wallet.get_shard_trees_mut().unwrap();
-    witness::add_subtree_roots(sapling_subtree_roots, shard_trees.sapling_mut());
-    witness::add_subtree_roots(orchard_subtree_roots, shard_trees.orchard_mut());
+    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling);
+    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard);
 }
 
 /// Sets up mempool stream.

@@ -25,7 +25,7 @@ use memuse::DynamicUsage;
 use crate::keys::KeyId;
 use crate::keys::ScanningKeyOps as _;
 use crate::keys::ScanningKeys;
-use crate::primitives::OutputId;
+use crate::wallet::OutputId;
 
 type TaggedSaplingBatch = Batch<
     SaplingDomain,
@@ -65,14 +65,14 @@ where
             sapling: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
-                    .sapling()
+                    .sapling
                     .iter()
                     .map(|(id, key)| (*id, key.prepare())),
             ),
             orchard: BatchRunner::new(
                 batch_size_threshold,
                 scanning_keys
-                    .orchard()
+                    .orchard
                     .iter()
                     .map(|(id, key)| (*id, key.prepare())),
             ),

@@ -42,9 +42,6 @@ memuse.workspace = true
 crossbeam-channel.workspace = true
 rayon.workspace = true
 
-# Minimise boilerplate
-getset.workspace = true
-
 # Error handling
 thiserror.workspace = true
 

@@ -10,8 +10,8 @@ use zcash_primitives::zip32::AccountId;
 use crate::client::{self, FetchRequest};
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
-use crate::primitives::Locator;
-use crate::traits::SyncWallet;
+use crate::wallet::traits::SyncWallet;
+use crate::wallet::Locator;
 
 use super::MAX_VERIFICATION_WINDOW;
 
@@ -93,8 +93,7 @@ pub(crate) async fn update_addresses_and_locators<P, W>(
                 let mut addresses: Vec<(TransparentAddressId, String)> = Vec::new();
 
                 while unused_address_count < ADDRESS_GAP_LIMIT {
-                    let address_id =
-                        TransparentAddressId::from_parts(*account_id, scope, address_index);
+                    let address_id = TransparentAddressId::new(*account_id, scope, address_index);
                     let address = keys::transparent::derive_address(
                         consensus_parameters,
                         account_pubkey,

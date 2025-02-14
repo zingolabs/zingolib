@@ -1,5 +1,5 @@
 use zcash_primitives::transaction::components::Amount;
-use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
+use zingo_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
 use super::{
     error::{FeeError, KindError},

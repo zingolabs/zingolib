@@ -11,13 +11,13 @@ use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zingo_sync::primitives::NoteInterface as _;
-use zingo_sync::primitives::OrchardNote;
-use zingo_sync::primitives::OutgoingNoteInterface;
-use zingo_sync::primitives::OutputInterface;
-use zingo_sync::primitives::SaplingNote;
-use zingo_sync::primitives::TransparentCoin;
-use zingo_sync::primitives::WalletTransaction;
+use zingo_sync::wallet::NoteInterface as _;
+use zingo_sync::wallet::OrchardNote;
+use zingo_sync::wallet::OutgoingNoteInterface;
+use zingo_sync::wallet::OutputInterface;
+use zingo_sync::wallet::SaplingNote;
+use zingo_sync::wallet::TransparentCoin;
+use zingo_sync::wallet::WalletTransaction;
 
 use std::cmp::Ordering;
 

@@ -25,7 +25,7 @@ use crate::client::FetchRequest;
 ///
 /// Allows all requests to the server to be handled from a single task for efficiency and also enables
 /// request prioritisation for further performance enhancement
-pub async fn fetch(
+pub(crate) async fn fetch(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: impl consensus::Parameters,

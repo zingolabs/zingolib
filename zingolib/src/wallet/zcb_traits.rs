@@ -28,9 +28,11 @@ use zcash_primitives::{
 use zingo_status::confirmation_status::ConfirmationStatus;
 use zingo_sync::{
     keys::transparent::{self, TransparentScope},
-    primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
-    traits::SyncWallet,
-    witness::{OrchardShardStore, SaplingShardStore},
+    wallet::traits::SyncWallet,
+    wallet::{
+        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
+        SaplingShardStore,
+    },
 };
 
 use crate::wallet::output::RemainingNeeded;
@@ -425,7 +427,7 @@ impl WalletCommitmentTrees for LightWallet {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        callback(self.shard_trees.sapling_mut())
+        callback(&mut self.shard_trees.sapling)
     }
 
     fn put_sapling_subtree_roots(
@@ -458,7 +460,7 @@ impl WalletCommitmentTrees for LightWallet {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        callback(self.shard_trees.orchard_mut())
+        callback(&mut self.shard_trees.orchard)
     }
 
     fn put_orchard_subtree_roots(
@@ -581,10 +583,10 @@ impl InputSource for LightWallet {
                     NoteId::new(
                         note.output_id().txid(),
                         ShieldedProtocol::Sapling,
-                        note.output_id().output_index() as u16,
+                        note.output_id().output_index(),
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index() as u16,
+                    note.output_id().output_index(),
                     note.note().clone(),
                     note.key_id().scope,
                     note.position()
@@ -599,10 +601,10 @@ impl InputSource for LightWallet {
                     NoteId::new(
                         note.output_id().txid(),
                         ShieldedProtocol::Orchard,
-                        note.output_id().output_index() as u16,
+                        note.output_id().output_index(),
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index() as u16,
+                    note.output_id().output_index(),
                     *note.note(),
                     note.key_id().scope,
                     note.position()

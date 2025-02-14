@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use getset::Getters;
 use incrementalmerkletree::Position;
 use orchard::{
     keys::{FullViewingKey, IncomingViewingKey},
@@ -13,6 +12,7 @@ use sapling_crypto::{
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
+use zcash_primitives::consensus;
 use zip32::Scope;
 
 /// Child index for the `address_index` path level in the BIP44 hierarchy.
@@ -135,11 +135,9 @@ impl ScanningKeyOps<OrchardDomain, orchard::note::Nullifier>
 }
 
 /// A set of keys to be used in scanning for decryptable transaction outputs.
-#[derive(Getters)]
-#[getset(get = "pub(crate)")]
 pub(crate) struct ScanningKeys {
-    sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
-    orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
+    pub(crate) sapling: HashMap<KeyId, ScanningKey<SaplingIvk, NullifierDerivingKey>>,
+    pub(crate) orchard: HashMap<KeyId, ScanningKey<IncomingViewingKey, FullViewingKey>>,
 }
 
 impl ScanningKeys {
@@ -187,4 +185,19 @@ impl ScanningKeys {
 
         Self { sapling, orchard }
     }
+}
+
+pub(crate) fn encode_orchard_receiver(
+    parameters: &impl consensus::Parameters,
+    orchard_address: &orchard::Address,
+) -> Result<String, ()> {
+    Ok(zcash_address::unified::Encoding::encode(
+        &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
+            vec![zcash_address::unified::Receiver::Orchard(
+                orchard_address.to_raw_address_bytes(),
+            )],
+        )
+        .unwrap(),
+        &parameters.network_type(),
+    ))
 }
