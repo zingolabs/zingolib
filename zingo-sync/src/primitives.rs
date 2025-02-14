@@ -195,7 +195,7 @@ pub struct TreeBoundaries {
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub scanned_blocks: u32,
@@ -232,7 +232,7 @@ pub struct OutputId {
 
 impl OutputId {
     /// Creates new OutputId from parts
-    pub fn from_parts(txid: TxId, output_index: u16) -> Self {
+    pub fn new(txid: TxId, output_index: u16) -> Self {
         OutputId { txid, output_index }
     }
 
@@ -247,7 +247,7 @@ impl OutputId {
 
 impl From<&OutPoint> for OutputId {
     fn from(value: &OutPoint) -> Self {
-        OutputId::from_parts(*value.txid(), value.n() as u16)
+        OutputId::new(*value.txid(), value.n() as u16)
     }
 }
 
@@ -287,34 +287,15 @@ impl Default for NullifierMap {
 /// Wallet block data
 #[derive(Debug, Clone)]
 pub struct WalletBlock {
-    block_height: BlockHeight,
-    block_hash: BlockHash,
-    prev_hash: BlockHash,
-    time: u32,
-    txids: Vec<TxId>,
-    tree_boundaries: TreeBoundaries,
-    // TODO: optional price
+    pub(crate) block_height: BlockHeight,
+    pub(crate) block_hash: BlockHash,
+    pub(crate) prev_hash: BlockHash,
+    pub(crate) time: u32,
+    pub(crate) txids: Vec<TxId>,
+    pub(crate) tree_boundaries: TreeBoundaries,
 }
 
 impl WalletBlock {
-    pub fn from_parts(
-        block_height: BlockHeight,
-        block_hash: BlockHash,
-        prev_hash: BlockHash,
-        time: u32,
-        txids: Vec<TxId>,
-        tree_boundaries: TreeBoundaries,
-    ) -> Self {
-        Self {
-            block_height,
-            block_hash,
-            prev_hash,
-            time,
-            txids,
-            tree_boundaries,
-        }
-    }
-
     pub fn block_height(&self) -> BlockHeight {
         self.block_height
     }
@@ -341,87 +322,91 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-#[derive(Getters, CopyGetters)]
 pub struct WalletTransaction {
-    #[getset(get_copy = "pub")]
-    txid: TxId,
-    #[getset(get = "pub")]
-    transaction: zcash_primitives::transaction::Transaction,
-    #[getset(get_copy = "pub")]
-    status: ConfirmationStatus,
-    #[getset(get_copy = "pub")]
-    datetime: u32,
-    #[getset(get_copy = "pub")]
-    price: Option<f64>, // TODO: consider how this can be implemented correctly
-    #[getset(skip)]
-    transparent_coins: Vec<TransparentCoin>,
-    #[getset(skip)]
-    sapling_notes: Vec<SaplingNote>,
-    #[getset(skip)]
-    orchard_notes: Vec<OrchardNote>,
-    #[getset(skip)]
-    outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-    #[getset(skip)]
-    outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    pub(crate) txid: TxId,
+    pub(crate) transaction: zcash_primitives::transaction::Transaction,
+    pub(crate) status: ConfirmationStatus,
+    pub(crate) datetime: u32,
+    pub(crate) transparent_coins: Vec<TransparentCoin>,
+    pub(crate) sapling_notes: Vec<SaplingNote>,
+    pub(crate) orchard_notes: Vec<OrchardNote>,
+    pub(crate) outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+    pub(crate) outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
 }
 
 impl WalletTransaction {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_parts(
-        txid: TxId,
-        transaction: zcash_primitives::transaction::Transaction,
-        status: ConfirmationStatus,
-        datetime: u32,
-        price: Option<f64>,
-        transparent_coins: Vec<TransparentCoin>,
-        sapling_notes: Vec<SaplingNote>,
-        orchard_notes: Vec<OrchardNote>,
-        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-    ) -> Self {
-        Self {
-            txid,
-            transaction,
-            status,
-            datetime,
-            price,
-            transparent_coins,
-            sapling_notes,
-            orchard_notes,
-            outgoing_sapling_notes,
-            outgoing_orchard_notes,
-        }
+    /// Transaction ID
+    pub fn txid(&self) -> TxId {
+        self.txid
     }
 
+    /// [`zcash_primitives::transaction::Transaction`]
+    pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
+        &self.transaction
+    }
+
+    /// Confirmation status
+    pub fn status(&self) -> ConfirmationStatus {
+        self.status
+    }
+
+    /// Datetime. In form of seconds since unix epoch.
+    pub fn datetime(&self) -> u32 {
+        self.datetime
+    }
+
+    /// Transparent coins
     pub fn transparent_coins(&self) -> &[TransparentCoin] {
         &self.transparent_coins
     }
 
-    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+    /// Transparent coins mutable
+    pub(crate) fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
         self.transparent_coins.iter_mut().collect()
     }
+
+    /// Sapling notes
     pub fn sapling_notes(&self) -> &[SaplingNote] {
         &self.sapling_notes
     }
 
-    pub fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
+    /// Sapling notes mutable
+    pub(crate) fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
         self.sapling_notes.iter_mut().collect()
     }
 
+    /// Orchard notes
     pub fn orchard_notes(&self) -> &[OrchardNote] {
         &self.orchard_notes
     }
 
-    pub fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
+    /// Orchard notes mutable
+    pub(crate) fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
         self.orchard_notes.iter_mut().collect()
     }
 
+    /// Outgoing sapling notes
     pub fn outgoing_sapling_notes(&self) -> &[OutgoingSaplingNote] {
         &self.outgoing_sapling_notes
     }
 
+    /// Outgoing orchard notes
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
+    }
+
+    /// Returns nullifers from sapling bundle.
+    /// Returns empty vec if bundle is `None`.
+    pub fn sapling_nullifiers(&self) -> Vec<&sapling_crypto::Nullifier> {
+        self.transaction
+            .sapling_bundle()
+            .map_or_else(Vec::new, |bundle| {
+                bundle
+                    .shielded_spends()
+                    .iter()
+                    .map(|spend| spend.nullifier())
+                    .collect::<Vec<_>>()
+            })
     }
 
     /// Returns nullifers from orchard bundle.
@@ -434,20 +419,6 @@ impl WalletTransaction {
                     .actions()
                     .iter()
                     .map(|action| action.nullifier())
-                    .collect::<Vec<_>>()
-            })
-    }
-
-    /// Returns nullifers from orchard bundle.
-    /// Returns empty vec if bundle is `None`.
-    pub fn sapling_nullifiers(&self) -> Vec<&sapling_crypto::Nullifier> {
-        self.transaction
-            .sapling_bundle()
-            .map_or_else(Vec::new, |bundle| {
-                bundle
-                    .shielded_spends()
-                    .iter()
-                    .map(|spend| spend.nullifier())
                     .collect::<Vec<_>>()
             })
     }
@@ -467,10 +438,10 @@ impl WalletTransaction {
     }
 }
 
-#[cfg(feature = "wallet_pack")]
+#[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
-    /// Returns the total value sent to receivers.
-    // FIXME: check if outgoing notes are generated for change (assumed not). consider correct send-to-self case (subtract shielded outputs?).
+    /// Returns the total value sent to receivers, including value explicitly sent to the wallet own addresses but
+    /// excluding change.
     pub fn total_value_sent(&self) -> u64 {
         let transparent_value_sent = self.transaction.transparent_bundle().map_or(0, |bundle| {
             bundle
@@ -526,42 +497,20 @@ impl std::fmt::Debug for WalletTransaction {
 #[derive(Debug, Clone)]
 pub struct WalletNote<N, Nf: Copy> {
     /// Output ID
-    pub output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to decrypt output
-    pub key_id: KeyId,
+    pub(crate) key_id: KeyId,
     /// Decrypted note with recipient and value
-    pub note: N,
+    pub(crate) note: N,
     /// Derived nullifier
-    pub nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
     /// Commitment tree leaf position
-    pub position: Option<Position>,
+    pub(crate) position: Option<Position>,
     /// Memo
-    pub memo: Memo,
+    pub(crate) memo: Memo,
     /// Txid of transaction this output was spent.
     /// If `None`, output is not spent.
-    pub spending_transaction: Option<TxId>,
-}
-
-impl<N, Nf: Copy> WalletNote<N, Nf> {
-    pub fn from_parts(
-        output_id: OutputId,
-        key_id: KeyId,
-        note: N,
-        nullifier: Option<Nf>,
-        position: Option<Position>,
-        memo: Memo,
-        spending_transaction: Option<TxId>,
-    ) -> Self {
-        Self {
-            output_id,
-            key_id,
-            note,
-            nullifier,
-            position,
-            memo,
-            spending_transaction,
-        }
-    }
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 pub trait OutputInterface: Sized {
@@ -601,40 +550,30 @@ pub trait OutputInterface: Sized {
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet
-#[derive(Debug, Clone, Getters, CopyGetters, Setters)]
+#[derive(Debug, Clone)]
 pub struct TransparentCoin {
     /// Output ID
-    pub output_id: OutputId,
+    pub(crate) output_id: OutputId,
     /// Identifier for key used to derive address
-    pub key_id: TransparentAddressId,
+    pub(crate) key_id: TransparentAddressId,
     /// Encoded transparent address
-    pub address: String,
+    pub(crate) address: String,
     /// Script
-    pub script: Script,
+    pub(crate) script: Script,
     /// Coin value
-    pub value: NonNegativeAmount,
+    pub(crate) value: NonNegativeAmount,
     /// Txid of transaction this output was spent.
     /// If `None`, output is not spent.
-    pub spending_transaction: Option<TxId>,
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 impl TransparentCoin {
-    pub fn from_parts(
-        output_id: OutputId,
-        key_id: TransparentAddressId,
-        address: String,
-        script: Script,
-        value: NonNegativeAmount,
-        spending_transaction: Option<TxId>,
-    ) -> Self {
-        Self {
-            output_id,
-            key_id,
-            address,
-            script,
-            value,
-            spending_transaction,
-        }
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    pub fn script(&self) -> &Script {
+        &self.script
     }
 }
 

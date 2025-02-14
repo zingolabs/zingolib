@@ -5,8 +5,6 @@
 use std::time::Duration;
 
 use log::{debug, error};
-use zingo_sync::sync::sync;
-use zingo_sync::sync::sync_status;
 
 use super::LightClient;
 use super::SyncResult;
@@ -35,14 +33,14 @@ impl LightClient {
         let wallet = self.wallet.clone();
         let network = self.config.chain;
         let sync_handle = tokio::spawn(async move {
-            sync(client, &network, wallet).await.unwrap();
+            zingo_sync::sync(client, &network, wallet).await.unwrap();
         });
 
         if print_updates {
             let wallet = self.wallet.clone();
             tokio::spawn(async move {
                 loop {
-                    let sync_status = sync_status(wallet.clone()).await;
+                    let sync_status = zingo_sync::sync_status(wallet.clone()).await;
                     println!("{}", sync_status);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
@@ -51,7 +49,7 @@ impl LightClient {
 
         sync_handle.await.unwrap();
 
-        let final_sync_state = sync_status(self.wallet.clone()).await;
+        let final_sync_state = zingo_sync::sync_status(self.wallet.clone()).await;
 
         Ok(SyncResult {
             success: true,

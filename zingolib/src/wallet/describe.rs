@@ -11,6 +11,7 @@ use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zingo_sync::primitives::NoteInterface as _;
 use zingo_sync::primitives::OrchardNote;
 use zingo_sync::primitives::OutgoingNoteInterface;
 use zingo_sync::primitives::OutputInterface;
@@ -347,7 +348,7 @@ impl LightWallet {
                     .value(value)
                     .fee(fee)
                     .status(transaction.status())
-                    .zec_price(transaction.price())
+                    .zec_price(None) // FIXME: zingo2, re-implement price correctly
                     .transparent_coins(transparent_coins)
                     .sapling_notes(sapling_notes)
                     .orchard_notes(orchard_notes)
@@ -415,7 +416,7 @@ impl LightWallet {
             .map(|output| {
                 let spend_status = self.output_spend_status(output);
 
-                let memo = if let Memo::Text(memo_text) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = output.memo() {
                     Some(memo_text.to_string())
                 } else {
                     None
@@ -435,7 +436,7 @@ impl LightWallet {
             .map(|output| {
                 let spend_status = self.output_spend_status(output);
 
-                let memo = if let Memo::Text(memo_text) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = output.memo() {
                     Some(memo_text.to_string())
                 } else {
                     None

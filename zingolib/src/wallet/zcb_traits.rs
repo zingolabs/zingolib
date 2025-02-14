@@ -362,14 +362,13 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            zingo_sync::sync::scan_pending_transaction(
+            zingo_sync::scan_pending_transaction(
                 &network,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
                 ConfirmationStatus::Calculated(sent_transaction.target_height()),
                 sent_transaction.created().unix_timestamp() as u32,
-                None,
             );
         }
 
@@ -515,12 +514,12 @@ impl InputSource for LightWallet {
         let exclude_sapling = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index()))
+            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let exclude_orchard = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index()))
+            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
@@ -640,13 +639,13 @@ impl InputSource for LightWallet {
                 NonZeroU32::new(min_confirmations).ok_or(WalletError::MinimumConfirmationError)?,
             )
             .into_iter()
-            .filter(|&output| output.address == address)
+            .filter(|&output| output.address() == address)
             .flat_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
                     zcash_primitives::transaction::components::TxOut {
-                        value: output.value,
-                        script_pubkey: output.script.clone(),
+                        value: output.value().try_into().expect("value from checked type"),
+                        script_pubkey: output.script().clone(),
                     },
                     Some(
                         self.output_transaction(output)

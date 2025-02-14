@@ -74,7 +74,7 @@ impl LightWallet {
                 let prevout = self
                     .wallet_outputs::<TransparentCoin>()
                     .into_iter()
-                    .find(|&output| output.output_id == outpoint)
+                    .find(|&output| output.output_id() == outpoint)
                     .ok_or(FeeError::SpendNotFound {
                         txid: transaction.txid(),
                         spend: format!("{:?}", outpoint),

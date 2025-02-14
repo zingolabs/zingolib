@@ -267,7 +267,6 @@ pub fn scan_pending_transaction<W>(
     transaction: Transaction,
     status: ConfirmationStatus,
     datetime: u32,
-    price: Option<f64>,
 ) where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
@@ -293,7 +292,6 @@ pub fn scan_pending_transaction<W>(
         &mut pending_transaction_outpoints,
         &transparent_addresses,
         datetime,
-        price,
     )
     .unwrap();
 
@@ -472,7 +470,6 @@ async fn process_mempool_transaction<W>(
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs() as u32,
-        None,
     );
 
     // TODO: consider logic for pending spent being set back to None when txs are evicted / never make it on chain

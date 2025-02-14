@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-wallet_pack = []
+default = [ "wallet_essentials" ]
+# utility not necessary for the sync engine but essential for wallets using zingo_sync::primitives for wallet functionality
+wallet_essentials = []
 
 [dependencies]
 # Zingo

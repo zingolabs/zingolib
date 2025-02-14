@@ -18,7 +18,7 @@ zaino-test = ['test-elevation']
 zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
-zingo-sync = { path = "../zingo-sync", features = [ "wallet_pack" ] }
+zingo-sync = { path = "../zingo-sync" }
 testvectors = { path = "../testvectors", optional = true }
 
 orchard = { workspace = true }

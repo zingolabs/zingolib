@@ -133,19 +133,23 @@ where
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
 
-        let wallet_block = WalletBlock::from_parts(
-            block.height(),
-            block.hash(),
-            block.prev_hash(),
-            block.time,
-            block.vtx.iter().map(|tx| tx.txid()).collect(),
-            TreeBoundaries {
+        let wallet_block = WalletBlock {
+            block_height: block.height(),
+            block_hash: block.hash(),
+            prev_hash: block.prev_hash(),
+            time: block.time,
+            txids: block
+                .vtx
+                .iter()
+                .map(|transaction| transaction.txid())
+                .collect(),
+            tree_boundaries: TreeBoundaries {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
                 orchard_initial_tree_size,
                 orchard_final_tree_size,
             },
-        );
+        };
 
         check_tree_size(block, &wallet_block).unwrap();
 

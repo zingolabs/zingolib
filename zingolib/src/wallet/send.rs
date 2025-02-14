@@ -235,7 +235,7 @@ impl LightWallet {
         let txids = sent_transactions
             .into_iter()
             .map(|sent_transaction| {
-                zingo_sync::sync::scan_pending_transaction(
+                zingo_sync::scan_pending_transaction(
                     &network,
                     &self
                         .get_unified_full_viewing_keys()
@@ -244,7 +244,6 @@ impl LightWallet {
                     sent_transaction.transaction,
                     ConfirmationStatus::Transmitted(sent_transaction.height),
                     now(),
-                    None,
                 );
 
                 Ok(sent_transaction.txid)
