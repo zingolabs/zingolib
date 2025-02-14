@@ -200,8 +200,8 @@ where
     Ok(())
 }
 
-/// Obtains the mutex guard to the wallet and creates a [`crate::primitives::SyncStatus`] from the wallet's current
-/// [`crate::primitives::SyncState`].
+/// Obtains the mutex guard to the wallet and creates a [`crate::wallet::SyncStatus`] from the wallet's current
+/// [`crate::wallet::SyncState`].
 ///
 /// Designed to be called during the sync process with minimal interruption.
 pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus

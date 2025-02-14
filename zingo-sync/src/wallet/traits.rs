@@ -47,7 +47,7 @@ pub trait SyncWallet {
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
 }
 
-/// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
+/// Trait for interfacing [`crate::wallet::WalletBlock`]s with wallet data
 pub trait SyncBlocks: SyncWallet {
     /// Get a stored wallet compact block from wallet data by block height
     /// Must return error if block is not found
@@ -77,7 +77,7 @@ pub trait SyncBlocks: SyncWallet {
     }
 }
 
-/// Trait for interfacing [`crate::primitives::WalletTransaction`]s with wallet data
+/// Trait for interfacing [`crate::wallet::WalletTransaction`]s with wallet data
 pub trait SyncTransactions: SyncWallet {
     /// Get reference to wallet transactions
     fn get_wallet_transactions(&self) -> Result<&HashMap<TxId, WalletTransaction>, Self::Error>;
