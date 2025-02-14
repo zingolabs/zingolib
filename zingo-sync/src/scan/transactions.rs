@@ -403,13 +403,13 @@ where
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote::from_parts(
-                OutputId::new(txid, output_index as u16),
-                key_ids[key_index],
+            outgoing_notes.push(OutgoingNote {
+                output_id: OutputId::new(txid, output_index as u16),
+                key_id: key_ids[key_index],
                 note,
-                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                None,
-            ));
+                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                recipient_unified_address: None,
+            });
         }
     }
 
@@ -478,7 +478,7 @@ fn add_recipient_unified_address<P, Nz>(
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.set_recipient_unified_address(Some(ua.clone()));
+                note.recipient_unified_address = Some(ua.clone());
             });
     }
 }

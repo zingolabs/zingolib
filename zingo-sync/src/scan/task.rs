@@ -31,7 +31,7 @@ use crate::{
     MAX_BATCH_OUTPUTS,
 };
 
-use super::{compact_blocks::calculate_block_tree_boundaries, error::ScanError, scan, ScanResults};
+use super::{compact_blocks::calculate_block_tree_bounds, error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 
@@ -344,7 +344,7 @@ where
                     }
 
                     if first_batch {
-                        let tree_boundaries = calculate_block_tree_boundaries(
+                        let tree_bounds = calculate_block_tree_bounds(
                             &consensus_parameters,
                             fetch_request_sender.clone(),
                             &compact_block,
@@ -361,12 +361,12 @@ where
                                 .iter()
                                 .map(|transaction| transaction.txid())
                                 .collect(),
-                            tree_boundaries,
+                            tree_bounds,
                         });
                         first_batch = false;
                     }
                     if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        let tree_boundaries = calculate_block_tree_boundaries(
+                        let tree_bounds = calculate_block_tree_bounds(
                             &consensus_parameters,
                             fetch_request_sender.clone(),
                             &compact_block,
@@ -383,7 +383,7 @@ where
                                 .iter()
                                 .map(|transaction| transaction.txid())
                                 .collect(),
-                            tree_boundaries,
+                            tree_bounds,
                         });
                     }
 
@@ -643,7 +643,7 @@ impl ScanTask {
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
-            let tree_boundaries = calculate_block_tree_boundaries(
+            let tree_bounds = calculate_block_tree_bounds(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 block,
@@ -660,14 +660,14 @@ impl ScanTask {
                     .iter()
                     .map(|transaction| transaction.txid())
                     .collect(),
-                tree_boundaries,
+                tree_bounds,
             })
         } else {
             None
         };
         let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
-            let tree_boundaries =
-                calculate_block_tree_boundaries(consensus_parameters, fetch_request_sender, block)
+            let tree_bounds =
+                calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block)
                     .await;
 
             Some(WalletBlock {
@@ -680,7 +680,7 @@ impl ScanTask {
                     .iter()
                     .map(|transaction| transaction.txid())
                     .collect(),
-                tree_boundaries,
+                tree_bounds,
             })
         } else {
             None

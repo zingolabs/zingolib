@@ -49,11 +49,11 @@ impl InitialScanData {
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
                 (
-                    prev.tree_boundaries().sapling_final_tree_size,
-                    prev.tree_boundaries().orchard_final_tree_size,
+                    prev.tree_bounds().sapling_final_tree_size,
+                    prev.tree_bounds().orchard_final_tree_size,
                 )
             } else {
-                let tree_boundaries = compact_blocks::calculate_block_tree_boundaries(
+                let tree_bounds = compact_blocks::calculate_block_tree_bounds(
                     consensus_parameters,
                     fetch_request_sender,
                     first_block,
@@ -61,8 +61,8 @@ impl InitialScanData {
                 .await;
 
                 (
-                    tree_boundaries.sapling_initial_tree_size,
-                    tree_boundaries.orchard_initial_tree_size,
+                    tree_bounds.sapling_initial_tree_size,
+                    tree_bounds.orchard_initial_tree_size,
                 )
             };
 

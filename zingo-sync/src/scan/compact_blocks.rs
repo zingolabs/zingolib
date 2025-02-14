@@ -21,7 +21,7 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
+    primitives::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
     MAX_BATCH_OUTPUTS,
 };
@@ -143,7 +143,7 @@ where
                 .iter()
                 .map(|transaction| transaction.txid())
                 .collect(),
-            tree_boundaries: TreeBoundaries {
+            tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
                 orchard_initial_tree_size,
@@ -248,12 +248,12 @@ fn check_continuity(
 fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
         if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.tree_boundaries().sapling_final_tree_size
+            != wallet_block.tree_bounds().sapling_final_tree_size
         {
             panic!("sapling tree size is incorrect!")
         }
         if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.tree_boundaries().orchard_final_tree_size
+            != wallet_block.tree_bounds().orchard_final_tree_size
         {
             panic!("orchard tree size is incorrect!")
         }
@@ -418,11 +418,11 @@ fn collect_nullifiers(
     Ok(())
 }
 
-pub(super) async fn calculate_block_tree_boundaries<P>(
+pub(super) async fn calculate_block_tree_bounds<P>(
     consensus_parameters: &P,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
-) -> TreeBoundaries
+) -> TreeBounds
 where
     P: consensus::Parameters + Sync + Send + 'static,
 {
@@ -476,7 +476,7 @@ where
         .try_into()
         .expect("Sapling output count cannot exceed a u32");
 
-    TreeBoundaries {
+    TreeBounds {
         sapling_initial_tree_size: sapling_final_tree_size - sapling_output_count,
         sapling_final_tree_size,
         orchard_initial_tree_size: orchard_final_tree_size - orchard_output_count,
