@@ -940,7 +940,6 @@ impl LightClient {
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
     ///  * TODO:  DEPRECATE in favor of list_outputs
-    #[cfg(any(test, feature = "test-elevation"))]
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_spent_sapling_notes) =
             self.list_sapling_notes(all_notes).await;

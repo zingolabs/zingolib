@@ -222,6 +222,9 @@ pub mod send_with_proposal {
                 .cached_raw_transactions
                 .clone();
             let mut txids = vec![];
+
+            // this allowance is fixed again in zingo 2.0
+            #[allow(unused_mut)]
             for (mut txid, raw_tx) in calculated_tx_cache {
                 let mut spend_status = None;
                 if let Some(&mut ref mut transaction_record) =
@@ -276,10 +279,10 @@ pub mod send_with_proposal {
                                     {
                                         // did the server generate a new txid? is this related to the rebroadcast bug?
                                         // crash
-                                        return BroadcastCachedTransactionsError::IncorrectTxidFromServer(
+                                        return Err(BroadcastCachedTransactionsError::IncorrectTxidFromServer(
                                                     txid,
                                                     reported_txid,
-                                                );
+                                                ));
                                     }
                                 };
 
