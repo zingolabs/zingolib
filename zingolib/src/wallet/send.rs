@@ -15,10 +15,10 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::memo::MemoBytes;
 
+use pepper_sync::wallet::traits::SyncWallet as _;
 use zcash_primitives::transaction::fees::zip317;
 use zingo_memo::create_wallet_internal_memo_version_1;
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingo_sync::wallet::traits::SyncWallet as _;
 
 use crate::lightclient::send::send_with_proposal::BroadcastTransactionsError;
 use crate::wallet::now;
@@ -235,7 +235,7 @@ impl LightWallet {
         let txids = sent_transactions
             .into_iter()
             .map(|sent_transaction| {
-                zingo_sync::scan_pending_transaction(
+                pepper_sync::scan_pending_transaction(
                     &network,
                     &self
                         .get_unified_full_viewing_keys()

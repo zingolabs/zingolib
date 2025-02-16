@@ -3,7 +3,6 @@ use std::time::Duration;
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingo_netutils::GrpcConnector;
-use zingo_sync::sync::{self, sync};
 use zingolib::{
     config::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER},
     get_base_address_macro,
@@ -40,7 +39,7 @@ async fn sync_mainnet_test() {
 
     let client = GrpcConnector::new(uri).get_client().await.unwrap();
 
-    sync(client, &config.chain, lightclient.wallet.clone())
+    pepper_sync::sync(client, &config.chain, lightclient.wallet.clone())
         .await
         .unwrap();
 
@@ -81,14 +80,16 @@ async fn sync_status() {
 
     let wallet = lightclient.wallet.clone();
     let sync_handle = tokio::spawn(async move {
-        sync(client, &config.chain, wallet).await.unwrap();
+        pepper_sync::sync(client, &config.chain, wallet)
+            .await
+            .unwrap();
     });
 
     let wallet = lightclient.wallet.clone();
     tokio::spawn(async move {
         loop {
             let wallet = wallet.clone();
-            let sync_status = sync::sync_status(wallet).await;
+            let sync_status = pepper_sync::sync_status(wallet).await;
             dbg!(sync_status);
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -133,7 +134,7 @@ async fn sync_test() {
 
     let uri = recipient.config().lightwalletd_uri.read().unwrap().clone();
     let client = GrpcConnector::new(uri).get_client().await.unwrap();
-    sync(client, &recipient.config().chain.clone(), recipient.wallet)
+    pepper_sync::sync(client, &recipient.config().chain.clone(), recipient.wallet)
         .await
         .unwrap();
 

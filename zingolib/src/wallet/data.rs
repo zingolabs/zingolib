@@ -482,9 +482,9 @@ pub mod summaries {
 
     use chrono::DateTime;
     use json::JsonValue;
+    use pepper_sync::keys::KeyId;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingo_sync::keys::KeyId;
 
     use crate::{
         error::BuildError,

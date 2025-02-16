@@ -68,7 +68,7 @@ async fn reorg_away_receipt_pepper() {
                 .get_client()
                 .await
                 .unwrap();
-            zingo_sync::sync::sync(client, &lc.config().chain.clone(), lc.wallet.clone())
+            pepper_sync::sync(client, &lc.config().chain.clone(), lc.wallet.clone())
                 .await
                 .map_err(|e| e.to_string())
         })

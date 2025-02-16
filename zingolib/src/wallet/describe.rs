@@ -4,6 +4,13 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use pepper_sync::wallet::NoteInterface as _;
+use pepper_sync::wallet::OrchardNote;
+use pepper_sync::wallet::OutgoingNoteInterface;
+use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::SaplingNote;
+use pepper_sync::wallet::TransparentCoin;
+use pepper_sync::wallet::WalletTransaction;
 use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
@@ -11,13 +18,6 @@ use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zingo_sync::wallet::NoteInterface as _;
-use zingo_sync::wallet::OrchardNote;
-use zingo_sync::wallet::OutgoingNoteInterface;
-use zingo_sync::wallet::OutputInterface;
-use zingo_sync::wallet::SaplingNote;
-use zingo_sync::wallet::TransparentCoin;
-use zingo_sync::wallet::WalletTransaction;
 
 use std::cmp::Ordering;
 
@@ -82,7 +82,7 @@ impl LightWallet {
             let encoded_ua = local_address.encode(&self.network);
             let transparent = local_address
                 .transparent()
-                .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
+                .map(|taddr| pepper_sync::keys::transparent::encode_address(&self.network, *taddr));
             objectified_addresses.push(
                 json::object!{
                     "address" => encoded_ua,
@@ -879,7 +879,7 @@ mod test {
                     .transparent()
                     .map(|taddr| {
                         // TODO: new crate for shared conversion, parsing and encoding
-                        zingo_sync::keys::transparent::encode_address(&self.network, *taddr)
+                        pepper_sync::keys::transparent::encode_address(&self.network, *taddr)
                     })
                     .ok_or(()),
                 PoolType::Shielded(ShieldedProtocol::Sapling) => ua

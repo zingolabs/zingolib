@@ -14,9 +14,9 @@ use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use zingo_sync::keys::transparent::{self, TransparentScope};
-use zingo_sync::wallet::ShardTrees;
-use zingo_sync::{
+use pepper_sync::keys::transparent::{self, TransparentScope};
+use pepper_sync::wallet::ShardTrees;
+use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
@@ -351,10 +351,10 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
-            nullifier_map: zingo_sync::wallet::NullifierMap::new(),
+            nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
-            shard_trees: zingo_sync::wallet::ShardTrees::new(),
-            sync_state: zingo_sync::wallet::SyncState::new(),
+            shard_trees: ShardTrees::new(),
+            sync_state: SyncState::new(),
             transparent_addresses,
             unified_addresses,
             network,

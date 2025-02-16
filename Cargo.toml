@@ -10,7 +10,7 @@ members = [
     "zingolib",
     "zingo-netutils",
     "zingo-memo",
-    "zingo-sync",
+    "pepper-sync",
 ]
 resolver = "2"
 

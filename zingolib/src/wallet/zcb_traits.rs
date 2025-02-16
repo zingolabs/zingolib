@@ -1,5 +1,13 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
+use pepper_sync::{
+    keys::transparent::{self, TransparentScope},
+    wallet::traits::SyncWallet,
+    wallet::{
+        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
+        SaplingShardStore,
+    },
+};
 use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
@@ -26,14 +34,6 @@ use zcash_primitives::{
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingo_sync::{
-    keys::transparent::{self, TransparentScope},
-    wallet::traits::SyncWallet,
-    wallet::{
-        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
-        SaplingShardStore,
-    },
-};
 
 use crate::wallet::output::RemainingNeeded;
 
@@ -364,7 +364,7 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            zingo_sync::scan_pending_transaction(
+            pepper_sync::scan_pending_transaction(
                 &network,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
