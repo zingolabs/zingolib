@@ -63,6 +63,20 @@ pub enum TransparentScope {
     Refund,
 }
 
+impl std::fmt::Display for TransparentScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                TransparentScope::External => "external",
+                TransparentScope::Internal => "internal",
+                TransparentScope::Refund => "refund",
+            }
+        )
+    }
+}
+
 impl From<TransparentScope> for TransparentKeyScope {
     fn from(value: TransparentScope) -> Self {
         match value {

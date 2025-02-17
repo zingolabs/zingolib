@@ -7,6 +7,7 @@ use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
+use pepper_sync::wallet::{OrchardNote, SaplingNote};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -1689,19 +1690,19 @@ impl Command for NewAddressCommand {
     }
 }
 
-struct OutputsCommand {}
-impl Command for OutputsCommand {
+struct NotesCommand {}
+impl Command for NotesCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Show all shielded notes and transparent coins in this wallet
+            Show all notes (shielded outputs) in this wallet
             Usage:
-            outputs [all]
-            If you supply the "all" parameter, all previously spent shielded notes and transparent coins are also included
+            notes [all]
+            If you supply the "all" parameter, all spent notes are also included
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Show all shielded notes and transparent coins in this wallet"
+        "Show all notes (shielded outputs) in this wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -1716,7 +1717,7 @@ impl Command for OutputsCommand {
                 "all" => true,
                 a => {
                     return format!(
-                        "Invalid argument \"{}\". Specify 'all' to include unspent notes",
+                        "Invalid argument \"{}\". Specify 'all' to include spent notes",
                         a
                     )
                 }
@@ -1726,12 +1727,58 @@ impl Command for OutputsCommand {
         };
 
         RT.block_on(async move {
-            lightclient
-                .wallet
-                .lock()
-                .await
-                .list_output_summaries(all_notes)
-                .pretty(2)
+            let wallet = lightclient.wallet.lock().await;
+
+            json::object! {
+                "orchard notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
+                "sapling notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct CoinsCommand {}
+impl Command for CoinsCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Show all coins (transparent outputs) in this wallet
+            Usage:
+            notes [all]
+            If you supply the "all" parameter, all spent coins are also included
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Show all coins (transparent outputs) in this wallet"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        // Parse the args.
+        if args.len() > 1 {
+            return self.short_help().to_string();
+        }
+
+        // Make sure we can parse the amount
+        let all_coins = if args.len() == 1 {
+            match args[0] {
+                "all" => true,
+                a => {
+                    return format!(
+                        "Invalid argument \"{}\". Specify 'all' to include spent coins",
+                        a
+                    )
+                }
+            }
+        } else {
+            false
+        };
+
+        RT.block_on(async move {
+            json::object! {
+                "transparent coins" => json::JsonValue::from(lightclient.wallet.lock().await.coin_summaries(all_coins)),
+            }
+            .pretty(2)
         })
     }
 }
@@ -1856,7 +1903,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
-        ("outputs", Box::new(OutputsCommand {})),
+        ("notes", Box::new(NotesCommand {})),
+        ("coins", Box::new(CoinsCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),

@@ -42,7 +42,7 @@ use crate::wallet::traits::Recipient;
 use crate::wallet::LightWallet;
 use crate::UAReceivers;
 
-use super::data::summaries::NoteSummary;
+use super::data::summaries::BasicNoteSummary;
 use super::data::summaries::OutgoingNoteSummary;
 use super::data::summaries::SelfSendValueTransfer;
 use super::data::summaries::SentValueTransfer;
@@ -396,8 +396,8 @@ impl LightWallet {
         TransactionKind,
         u64,
         Option<u64>,
-        Vec<NoteSummary>,
-        Vec<NoteSummary>,
+        Vec<BasicNoteSummary>,
+        Vec<BasicNoteSummary>,
         Vec<TransparentCoinSummary>,
         Vec<OutgoingNoteSummary>,
         Vec<OutgoingNoteSummary>,
@@ -422,7 +422,7 @@ impl LightWallet {
                     None
                 };
 
-                NoteSummary::from_parts(
+                BasicNoteSummary::from_parts(
                     output.value(),
                     spend_status,
                     output.output_id().output_index() as u32,
@@ -442,7 +442,7 @@ impl LightWallet {
                     None
                 };
 
-                NoteSummary::from_parts(
+                BasicNoteSummary::from_parts(
                     output.value(),
                     spend_status,
                     output.output_id().output_index() as u32,

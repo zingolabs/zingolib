@@ -943,9 +943,9 @@ pub mod summaries {
         /// Gets zec price in USD
         fn zec_price(&self) -> Option<f64>;
         /// Gets slice of orchard note summaries
-        fn orchard_notes(&self) -> &[NoteSummary];
+        fn orchard_notes(&self) -> &[BasicNoteSummary];
         /// Gets slice of sapling note summaries
-        fn sapling_notes(&self) -> &[NoteSummary];
+        fn sapling_notes(&self) -> &[BasicNoteSummary];
         /// Gets slice of transparent coin summaries
         fn transparent_coins(&self) -> &[TransparentCoinSummary];
         /// Gets slice of outgoing orchard notes
@@ -974,8 +974,8 @@ pub mod summaries {
             String,
             String,
             String,
-            NoteSummaries,
-            NoteSummaries,
+            BasicNoteSummaries,
+            BasicNoteSummaries,
             TransparentCoinSummaries,
             OutgoingNoteSummaries,
             OutgoingNoteSummaries,
@@ -995,8 +995,8 @@ pub mod summaries {
             } else {
                 "not available".to_string()
             };
-            let orchard_notes = NoteSummaries(self.orchard_notes().to_vec());
-            let sapling_notes = NoteSummaries(self.sapling_notes().to_vec());
+            let orchard_notes = BasicNoteSummaries(self.orchard_notes().to_vec());
+            let sapling_notes = BasicNoteSummaries(self.sapling_notes().to_vec());
             let transparent_coins = TransparentCoinSummaries(self.transparent_coins().to_vec());
             let outgoing_orchard_notes =
                 OutgoingNoteSummaries(self.outgoing_orchard_notes().to_vec());
@@ -1030,8 +1030,8 @@ pub mod summaries {
         value: u64,
         fee: Option<u64>,
         zec_price: Option<f64>,
-        orchard_notes: Vec<NoteSummary>,
-        sapling_notes: Vec<NoteSummary>,
+        orchard_notes: Vec<BasicNoteSummary>,
+        sapling_notes: Vec<BasicNoteSummary>,
         transparent_coins: Vec<TransparentCoinSummary>,
         outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
         outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
@@ -1062,10 +1062,10 @@ pub mod summaries {
         fn zec_price(&self) -> Option<f64> {
             self.zec_price
         }
-        fn orchard_notes(&self) -> &[NoteSummary] {
+        fn orchard_notes(&self) -> &[BasicNoteSummary] {
             &self.orchard_notes
         }
-        fn sapling_notes(&self) -> &[NoteSummary] {
+        fn sapling_notes(&self) -> &[BasicNoteSummary] {
             &self.sapling_notes
         }
         fn transparent_coins(&self) -> &[TransparentCoinSummary] {
@@ -1200,8 +1200,8 @@ pub mod summaries {
         value: Option<u64>,
         fee: Option<Option<u64>>,
         zec_price: Option<Option<f64>>,
-        orchard_notes: Option<Vec<NoteSummary>>,
-        sapling_notes: Option<Vec<NoteSummary>>,
+        orchard_notes: Option<Vec<BasicNoteSummary>>,
+        sapling_notes: Option<Vec<BasicNoteSummary>>,
         transparent_coins: Option<Vec<TransparentCoinSummary>>,
         outgoing_orchard_notes: Option<Vec<OutgoingNoteSummary>>,
         outgoing_sapling_notes: Option<Vec<OutgoingNoteSummary>>,
@@ -1235,8 +1235,8 @@ pub mod summaries {
         build_method!(value, u64);
         build_method!(fee, Option<u64>);
         build_method!(zec_price, Option<f64>);
-        build_method!(orchard_notes, Vec<NoteSummary>);
-        build_method!(sapling_notes, Vec<NoteSummary>);
+        build_method!(orchard_notes, Vec<BasicNoteSummary>);
+        build_method!(sapling_notes, Vec<BasicNoteSummary>);
         build_method!(transparent_coins, Vec<TransparentCoinSummary>);
         build_method!(outgoing_orchard_notes, Vec<OutgoingNoteSummary>);
         build_method!(outgoing_sapling_notes, Vec<OutgoingNoteSummary>);
@@ -1604,19 +1604,23 @@ pub mod summaries {
     //         }
     //     }
 
-    /// Note summary.
+    /// Basic note summary.
+    ///
+    /// Intended in the context of a transaction summary to provide the most useful data to user without cluttering up
+    /// the interface. See [crate::wallet::summary::`NoteSummary`] for a note summary that is intended for use independently.
+    ///
     /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
     /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
     /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
-    pub struct NoteSummary {
+    pub struct BasicNoteSummary {
         value: u64,
-        spend_summary: SpendStatus,
+        spend_status: SpendStatus,
         output_index: u32,
         memo: Option<String>,
     }
 
-    impl NoteSummary {
+    impl BasicNoteSummary {
         /// Creates an OrchardNoteSummary from parts
         pub fn from_parts(
             value: u64,
@@ -1624,9 +1628,9 @@ pub mod summaries {
             output_index: u32,
             memo: Option<String>,
         ) -> Self {
-            NoteSummary {
+            BasicNoteSummary {
                 value,
-                spend_summary: spend_status,
+                spend_status,
                 output_index,
                 memo,
             }
@@ -1637,8 +1641,8 @@ pub mod summaries {
         }
 
         /// Gets spend status
-        pub fn spend_summary(&self) -> SpendStatus {
-            self.spend_summary
+        pub fn spend_status(&self) -> SpendStatus {
+            self.spend_status
         }
 
         /// Gets output index
@@ -1651,7 +1655,7 @@ pub mod summaries {
         }
     }
 
-    impl std::fmt::Display for NoteSummary {
+    impl std::fmt::Display for BasicNoteSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let memo = if let Some(m) = self.memo.clone() {
                 m
@@ -1666,16 +1670,16 @@ pub mod summaries {
             output index: {}
             memo: {}
         }}",
-                self.value, self.spend_summary, self.output_index, memo,
+                self.value, self.spend_status, self.output_index, memo,
             )
         }
     }
 
-    impl From<NoteSummary> for JsonValue {
-        fn from(note: NoteSummary) -> Self {
+    impl From<BasicNoteSummary> for JsonValue {
+        fn from(note: BasicNoteSummary) -> Self {
             json::object! {
                 "value" => note.value,
-                "spend_status" => note.spend_summary.to_string(),
+                "spend_status" => note.spend_status.to_string(),
                 "output_index" => note.output_index,
                 "memo" => note.memo,
             }
@@ -1683,9 +1687,9 @@ pub mod summaries {
     }
 
     /// Wraps a vec of note summaries for the implementation of std::fmt::Display
-    pub struct NoteSummaries(Vec<NoteSummary>);
+    pub struct BasicNoteSummaries(Vec<BasicNoteSummary>);
 
-    impl std::fmt::Display for NoteSummaries {
+    impl std::fmt::Display for BasicNoteSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for note in &self.0 {
                 write!(f, "\n{}", note)?;
