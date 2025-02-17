@@ -821,7 +821,7 @@ pub trait OutgoingNoteInterface: Sized {
 }
 
 /// Note sent from this capability to a recipient.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutgoingNote<N> {
     /// Output ID.
     pub(crate) output_id: OutputId,
