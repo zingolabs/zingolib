@@ -213,10 +213,10 @@ impl LightWallet {
             if txid_from_server != txid {
                 #[cfg(not(feature = "darkside_tests"))]
                 {
-                    return BroadcastTransactionsError::IncorrectTxidFromServer(
-                        calculated_txid,
+                    return Err(BroadcastTransactionsError::IncorrectTxidFromServer(
+                        txid,
                         txid_from_server,
-                    );
+                    ));
                 }
                 // during darkside tests, the server may report a different txid to the one calculated.
                 #[cfg(feature = "darkside_tests")]
