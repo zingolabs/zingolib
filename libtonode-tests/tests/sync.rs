@@ -7,7 +7,7 @@ use zingolib::{
     config::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER},
     get_base_address_macro,
     lightclient::LightClient,
-    testutils::{lightclient::from_inputs, scenarios},
+    testutils::{increase_server_height, lightclient::from_inputs, scenarios},
     wallet::WalletBase,
 };
 
@@ -99,23 +99,23 @@ async fn sync_status() {
 }
 
 // temporary test for sync development
-#[ignore = "hangs"]
+#[ignore = "sync development only"]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (_regtest_manager, _cph, _faucet, _recipient, _txid) =
+    let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
-    // from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "transparent"),
-    //         100_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(&recipient, "transparent"),
+            100_000,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     // from_inputs::quick_send(
     //     &recipient,
     //     vec![(
@@ -127,16 +127,16 @@ async fn sync_test() {
     // .await
     // .unwrap();
 
-    // increase_server_height(&regtest_manager, 1).await;
-    // recipient.do_sync(false).await.unwrap();
-    // recipient.quick_shield().await.unwrap();
-    // increase_server_height(&regtest_manager, 1).await;
+    increase_server_height(&regtest_manager, 1).await;
+    recipient.do_sync(false).await.unwrap();
+    recipient.quick_shield().await.unwrap();
+    increase_server_height(&regtest_manager, 1).await;
+    recipient.do_sync(true).await.unwrap();
 
-    // recipient.do_sync(true).await.unwrap();
-
-    // dbg!(&recipient.wallet.wallet_transactions);
-    // dbg!(recipient.wallet.wallet_blocks());
-    // dbg!(recipient.wallet.nullifier_map());
-    // dbg!(recipient.wallet.outpoint_map());
-    // dbg!(recipient.wallet.sync_state());
+    // let wallet = recipient.wallet.lock().await;
+    // dbg!(&wallet.wallet_transactions);
+    // dbg!(&wallet.wallet_blocks);
+    // dbg!(&wallet.nullifier_map);
+    // dbg!(&wallet.outpoint_map);
+    // dbg!(&wallet.sync_state);
 }

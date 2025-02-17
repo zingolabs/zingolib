@@ -1,6 +1,6 @@
 //! Module for handling all connections to the server
 
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -199,7 +199,17 @@ pub(crate) async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
 ) -> Result<tonic::Streaming<RawTransaction>, ()> {
     tracing::debug!("Fetching mempool stream");
-    let mempool_stream = fetch::get_mempool_stream(client).await.unwrap();
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    let mempool_stream;
+    tokio::select! {
+        mempool_stream_response = fetch::get_mempool_stream(client) => {
+            mempool_stream = mempool_stream_response.unwrap();
+        }
+
+        _ = interval.tick() => {
+            return Err(());
+        }
+    }
 
     Ok(mempool_stream)
 }

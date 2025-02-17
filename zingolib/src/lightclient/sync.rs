@@ -39,14 +39,14 @@ impl LightClient {
             pepper_sync::sync(client, &network, wallet).await.unwrap();
         });
 
-        // TODO: replace with lightclient sync running flag
+        // FIXME: replace with lightclient syncing field
         let syncing = Arc::new(AtomicBool::new(true));
         if print_updates {
             let syncing = syncing.clone();
             let wallet = self.wallet.clone();
             tokio::spawn(async move {
                 loop {
-                    if syncing.load(atomic::Ordering::Acquire) {
+                    if !syncing.load(atomic::Ordering::Acquire) {
                         break;
                     };
 

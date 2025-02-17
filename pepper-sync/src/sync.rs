@@ -194,7 +194,9 @@ where
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
+    dbg!("pre-mempool await");
     mempool_handle.await.unwrap().unwrap();
+    dbg!("post-mempool await");
     fetcher_handle.await.unwrap().unwrap();
 
     Ok(())
@@ -662,6 +664,7 @@ async fn mempool_monitor(
             mempool_stream_response = mempool_stream.message() => {
                 match mempool_stream_response.unwrap_or(None) {
                     Some(raw_transaction) => {
+                        dbg!("some raw tx");
                         mempool_transaction_sender
                             .send(raw_transaction)
                             .await
@@ -671,12 +674,14 @@ async fn mempool_monitor(
                     None => {
                         tokio::select! {
                             mempool_stream_response = client::get_mempool_transaction_stream(&mut client) => {
-                                mempool_stream = mempool_stream_response.unwrap();
-                                tokio::time::sleep(Duration::from_millis(500)).await;
+                                if let Ok(response) = mempool_stream_response {
+                                    mempool_stream = response;
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                }
                             }
 
                             _ = interval.tick() => {
-                                if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                                if dbg!(shutdown_mempool.load(atomic::Ordering::Acquire)) {
                                     break;
                                 }
                             }
@@ -687,7 +692,7 @@ async fn mempool_monitor(
             }
 
             _ = interval.tick() => {
-                if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                if dbg!(shutdown_mempool.load(atomic::Ordering::Acquire)) {
                     break;
                 }
             }
