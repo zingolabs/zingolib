@@ -56,35 +56,41 @@ pub mod send_with_proposal {
     #[allow(missing_docs)] // error types document themselves
     #[derive(Clone, Debug, thiserror::Error)]
     pub enum BroadcastCachedTransactionsError {
-        #[error("Cant broadcast: {0:?}")]
+        #[error("Cant broadcast: {0}")]
         Cache(#[from] TransactionCacheError),
-        #[error("Transaction not recorded. Call record_created_transactions first: {0:?}")]
+        #[error("Transaction not recorded. Call record_created_transactions first: {0}")]
         Unrecorded(TxId),
-        #[error("Couldnt fetch server height: {0:?}")]
+        #[error("Couldnt fetch server height: {0}")]
         Height(String),
-        #[error("Broadcast failed: {0:?}")]
+        #[error("Broadcast failed: {0}")]
         Broadcast(String),
+        /// Txid reported by server does not match calculated txid.
+        #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
+        IncorrectTxidFromServer(TxId, TxId),
+        /// Transaction rejected by validator
+        #[error("Transaction was rejected by validator. {0}")]
+        TransactionRejected(String),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
     pub enum RecordCachedTransactionsError {
-        #[error("Cant record: {0:?}")]
+        #[error("Cant record: {0}")]
         Cache(#[from] TransactionCacheError),
-        #[error("Couldnt fetch server height: {0:?}")]
+        #[error("Couldnt fetch server height: {0}")]
         Height(String),
-        #[error("Decoding failed: {0:?}")]
+        #[error("Decoding failed: {0}")]
         Decode(#[from] std::io::Error),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
     pub enum CompleteAndBroadcastError {
-        #[error("The transaction could not be calculated: {0:?}")]
+        #[error("The transaction could not be calculated: {0}")]
         BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Recording created transaction failed: {0:?}")]
+        #[error("Recording created transaction failed: {0}")]
         Record(#[from] RecordCachedTransactionsError),
-        #[error("Broadcast failed: {0:?}")]
+        #[error("Broadcast failed: {0}")]
         Broadcast(#[from] BroadcastCachedTransactionsError),
         #[error("TxIds did not work through?")]
         EmptyList,
@@ -95,25 +101,25 @@ pub mod send_with_proposal {
     pub enum CompleteAndBroadcastStoredProposalError {
         #[error("No proposal. Call do_propose first.")]
         NoStoredProposal,
-        #[error("send {0:?}")]
+        #[error("{0}")]
         CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
     pub enum QuickSendError {
-        #[error("propose send {0:?}")]
+        #[error("propose send {0}")]
         ProposeSend(#[from] ProposeSendError),
-        #[error("send {0:?}")]
+        #[error("send {0}")]
         CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
     #[allow(missing_docs)] // error types document themselves
     #[derive(Debug, thiserror::Error)]
     pub enum QuickShieldError {
-        #[error("propose shield {0:?}")]
+        #[error("propose shield {0}")]
         Propose(#[from] ProposeShieldError),
-        #[error("send {0:?}")]
+        #[error("send {0}")]
         CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
     }
 
@@ -216,6 +222,9 @@ pub mod send_with_proposal {
                 .cached_raw_transactions
                 .clone();
             let mut txids = vec![];
+
+            // this allowance is fixed again in zingo 2.0
+            #[allow(unused_mut)]
             for (mut txid, raw_tx) in calculated_tx_cache {
                 let mut spend_status = None;
                 if let Some(&mut ref mut transaction_record) =
@@ -235,44 +244,47 @@ pub mod send_with_proposal {
 
                                 transaction_record.status = new_status;
 
-                                match crate::utils::conversion::txid_from_hex_encoded_str(
-                                    serverz_txid_string.as_str(),
-                                ) {
-                                    Ok(reported_txid) => {
-                                        if txid != reported_txid {
-                                            println!(
-                                                "served txid {} does not match calculated txid {}",
-                                                reported_txid, txid,
-                                            );
-                                            // during darkside tests, the server may generate a new txid.
-                                            // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
-                                            #[cfg(feature = "darkside_tests")]
-                                            {
-                                                // now we reconfigure the tx_map to align with the server
-                                                // switch the TransactionRecord to the new txid
-                                                if let Some(mut transaction_record) =
-                                                    tx_map.transaction_records_by_id.remove(&txid)
-                                                {
-                                                    transaction_record.txid = reported_txid;
-                                                    tx_map
-                                                        .transaction_records_by_id
-                                                        .insert(reported_txid, transaction_record);
-                                                }
-                                                txid = reported_txid;
-                                            }
-                                            #[cfg(not(feature = "darkside_tests"))]
-                                            {
-                                                // did the server generate a new txid? is this related to the rebroadcast bug?
-                                                // crash
-                                                todo!();
-                                            }
-                                        };
+                                let reported_txid =
+                                    crate::utils::conversion::txid_from_hex_encoded_str(
+                                        serverz_txid_string.as_str(),
+                                    )
+                                    .map_err(|_| {
+                                        BroadcastCachedTransactionsError::TransactionRejected(
+                                            serverz_txid_string,
+                                        )
+                                    })?;
+
+                                if txid != reported_txid {
+                                    println!(
+                                        "served txid {} does not match calculated txid {}",
+                                        reported_txid, txid,
+                                    );
+                                    // during darkside tests, the server may generate a new txid.
+                                    // If this option is enabled, the LightClient will replace outgoing TxId records with the TxId picked by the server. necessary for darkside.
+                                    #[cfg(feature = "darkside_tests")]
+                                    {
+                                        // now we reconfigure the tx_map to align with the server
+                                        // switch the TransactionRecord to the new txid
+                                        if let Some(mut transaction_record) =
+                                            tx_map.transaction_records_by_id.remove(&txid)
+                                        {
+                                            transaction_record.txid = reported_txid;
+                                            tx_map
+                                                .transaction_records_by_id
+                                                .insert(reported_txid, transaction_record);
+                                        }
+                                        txid = reported_txid;
                                     }
-                                    Err(e) => {
-                                        println!("server returned invalid txid {}", e);
-                                        todo!();
+                                    #[cfg(not(feature = "darkside_tests"))]
+                                    {
+                                        // did the server generate a new txid? is this related to the rebroadcast bug?
+                                        // crash
+                                        return Err(BroadcastCachedTransactionsError::IncorrectTxidFromServer(
+                                                    txid,
+                                                    reported_txid,
+                                                ));
                                     }
-                                }
+                                };
 
                                 spend_status = Some((txid, new_status));
 

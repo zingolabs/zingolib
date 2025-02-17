@@ -1229,7 +1229,7 @@ impl Command for ConfirmCommand {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    object! { "error" => format!("Error: {}", e) }
                 }
             }
             .pretty(2)
