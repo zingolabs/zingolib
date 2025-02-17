@@ -104,18 +104,18 @@ async fn sync_status() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (_regtest_manager, _cph, faucet, recipient, _txid) =
+    let (_regtest_manager, _cph, _faucet, _recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
-    from_inputs::quick_send(
-        &faucet,
-        vec![(
-            &get_base_address_macro!(&recipient, "transparent"),
-            100_000,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
+    // from_inputs::quick_send(
+    //     &faucet,
+    //     vec![(
+    //         &get_base_address_macro!(&recipient, "transparent"),
+    //         100_000,
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
     // from_inputs::quick_send(
     //     &recipient,
     //     vec![(
@@ -132,11 +132,7 @@ async fn sync_test() {
     // recipient.quick_shield().await.unwrap();
     // increase_server_height(&regtest_manager, 1).await;
 
-    let uri = recipient.config().lightwalletd_uri.read().unwrap().clone();
-    let client = GrpcConnector::new(uri).get_client().await.unwrap();
-    pepper_sync::sync(client, &recipient.config().chain.clone(), recipient.wallet)
-        .await
-        .unwrap();
+    // recipient.do_sync(true).await.unwrap();
 
     // dbg!(&recipient.wallet.wallet_transactions);
     // dbg!(recipient.wallet.wallet_blocks());

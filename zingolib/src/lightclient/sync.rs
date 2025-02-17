@@ -2,6 +2,9 @@
 //! LightClient sync stuff.
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
+use std::sync::atomic;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 
 use log::{debug, error};
@@ -30,16 +33,23 @@ impl LightClient {
             .get_client()
             .await
             .unwrap();
+        let network = self.wallet.lock().await.network;
         let wallet = self.wallet.clone();
-        let network = self.config.chain;
         let sync_handle = tokio::spawn(async move {
             pepper_sync::sync(client, &network, wallet).await.unwrap();
         });
 
+        // TODO: replace with lightclient sync running flag
+        let syncing = Arc::new(AtomicBool::new(true));
         if print_updates {
+            let syncing = syncing.clone();
             let wallet = self.wallet.clone();
             tokio::spawn(async move {
                 loop {
+                    if syncing.load(atomic::Ordering::Acquire) {
+                        break;
+                    };
+
                     let sync_status = pepper_sync::sync_status(wallet.clone()).await;
                     println!("{}", sync_status);
                     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -48,12 +58,16 @@ impl LightClient {
         }
 
         sync_handle.await.unwrap();
+        syncing.store(false, atomic::Ordering::Release);
 
-        let final_sync_state = pepper_sync::sync_status(self.wallet.clone()).await;
+        let final_sync_status = pepper_sync::sync_status(self.wallet.clone()).await;
+        if print_updates {
+            println!("{}", &final_sync_status);
+        }
 
         Ok(SyncResult {
             success: true,
-            latest_block: (final_sync_state
+            latest_block: (final_sync_status
                 .scan_ranges
                 .last()
                 .expect("should be non-empty after syncing")
@@ -61,7 +75,7 @@ impl LightClient {
                 .end
                 - 1)
             .into(),
-            total_blocks_synced: final_sync_state.scanned_blocks as u64,
+            total_blocks_synced: final_sync_status.scanned_blocks as u64,
         })
     }
 
