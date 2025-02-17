@@ -3,6 +3,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::config::ZingoConfig;
 use base58::ToBase58;
+use pepper_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
 use sapling_crypto::{
     zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
     PaymentAddress,
@@ -13,7 +14,6 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
 };
-use zingo_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
 
 use super::{error::KeyError, LightWallet};
 
@@ -36,7 +36,7 @@ impl LightWallet {
 
         if let Some(transparent_address) = unified_address.transparent() {
             self.transparent_addresses.insert(
-                TransparentAddressId::from_parts(
+                TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::External,
                     self.unified_addresses.len() as u32,
@@ -63,7 +63,7 @@ impl LightWallet {
 
         (refund_address_count..(refund_address_count + n))
             .map(|address_index| {
-                let transparent_address_id = TransparentAddressId::from_parts(
+                let transparent_address_id = TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::Refund,
                     address_index as u32,

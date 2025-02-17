@@ -15,15 +15,16 @@
 //!                 of the previous sync, before the server is contacted to update the wallet height to the new chain height.
 //! Fully scanned height - block height in which the wallet has completed scanning all blocks equal to and below this height.
 
-pub mod client;
+pub(crate) mod client;
 pub mod error;
 pub mod keys;
-#[allow(missing_docs)]
-pub mod primitives;
 pub(crate) mod scan;
 pub mod sync;
-pub mod traits;
-pub(crate) mod utils;
-pub mod witness;
+pub mod wallet;
+pub(crate) mod witness;
+
+pub use sync::scan_pending_transaction;
+pub use sync::sync;
+pub use sync::sync_status;
 
 pub(crate) const MAX_BATCH_OUTPUTS: usize = 16_384; // 2^14

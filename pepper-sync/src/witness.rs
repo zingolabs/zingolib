@@ -2,53 +2,16 @@
 
 use std::collections::BTreeMap;
 
-use getset::{Getters, MutGetters};
 use incrementalmerkletree::{Position, Retention};
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{
-    store::{memory::MemoryShardStore, ShardStore},
-    LocatedPrunableTree, ShardTree,
-};
+use shardtree::{store::ShardStore, LocatedPrunableTree};
 use zcash_client_backend::proto::service::SubtreeRoot;
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::{sync::MAX_VERIFICATION_WINDOW, MAX_BATCH_OUTPUTS};
+use crate::MAX_BATCH_OUTPUTS;
 
-const NOTE_COMMITMENT_TREE_DEPTH: u8 = 32;
-const SHARD_HEIGHT: u8 = 16;
+pub(crate) const SHARD_HEIGHT: u8 = 16;
 const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
-
-/// Type alias for sapling memory shard store
-pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
-
-/// Type alias for orchard memory shard store
-pub type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
-
-/// Shard tree wallet data struct
-#[derive(Debug, Getters, MutGetters)]
-#[getset(get = "pub", get_mut = "pub")]
-pub struct ShardTrees {
-    /// Sapling shard tree
-    sapling: ShardTree<SaplingShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
-    /// Orchard shard tree
-    orchard: ShardTree<OrchardShardStore, NOTE_COMMITMENT_TREE_DEPTH, SHARD_HEIGHT>,
-}
-
-impl ShardTrees {
-    /// Create new ShardTrees
-    pub fn new() -> Self {
-        Self {
-            sapling: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
-            orchard: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
-        }
-    }
-}
-
-impl Default for ShardTrees {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Required data for updating [`shardtree::ShardTree`]
 pub(crate) struct WitnessData {
@@ -60,7 +23,10 @@ pub(crate) struct WitnessData {
 
 impl WitnessData {
     /// Creates new ShardTreeData
-    pub fn new(sapling_initial_position: Position, orchard_initial_position: Position) -> Self {
+    pub(crate) fn new(
+        sapling_initial_position: Position,
+        orchard_initial_position: Position,
+    ) -> Self {
         WitnessData {
             sapling_initial_position,
             orchard_initial_position,
@@ -73,9 +39,9 @@ impl WitnessData {
 /// Located prunable tree data built from nodes and retentions during scanning for insertion into the shard store.
 pub struct LocatedTreeData<H> {
     /// Located prunable tree
-    pub subtree: LocatedPrunableTree<H>,
+    pub(crate) subtree: LocatedPrunableTree<H>,
     /// Checkpoints
-    pub checkpoints: BTreeMap<BlockHeight, Position>,
+    pub(crate) checkpoints: BTreeMap<BlockHeight, Position>,
 }
 
 pub(crate) fn build_located_trees<H>(

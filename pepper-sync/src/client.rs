@@ -19,13 +19,13 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
-pub mod fetch;
+pub(crate) mod fetch;
 
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
 #[derive(Debug)]
-pub enum FetchRequest {
+pub(crate) enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<BlockId>),
     /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -38,6 +38,7 @@ pub enum FetchRequest {
     /// Get a full transaction by txid.
     Transaction(oneshot::Sender<(Transaction, BlockHeight)>, TxId),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
+    #[allow(dead_code)]
     UtxoMetadata(
         oneshot::Sender<Vec<GetAddressUtxosReply>>,
         (Vec<String>, BlockHeight),
@@ -59,7 +60,7 @@ pub enum FetchRequest {
 /// Gets the height of the blockchain from the server.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_chain_height(
+pub(crate) async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
 ) -> Result<BlockHeight, ()> {
     let (reply_sender, reply_receiver) = oneshot::channel();
@@ -74,7 +75,7 @@ pub async fn get_chain_height(
 /// Gets the specified range of compact blocks from the server (end exclusive).
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_compact_block_range(
+pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<CompactBlock>, ()> {
@@ -91,7 +92,7 @@ pub async fn get_compact_block_range(
 /// from the server.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_subtree_roots(
+pub(crate) async fn get_subtree_roots(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     start_index: u32,
     shielded_protocol: i32,
@@ -118,7 +119,7 @@ pub async fn get_subtree_roots(
 /// Gets the frontiers for a specified block height.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_frontiers(
+pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
 ) -> Result<ChainState, ()> {
@@ -135,7 +136,7 @@ pub async fn get_frontiers(
 /// Gets a full transaction for a specified txid.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_transaction_and_block_height(
+pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     txid: TxId,
 ) -> Result<(Transaction, BlockHeight), ()> {
@@ -151,7 +152,8 @@ pub async fn get_transaction_and_block_height(
 /// Gets unspent transparent output metadata for a list of `transparent addresses` from the specified `start_height`.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_utxo_metadata(
+#[allow(dead_code)]
+pub(crate) async fn get_utxo_metadata(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     transparent_addresses: Vec<String>,
     start_height: BlockHeight,
@@ -175,7 +177,7 @@ pub async fn get_utxo_metadata(
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub async fn get_transparent_address_transactions(
+pub(crate) async fn get_transparent_address_transactions(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     transparent_address: String,
     block_range: Range<BlockHeight>,
@@ -193,7 +195,7 @@ pub async fn get_transparent_address_transactions(
 }
 
 /// Gets stream of mempool transactions until the next block is mined.
-pub async fn get_mempool_transaction_stream(
+pub(crate) async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
 ) -> Result<tonic::Streaming<RawTransaction>, ()> {
     tracing::debug!("Fetching mempool stream");

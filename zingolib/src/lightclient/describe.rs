@@ -1,8 +1,8 @@
 //! These functions can be called by consumer to learn about the LightClient.
 use json::{object, JsonValue};
+use pepper_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
-use zingo_sync::primitives::{OrchardNote, SaplingNote, TransparentCoin};
 
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},

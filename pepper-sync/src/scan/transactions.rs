@@ -13,9 +13,7 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
-use zcash_keys::{
-    address::UnifiedAddress, encoding::encode_payment_address, keys::UnifiedFullViewingKey,
-};
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::{self, BlockHeight, NetworkConstants},
@@ -33,13 +31,12 @@ use crate::{
         transparent::{self, TransparentAddressId},
         KeyId,
     },
-    primitives::{
+    wallet::traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
+    wallet::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
         WalletBlock, WalletNote, WalletTransaction,
     },
-    traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
-    utils,
 };
 
 use super::DecryptedNoteData;
@@ -112,7 +109,6 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             outpoint_map,
             &transparent_addresses,
             wallet_block.time(),
-            None,
         )
         .unwrap();
         wallet_transactions.insert(txid, wallet_transaction);
@@ -121,22 +117,27 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     Ok(wallet_transactions)
 }
 
-/// Scans the given `transaction` to the wallet, decrypting all notes and adding any transparent coins.
-/// Updates the spend status of all other ouputs in the wallet that were spent in `transaction`.
+/// Scans `transaction` with the given `status` and returns [crate::primitives::WalletTransaction], decrypting all
+/// incoming and outgoing notes with `ufvks` and adding any transparent coins matching `transparent_addresses`.
+///
+/// `decrypted_note_data` will be `None` for pending transactions. For confirmed transactions, it must contain the
+/// nullifiers and positions for each note to be decrypted. This will have been obtained during compact block scanning.
+///
+/// All inputs in `transaction` are inserted into the `nullifier_map` and `outpoint_map` to be used for spend detection.
+/// For pending transactions, new maps are used instead of the wallet's maps as to keep confirmed spends isolated.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn scan_transaction<P: consensus::Parameters>(
-    consensus_parameters: &P,
+pub(crate) fn scan_transaction(
+    consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     transaction: Transaction,
-    confirmation_status: ConfirmationStatus,
+    status: ConfirmationStatus,
     decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
-    price: Option<f64>,
 ) -> Result<WalletTransaction, ()> {
-    let block_height = confirmation_status.get_height();
+    let block_height = status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,
         block_height,
@@ -257,7 +258,7 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
 
     // collect nullifiers for pending transactions
     // nullifiers for confirmed transactions are collected during compact block scanning
-    if !confirmation_status.is_confirmed() {
+    if !status.is_confirmed() {
         collect_nullifiers(nullifier_map, block_height, &transaction);
     }
 
@@ -298,18 +299,17 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         }
     }
 
-    Ok(WalletTransaction::from_parts(
-        transaction.txid(),
+    Ok(WalletTransaction {
+        txid: transaction.txid(),
         transaction,
-        confirmation_status,
+        status,
         datetime,
-        price, // TODO: fully implement
         transparent_coins,
         sapling_notes,
         orchard_notes,
         outgoing_sapling_notes,
         outgoing_orchard_notes,
-    ))
+    })
 }
 
 fn scan_incoming_coins<P: consensus::Parameters>(
@@ -323,16 +323,16 @@ fn scan_incoming_coins<P: consensus::Parameters>(
         if let Some(address) = output.recipient_address() {
             let encoded_address = keys::transparent::encode_address(consensus_parameters, address);
             if let Some((address, key_id)) = transparent_addresses.get_key_value(&encoded_address) {
-                let output_id = OutputId::from_parts(txid, output_index);
+                let output_id = OutputId::new(txid, output_index as u16);
 
-                transparent_coins.push(TransparentCoin::from_parts(
+                transparent_coins.push(TransparentCoin {
                     output_id,
-                    *key_id,
-                    address.clone(),
-                    output.script_pubkey.clone(),
-                    output.value,
-                    None,
-                ));
+                    key_id: *key_id,
+                    address: address.clone(),
+                    script: output.script_pubkey.clone(),
+                    value: output.value,
+                    spending_transaction: None,
+                });
             }
         }
     }
@@ -358,21 +358,21 @@ where
         .enumerate()
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
-            let output_id = OutputId::from_parts(txid, output_index);
+            let output_id = OutputId::new(txid, output_index as u16);
             let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
                     .unwrap()
             });
-            wallet_notes.push(WalletNote::from_parts(
+            wallet_notes.push(WalletNote {
                 output_id,
-                key_ids[key_index],
+                key_id: key_ids[key_index],
                 note,
                 nullifier,
                 position,
-                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                None,
-            ));
+                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                spending_transaction: None,
+            });
         }
     }
 
@@ -400,13 +400,13 @@ where
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote::from_parts(
-                OutputId::from_parts(txid, output_index),
-                key_ids[key_index],
+            outgoing_notes.push(OutgoingNote {
+                output_id: OutputId::new(txid, output_index as u16),
+                key_id: key_ids[key_index],
                 note,
-                Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                None,
-            ));
+                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                recipient_unified_address: None,
+            });
         }
     }
 
@@ -463,8 +463,8 @@ fn add_recipient_unified_address<P, Nz>(
 {
     for ua in unified_addresses {
         let ua_receivers = [
-            utils::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
-            encode_payment_address(
+            keys::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
+            zcash_keys::encoding::encode_payment_address(
                 parameters.hrp_sapling_payment_address(),
                 ua.sapling().unwrap(),
             ),
@@ -475,7 +475,7 @@ fn add_recipient_unified_address<P, Nz>(
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.set_recipient_unified_address(Some(ua.clone()));
+                note.recipient_unified_address = Some(ua.clone());
             });
     }
 }
@@ -493,7 +493,7 @@ fn collect_nullifiers(
             .map(|spend| spend.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .sapling_mut()
+                    .sapling
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }
@@ -504,7 +504,7 @@ fn collect_nullifiers(
             .map(|action| action.nullifier())
             .for_each(|nullifier| {
                 nullifier_map
-                    .orchard_mut()
+                    .orchard
                     .insert(*nullifier, (block_height, transaction.txid()));
             });
     }

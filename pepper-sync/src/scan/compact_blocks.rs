@@ -21,7 +21,7 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    primitives::{NullifierMap, OutputId, TreeBoundaries, WalletBlock},
+    wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
     MAX_BATCH_OUTPUTS,
 };
@@ -116,13 +116,13 @@ where
 
             calculate_nullifiers_and_positions(
                 sapling_final_tree_size,
-                scanning_keys.sapling(),
+                &scanning_keys.sapling,
                 &incoming_sapling_outputs,
                 &mut decrypted_note_data.sapling_nullifiers_and_positions,
             );
             calculate_nullifiers_and_positions(
                 orchard_final_tree_size,
-                scanning_keys.orchard(),
+                &scanning_keys.orchard,
                 &incoming_orchard_outputs,
                 &mut decrypted_note_data.orchard_nullifiers_and_positions,
             );
@@ -133,19 +133,23 @@ where
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
 
-        let wallet_block = WalletBlock::from_parts(
-            block.height(),
-            block.hash(),
-            block.prev_hash(),
-            block.time,
-            block.vtx.iter().map(|tx| tx.txid()).collect(),
-            TreeBoundaries {
+        let wallet_block = WalletBlock {
+            block_height: block.height(),
+            block_hash: block.hash(),
+            prev_hash: block.prev_hash(),
+            time: block.time,
+            txids: block
+                .vtx
+                .iter()
+                .map(|transaction| transaction.txid())
+                .collect(),
+            tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
                 orchard_initial_tree_size,
                 orchard_final_tree_size,
             },
-        );
+        };
 
         check_tree_size(block, &wallet_block).unwrap();
 
@@ -244,12 +248,12 @@ fn check_continuity(
 fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
         if chain_metadata.sapling_commitment_tree_size
-            != wallet_block.tree_boundaries().sapling_final_tree_size
+            != wallet_block.tree_bounds().sapling_final_tree_size
         {
             panic!("sapling tree size is incorrect!")
         }
         if chain_metadata.orchard_commitment_tree_size
-            != wallet_block.tree_boundaries().orchard_final_tree_size
+            != wallet_block.tree_bounds().orchard_final_tree_size
         {
             panic!("orchard tree size is incorrect!")
         }
@@ -273,9 +277,8 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     incoming_decrypted_outputs
         .iter()
         .for_each(|(output_id, incoming_output)| {
-            let position = Position::from(u64::from(
-                tree_size + u32::try_from(output_id.output_index()).unwrap(),
-            ));
+            let position =
+                Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
             let key = keys
                 .get(&incoming_output.ivk_tag)
                 .expect("key should be available as it was used to decrypt output");
@@ -294,11 +297,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
+    let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
-        .collect();
+        .collect::<Vec<_>>();
 
     if outputs.is_empty() {
         Ok(Vec::new())
@@ -314,7 +317,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
 
                 let last_output_in_block: bool =
                     last_outputs_in_block && output_index == last_output_index;
-                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
@@ -342,11 +345,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
-    let incoming_output_indices: Vec<usize> = incoming_decrypted_outputs
+    let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
         .map(|output_id| output_id.output_index())
-        .collect();
+        .collect::<Vec<_>>();
 
     if actions.is_empty() {
         Ok(Vec::new())
@@ -362,7 +365,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 
                 let last_output_in_block: bool =
                     last_outputs_in_block && output_index == last_output_index;
-                let decrypted: bool = incoming_output_indices.contains(&output_index);
+                let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
                 let retention = match (decrypted, last_output_in_block) {
                     (is_marked, true) => Retention::Checkpoint {
                         id: block_height,
@@ -396,7 +399,7 @@ fn collect_nullifiers(
         .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()).unwrap())
         .for_each(|nullifier| {
             nullifier_map
-                .sapling_mut()
+                .sapling
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     transaction
@@ -408,17 +411,17 @@ fn collect_nullifiers(
         })
         .for_each(|nullifier| {
             nullifier_map
-                .orchard_mut()
+                .orchard
                 .insert(nullifier, (block_height, transaction.txid()));
         });
     Ok(())
 }
 
-pub(super) async fn calculate_block_tree_boundaries<P>(
+pub(super) async fn calculate_block_tree_bounds<P>(
     consensus_parameters: &P,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
-) -> TreeBoundaries
+) -> TreeBounds
 where
     P: consensus::Parameters + Sync + Send + 'static,
 {
@@ -472,7 +475,7 @@ where
         .try_into()
         .expect("Sapling output count cannot exceed a u32");
 
-    TreeBoundaries {
+    TreeBounds {
         sapling_initial_tree_size: sapling_final_tree_size - sapling_output_count,
         sapling_final_tree_size,
         orchard_initial_tree_size: orchard_final_tree_size - orchard_output_count,

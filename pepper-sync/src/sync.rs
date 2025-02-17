@@ -24,14 +24,14 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{NullifierMap, SyncStatus};
 use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::Scanner;
 use crate::scan::transactions::scan_transaction;
 use crate::scan::ScanResults;
-use crate::traits::{
+use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
+use crate::wallet::{NullifierMap, SyncStatus};
 use crate::witness;
 
 pub(crate) mod spend;
@@ -200,8 +200,8 @@ where
     Ok(())
 }
 
-/// Obtains the mutex guard to the wallet and creates a [`crate::primitives::SyncStatus`] from the wallet's current
-/// [`crate::primitives::SyncState`].
+/// Obtains the mutex guard to the wallet and creates a [`crate::wallet::SyncStatus`] from the wallet's current
+/// [`crate::wallet::SyncState`].
 ///
 /// Designed to be called during the sync process with minimal interruption.
 pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
@@ -220,34 +220,29 @@ where
             acc + (block_range.end - block_range.start)
         });
     let scanned_blocks = sync_state
-        .initial_sync_state()
-        .total_blocks_to_scan()
+        .initial_sync_state
+        .total_blocks_to_scan
         .saturating_sub(unscanned_blocks);
-    let percentage_blocks_scanned = (scanned_blocks as f32
-        / sync_state.initial_sync_state().total_blocks_to_scan() as f32)
-        * 100.0;
+    let percentage_blocks_scanned =
+        (scanned_blocks as f32 / sync_state.initial_sync_state.total_blocks_to_scan as f32) * 100.0;
 
     let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
         state::calculate_unscanned_outputs(&*wallet_guard);
     let scanned_sapling_outputs = sync_state
-        .initial_sync_state()
-        .total_sapling_outputs_to_scan()
+        .initial_sync_state
+        .total_sapling_outputs_to_scan
         .saturating_sub(unscanned_sapling_outputs);
     let scanned_orchard_outputs = sync_state
-        .initial_sync_state()
-        .total_orchard_outputs_to_scan()
+        .initial_sync_state
+        .total_orchard_outputs_to_scan
         .saturating_sub(unscanned_orchard_outputs);
     let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
-        / (sync_state
-            .initial_sync_state()
-            .total_sapling_outputs_to_scan()
-            + sync_state
-                .initial_sync_state()
-                .total_orchard_outputs_to_scan()) as f32)
+        / (sync_state.initial_sync_state.total_sapling_outputs_to_scan
+            + sync_state.initial_sync_state.total_orchard_outputs_to_scan) as f32)
         * 100.0;
 
     SyncStatus {
-        scan_ranges: sync_state.scan_ranges().clone(),
+        scan_ranges: sync_state.scan_ranges.clone(),
         scanned_blocks,
         unscanned_blocks,
         percentage_blocks_scanned,
@@ -272,7 +267,6 @@ pub fn scan_pending_transaction<W>(
     transaction: Transaction,
     status: ConfirmationStatus,
     datetime: u32,
-    price: Option<f64>,
 ) where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
@@ -298,7 +292,6 @@ pub fn scan_pending_transaction<W>(
         &mut pending_transaction_outpoints,
         &transparent_addresses,
         datetime,
-        price,
     )
     .unwrap();
 
@@ -477,7 +470,6 @@ async fn process_mempool_transaction<W>(
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs() as u32,
-        None,
     );
 
     // TODO: consider logic for pending spent being set back to None when txs are evicted / never make it on chain
@@ -553,9 +545,9 @@ where
     let sync_state = wallet.get_sync_state().unwrap();
     let fully_scanned_height = sync_state.fully_scanned_height();
     let highest_scanned_height = sync_state.highest_scanned_height();
-    let sync_start_height = sync_state.initial_sync_state().sync_start_height();
+    let sync_start_height = sync_state.initial_sync_state.sync_start_height;
 
-    let scanned_block_range_boundaries = sync_state
+    let scanned_block_range_bounds = sync_state
         .scan_ranges()
         .iter()
         .filter(|scan_range| {
@@ -580,23 +572,23 @@ where
     wallet.get_wallet_blocks_mut().unwrap().retain(|height, _| {
         *height >= sync_start_height - 1
             || *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
-            || scanned_block_range_boundaries.contains(height)
+            || scanned_block_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .sapling_mut()
+        .sapling
         .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()
         .unwrap()
-        .orchard_mut()
+        .orchard
         .retain(|_, (height, _)| *height > fully_scanned_height);
     wallet
         .get_sync_state_mut()
         .unwrap()
-        .locators_mut()
+        .locators
         .retain(|(height, _)| *height > fully_scanned_height);
 
     Ok(())
@@ -612,7 +604,7 @@ async fn update_subtree_roots<W>(
     let sapling_start_index = wallet
         .get_shard_trees()
         .unwrap()
-        .sapling()
+        .sapling
         .store()
         .get_shard_roots()
         .unwrap()
@@ -620,7 +612,7 @@ async fn update_subtree_roots<W>(
     let orchard_start_index = wallet
         .get_shard_trees()
         .unwrap()
-        .orchard()
+        .orchard
         .store()
         .get_shard_roots()
         .unwrap()
@@ -648,8 +640,8 @@ async fn update_subtree_roots<W>(
     );
 
     let shard_trees = wallet.get_shard_trees_mut().unwrap();
-    witness::add_subtree_roots(sapling_subtree_roots, shard_trees.sapling_mut());
-    witness::add_subtree_roots(orchard_subtree_roots, shard_trees.orchard_mut());
+    witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling);
+    witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard);
 }
 
 /// Sets up mempool stream.

@@ -10,7 +10,7 @@ members = [
     "zingolib",
     "zingo-netutils",
     "zingo-memo",
-    "zingo-sync",
+    "pepper-sync",
 ]
 resolver = "2"
 
@@ -48,7 +48,6 @@ enum_dispatch = "0.3"
 ff = "0.13"
 futures = "0.3"
 futures-util = "0.3"
-getset = "0.1"
 group = "0.13"
 hex = "0.4"
 http = "1"

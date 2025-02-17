@@ -1,10 +1,12 @@
 [package]
-name = "zingo-sync"
+name = "pepper-sync"
 version = "0.1.0"
 edition = "2021"
 
 [features]
-wallet_pack = []
+default = [ "wallet_essentials" ]
+# utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
+wallet_essentials = []
 
 [dependencies]
 # Zingo
@@ -39,9 +41,6 @@ memuse.workspace = true
 # Parallel processing
 crossbeam-channel.workspace = true
 rayon.workspace = true
-
-# Minimise boilerplate
-getset.workspace = true
 
 # Error handling
 thiserror.workspace = true

@@ -1,5 +1,5 @@
+use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 use zcash_primitives::transaction::components::Amount;
-use zingo_sync::primitives::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
 use super::{
     error::{FeeError, KindError},
@@ -74,7 +74,7 @@ impl LightWallet {
                 let prevout = self
                     .wallet_outputs::<TransparentCoin>()
                     .into_iter()
-                    .find(|&output| output.output_id == outpoint)
+                    .find(|&output| output.output_id() == outpoint)
                     .ok_or(FeeError::SpendNotFound {
                         txid: transaction.txid(),
                         spend: format!("{:?}", outpoint),

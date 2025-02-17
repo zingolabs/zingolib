@@ -2,13 +2,13 @@
 
 use std::{convert::Infallible, num::NonZeroU32};
 
+use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
     zip321::{TransactionRequest, Zip321Error},
     ShieldedProtocol,
 };
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
-use zingo_sync::keys::transparent::TransparentScope;
 
 use crate::config::ChainType;
 

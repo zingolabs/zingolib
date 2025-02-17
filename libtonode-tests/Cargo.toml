@@ -12,7 +12,7 @@ ci = ["zingolib/ci"]
 zingolib = { path = "../zingolib", features = [ "deprecations", "test-elevation" ] }
 zingo-status = { path = "../zingo-status" }
 zingo-netutils = { path = "../zingo-netutils" }
-zingo-sync = { path = "../zingo-sync" }
+pepper-sync = { path = "../pepper-sync" }
 testvectors = { path = "../testvectors" }
 
 bip0039.workspace = true

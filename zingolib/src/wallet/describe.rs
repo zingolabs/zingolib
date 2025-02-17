@@ -4,6 +4,13 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
 
+use pepper_sync::wallet::NoteInterface as _;
+use pepper_sync::wallet::OrchardNote;
+use pepper_sync::wallet::OutgoingNoteInterface;
+use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::SaplingNote;
+use pepper_sync::wallet::TransparentCoin;
+use pepper_sync::wallet::WalletTransaction;
 use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
@@ -11,12 +18,6 @@ use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zingo_sync::primitives::OrchardNote;
-use zingo_sync::primitives::OutgoingNoteInterface;
-use zingo_sync::primitives::OutputInterface;
-use zingo_sync::primitives::SaplingNote;
-use zingo_sync::primitives::TransparentCoin;
-use zingo_sync::primitives::WalletTransaction;
 
 use std::cmp::Ordering;
 
@@ -81,7 +82,7 @@ impl LightWallet {
             let encoded_ua = local_address.encode(&self.network);
             let transparent = local_address
                 .transparent()
-                .map(|taddr| zingo_sync::keys::transparent::encode_address(&self.network, *taddr));
+                .map(|taddr| pepper_sync::keys::transparent::encode_address(&self.network, *taddr));
             objectified_addresses.push(
                 json::object!{
                     "address" => encoded_ua,
@@ -347,7 +348,7 @@ impl LightWallet {
                     .value(value)
                     .fee(fee)
                     .status(transaction.status())
-                    .zec_price(transaction.price())
+                    .zec_price(None) // FIXME: zingo2, re-implement price correctly
                     .transparent_coins(transparent_coins)
                     .sapling_notes(sapling_notes)
                     .orchard_notes(orchard_notes)
@@ -415,7 +416,7 @@ impl LightWallet {
             .map(|output| {
                 let spend_status = self.output_spend_status(output);
 
-                let memo = if let Memo::Text(memo_text) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = output.memo() {
                     Some(memo_text.to_string())
                 } else {
                     None
@@ -435,7 +436,7 @@ impl LightWallet {
             .map(|output| {
                 let spend_status = self.output_spend_status(output);
 
-                let memo = if let Memo::Text(memo_text) = &output.memo {
+                let memo = if let Memo::Text(memo_text) = output.memo() {
                     Some(memo_text.to_string())
                 } else {
                     None
@@ -878,7 +879,7 @@ mod test {
                     .transparent()
                     .map(|taddr| {
                         // TODO: new crate for shared conversion, parsing and encoding
-                        zingo_sync::keys::transparent::encode_address(&self.network, *taddr)
+                        pepper_sync::keys::transparent::encode_address(&self.network, *taddr)
                     })
                     .ok_or(()),
                 PoolType::Shielded(ShieldedProtocol::Sapling) => ua

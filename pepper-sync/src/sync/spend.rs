@@ -13,9 +13,9 @@ use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
-    primitives::{Locator, NullifierMap, OutputId, WalletTransaction},
     scan::transactions::scan_spending_transactions,
-    traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+    wallet::{Locator, NullifierMap, OutputId, WalletTransaction},
 };
 
 use super::state;
@@ -117,11 +117,11 @@ pub(super) fn detect_shielded_spends(
 ) {
     let sapling_spend_locators = sapling_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.sapling_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
         .collect();
     let orchard_spend_locators = orchard_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.orchard_mut().remove_entry(nf))
+        .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
         .collect();
 
     (sapling_spend_locators, orchard_spend_locators)

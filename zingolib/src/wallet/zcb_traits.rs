@@ -1,5 +1,13 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
+use pepper_sync::{
+    keys::transparent::{self, TransparentScope},
+    wallet::traits::SyncWallet,
+    wallet::{
+        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
+        SaplingShardStore,
+    },
+};
 use shardtree::{error::ShardTreeError, ShardTree};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
@@ -26,12 +34,6 @@ use zcash_primitives::{
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-use zingo_sync::{
-    keys::transparent::{self, TransparentScope},
-    primitives::{NoteInterface as _, OrchardNote, OutputId, OutputInterface, SaplingNote},
-    traits::SyncWallet,
-    witness::{OrchardShardStore, SaplingShardStore},
-};
 
 use crate::wallet::output::RemainingNeeded;
 
@@ -362,14 +364,13 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            zingo_sync::sync::scan_pending_transaction(
+            pepper_sync::scan_pending_transaction(
                 &network,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
                 ConfirmationStatus::Calculated(sent_transaction.target_height()),
                 sent_transaction.created().unix_timestamp() as u32,
-                None,
             );
         }
 
@@ -426,7 +427,7 @@ impl WalletCommitmentTrees for LightWallet {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        callback(self.shard_trees.sapling_mut())
+        callback(&mut self.shard_trees.sapling)
     }
 
     fn put_sapling_subtree_roots(
@@ -459,7 +460,7 @@ impl WalletCommitmentTrees for LightWallet {
         ) -> Result<A, E>,
         E: From<ShardTreeError<Self::Error>>,
     {
-        callback(self.shard_trees.orchard_mut())
+        callback(&mut self.shard_trees.orchard)
     }
 
     fn put_orchard_subtree_roots(
@@ -515,12 +516,12 @@ impl InputSource for LightWallet {
         let exclude_sapling = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let exclude_orchard = exclude
             .iter()
             .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
-            .map(|note_id| OutputId::from_parts(*note_id.txid(), note_id.output_index() as usize))
+            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
@@ -582,10 +583,10 @@ impl InputSource for LightWallet {
                     NoteId::new(
                         note.output_id().txid(),
                         ShieldedProtocol::Sapling,
-                        note.output_id().output_index() as u16,
+                        note.output_id().output_index(),
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index() as u16,
+                    note.output_id().output_index(),
                     note.note().clone(),
                     note.key_id().scope,
                     note.position()
@@ -600,10 +601,10 @@ impl InputSource for LightWallet {
                     NoteId::new(
                         note.output_id().txid(),
                         ShieldedProtocol::Orchard,
-                        note.output_id().output_index() as u16,
+                        note.output_id().output_index(),
                     ),
                     note.output_id().txid(),
-                    note.output_id().output_index() as u16,
+                    note.output_id().output_index(),
                     *note.note(),
                     note.key_id().scope,
                     note.position()
@@ -640,13 +641,13 @@ impl InputSource for LightWallet {
                 NonZeroU32::new(min_confirmations).ok_or(WalletError::MinimumConfirmationError)?,
             )
             .into_iter()
-            .filter(|&output| output.address == address)
+            .filter(|&output| output.address() == address)
             .flat_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
                     zcash_primitives::transaction::components::TxOut {
-                        value: output.value,
-                        script_pubkey: output.script.clone(),
+                        value: output.value().try_into().expect("value from checked type"),
+                        script_pubkey: output.script().clone(),
                     },
                     Some(
                         self.output_transaction(output)

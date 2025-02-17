@@ -25,13 +25,13 @@ use zcash_primitives::{
 use crate::{
     client::{self, FetchRequest},
     keys::transparent::TransparentAddressId,
-    primitives::{Locator, WalletBlock},
     sync,
-    traits::{SyncBlocks, SyncWallet},
+    wallet::traits::{SyncBlocks, SyncWallet},
+    wallet::{Locator, WalletBlock},
     MAX_BATCH_OUTPUTS,
 };
 
-use super::{compact_blocks::calculate_block_tree_boundaries, error::ScanError, scan, ScanResults};
+use super::{compact_blocks::calculate_block_tree_bounds, error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 
@@ -344,39 +344,47 @@ where
                     }
 
                     if first_batch {
-                        let tree_boundaries = calculate_block_tree_boundaries(
+                        let tree_bounds = calculate_block_tree_bounds(
                             &consensus_parameters,
                             fetch_request_sender.clone(),
                             &compact_block,
                         )
                         .await;
 
-                        previous_task_first_block = Some(WalletBlock::from_parts(
-                            compact_block.height(),
-                            compact_block.hash(),
-                            compact_block.prev_hash(),
-                            compact_block.time,
-                            compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
-                            tree_boundaries,
-                        ));
+                        previous_task_first_block = Some(WalletBlock {
+                            block_height: compact_block.height(),
+                            block_hash: compact_block.hash(),
+                            prev_hash: compact_block.prev_hash(),
+                            time: compact_block.time,
+                            txids: compact_block
+                                .vtx
+                                .iter()
+                                .map(|transaction| transaction.txid())
+                                .collect(),
+                            tree_bounds,
+                        });
                         first_batch = false;
                     }
                     if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        let tree_boundaries = calculate_block_tree_boundaries(
+                        let tree_bounds = calculate_block_tree_bounds(
                             &consensus_parameters,
                             fetch_request_sender.clone(),
                             &compact_block,
                         )
                         .await;
 
-                        previous_task_last_block = Some(WalletBlock::from_parts(
-                            compact_block.height(),
-                            compact_block.hash(),
-                            compact_block.prev_hash(),
-                            compact_block.time,
-                            compact_block.vtx.iter().map(|tx| tx.txid()).collect(),
-                            tree_boundaries,
-                        ));
+                        previous_task_last_block = Some(WalletBlock {
+                            block_height: compact_block.height(),
+                            block_hash: compact_block.hash(),
+                            prev_hash: compact_block.prev_hash(),
+                            time: compact_block.time,
+                            txids: compact_block
+                                .vtx
+                                .iter()
+                                .map(|transaction| transaction.txid())
+                                .collect(),
+                            tree_bounds,
+                        });
                     }
 
                     sapling_output_count += compact_block
@@ -635,37 +643,45 @@ impl ScanTask {
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
-            let tree_boundaries = calculate_block_tree_boundaries(
+            let tree_bounds = calculate_block_tree_bounds(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 block,
             )
             .await;
 
-            Some(WalletBlock::from_parts(
-                block.height(),
-                block.hash(),
-                block.prev_hash(),
-                block.time,
-                block.vtx.iter().map(|tx| tx.txid()).collect(),
-                tree_boundaries,
-            ))
+            Some(WalletBlock {
+                block_height: block.height(),
+                block_hash: block.hash(),
+                prev_hash: block.prev_hash(),
+                time: block.time,
+                txids: block
+                    .vtx
+                    .iter()
+                    .map(|transaction| transaction.txid())
+                    .collect(),
+                tree_bounds,
+            })
         } else {
             None
         };
         let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
-            let tree_boundaries =
-                calculate_block_tree_boundaries(consensus_parameters, fetch_request_sender, block)
+            let tree_bounds =
+                calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block)
                     .await;
 
-            Some(WalletBlock::from_parts(
-                block.height(),
-                block.hash(),
-                block.prev_hash(),
-                block.time,
-                block.vtx.iter().map(|tx| tx.txid()).collect(),
-                tree_boundaries,
-            ))
+            Some(WalletBlock {
+                block_height: block.height(),
+                block_hash: block.hash(),
+                prev_hash: block.prev_hash(),
+                time: block.time,
+                txids: block
+                    .vtx
+                    .iter()
+                    .map(|transaction| transaction.txid())
+                    .collect(),
+                tree_bounds,
+            })
         } else {
             None
         };

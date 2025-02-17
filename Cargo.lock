@@ -769,6 +769,7 @@ dependencies = [
  "hyper-util",
  "json",
  "orchard",
+ "pepper-sync",
  "portpicker",
  "proptest",
  "prost",
@@ -784,7 +785,6 @@ dependencies = [
  "zcash_primitives",
  "zingo-netutils",
  "zingo-status",
- "zingo-sync",
  "zingolib",
 ]
 
@@ -1824,6 +1824,7 @@ dependencies = [
  "json",
  "log",
  "orchard",
+ "pepper-sync",
  "proptest",
  "rustls",
  "sapling-crypto",
@@ -1838,7 +1839,6 @@ dependencies = [
  "zcash_primitives",
  "zingo-netutils",
  "zingo-status",
- "zingo-sync",
  "zingolib",
 ]
 
@@ -2279,6 +2279,35 @@ checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
 dependencies = [
  "digest",
  "password-hash",
+]
+
+[[package]]
+name = "pepper-sync"
+version = "0.1.0"
+dependencies = [
+ "base58",
+ "crossbeam-channel",
+ "futures",
+ "incrementalmerkletree",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
+ "sha2",
+ "shardtree",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zingo-memo",
+ "zingo-netutils",
+ "zingo-status",
+ "zip32",
 ]
 
 [[package]]
@@ -4576,36 +4605,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-sync"
-version = "0.1.0"
-dependencies = [
- "base58",
- "crossbeam-channel",
- "futures",
- "getset",
- "incrementalmerkletree",
- "memuse",
- "orchard",
- "rayon",
- "sapling-crypto",
- "sha2",
- "shardtree",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "zcash_address",
- "zcash_client_backend",
- "zcash_keys",
- "zcash_note_encryption",
- "zcash_primitives",
- "zingo-memo",
- "zingo-netutils",
- "zingo-status",
- "zip32",
-]
-
-[[package]]
 name = "zingolib"
 version = "0.2.0"
 dependencies = [
@@ -4638,6 +4637,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
+ "pepper-sync",
  "portpicker",
  "proptest",
  "prost",
@@ -4672,7 +4672,6 @@ dependencies = [
  "zingo-memo",
  "zingo-netutils",
  "zingo-status",
- "zingo-sync",
  "zip32",
 ]
 

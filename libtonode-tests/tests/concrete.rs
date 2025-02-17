@@ -2224,24 +2224,24 @@ mod slow {
         dbg!(wallet.sync_state.wallet_height());
         dbg!(wallet
             .shard_trees
-            .sapling()
+            .sapling
             .store()
             .max_checkpoint_id()
             .unwrap());
         dbg!(wallet
             .shard_trees
-            .orchard()
+            .orchard
             .store()
             .max_checkpoint_id()
             .unwrap());
         dbg!(wallet
             .shard_trees
-            .sapling()
+            .sapling
             .root_at_checkpoint_id(&3.into())
             .unwrap());
         dbg!(wallet
             .shard_trees
-            .orchard()
+            .orchard
             .root_at_checkpoint_id(&3.into())
             .unwrap());
         drop(wallet);

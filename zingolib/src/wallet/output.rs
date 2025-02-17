@@ -2,15 +2,15 @@
 
 use std::num::NonZeroU32;
 
+use pepper_sync::wallet::NoteInterface;
+use pepper_sync::wallet::OutputId;
+use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::TransparentCoin;
+use pepper_sync::wallet::WalletTransaction;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::TxId;
-use zingo_sync::primitives::NoteInterface;
-use zingo_sync::primitives::OutputId;
-use zingo_sync::primitives::OutputInterface;
-use zingo_sync::primitives::TransparentCoin;
-use zingo_sync::primitives::WalletTransaction;
 
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;

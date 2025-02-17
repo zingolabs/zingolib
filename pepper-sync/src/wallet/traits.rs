@@ -10,10 +10,10 @@ use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
 use crate::keys::transparent::TransparentAddressId;
-use crate::primitives::{
-    Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction,
+use crate::wallet::{
+    Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
-use crate::witness::{LocatedTreeData, ShardTrees};
+use crate::witness::LocatedTreeData;
 
 // TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
 
@@ -47,7 +47,7 @@ pub trait SyncWallet {
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
 }
 
-/// Trait for interfacing [`crate::primitives::WalletBlock`]s with wallet data
+/// Trait for interfacing [`crate::wallet::WalletBlock`]s with wallet data
 pub trait SyncBlocks: SyncWallet {
     /// Get a stored wallet compact block from wallet data by block height
     /// Must return error if block is not found
@@ -77,7 +77,7 @@ pub trait SyncBlocks: SyncWallet {
     }
 }
 
-/// Trait for interfacing [`crate::primitives::WalletTransaction`]s with wallet data
+/// Trait for interfacing [`crate::wallet::WalletTransaction`]s with wallet data
 pub trait SyncTransactions: SyncWallet {
     /// Get reference to wallet transactions
     fn get_wallet_transactions(&self) -> Result<&HashMap<TxId, WalletTransaction>, Self::Error>;
@@ -168,11 +168,11 @@ pub trait SyncNullifiers: SyncWallet {
     /// Append nullifiers to wallet nullifier map
     fn append_nullifiers(&mut self, mut nullifiers: NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
-            .sapling_mut()
-            .append(nullifiers.sapling_mut());
+            .sapling
+            .append(&mut nullifiers.sapling);
         self.get_nullifiers_mut()?
-            .orchard_mut()
-            .append(nullifiers.orchard_mut());
+            .orchard
+            .append(&mut nullifiers.orchard);
 
         Ok(())
     }
@@ -181,10 +181,10 @@ pub trait SyncNullifiers: SyncWallet {
     fn truncate_nullifiers(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
-            .sapling_mut()
+            .sapling
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
         nullifier_map
-            .orchard_mut()
+            .orchard
             .retain(|_, (block_height, _)| *block_height <= truncate_height);
 
         Ok(())
@@ -236,13 +236,13 @@ pub trait SyncShardTrees: SyncWallet {
 
         for tree in sapling_located_trees.into_iter() {
             shard_trees
-                .sapling_mut()
+                .sapling
                 .insert_tree(tree.subtree, tree.checkpoints)
                 .unwrap();
         }
         for tree in orchard_located_trees.into_iter() {
             shard_trees
-                .orchard_mut()
+                .orchard
                 .insert_tree(tree.subtree, tree.checkpoints)
                 .unwrap();
         }
@@ -255,7 +255,7 @@ pub trait SyncShardTrees: SyncWallet {
         // TODO: investigate resetting the shard completely when truncate height is 0
         if !self
             .get_shard_trees_mut()?
-            .sapling_mut()
+            .sapling
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
@@ -263,7 +263,7 @@ pub trait SyncShardTrees: SyncWallet {
         }
         if !self
             .get_shard_trees_mut()?
-            .orchard_mut()
+            .orchard
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
