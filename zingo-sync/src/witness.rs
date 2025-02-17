@@ -18,8 +18,11 @@ const NOTE_COMMITMENT_TREE_DEPTH: u8 = 32;
 const SHARD_HEIGHT: u8 = 16;
 const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
-type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
-type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+/// Type alias for sapling memory shard store
+pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
+
+/// Type alias for orchard memory shard store
+pub type OrchardShardStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 
 /// Shard tree wallet data struct
 #[derive(Debug, Getters, MutGetters)]

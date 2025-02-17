@@ -94,12 +94,11 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
         }
 
         // wallet block must exist, otherwise the transaction will not have access to essential data such as the time it was mined
-        if let Some(wallet_block) = wallet_blocks.get(&block_height) {
-            if !wallet_block.txids().contains(&transaction.txid()) {
-                panic!("txid is not found in the wallet block at the transaction height!");
-            }
-        } else {
-            panic!("wallet block at transaction height not found!");
+        let wallet_block = wallet_blocks
+            .get(&block_height)
+            .expect("wallet block should exist at transaction height!");
+        if !wallet_block.txids().contains(&transaction.txid()) {
+            panic!("txid is not found in the wallet block at the transaction height!");
         }
 
         let confirmation_status = ConfirmationStatus::Confirmed(block_height);
@@ -112,6 +111,8 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             &mut NullifierMap::new(),
             outpoint_map,
             &transparent_addresses,
+            wallet_block.time(),
+            None,
         )
         .unwrap();
         wallet_transactions.insert(txid, wallet_transaction);
@@ -130,9 +131,9 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
     nullifier_map: &mut NullifierMap,
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
+    datetime: u32,
+    price: Option<f64>,
 ) -> Result<WalletTransaction, ()> {
-    // TODO: consider splitting into separate fns for pending and confirmed etc.
-    // TODO: price? save in wallet block as its relative to time mined?
     let block_height = confirmation_status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,
@@ -299,8 +300,8 @@ pub(crate) fn scan_transaction<P: consensus::Parameters>(
         transaction.txid(),
         transaction,
         confirmation_status,
-        0,    // TODO: add datetime
-        None, // TODO: implement
+        datetime,
+        price, // TODO: fully implement
         transparent_coins,
         sapling_notes,
         orchard_notes,

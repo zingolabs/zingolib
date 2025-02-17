@@ -14,10 +14,10 @@ use zingo_sync::{
 };
 use zip32::AccountId;
 
-use crate::wallet::LightWallet;
+use super::{error::WalletError, LightWallet};
 
 impl SyncWallet for LightWallet {
-    type Error = ();
+    type Error = WalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
         Ok(self.birthday)
@@ -34,8 +34,8 @@ impl SyncWallet for LightWallet {
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error> {
-        let account_id = AccountId::try_from(0).unwrap();
-        let ufvk = UnifiedFullViewingKey::try_from(&self.unified_key_store).unwrap();
+        let account_id = AccountId::try_from(0).expect("valid hard-coded u32");
+        let ufvk = UnifiedFullViewingKey::try_from(&self.unified_key_store)?;
         let mut ufvk_map = HashMap::new();
         ufvk_map.insert(account_id, ufvk);
 
@@ -57,7 +57,10 @@ impl SyncWallet for LightWallet {
 
 impl SyncBlocks for LightWallet {
     fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error> {
-        self.wallet_blocks.get(&block_height).cloned().ok_or(())
+        self.wallet_blocks
+            .get(&block_height)
+            .cloned()
+            .ok_or(WalletError::BlockNotFound(block_height))
     }
 
     fn get_wallet_blocks_mut(
@@ -95,7 +98,7 @@ impl SyncNullifiers for LightWallet {
         Ok(&self.nullifier_map)
     }
 
-    fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, ()> {
+    fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error> {
         Ok(&mut self.nullifier_map)
     }
 }
