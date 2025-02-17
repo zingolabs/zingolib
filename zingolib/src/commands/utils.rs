@@ -1,4 +1,4 @@
-// Module containing utility functions for the commands interface
+//! Module containing utility functions for the commands interface
 
 use crate::commands::error::CommandError;
 use crate::data::receivers::Receivers;
@@ -69,12 +69,11 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
 
     Ok(send_args)
 }
+
 // The send arguments have two possible formats:
 // - 1 arguments in the form of:
 //    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>", "zennies_for_zingo":<true|false>}]'
 // - 1 + 1 optional arguments for a single address send. &["<address>", "<optional memo>"]
-// FIXME: zingo2
-#[allow(dead_code)]
 pub(super) fn parse_send_all_args(
     args: &[&str],
 ) -> Result<(ZcashAddress, bool, Option<MemoBytes>), CommandError> {
@@ -121,8 +120,6 @@ pub(super) fn parse_send_all_args(
 // - 1 argument for a single address. &["<address>"]
 // NOTE: zennies_for_zingo can only be set in a JSON
 // string.
-// FIXME: zingo2
-#[allow(dead_code)]
 pub(super) fn parse_spendable_balance_args(
     args: &[&str],
 ) -> Result<(ZcashAddress, bool), CommandError> {

@@ -7,15 +7,12 @@ use zcash_client_backend::{
     zip321::{TransactionRequest, Zip321Error},
     ShieldedProtocol,
 };
-use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 use zingo_sync::keys::transparent::TransparentScope;
 
 use crate::config::ChainType;
 
-use super::{
-    error::WalletError, send::change_memo_from_transaction_request, tx_map::TxMapTraitError,
-    LightWallet,
-};
+use super::{error::WalletError, send::change_memo_from_transaction_request, LightWallet};
 
 type GISKit = GreedyInputSelector<
     LightWallet,
@@ -76,8 +73,8 @@ pub enum ProposeShieldError {
     #[error("{0}")]
     Component(
         zcash_client_backend::data_api::error::Error<
-            TxMapTraitError,
-            TxMapTraitError,
+            WalletError,
+            WalletError,
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
                 zcash_primitives::transaction::fees::zip317::FeeError,
                 Infallible,
@@ -121,58 +118,49 @@ impl LightWallet {
         .map_err(ProposeSendError::Proposal)
     }
 
-    // FIXME: zingo2
-    // /// The shield operation consumes a proposal that transfers value
-    // /// into the Orchard pool.
-    // ///
-    // /// The proposal is generated with this method, which operates on
-    // /// the balance transparent pool, without other input.
-    // /// In other words, shield does not take a user-specified amount
-    // /// to shield, rather it consumes all transparent value in the wallet that
-    // /// can be consumsed without costing more in zip317 fees than is being transferred.
-    // pub(crate) async fn create_shield_proposal(
-    //     &self,
-    // ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
-    //     let input_selector = build_default_giskit(None);
+    /// The shield operation consumes a proposal that transfers value
+    /// into the Orchard pool.
+    ///
+    /// The proposal is generated with this method, which operates on
+    /// the balance transparent pool, without other input.
+    /// In other words, shield does not take a user-specified amount
+    /// to shield, rather it consumes all transparent value in the wallet that
+    /// can be consumed without costing more in zip317 fees than is being transferred.
+    pub(crate) async fn create_shield_proposal(
+        &mut self,
+    ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
+        let network = self.network;
+        let input_selector = build_default_giskit(None);
 
-    //     let mut tmamt = self
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .write()
-    //         .await;
+        let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
+            LightWallet,
+            ChainType,
+            GISKit,
+            WalletError,
+        >(
+            self,
+            &network,
+            &input_selector,
+            NonNegativeAmount::const_from_u64(10_000),
+            &self.get_transparent_addresses(),
+            1,
+        )
+        .map_err(ProposeShieldError::Component)?;
 
-    //     let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
-    //         TxMap,
-    //         ChainType,
-    //         GISKit,
-    //         TxMapTraitError,
-    //     >(
-    //         &mut tmamt,
-    //         &self.transaction_context.config.chain,
-    //         &input_selector,
-    //         // don't shield dust
-    //         NonNegativeAmount::const_from_u64(10_000),
-    //         &self.get_transparent_addresses(),
-    //         // review! do we want to require confirmations?
-    //         // make it configurable?
-    //         0,
-    //     )
-    //     .map_err(ProposeShieldError::Component)?;
+        for step in proposed_shield.steps().iter() {
+            if step
+                .balance()
+                .proposed_change()
+                .iter()
+                .fold(0, |total_out, output| total_out + output.value().into_u64())
+                == 0
+            {
+                return Err(ProposeShieldError::Insufficient);
+            }
+        }
 
-    //     for step in proposed_shield.steps().iter() {
-    //         if step
-    //             .balance()
-    //             .proposed_change()
-    //             .iter()
-    //             .fold(0, |total_out, output| total_out + output.value().into_u64())
-    //             == 0
-    //         {
-    //             return Err(ProposeShieldError::Insufficient);
-    //         }
-    //     }
-
-    //     Ok(proposed_shield)
-    // }
+        Ok(proposed_shield)
+    }
 }
 
 #[cfg(test)]

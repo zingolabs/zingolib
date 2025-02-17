@@ -44,20 +44,18 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
 
+    use nonempty::NonEmpty;
+
     use crate::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
-        _quick_sender: &crate::lightclient::LightClient,
-        _raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<nonempty::NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
-        // FIXME: zingo2
-        // TOdo fix expect
-        // let request = transaction_request_from_send_inputs(raw_receivers)
-        //     .expect("should be able to create a transaction request as receivers are valid.");
-        // quick_sender.quick_send(request).await
-
-        todo!()
+        quick_sender: &crate::lightclient::LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
+    ) -> Result<NonEmpty<zcash_primitives::transaction::TxId>, QuickSendError> {
+        let request = transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        quick_sender.quick_send(request).await
     }
 
     /// Panics if the address, amount or memo conversion fails.
@@ -94,19 +92,15 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose(
-        _proposer: &LightClient,
-        _raw_receivers: Vec<(&str, u64, Option<&str>)>,
+        proposer: &LightClient,
+        raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         crate::data::proposal::ProportionalFeeProposal,
         crate::wallet::propose::ProposeSendError,
     > {
-        // FIXME: zingo2
-        //     // TOdo fix expect
-        //     let request = transaction_request_from_send_inputs(raw_receivers)
-        //         .expect("should be able to create a transaction request as receivers are valid.");
-        //     proposer.propose_send(request).await
-
-        todo!()
+        let request = transaction_request_from_send_inputs(raw_receivers)
+            .expect("should be able to create a transaction request as receivers are valid.");
+        proposer.propose_send(request).await
     }
 }
 

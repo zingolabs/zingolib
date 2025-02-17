@@ -26,11 +26,8 @@ pub mod send_with_proposal {
     use zcash_primitives::transaction::fees::zip317;
     use zcash_primitives::transaction::TxId;
 
-    // use zingo_status::confirmation_status::ConfirmationStatus;
-
     use crate::data::proposal::ZingoProposal;
     use crate::lightclient::LightClient;
-    // use crate::wallet::now;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
     // TODO: untangle errors and fix send result so clone is not needed so we can impl from on std::error
@@ -153,27 +150,23 @@ pub mod send_with_proposal {
         /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
         pub async fn quick_send(
             &self,
-            _request: TransactionRequest,
+            request: TransactionRequest,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
-            // FIXME: zingo2
-            //     let proposal = self
-            //         .wallet
-            //         .lock()
-            //         .await
-            //         .create_send_proposal(request)
-            //         .await?;
-            //     Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
+            let proposal = self
+                .wallet
+                .lock()
+                .await
+                .create_send_proposal(request)
+                .await?;
 
-            todo!()
+            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
         }
 
         /// Shields all transparent funds without confirmation.
         pub async fn quick_shield(&self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            // FIXME: zingo2
-            //     let proposal = self.wallet.lock().await.create_shield_proposal().await?;
-            //     Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
+            let proposal = self.wallet.lock().await.create_shield_proposal().await?;
 
-            todo!()
+            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
         }
     }
 

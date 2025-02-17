@@ -26,8 +26,6 @@ pub(crate) type ProportionalFeeShieldProposal =
 
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Clone)]
-// FIXME: zingo2
-#[allow(dead_code)]
 pub(crate) enum ZingoProposal {
     /// Destination somewhere else.
     /// Can propose any valid recipient.
