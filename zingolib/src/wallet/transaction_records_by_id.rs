@@ -684,6 +684,7 @@ impl TransactionRecordsById {
         timestamp: Option<u32>,
         vout: &zcash_primitives::transaction::components::TxOut,
         output_num: u32,
+        is_coinbase: bool,
     ) {
         // Read or create the current TxId
         let transaction_metadata =
@@ -705,6 +706,7 @@ impl TransactionRecordsById {
                     vout.script_pubkey.0.clone(),
                     u64::from(vout.value),
                     None,
+                    is_coinbase,
                 ),
             );
         }

@@ -39,18 +39,21 @@ jobs:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       arch: ${{ matrix.arch }}
 
-  android-ubuntu-integration-test-actions:
+  android-ubuntu-integration-test-ci:
     strategy:
       matrix:
-        abi: [ x86_64, x86 ]
+        config:
+          - { abi: x86_64, api-level: 34, target: default }
+          - { abi: x86, api-level: 29, target: default }
       fail-fast: false
     uses: zingolabs/zingo-mobile/.github/workflows/android-ubuntu-integration-test-ci.yaml@dev
     needs: [create-timestamp, android-build]
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      abi: ${{ matrix.abi }}
-      api-level: 29
+      abi: ${{ matrix.config.abi }}
+      api-level: ${{ matrix.config['api-level'] }}
+      target: ${{ matrix.config.target }}
 
   ios-build:
     strategy:

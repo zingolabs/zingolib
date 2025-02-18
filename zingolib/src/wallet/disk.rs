@@ -38,10 +38,10 @@ use super::{
 };
 
 impl LightWallet {
-    /// Changes in version 30:
-    /// - New WalletCapability version (v4) which implements read/write for rejection addresses
+    /// Changes in version 31:
+    /// - Added `is_coinbase` bool to transparent outputs
     pub const fn serialized_version() -> u64 {
-        30
+        31
     }
 
     /// TODO: Add Doc Comment Here!

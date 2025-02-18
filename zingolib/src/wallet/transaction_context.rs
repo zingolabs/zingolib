@@ -218,6 +218,7 @@ mod decrypt_transaction {
 
         /// This method records that receipt in the relevant receiving
         /// TransactionRecord in the TransactionRecordsById database.
+        #[allow(clippy::too_many_arguments)]
         async fn record_taddr_receipt(
             &self,
             transaction: &zcash_primitives::transaction::Transaction,
@@ -226,6 +227,7 @@ mod decrypt_transaction {
             block_time: Option<u32>,
             vout: &zcash_primitives::transaction::components::TxOut,
             n: usize,
+            is_coinbase: bool,
         ) {
             self.transaction_metadata_set
                 .write()
@@ -238,6 +240,7 @@ mod decrypt_transaction {
                     block_time,
                     vout,
                     n as u32,
+                    is_coinbase,
                 );
         }
         /// New value has been detected for one of the wallet's transparent
@@ -250,6 +253,8 @@ mod decrypt_transaction {
             block_time: Option<u32>,
         ) {
             if let Some(t_bundle) = transaction.transparent_bundle() {
+                let is_coinbase = t_bundle.is_coinbase();
+
                 // Collect our t-addresses for easy checking
                 // the get_taddrs method includes ephemeral 320 taddrs
                 let taddrs_set = self.key.get_taddrs(&self.config.chain);
@@ -264,6 +269,7 @@ mod decrypt_transaction {
                                 block_time,
                                 vout,
                                 n,
+                                is_coinbase,
                             )
                             .await;
                         }

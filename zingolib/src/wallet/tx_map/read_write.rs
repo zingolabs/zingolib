@@ -17,7 +17,7 @@ use super::{spending_data::SpendingData, TransactionRecordsById, TxMap};
 impl TxMap {
     /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
-        22
+        23
     }
 
     /// TODO: Doc-comment!

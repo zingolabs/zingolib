@@ -496,7 +496,7 @@ impl TransactionRecord {
 
     /// TODO: Add Doc Comment Here!
     pub fn serialized_version() -> u64 {
-        24
+        25
     }
 
     /// TODO: Add Doc Comment Here!

@@ -303,7 +303,17 @@ impl InputSource for TransactionRecordsById {
             })
             .flat_map(|tx| {
                 tx.transparent_outputs().iter().filter_map(|output| {
-                    if output.spending_tx_status().is_none()
+                    let mature = if output.is_coinbase {
+                        tx.status
+                            .get_confirmed_height()
+                            .expect("transaction should be confirmed")
+                            <= target_height - 100
+                    } else {
+                        true
+                    };
+
+                    if mature
+                        && output.spending_tx_status().is_none()
                         && (output.address
                             == address.encode(&zcash_primitives::consensus::MAIN_NETWORK)
                             || output.address
