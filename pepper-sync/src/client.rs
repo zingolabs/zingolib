@@ -1,6 +1,13 @@
 //! Module for handling all connections to the server
 
-use std::{ops::Range, time::Duration};
+use std::{
+    ops::Range,
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
+    time::Duration,
+};
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -197,19 +204,22 @@ pub(crate) async fn get_transparent_address_transactions(
 /// Gets stream of mempool transactions until the next block is mined.
 pub(crate) async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<tonic::Streaming<RawTransaction>, ()> {
     tracing::debug!("Fetching mempool stream");
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
-    let mempool_stream;
-    tokio::select! {
-        mempool_stream_response = fetch::get_mempool_stream(client) => {
-            mempool_stream = mempool_stream_response.unwrap();
-        }
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.tick().await;
+    loop {
+        tokio::select! {
+            mempool_stream_response = fetch::get_mempool_stream(client) => {
+                return Ok(mempool_stream_response.unwrap());
+            }
 
-        _ = interval.tick() => {
-            return Err(());
+            _ = interval.tick() => {
+                if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                    return Err(());
+                }
+            }
         }
     }
-
-    Ok(mempool_stream)
 }

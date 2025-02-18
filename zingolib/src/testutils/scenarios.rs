@@ -542,9 +542,7 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    dbg!("pre-hang");
     faucet.do_sync(false).await.unwrap();
-    dbg!("post-hang");
     (
         regtest_manager,
         child_process_handler,

@@ -194,9 +194,7 @@ where
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
-    dbg!("pre-mempool await");
-    mempool_handle.await.unwrap().unwrap();
-    dbg!("post-mempool await");
+    let _ = mempool_handle.await.unwrap(); // TODO: mempool monitor is still not optimal
     fetcher_handle.await.unwrap().unwrap();
 
     Ok(())
@@ -655,16 +653,14 @@ async fn mempool_monitor(
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<(), ()> {
-    let mut mempool_stream = client::get_mempool_transaction_stream(&mut client)
-        .await
-        .unwrap();
+    let mut mempool_stream =
+        client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await?;
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
     loop {
-        let mut interval = tokio::time::interval(Duration::from_secs(3));
         tokio::select! {
             mempool_stream_response = mempool_stream.message() => {
                 match mempool_stream_response.unwrap_or(None) {
                     Some(raw_transaction) => {
-                        dbg!("some raw tx");
                         mempool_transaction_sender
                             .send(raw_transaction)
                             .await
@@ -672,27 +668,15 @@ async fn mempool_monitor(
                             interval.reset();
                     }
                     None => {
-                        tokio::select! {
-                            mempool_stream_response = client::get_mempool_transaction_stream(&mut client) => {
-                                if let Ok(response) = mempool_stream_response {
-                                    mempool_stream = response;
-                                    tokio::time::sleep(Duration::from_millis(500)).await;
-                                }
-                            }
-
-                            _ = interval.tick() => {
-                                if dbg!(shutdown_mempool.load(atomic::Ordering::Acquire)) {
-                                    break;
-                                }
-                            }
-                        }
+                        mempool_stream = client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await?;
+                        tokio::time::sleep(Duration::from_millis(500)).await;
                     }
                 }
 
             }
 
             _ = interval.tick() => {
-                if dbg!(shutdown_mempool.load(atomic::Ordering::Acquire)) {
+                if shutdown_mempool.load(atomic::Ordering::Acquire) {
                     break;
                 }
             }
