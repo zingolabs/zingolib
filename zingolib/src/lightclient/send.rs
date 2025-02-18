@@ -172,12 +172,12 @@ pub mod send_with_proposal {
             )
             .await;
 
-            start_broadcast_loop(
-                arc_tx_map.clone(),
-                server_uri.clone(),
-                send_result_cache.clone(),
-            )
-            .await;
+            // start_broadcast_loop(
+            //     arc_tx_map.clone(),
+            //     server_uri.clone(),
+            //     send_result_cache.clone(),
+            // )
+            // .await;
 
             Ok(txids)
         }
@@ -264,8 +264,6 @@ pub mod send_with_proposal {
     ) {
         tokio::spawn(async move {
             loop {
-                println!("broadcast attempt beginning");
-
                 let transmission_result = transmit_cached_transactions(
                     arc_tx_map.clone(),
                     server_uri.clone(),
@@ -405,10 +403,10 @@ pub mod send_with_proposal {
         let current_height = crate::grpc_connector::get_latest_block_height(server_uri)
             .await
             .map_err(TransmitTransactionError::Height)?;
-        println!("actually sending to server now");
         let send_transaction_result =
             crate::grpc_connector::send_transaction(server_uri.clone(), raw_tx.into_boxed_slice())
                 .await;
+        println!("sent, received confirmation of {send_transaction_result:?}");
         let serverz_txid =
             send_transaction_result.map_err(TransmitTransactionError::ServerResponse)?;
         post_transmission_success_update_transaction(
