@@ -26,6 +26,8 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
+use crate::sync::error::MempoolError;
+
 pub(crate) mod fetch;
 
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
@@ -205,9 +207,9 @@ pub(crate) async fn get_transparent_address_transactions(
 pub(crate) async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, ()> {
+) -> Result<tonic::Streaming<RawTransaction>, MempoolError> {
     tracing::debug!("Fetching mempool stream");
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
     interval.tick().await;
     loop {
         tokio::select! {
@@ -217,7 +219,7 @@ pub(crate) async fn get_mempool_transaction_stream(
 
             _ = interval.tick() => {
                 if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                    return Err(());
+                    return Err(MempoolError::ShutdownWithoutStream);
                 }
             }
         }

@@ -5,6 +5,7 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use error::MempoolError;
 use tokio::sync::{mpsc, Mutex};
 
 use shardtree::store::ShardStore;
@@ -34,6 +35,7 @@ use crate::wallet::traits::{
 use crate::wallet::{NullifierMap, SyncStatus};
 use crate::witness;
 
+pub mod error;
 pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
@@ -194,7 +196,7 @@ where
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
-    let _ = mempool_handle.await.unwrap(); // TODO: mempool monitor is still not optimal
+    mempool_handle.await.unwrap()?;
     fetcher_handle.await.unwrap().unwrap();
 
     Ok(())
@@ -652,7 +654,7 @@ async fn mempool_monitor(
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<(), ()> {
+) -> Result<(), MempoolError> {
     let mut mempool_stream =
         client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await?;
     let mut interval = tokio::time::interval(Duration::from_secs(1));

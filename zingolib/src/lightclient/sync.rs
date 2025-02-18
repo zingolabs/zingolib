@@ -8,6 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::{debug, error};
+use pepper_sync::error::SyncError;
+use pepper_sync::sync::error::MempoolError;
 
 use super::LightClient;
 use super::SyncResult;
@@ -35,9 +37,8 @@ impl LightClient {
             .unwrap();
         let network = self.wallet.lock().await.network;
         let wallet = self.wallet.clone();
-        let sync_handle = tokio::spawn(async move {
-            pepper_sync::sync(client, &network, wallet).await.unwrap();
-        });
+        let sync_handle =
+            tokio::spawn(async move { pepper_sync::sync(client, &network, wallet).await });
 
         // FIXME: replace with lightclient syncing field
         let syncing = Arc::new(AtomicBool::new(true));
@@ -57,7 +58,13 @@ impl LightClient {
             });
         }
 
-        sync_handle.await.unwrap();
+        match sync_handle.await.unwrap() {
+            Ok(_) => (),
+            Err(SyncError::MempoolError(e @ MempoolError::ShutdownWithoutStream)) => {
+                log::warn!("{}", e);
+            }
+            Err(e) => return Err(e.to_string()),
+        }
         syncing.store(false, atomic::Ordering::Release);
 
         let final_sync_status = pepper_sync::sync_status(self.wallet.clone()).await;
