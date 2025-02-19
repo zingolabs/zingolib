@@ -7,7 +7,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
-        compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec, Empty,
+        compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction, SubtreeRoot,
         TransparentAddressBlockFilter, TreeState, TxFilter,
     },
@@ -313,17 +313,13 @@ async fn get_taddress_txs(
     Ok(transactions)
 }
 
-/// Call `GetMempoolStream` client gPRC
+/// Call `GetMempoolStream` client gPRC.
 ///
 /// This is not called from the fetch request framework and is intended to be called independently.
-pub(super) async fn get_mempool_stream(
+pub(crate) async fn get_mempool_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-) -> Result<tonic::Streaming<RawTransaction>, ()> {
-    let request = tonic::Request::new(Empty {});
+) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
+    let request = tonic::Request::new(zcash_client_backend::proto::service::Empty {});
 
-    Ok(client
-        .get_mempool_stream(request)
-        .await
-        .unwrap()
-        .into_inner())
+    Ok(client.get_mempool_stream(request).await?.into_inner())
 }

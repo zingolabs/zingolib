@@ -52,7 +52,7 @@ impl ScannerState {
 }
 
 pub(crate) struct Scanner<P> {
-    state: ScannerState,
+    pub(crate) state: ScannerState,
     batcher: Option<Batcher<P>>,
     workers: Vec<ScanWorker<P>>,
     unique_id: usize,
@@ -110,8 +110,10 @@ where
     }
 
     async fn shutdown_batcher(&mut self) -> Result<(), JoinError> {
-        let mut batcher = self.batcher.take().expect("batcher should exist!");
-        batcher.shutdown().await?;
+        let batcher = self.batcher.take();
+        if let Some(mut batcher) = batcher {
+            batcher.shutdown().await?;
+        }
 
         Ok(())
     }

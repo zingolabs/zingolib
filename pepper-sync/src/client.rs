@@ -204,17 +204,20 @@ pub(crate) async fn get_transparent_address_transactions(
 }
 
 /// Gets stream of mempool transactions until the next block is mined.
+///
+/// Checks at intervals if `shutdown_mempool` is set to prevent hanging on awating mempool monitor handle.
 pub(crate) async fn get_mempool_transaction_stream(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<tonic::Streaming<RawTransaction>, MempoolError> {
     tracing::debug!("Fetching mempool stream");
     let mut interval = tokio::time::interval(Duration::from_secs(3));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     interval.tick().await;
     loop {
         tokio::select! {
             mempool_stream_response = fetch::get_mempool_stream(client) => {
-                return Ok(mempool_stream_response.unwrap());
+                return mempool_stream_response.map_err(MempoolError::RequestFailed);
             }
 
             _ = interval.tick() => {
