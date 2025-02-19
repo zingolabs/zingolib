@@ -1744,8 +1744,8 @@ impl Command for NotesCommand {
             let wallet = lightclient.wallet.lock().await;
 
             json::object! {
-                "orchard notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
-                "sapling notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
+                "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
+                "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
             }
             .pretty(2)
         })
@@ -1790,7 +1790,7 @@ impl Command for CoinsCommand {
 
         RT.block_on(async move {
             json::object! {
-                "transparent coins" => json::JsonValue::from(lightclient.wallet.lock().await.coin_summaries(all_coins)),
+                "transparent_coins" => json::JsonValue::from(lightclient.wallet.lock().await.coin_summaries(all_coins)),
             }
             .pretty(2)
         })

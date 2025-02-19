@@ -241,22 +241,22 @@ impl From<SyncStatus> for json::JsonValue {
             .map(|range| {
                 json::object! {
                     "priority" => format!("{:?}", range.priority()),
-                    "start block" => range.block_range().start.to_string(),
-                    "end block" => (range.block_range().end - 1).to_string(),
+                    "start_block" => range.block_range().start.to_string(),
+                    "end_block" => (range.block_range().end - 1).to_string(),
                 }
             })
             .collect();
 
         json::object! {
-            "scan ranges" => scan_ranges,
-            "scanned blocks" => value.scanned_blocks,
-            "unscanned blocks" => value.unscanned_blocks,
-            "percentage blocks scanned" => value.percentage_blocks_scanned,
-            "scanned sapling outputs" => value.scanned_sapling_outputs,
-            "unscanned sapling outputs" => value.unscanned_sapling_outputs,
-            "scanned orchard outputs" => value.scanned_orchard_outputs,
-            "unscanned orchard outputs" => value.unscanned_orchard_outputs,
-            "percentage outputs scanned" => value.percentage_outputs_scanned,
+            "scan_ranges" => scan_ranges,
+            "scanned_blocks" => value.scanned_blocks,
+            "unscanned_blocks" => value.unscanned_blocks,
+            "percentage_blocks_scanned" => value.percentage_blocks_scanned,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "unscanned_sapling_outputs" => value.unscanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+            "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
+            "percentage_outputs_scanned" => value.percentage_outputs_scanned,
         }
     }
 }
