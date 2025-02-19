@@ -183,7 +183,6 @@ where
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
-                                    println!("received");
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
@@ -686,13 +685,11 @@ async fn mempool_monitor(
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                    println!("sending");
                                     mempool_transaction_sender
                                         .send(raw_transaction)
                                         .await
                                         .unwrap();
                                     unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
-                                    println!("sent");
                                 }
                                 None => {
                                     continue 'main;
@@ -702,9 +699,7 @@ async fn mempool_monitor(
                         }
 
                         _ = interval.tick() => {
-                                    println!("tick");
                             if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                                    println!("break");
                                 break 'main;
                             }
                         }
