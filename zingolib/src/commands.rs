@@ -379,7 +379,8 @@ struct SyncCommand {}
 impl Command for SyncCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Sync the light client with the server
+            Sync the wallet with the blockchain
+
             Usage:
             sync
 
@@ -387,12 +388,17 @@ impl Command for SyncCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Download CompactBlocks and sync to the server"
+        "Sync the wallet with the blockchain"
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if !args.is_empty() {
+            return self.help().to_string();
+        }
+
         RT.block_on(async move {
-            match lightclient.do_sync(true).await {
+            // TODO: zingo CLI sync status updates
+            match lightclient.do_sync(false).await {
                 Ok(j) => j.to_json().pretty(2),
                 Err(e) => e,
             }
@@ -405,6 +411,7 @@ impl Command for SyncStatusCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Get the sync status of the wallet
+
             Usage:
             syncstatus
 
@@ -415,8 +422,15 @@ impl Command for SyncStatusCommand {
         "Get the sync status of the wallet"
     }
 
-    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
-        todo!()
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if !args.is_empty() {
+            return self.help().to_string();
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(pepper_sync::sync_status(lightclient.wallet.clone()).await)
+                .pretty(2)
+        })
     }
 }
 

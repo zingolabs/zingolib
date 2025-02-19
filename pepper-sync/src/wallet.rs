@@ -218,6 +218,7 @@ pub struct SyncStatus {
     pub percentage_outputs_scanned: f32,
 }
 
+// TODO: complete display, scan ranges in raw form are too verbose
 impl std::fmt::Display for SyncStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -228,6 +229,28 @@ impl std::fmt::Display for SyncStatus {
             }}",
             self.scanned_blocks, self.percentage_outputs_scanned
         )
+    }
+}
+
+impl From<SyncStatus> for json::JsonValue {
+    fn from(value: SyncStatus) -> Self {
+        let scan_ranges: Vec<json::JsonValue> = value
+            .scan_ranges
+            .iter()
+            .map(|range| json::JsonValue::from(range.to_string()))
+            .collect();
+
+        json::object! {
+            "scan ranges" => scan_ranges,
+            "scanned blocks" => value.scanned_blocks,
+            "unscanned blocks" => value.unscanned_blocks,
+            "percentage blocks scanned" => value.percentage_blocks_scanned,
+            "scanned sapling outputs" => value.scanned_sapling_outputs,
+            "unscanned sapling outputs" => value.unscanned_sapling_outputs,
+            "scanned orchard outputs" => value.scanned_orchard_outputs,
+            "unscanned orchard outputs" => value.unscanned_orchard_outputs,
+            "percentage outputs scanned" => value.percentage_outputs_scanned,
+        }
     }
 }
 
