@@ -249,6 +249,7 @@ impl From<SyncStatus> for json::JsonValue {
 
         json::object! {
             "scan_ranges" => scan_ranges,
+            "sync_start_height" => u32::from(value.sync_start_height),
             "scanned_blocks" => value.scanned_blocks,
             "unscanned_blocks" => value.unscanned_blocks,
             "percentage_blocks_scanned" => value.percentage_blocks_scanned,
