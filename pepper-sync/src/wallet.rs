@@ -208,6 +208,7 @@ pub struct TreeBounds {
 #[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
+    pub sync_start_height: BlockHeight,
     pub scanned_blocks: u32,
     pub unscanned_blocks: u32,
     pub percentage_blocks_scanned: f32,
@@ -237,7 +238,13 @@ impl From<SyncStatus> for json::JsonValue {
         let scan_ranges: Vec<json::JsonValue> = value
             .scan_ranges
             .iter()
-            .map(|range| json::JsonValue::from(range.to_string()))
+            .map(|range| {
+                json::object! {
+                    "priority" => format!("{:?}", range.priority()),
+                    "start block" => range.block_range().start.to_string(),
+                    "end block" => (range.block_range().end - 1).to_string(),
+                }
+            })
             .collect();
 
         json::object! {

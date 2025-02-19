@@ -260,6 +260,7 @@ where
 
     SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
+        sync_start_height: sync_state.initial_sync_state.sync_start_height,
         scanned_blocks,
         unscanned_blocks,
         percentage_blocks_scanned,
