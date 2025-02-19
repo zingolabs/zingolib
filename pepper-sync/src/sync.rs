@@ -368,9 +368,9 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet,
 {
-    dbg!(scanner.worker_poolsize()) == 0
-        && dbg!(mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire)) == 0
-        && dbg!(wallet.get_sync_state().unwrap().scan_complete())
+    scanner.worker_poolsize() == 0
+        && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
+        && wallet.get_sync_state().unwrap().scan_complete()
 }
 
 /// Scan post-processing
