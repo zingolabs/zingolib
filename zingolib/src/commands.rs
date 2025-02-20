@@ -398,7 +398,7 @@ impl Command for SyncCommand {
 
         RT.block_on(async move {
             // TODO: zingo CLI sync status updates
-            match lightclient.do_sync(false).await {
+            match lightclient.do_sync(true).await {
                 Ok(j) => j.to_json().pretty(2),
                 Err(e) => e,
             }
