@@ -71,47 +71,79 @@ macro_rules! check_client_balances {
         );
     };
 }
-// FIXME: zingo2
-// /// Given a client and txid, get the outgoing metadata from the tr
-// #[macro_export]
-// macro_rules! get_otd {
-//     ($client:ident, $txid:ident) => {
-//         $client
-//             .wallet
-//             .lock()
-//             .await
-//             .transaction_context
-//             .transaction_metadata_set
-//             .read()
-//             .await
-//             .transaction_records_by_id
-//             .get($txid)
-//             .unwrap()
-//             .outgoing_tx_data
-//             .clone()
-//     };
-// }
-// FIXME: zingo2
-// /// Specific to two tests, validate outgoing metadata before and after rescan
-// #[macro_export]
-// macro_rules! validate_otds {
-//     ($client:ident, $nom_txid:ident, $memo_txid:ident) => {
-//         let pre_rescan_summaries = $client.transaction_summaries().await;
-//         let pre_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($client, $nom_txid);
-//         let pre_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($client, $memo_txid);
-//         $client.do_rescan().await.unwrap();
-//         let post_rescan_no_memo_self_send_outgoing_tx_data = get_otd!($client, $nom_txid);
-//         let post_rescan_with_memo_self_send_outgoing_tx_data = get_otd!($client, $memo_txid);
-//         assert_eq!(
-//             pre_rescan_no_memo_self_send_outgoing_tx_data,
-//             post_rescan_no_memo_self_send_outgoing_tx_data
-//         );
-//         assert_eq!(
-//             pre_rescan_with_memo_self_send_outgoing_tx_data,
-//             post_rescan_with_memo_self_send_outgoing_tx_data
-//         );
-//         for summary in pre_rescan_summaries.iter() {
-//             assert_transaction_summary_exists(&$client, summary).await;
-//         }
-//     };
-// }
+/// Specific to two tests, validate outgoing notes before and after rescan
+#[macro_export]
+macro_rules! validate_outgoing_notes {
+    ($client:ident, $nom_txid:ident, $memo_txid:ident) => {
+        let wallet = $client.wallet.lock().await;
+        let pre_rescan_summaries = wallet.transaction_summaries().await;
+        let pre_rescan_no_memo_self_send_outgoing_sapling_notes = wallet
+            .wallet_transactions
+            .get($nom_txid)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .clone();
+        let pre_rescan_with_memo_self_send_outgoing_sapling_notes = wallet
+            .wallet_transactions
+            .get($memo_txid)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .clone();
+        let pre_rescan_no_memo_self_send_outgoing_orchard_notes = wallet
+            .wallet_transactions
+            .get($nom_txid)
+            .unwrap()
+            .outgoing_orchard_notes()
+            .clone();
+        let pre_rescan_with_memo_self_send_outgoing_orchard_notes = wallet
+            .wallet_transactions
+            .get($memo_txid)
+            .unwrap()
+            .outgoing_orchard_notes()
+            .clone();
+        $client.do_rescan().await.unwrap();
+        let post_rescan_no_memo_self_send_outgoing_sapling_notes = wallet
+            .wallet_transactions
+            .get($nom_txid)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .clone();
+        let post_rescan_with_memo_self_send_outgoing_sapling_notes = wallet
+            .wallet_transactions
+            .get($memo_txid)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .clone();
+        let post_rescan_no_memo_self_send_outgoing_orchard_notes = wallet
+            .wallet_transactions
+            .get($nom_txid)
+            .unwrap()
+            .outgoing_orchard_notes()
+            .clone();
+        let post_rescan_with_memo_self_send_outgoing_orchard_notes = wallet
+            .wallet_transactions
+            .get($memo_txid)
+            .unwrap()
+            .outgoing_orchard_notes()
+            .clone();
+        assert_eq!(
+            pre_rescan_no_memo_self_send_outgoing_sapling_notes,
+            post_rescan_no_memo_self_send_outgoing_sapling_notes
+        );
+        assert_eq!(
+            pre_rescan_with_memo_self_send_outgoing_sapling_notes,
+            post_rescan_with_memo_self_send_outgoing_sapling_notes
+        );
+        assert_eq!(
+            pre_rescan_no_memo_self_send_outgoing_orchard_notes,
+            post_rescan_no_memo_self_send_outgoing_orchard_notes
+        );
+        assert_eq!(
+            pre_rescan_with_memo_self_send_outgoing_orchard_notes,
+            post_rescan_with_memo_self_send_outgoing_orchard_notes
+        );
+        for summary in pre_rescan_summaries.iter() {
+            zingolib::testutils::assert_transaction_summary_exists(&$client, summary).await;
+        }
+    };
+}

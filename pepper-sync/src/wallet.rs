@@ -821,7 +821,7 @@ pub trait OutgoingNoteInterface: Sized {
 }
 
 /// Note sent from this capability to a recipient.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutgoingNote<N> {
     /// Output ID.
     pub(crate) output_id: OutputId,
@@ -962,11 +962,22 @@ pub struct ShardTrees {
 impl ShardTrees {
     /// Create new ShardTrees
     pub fn new() -> Self {
-        Self {
-            sapling: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
-            orchard: ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize),
-        }
+        let mut sapling =
+            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        let mut orchard =
+            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+
+        sapling
+            .checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail");
+        orchard
+            .checkpoint(BlockHeight::from_u32(0))
+            .expect("should never fail");
+
+        Self { sapling, orchard }
     }
+
+    // TODO: clear fn the creates news shard trees and replaces with current, add logic for truncating to height 0
 }
 
 impl Default for ShardTrees {
