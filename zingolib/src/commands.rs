@@ -178,35 +178,6 @@ impl Command for WalletKindCommand {
     }
 }
 
-// FIXME: zingo2
-// struct InterruptCommand {}
-// impl Command for InterruptCommand {
-//     fn help(&self) -> &'static str {
-//         "Toggle the sync interrupt after batch flag."
-//     }
-//     fn short_help(&self) -> &'static str {
-//         "Toggle the sync interrupt after batch flag."
-//     }
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         match args.len() {
-//             1 => RT.block_on(async move {
-//                 match args[0] {
-//                     "true" => {
-//                         lightclient.interrupt_sync_after_batch(true).await;
-//                         "true".to_string()
-//                     }
-//                     "false" => {
-//                         lightclient.interrupt_sync_after_batch(false).await;
-//                         "false".to_string()
-//                     }
-//                     _ => self.help().to_string(),
-//                 }
-//             }),
-//             _ => self.help().to_string(),
-//         }
-//     }
-// }
-
 struct ParseAddressCommand {}
 impl Command for ParseAddressCommand {
     fn help(&self) -> &'static str {
@@ -379,10 +350,11 @@ struct SyncCommand {}
 impl Command for SyncCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Sync the wallet with the blockchain
+            Sync the wallet with the blockchain.
 
             Usage:
-            sync
+            sync run
+            sync pause
 
         "#}
     }
@@ -392,12 +364,12 @@ impl Command for SyncCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if !args.is_empty() {
+        if args.len() != 1 {
             return self.help().to_string();
         }
 
         RT.block_on(async move {
-            // TODO: zingo CLI sync status updates
+            // TODO: improve zingo CLI sync status updates
             match lightclient.do_sync(true).await {
                 Ok(j) => j.to_json().pretty(2),
                 Err(e) => e,
@@ -1374,33 +1346,6 @@ impl Command for TransactionsCommand {
     }
 }
 
-// FIXME: zingo2, re-implement
-// struct DetailedTransactionsCommand {}
-// impl Command for DetailedTransactionsCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Provides a detailed list of transaction summaries related to this wallet in order of blockheight.
-
-//             Usage:
-//             detailed_transactions
-//         "#}
-//     }
-
-//     fn short_help(&self) -> &'static str {
-//         "Provides a detailed list of transaction summaries related to this wallet in order of blockheight."
-//     }
-
-//     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-//         if !args.is_empty() {
-//             return "Error: invalid arguments\nTry 'help detailed_transactions' for correct usage and examples"
-//                 .to_string();
-//         }
-//         RT.block_on(
-//             async move { format!("{}", lightclient.detailed_transaction_summaries().await) },
-//         )
-//     }
-// }
-
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1885,7 +1830,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("decryptmessage", Box::new(DecryptMessageCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
-        // ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
         ("rescan", Box::new(RescanCommand {})),
         ("clear", Box::new(ClearCommand {})),
@@ -1898,10 +1842,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         // ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
-        // (
-        //     "detailed_transactions",
-        //     Box::new(DetailedTransactionsCommand {}),
-        // ),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
         ("messages", Box::new(MessagesFilterCommand {})),

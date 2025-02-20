@@ -3,7 +3,7 @@
 use json::{array, object, JsonValue};
 use log::error;
 use serde::Serialize;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{atomic::AtomicU8, Arc};
 use tokio::sync::{Mutex, RwLock};
 
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
@@ -292,23 +292,24 @@ pub struct UserBalances {
 ///      * from a fresh start with reasonable defaults
 ///  2. synchronization of the client with the state of the blockchain via a gRPC server
 ///      *
-#[allow(dead_code)] // TODO: remove after sync integration
+/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
-    syncing: Arc<AtomicBool>, // TODO: add interrupt to sync engine
+    sync_mode: Arc<AtomicU8>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
-    save_buffer: ZingoSaveBuffer, // TODO: move save buffer to wallet itself?
+    save_buffer: ZingoSaveBuffer,                        // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
 pub mod instantiation {
     use log::debug;
+    use pepper_sync::wallet::SyncMode;
     use std::{
         io::{self, Error, ErrorKind},
-        sync::{atomic::AtomicBool, Arc},
+        sync::{atomic::AtomicU8, Arc},
     };
     use tokio::{
         runtime::Runtime,
@@ -334,7 +335,7 @@ pub mod instantiation {
             Ok(LightClient {
                 config,
                 wallet: Arc::new(Mutex::new(wallet)),
-                syncing: Arc::new(AtomicBool::new(false)),
+                sync_mode: Arc::new(AtomicU8::new(SyncMode::Stopped as u8)),
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })

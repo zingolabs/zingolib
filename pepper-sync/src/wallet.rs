@@ -191,6 +191,32 @@ impl Default for SyncState {
     }
 }
 
+/// Sync modes.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncMode {
+    /// Sync is not running.
+    Stopped,
+    /// Sync is held in a paused state and the wallet guard is dropped.
+    Paused,
+    /// Sync is running.
+    Running,
+}
+
+impl SyncMode {
+    /// Constructor from u8.
+    ///
+    /// Returns `None` if `mode` is not a valid enum variant.
+    pub fn from_u8(mode: u8) -> Option<Self> {
+        match mode {
+            0 => Some(Self::Stopped),
+            1 => Some(Self::Paused),
+            2 => Some(Self::Running),
+            _ => None,
+        }
+    }
+}
+
 /// Initial and final tree sizes.
 #[derive(Debug, Clone, Copy)]
 #[allow(missing_docs)]

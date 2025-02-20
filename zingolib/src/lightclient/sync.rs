@@ -10,6 +10,7 @@ use std::time::Duration;
 use log::{debug, error};
 use pepper_sync::error::SyncError;
 use pepper_sync::sync::error::MempoolError;
+use pepper_sync::wallet::SyncMode;
 
 use super::LightClient;
 use super::SyncResult;
@@ -37,8 +38,11 @@ impl LightClient {
             .unwrap();
         let network = self.wallet.lock().await.network;
         let wallet = self.wallet.clone();
+        let sync_mode = self.sync_mode.clone();
         let sync_handle =
-            tokio::spawn(async move { pepper_sync::sync(client, &network, wallet).await });
+            tokio::spawn(
+                async move { pepper_sync::sync(client, &network, wallet, sync_mode).await },
+            );
 
         // FIXME: replace with lightclient syncing field
         let syncing = Arc::new(AtomicBool::new(true));
@@ -97,6 +101,16 @@ impl LightClient {
         debug!("Rescan finished");
 
         response
+    }
+
+    pub fn sync_mode(&self) -> SyncMode {
+        SyncMode::from_u8(self.sync_mode.load(atomic::Ordering::Acquire))
+            .expect("API does not support setting of non-valid variant values")
+    }
+
+    pub fn set_sync_mode(&self, sync_mode: SyncMode) {
+        self.sync_mode
+            .store(sync_mode as u8, atomic::Ordering::Release);
     }
 }
 

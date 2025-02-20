@@ -32,7 +32,7 @@ use crate::scan::ScanResults;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
-use crate::wallet::{NullifierMap, SyncStatus};
+use crate::wallet::{NullifierMap, SyncMode, SyncStatus};
 use crate::witness;
 
 pub mod error;
@@ -43,16 +43,27 @@ pub(crate) mod transparent;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 
-/// Syncs a wallet to the latest state of the blockchain
+/// Syncs a wallet to the latest state of the blockchain.
+///
+/// `sync_mode` is intended to be stored as [`crate::wallet::SyncMode`] and converted with TODO.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
+    sync_mode: Arc<AtomicU8>,
 ) -> Result<(), SyncError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
+    let mut sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+    if sync_mode_enum == SyncMode::Stopped {
+        sync_mode_enum = SyncMode::Running;
+        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
+    } else {
+        panic!("Sync is already running!");
+    }
+
     tracing::info!("Starting sync...");
 
     // create channel for sending fetch requests and launch fetcher task
@@ -179,6 +190,18 @@ where
 
                 // allow tasks outside the sync engine access to the wallet data
                 drop(wallet_guard);
+
+                sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+                if sync_mode_enum == SyncMode::Paused {
+                    let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
+                    pause_interval.tick().await;
+                    while sync_mode_enum != SyncMode::Running {
+                        pause_interval.tick().await;
+                        sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+                    }
+
+                }
+
                 wallet_guard = wallet.lock().await;
             }
 

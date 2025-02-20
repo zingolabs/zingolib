@@ -1,8 +1,5 @@
-use std::time::Duration;
-
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingo_netutils::GrpcConnector;
 use zingolib::{
     config::{construct_lightwalletd_uri, load_clientconfig, DEFAULT_LIGHTWALLETD_SERVER},
     get_base_address_macro,
@@ -37,11 +34,7 @@ async fn sync_mainnet_test() {
     .await
     .unwrap();
 
-    let client = GrpcConnector::new(uri).get_client().await.unwrap();
-
-    pepper_sync::sync(client, &config.chain, lightclient.wallet.clone())
-        .await
-        .unwrap();
+    lightclient.do_sync(false).await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -76,26 +69,7 @@ async fn sync_status() {
     .await
     .unwrap();
 
-    let client = GrpcConnector::new(uri).get_client().await.unwrap();
-
-    let wallet = lightclient.wallet.clone();
-    let sync_handle = tokio::spawn(async move {
-        pepper_sync::sync(client, &config.chain, wallet)
-            .await
-            .unwrap();
-    });
-
-    let wallet = lightclient.wallet.clone();
-    tokio::spawn(async move {
-        loop {
-            let wallet = wallet.clone();
-            let sync_status = pepper_sync::sync_status(wallet).await;
-            dbg!(sync_status);
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    });
-
-    sync_handle.await.unwrap();
+    lightclient.do_sync(true).await.unwrap();
 }
 
 // temporary test for sync development
