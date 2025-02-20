@@ -8,7 +8,7 @@ pub enum ScanError {
     ContinuityError(#[from] ContinuityError),
 }
 
-/// Block continuuity errors.
+/// Block continuity errors.
 #[derive(Debug, thiserror::Error)]
 pub enum ContinuityError {
     /// Height discontinuity.
