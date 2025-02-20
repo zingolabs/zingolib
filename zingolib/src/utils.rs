@@ -3,7 +3,6 @@
 pub mod conversion;
 pub mod error;
 
-#[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         #[doc = "Set the $name field of the builder."]
@@ -32,7 +31,6 @@ macro_rules! build_push_list {
     };
 }
 
-#[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;

@@ -8,7 +8,7 @@ pub mod scenarios;
 
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
-    NoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
+    BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
 };
 use crate::wallet::keys::unified::WalletCapability;
 use crate::wallet::output::SpendStatus;
@@ -173,13 +173,13 @@ pub fn check_transaction_summary_equality(
 }
 
 /// TODO: doc comment
-fn check_note_summary_equality(first: &[NoteSummary], second: &[NoteSummary]) -> bool {
+fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
     };
     for i in 0..first.len() {
         if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary())
+            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
             && first[i].memo() == second[i].memo())
         {
             return false;

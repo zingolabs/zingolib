@@ -52,6 +52,7 @@ pub mod disk;
 pub mod output;
 pub mod propose;
 pub mod send;
+pub mod summary;
 pub mod sync;
 pub mod transaction;
 mod zcb_traits;
