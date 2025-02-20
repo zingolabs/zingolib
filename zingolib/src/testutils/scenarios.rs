@@ -12,7 +12,7 @@
 //! All scenarios have a default (i.e. faucet_default) which take minimal parameters and
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
-// use crate::get_base_address_macro;
+use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
 use crate::testutils::regtest::{ChildProcessHandler, RegtestManager};
@@ -472,9 +472,9 @@ pub async fn faucet_recipient_default() -> (
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_funded_recipient(
-    _orchard_funds: Option<u64>,
-    _sapling_funds: Option<u64>,
-    _transparent_funds: Option<u64>,
+    orchard_funds: Option<u64>,
+    sapling_funds: Option<u64>,
+    transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
     regtest_network: crate::config::RegtestNetwork,
     lightwalletd_feature: bool,
@@ -492,59 +492,53 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    // FIXME: zingo2
-    let orchard_txid = None;
-    // let orchard_txid = if let Some(funds) = orchard_funds {
-    //     Some(
-    //         super::lightclient::from_inputs::quick_send(
-    //             &faucet,
-    //             vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
-    //         )
-    //         .await
-    //         .unwrap()
-    //         .first()
-    //         .to_string(),
-    //     )
-    // } else {
-    //     None
-    // };
-    // FIXME: zingo2
-    let sapling_txid = None;
-    // let sapling_txid = if let Some(funds) = sapling_funds {
-    //     Some(
-    //         super::lightclient::from_inputs::quick_send(
-    //             &faucet,
-    //             vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
-    //         )
-    //         .await
-    //         .unwrap()
-    //         .first()
-    //         .to_string(),
-    //     )
-    // } else {
-    //     None
-    // };
 
-    // FIXME: zingo2
-    let transparent_txid = None;
-    // let transparent_txid = if let Some(funds) = transparent_funds {
-    //     Some(
-    //         super::lightclient::from_inputs::quick_send(
-    //             &faucet,
-    //             vec![(
-    //                 &get_base_address_macro!(recipient, "transparent"),
-    //                 funds,
-    //                 None,
-    //             )],
-    //         )
-    //         .await
-    //         .unwrap()
-    //         .first()
-    //         .to_string(),
-    //     )
-    // } else {
-    //     None
-    // };
+    let orchard_txid = if let Some(funds) = orchard_funds {
+        Some(
+            super::lightclient::from_inputs::quick_send(
+                &faucet,
+                vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
+            )
+            .await
+            .unwrap()
+            .first()
+            .to_string(),
+        )
+    } else {
+        None
+    };
+    let sapling_txid = if let Some(funds) = sapling_funds {
+        Some(
+            super::lightclient::from_inputs::quick_send(
+                &faucet,
+                vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
+            )
+            .await
+            .unwrap()
+            .first()
+            .to_string(),
+        )
+    } else {
+        None
+    };
+    let transparent_txid = if let Some(funds) = transparent_funds {
+        Some(
+            super::lightclient::from_inputs::quick_send(
+                &faucet,
+                vec![(
+                    &get_base_address_macro!(recipient, "transparent"),
+                    funds,
+                    None,
+                )],
+            )
+            .await
+            .unwrap()
+            .first()
+            .to_string(),
+        )
+    } else {
+        None
+    };
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();

@@ -107,7 +107,10 @@ mod fast {
         zip321::{Payment, TransactionRequest},
         PoolType, ShieldedProtocol,
     };
-    use zcash_primitives::{memo::Memo, transaction::components::amount::NonNegativeAmount};
+    use zcash_primitives::{
+        consensus::BlockHeight, memo::Memo, transaction::components::amount::NonNegativeAmount,
+    };
+    use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
@@ -115,7 +118,10 @@ mod fast {
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
-            data::summaries::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
+            data::summaries::{
+                SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface as _,
+                ValueTransferKind,
+            },
             keys::unified::ReceiverSelection,
         },
         UAReceivers,
@@ -792,80 +798,54 @@ mod fast {
         }
     }
 
-    // FIXME:
-    // #[tokio::test]
-    // async fn targeted_rescan() {
-    //     let (regtest_manager, _cph, _faucet, recipient, txid) =
-    //         scenarios::faucet_funded_recipient_default(100_000).await;
+    #[tokio::test]
+    async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
+        tracing_subscriber::fmt().init();
 
-    //     *recipient
-    //         .wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .write()
-    //         .await
-    //         .transaction_records_by_id
-    //         .get_mut(&txid_from_hex_encoded_str(&txid).unwrap())
-    //         .unwrap()
-    //         .orchard_notes[0]
-    //         .output_index_mut() = None;
+        let (regtest_manager, _cph, faucet, recipient, _txid) =
+            scenarios::faucet_funded_recipient_default(100_000).await;
 
-    //     let tx_summaries = recipient.transaction_summaries().await.0;
-    //     assert!(tx_summaries[0].orchard_notes()[0].output_index().is_none());
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(&recipient, "unified"),
+                // &get_base_address_macro!(&recipient, "sapling"),
+                20_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
 
-    //     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-    //         .await
-    //         .unwrap();
+        recipient.do_sync(false).await.unwrap();
 
-    //     let tx_summaries = recipient.transaction_summaries().await.0;
-    //     assert!(tx_summaries[0].orchard_notes()[0].output_index().is_some());
-    // }
+        let transactions = &recipient.transaction_summaries().await.0;
+        transactions.iter().for_each(|tx| {
+            dbg!(tx);
+        });
+        assert_eq!(
+            transactions
+                .iter()
+                .find(|tx| tx.value() == 20_000)
+                .unwrap()
+                .status(),
+            ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
+        );
 
-    // #[tokio::test]
-    // async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
-    //     let (regtest_manager, _cph, faucet, recipient, _txid) =
-    //         scenarios::faucet_funded_recipient_default(100_000).await;
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
 
-    //     let recipient = std::sync::Arc::new(recipient);
-
-    //     from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             &get_base_address_macro!(&recipient, "sapling"),
-    //             20_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     LightClient::start_mempool_monitor(recipient.clone()).unwrap();
-    //     tokio::time::sleep(Duration::from_secs(5)).await;
-
-    //     let transactions = &recipient.transaction_summaries().await.0;
-    //     assert_eq!(
-    //         transactions
-    //             .iter()
-    //             .find(|tx| tx.value() == 20_000)
-    //             .unwrap()
-    //             .status(),
-    //         ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
-    //     );
-
-    //     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-    //         .await
-    //         .unwrap();
-
-    //     let transactions = &recipient.transaction_summaries().await.0;
-    //     assert_eq!(
-    //         transactions
-    //             .iter()
-    //             .find(|tx| tx.value() == 20_000)
-    //             .unwrap()
-    //             .status(),
-    //         ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
-    //     );
-    // }
+        let transactions = &recipient.transaction_summaries().await.0;
+        assert_eq!(
+            transactions
+                .iter()
+                .find(|tx| tx.value() == 20_000)
+                .unwrap()
+                .status(),
+            ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
+        );
+    }
 
     // #[tokio::test]
     // async fn utxos_are_not_prematurely_confirmed() {

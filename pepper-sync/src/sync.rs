@@ -1,10 +1,11 @@
 //! Entrypoint for sync engine
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{self, AtomicBool};
+use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use error::MempoolError;
 use tokio::sync::{mpsc, Mutex};
 
 use shardtree::store::ShardStore;
@@ -25,7 +26,7 @@ use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::error::{ContinuityError, ScanError};
-use crate::scan::task::Scanner;
+use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
 use crate::scan::ScanResults;
 use crate::wallet::traits::{
@@ -34,6 +35,7 @@ use crate::wallet::traits::{
 use crate::wallet::{NullifierMap, SyncStatus};
 use crate::witness;
 
+pub mod error;
 pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
@@ -67,11 +69,20 @@ where
     });
 
     // create channel for receiving mempool transactions and launch mempool monitor
-    let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(10);
+    let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
     let shutdown_mempool = Arc::new(AtomicBool::new(false));
     let shutdown_mempool_clone = shutdown_mempool.clone();
+    let unprocessed_mempool_transactions_count = Arc::new(AtomicU8::new(0));
+    let unprocessed_mempool_transactions_count_clone =
+        unprocessed_mempool_transactions_count.clone();
     let mempool_handle = tokio::spawn(async move {
-        mempool_monitor(client, mempool_transaction_sender, shutdown_mempool_clone).await
+        mempool_monitor(
+            client,
+            mempool_transaction_sender,
+            unprocessed_mempool_transactions_count_clone,
+            shutdown_mempool_clone,
+        )
+        .await
     });
 
     // pre-scan initialisation
@@ -149,7 +160,8 @@ where
         .unwrap()
         .highest_scanned_height()
         + 1;
-    let mut interval = tokio::time::interval(Duration::from_millis(30));
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
@@ -178,14 +190,19 @@ where
                     raw_transaction,
                 )
                 .await;
+                unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
             }
 
             _update_scanner = interval.tick() => {
                 scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await;
 
-                if sync_complete(&scanner, &scan_results_receiver, &*wallet_guard) {
-                    tracing::info!("Sync complete.");
-                    break;
+                if matches!(scanner.state, ScannerState::Shutdown) {
+                    // wait for mempool monitor to receive mempool transactions
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    if sync_complete(&scanner, unprocessed_mempool_transactions_count.clone(), &*wallet_guard) {
+                        tracing::info!("Sync complete.");
+                        break;
+                    }
                 }
             }
         }
@@ -194,7 +211,7 @@ where
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
-    mempool_handle.await.unwrap().unwrap();
+    mempool_handle.await.unwrap()?;
     fetcher_handle.await.unwrap().unwrap();
 
     Ok(())
@@ -340,11 +357,11 @@ pub fn scan_pending_transaction<W>(
 ///
 /// Sync is complete when:
 /// - all scan workers have been shutdown
-/// - there is no unprocessed scan results in the channel
+/// - there is no unprocessed mempool transactions
 /// - all scan ranges have `Scanned` priority
 fn sync_complete<P, W>(
     scanner: &Scanner<P>,
-    scan_results_receiver: &mpsc::UnboundedReceiver<(ScanRange, Result<ScanResults, ScanError>)>,
+    mempool_unprocessed_transactions_count: Arc<AtomicU8>,
     wallet: &W,
 ) -> bool
 where
@@ -352,7 +369,7 @@ where
     W: SyncWallet,
 {
     scanner.worker_poolsize() == 0
-        && scan_results_receiver.is_empty()
+        && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
         && wallet.get_sync_state().unwrap().scan_complete()
 }
 
@@ -647,49 +664,52 @@ async fn update_subtree_roots<W>(
 /// Sets up mempool stream.
 ///
 /// If there is some raw transaction, send to be scanned.
-/// If the response is `None` (a block was mined) or a timeout error occurred, setup a new mempool stream.
+/// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor(
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
+    unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<(), ()> {
-    let mut mempool_stream = client::get_mempool_transaction_stream(&mut client)
-        .await
-        .unwrap();
-    loop {
-        let mut interval = tokio::time::interval(Duration::from_secs(3));
-        tokio::select! {
-            mempool_stream_response = mempool_stream.message() => {
-                match mempool_stream_response.unwrap_or(None) {
-                    Some(raw_transaction) => {
-                        mempool_transaction_sender
-                            .send(raw_transaction)
-                            .await
-                            .unwrap();
-                            interval.reset();
-                    }
-                    None => {
-                        tokio::select! {
-                            mempool_stream_response = client::get_mempool_transaction_stream(&mut client) => {
-                                mempool_stream = mempool_stream_response.unwrap();
-                                tokio::time::sleep(Duration::from_millis(500)).await;
+) -> Result<(), MempoolError> {
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    'main: loop {
+        let response =
+            client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await;
+
+        match response {
+            Ok(mut mempool_stream) => {
+                interval.reset();
+                loop {
+                    tokio::select! {
+                        mempool_stream_message = mempool_stream.message() => {
+                            match mempool_stream_message.unwrap_or(None) {
+                                Some(raw_transaction) => {
+                                    mempool_transaction_sender
+                                        .send(raw_transaction)
+                                        .await
+                                        .unwrap();
+                                    unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
+                                }
+                                None => {
+                                    continue 'main;
+                                }
                             }
 
-                            _ = interval.tick() => {
-                                if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                                    break;
-                                }
+                        }
+
+                        _ = interval.tick() => {
+                            if shutdown_mempool.load(atomic::Ordering::Acquire) {
+                                break 'main;
                             }
                         }
                     }
                 }
-
             }
-
-            _ = interval.tick() => {
-                if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                    break;
-                }
+            Err(e @ MempoolError::ShutdownWithoutStream) => return Err(e),
+            Err(MempoolError::RequestFailed(e)) => {
+                tracing::warn!("Mempool stream request failed! Status: {e}.\nRetrying...");
+                tokio::time::sleep(Duration::from_secs(3)).await;
             }
         }
     }

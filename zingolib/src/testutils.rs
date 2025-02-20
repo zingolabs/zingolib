@@ -78,8 +78,9 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .await
         .unwrap()
 }
+
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
-    client.do_sync(true).await?;
+    client.do_sync(false).await?;
     Ok(client
         .do_wallet_last_scanned_height()
         .await
@@ -289,6 +290,7 @@ pub async fn wait_until_client_reaches_block_height(
     }
     Ok(())
 }
+
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
     Ok(get_synced_wallet_height(client).await? != target)
 }
