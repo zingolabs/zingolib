@@ -358,7 +358,7 @@ impl Command for SyncCommand {
             `pause` pauses scanning until sync is resumed.
             `status` returns a report of the wallet's current sync status.
             `poll` polls the sync task handle, returning a sync result if complete. If sync failed, returns the error
-            instead.
+            instead. Poll is not intended to be called manually for zingo-cli.
 
             Usage:
             sync run
@@ -406,7 +406,7 @@ impl Command for SyncCommand {
                 SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
                 SyncPollReport::Ready(sync_result) => match sync_result {
                     Ok(success) => success.to_string(),
-                    Err(failure) => failure.to_string(),
+                    Err(failure) => format!("Error: {}", failure.to_string()),
                 },
             },
             _ => self.help().to_string(),

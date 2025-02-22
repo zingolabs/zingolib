@@ -190,6 +190,12 @@ fn start_interactive(
             .as_i64()
             .unwrap();
 
+        match send_command("sync".to_string(), vec!["poll".to_string()]) {
+            poll if poll.starts_with("Error:") => eprintln!("{poll}"),
+            poll if poll.starts_with("Sync completed succesfully:") => println!("{poll}"),
+            _ => (),
+        }
+
         let readline = rl.readline(&format!(
             "({}) Block:{} (type 'help') >> ",
             chain_name, height
@@ -474,7 +480,7 @@ pub fn startup(
 
     // At startup, run a sync.
     if filled_template.sync {
-        let update = commands::do_user_command("sync", &[], &mut lightclient);
+        let update = commands::do_user_command("sync", &["run"], &mut lightclient);
         println!("{}", update);
     }
 

@@ -319,13 +319,14 @@ impl std::fmt::Display for SyncResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{
-                sync start height: {}
-                sync end height: {}
-                scanned blocks: {}
-                scanned sapling outputs: {}
-                scanned orchard outputs: {}        
-            }}",
+            "Sync completed succesfully:
+{{
+    sync start height: {}
+    sync end height: {}
+    scanned blocks: {}
+    scanned sapling outputs: {}
+    scanned orchard outputs: {}        
+}}",
             self.sync_start_height,
             self.sync_end_height,
             self.scanned_blocks,
