@@ -368,16 +368,18 @@ impl Command for SyncCommand {
             return self.help().to_string();
         }
 
-        RT.block_on(async move {
-            // TODO: improve zingo CLI sync status updates
-            match lightclient.do_sync(true).await {
-                Ok(j) => j.to_json().pretty(2),
-                Err(e) => e,
-            }
-        })
+        // RT.block_on(async move {
+        //     // TODO: improve zingo CLI sync status updates
+        //     match lightclient.sync_and_await(true).await {
+        //         Ok(j) => j.to_json().pretty(2),
+        //         Err(e) => e,
+        //     }
+        // })
+        todo!()
     }
 }
 
+// FIXME: add to sync command
 struct SyncStatusCommand {}
 impl Command for SyncStatusCommand {
     fn help(&self) -> &'static str {
@@ -399,10 +401,11 @@ impl Command for SyncStatusCommand {
             return self.help().to_string();
         }
 
-        RT.block_on(async move {
-            json::JsonValue::from(pepper_sync::sync_status(lightclient.wallet.clone()).await)
-                .pretty(2)
-        })
+        // RT.block_on(async move {
+        //     json::JsonValue::from(pepper_sync::sync_status(lightclient.wallet.clone()).await)
+        //         .pretty(2)
+        // })
+        todo!()
     }
 }
 

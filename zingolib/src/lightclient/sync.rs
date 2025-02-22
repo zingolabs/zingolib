@@ -3,39 +3,38 @@
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
 use std::sync::atomic;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{debug, error};
-use pepper_sync::error::SyncError;
-use pepper_sync::sync::error::MempoolError;
+use log::debug;
 use pepper_sync::wallet::SyncMode;
+use zingo_netutils::GetClientError;
 
 use super::LightClient;
 use super::SyncResult;
 
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
-/// likely no errors here. but this makes clippy (and fv) happier
-pub enum StartMempoolMonitorError {
-    #[error("Mempool Monitor is disabled.")]
-    Disabled,
-    #[error("could not read mempool monitor: {0}")]
-    CouldNotRead(String),
-    #[error("could not write mempool monitor: {0}")]
-    CouldNotWrite(String),
-    #[error("Mempool Monitor does not exist.")]
-    DoesNotExist,
-}
-
 impl LightClient {
-    /// Sync the wallet to the latest state of the block chain.
-    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+    /// Calls [`self::sync`] and awaits the handle.
+    // TODO: error handling, concrete error types
+    pub async fn sync_and_await(&mut self, print_updates: bool) -> Result<SyncResult, String> {
+        self.sync(print_updates).await.map_err(|e| e.to_string())?;
+
+        Ok(self
+            .sync_handle
+            .take()
+            .expect("handle should always exist after calling `sync`")
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?)
+    }
+
+    /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
+    /// `sync_handle` field.
+    pub async fn sync(&mut self, print_updates: bool) -> Result<(), GetClientError> {
         let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
             .get_client()
-            .await
-            .unwrap();
+            .await?;
         let network = self.wallet.lock().await.network;
         let wallet = self.wallet.clone();
         let sync_mode = self.sync_mode.clone();
@@ -43,71 +42,48 @@ impl LightClient {
             tokio::spawn(
                 async move { pepper_sync::sync(client, &network, wallet, sync_mode).await },
             );
+        self.sync_handle = Some(sync_handle);
 
-        // FIXME: replace with lightclient syncing field
-        let syncing = Arc::new(AtomicBool::new(true));
+        // TODO: replace this with calls to `sync status` in zingo-cli
         if print_updates {
-            let syncing = syncing.clone();
+            let sync_mode = self.sync_mode.clone();
             let wallet = self.wallet.clone();
             tokio::spawn(async move {
                 loop {
-                    if !syncing.load(atomic::Ordering::Acquire) {
+                    if LightClient::sync_mode(sync_mode.clone()) == SyncMode::NotRunning {
                         break;
                     };
 
-                    let sync_status = pepper_sync::sync_status(wallet.clone()).await;
+                    let sync_status = pepper_sync::sync_status(&*wallet.lock().await).await;
                     println!("{}", sync_status);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             });
         }
 
-        match sync_handle.await.unwrap() {
-            Ok(_) => (),
-            Err(SyncError::MempoolError(e @ MempoolError::ShutdownWithoutStream)) => {
-                log::warn!("{}", e);
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-        syncing.store(false, atomic::Ordering::Release);
-
-        let final_sync_status = pepper_sync::sync_status(self.wallet.clone()).await;
-        if print_updates {
-            println!("{}", &final_sync_status);
-        }
-
-        Ok(SyncResult {
-            success: true,
-            latest_block: (final_sync_status
-                .scan_ranges
-                .last()
-                .expect("should be non-empty after syncing")
-                .block_range()
-                .end
-                - 1)
-            .into(),
-            total_blocks_synced: final_sync_status.scanned_blocks as u64,
-        })
+        Ok(())
     }
 
     /// Clear the wallet state and rescan from wallet birthday.
-    pub async fn do_rescan(&self) -> Result<SyncResult, String> {
+    pub async fn do_rescan(&mut self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
         self.wallet.lock().await.clear_all();
 
-        let response = self.do_sync(false).await;
+        let response = self.sync_and_await(false).await;
 
         debug!("Rescan finished");
 
         response
     }
 
-    pub fn sync_mode(&self) -> SyncMode {
-        SyncMode::from_u8(self.sync_mode.load(atomic::Ordering::Acquire))
-            .expect("API does not support setting of non-valid variant values")
+    /// Creates [`pepper_sync::wallet::SyncMode`] from an atomic u8.
+    pub fn sync_mode(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
+        SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+            .expect("this library does not allow setting of non-valid sync mode variants")
     }
 
+    // TODO: split into separate functions with checks
     pub fn set_sync_mode(&self, sync_mode: SyncMode) {
         self.sync_mode
             .store(sync_mode as u8, atomic::Ordering::Release);
@@ -129,9 +105,10 @@ pub mod test {
             log::error!("Error installing crypto provider: {:?}", e)
         };
 
-        let lc = wallet_case.load_example_wallet_with_client().await;
+        let mut lc = wallet_case.load_example_wallet_with_client().await;
 
-        lc.do_sync(true).await.unwrap();
+        let sync_result = lc.sync_and_await(false).await.unwrap();
+        println!("{}", sync_result);
         println!("{:?}", lc.do_balance().await);
         lc
     }

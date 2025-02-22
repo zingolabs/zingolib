@@ -25,7 +25,7 @@ async fn sync_mainnet_test() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let lightclient = LightClient::create_from_wallet_base_async(
+    let mut lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
         2_650_318,
@@ -34,7 +34,7 @@ async fn sync_mainnet_test() {
     .await
     .unwrap();
 
-    lightclient.do_sync(false).await.unwrap();
+    lightclient.sync_and_await(false).await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -59,7 +59,7 @@ async fn sync_status() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let lightclient = LightClient::create_from_wallet_base_async(
+    let mut lightclient = LightClient::create_from_wallet_base_async(
         WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
         &config,
         // 2_750_000,
@@ -69,7 +69,7 @@ async fn sync_status() {
     .await
     .unwrap();
 
-    lightclient.do_sync(true).await.unwrap();
+    lightclient.sync_and_await(true).await.unwrap();
 }
 
 // temporary test for sync development
@@ -78,7 +78,7 @@ async fn sync_status() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (regtest_manager, _cph, faucet, recipient, _txid) =
+    let (regtest_manager, _cph, faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
     from_inputs::quick_send(
         &faucet,
@@ -102,10 +102,10 @@ async fn sync_test() {
     // .unwrap();
 
     increase_server_height(&regtest_manager, 1).await;
-    recipient.do_sync(false).await.unwrap();
+    recipient.sync_and_await(false).await.unwrap();
     recipient.quick_shield().await.unwrap();
     increase_server_height(&regtest_manager, 1).await;
-    recipient.do_sync(true).await.unwrap();
+    recipient.sync_and_await(true).await.unwrap();
 
     // let wallet = recipient.wallet.lock().await;
     // dbg!(&wallet.wallet_transactions);

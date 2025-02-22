@@ -1,6 +1,5 @@
 //! these functions are each meant to be 'test-in-a-box'
 //! simply plug in a mock server as a chain conductor and provide some values
-use std::sync::Arc;
 
 use zcash_client_backend::PoolType;
 // use zcash_client_backend::PoolType::Shielded;
@@ -10,7 +9,6 @@ use zcash_client_backend::ShieldedProtocol;
 // use zcash_client_backend::ShieldedProtocol::Sapling;
 // use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
-use crate::lightclient::LightClient;
 // use crate::wallet::data::summaries::SelfSendValueTransfer;
 // use crate::wallet::data::summaries::SentValueTransfer;
 // use crate::wallet::data::summaries::ValueTransferKind;
@@ -18,7 +16,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 // use crate::testutils::chain_generics::with_assertions;
 use crate::testutils::fee_tables;
-// use crate::testutils::lightclient::from_inputs;
+use crate::testutils::lightclient::from_inputs;
 
 /// Fixture for testing various vt transactions
 pub async fn create_various_value_transfers<CC>()
@@ -393,47 +391,43 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
 }
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn to_pool_unfunded_error<CC>(pool: PoolType, _try_amount: u64)
+pub async fn to_pool_unfunded_error<CC>(pool: PoolType, try_amount: u64)
 where
     CC: ConductChain,
 {
     let mut environment = CC::setup().await;
 
-    let secondary = environment.create_client().await;
+    let mut secondary = environment.create_client().await;
     let tertiary = environment.create_client().await;
 
-    let ref_secondary: Arc<LightClient> = Arc::new(secondary);
-    let _ref_tertiary: Arc<LightClient> = Arc::new(tertiary);
+    secondary.sync_and_await(false).await.unwrap();
 
-    ref_secondary.do_sync(false).await.unwrap();
+    let expected_fee = fee_tables::one_to_one(None, pool, true);
 
-    let _expected_fee = fee_tables::one_to_one(None, pool, true);
-
-    // FIXME: zingo2
-    // assert_eq!(
-    //     from_inputs::propose(
-    //         &ref_secondary,
-    //         vec![(
-    //             ref_tertiary
-    //                 .wallet
-    //                 .lock()
-    //                 .await
-    //                 .get_first_address(pool)
-    //                 .unwrap()
-    //                 .as_str(),
-    //             try_amount,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap_err()
-    //     .to_string(),
-    //     format!(
-    //         "Insufficient balance (have {}, need {} including fee)",
-    //         0,
-    //         try_amount + expected_fee
-    //     )
-    // );
+    assert_eq!(
+        from_inputs::propose(
+            &secondary,
+            vec![(
+                tertiary
+                    .wallet
+                    .lock()
+                    .await
+                    .get_first_address(pool)
+                    .unwrap()
+                    .as_str(),
+                try_amount,
+                None,
+            )],
+        )
+        .await
+        .unwrap_err()
+        .to_string(),
+        format!(
+            "Insufficient balance (have {}, need {} including fee)",
+            0,
+            try_amount + expected_fee
+        )
+    );
 }
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.

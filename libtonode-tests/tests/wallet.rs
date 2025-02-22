@@ -309,10 +309,10 @@ mod load_wallet {
         // interrupting send, it made it immediately obvious that this was
         // the wrong height to use!  The correct height is the
         // "mempool height" which is the server_height + 1
-        let (regtest_manager, _cph, faucet, recipient) =
+        let (regtest_manager, _cph, mut faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         // Ensure that the client has confirmed spendable funds
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 5)
             .await
             .unwrap();
 

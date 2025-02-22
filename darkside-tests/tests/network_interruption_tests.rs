@@ -30,7 +30,7 @@ async fn interrupt_initial_tree_fetch() {
         .await
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
+    let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
     let mut cond_log =
@@ -62,7 +62,7 @@ async fn interrupt_initial_tree_fetch() {
         println!("aborted proxy");
     });
     println!("spawned abortion task");
-    let result = light_client.do_sync(true).await;
+    let result = light_client.sync_and_await(true).await;
     assert_eq!(result.unwrap_err(),"status: Unavailable, message: \"error trying to connect: tcp connect error: Connection refused (os error 111)\", details: [], metadata: MetadataMap { headers: {} }");
 }
 
@@ -86,11 +86,12 @@ async fn shielded_note_marked_as_change_chainbuild() {
         scenario
             .stage_and_apply_blocks(thousands_blocks_count * 1000 - 2, 0)
             .await;
-        scenario.get_faucet().do_sync(false).await.unwrap();
+        scenario.get_faucet().sync_and_await(false).await.unwrap();
+        let recipient_addr = get_base_address_macro!(scenario.get_lightclient(0), "sapling");
         scenario
             .send_and_write_transaction(
                 DarksideSender::Faucet,
-                &get_base_address_macro!(scenario.get_lightclient(0), "sapling"),
+                &recipient_addr,
                 50_000,
                 &chainbuild_file,
             )
@@ -98,7 +99,11 @@ async fn shielded_note_marked_as_change_chainbuild() {
         scenario
             .apply_blocks(thousands_blocks_count * 1000 - 1)
             .await;
-        scenario.get_lightclient(0).do_sync(false).await.unwrap();
+        scenario
+            .get_lightclient(0)
+            .sync_and_await(false)
+            .await
+            .unwrap();
         scenario
             .shield_and_write_transaction(DarksideSender::IndexedClient(0), &chainbuild_file)
             .await;

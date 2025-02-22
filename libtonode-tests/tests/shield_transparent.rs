@@ -4,7 +4,7 @@ use zingolib::testutils::{lightclient::from_inputs, scenarios::faucet_recipient_
 #[tokio::test]
 #[ignore]
 async fn shield_transparent() {
-    let (regtest_manager, _cph, faucet, recipient) = faucet_recipient_default().await;
+    let (regtest_manager, _cph, faucet, mut recipient) = faucet_recipient_default().await;
     let transparent_funds = 100_000;
 
     println!(
@@ -32,7 +32,7 @@ async fn shield_transparent() {
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
     );
-    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
 
@@ -53,7 +53,7 @@ async fn shield_transparent() {
         .complete_and_broadcast_stored_proposal()
         .await
         .unwrap();
-    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
 

@@ -3,7 +3,6 @@
 
 #![warn(missing_docs)]
 
-pub mod interrupts;
 pub mod scenarios;
 
 // use crate::lightclient::describe::UAReceivers;
@@ -30,7 +29,6 @@ use crate::lightclient::LightClient;
 use json::JsonValue;
 // use log::debug;
 use regtest::RegtestManager;
-use tokio::time::sleep;
 
 pub mod assertions;
 pub mod chain_generics;
@@ -79,15 +77,6 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .unwrap()
 }
 
-async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
-    client.do_sync(false).await?;
-    Ok(client
-        .do_wallet_last_scanned_height()
-        .await
-        .as_u32()
-        .unwrap())
-}
-
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     let temp_tips = manager.get_chain_tip().unwrap().stdout;
     let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
@@ -104,7 +93,7 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
         .expect("Called for side effect, failed!");
     let mut count = 0;
     while poll_server_height(manager).as_fixed_point_u64(2).unwrap() < target {
-        sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         count = dbg!(count + 1);
     }
 }
@@ -250,14 +239,14 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
 
 /// This function increases the chain height reliably (with polling) but
 /// it _also_ ensures that the client state is synced.
-/// Unsynced clients are very interesting to us.  See increate_server_height
+/// Unsynced clients are very interesting to us.  See increase_server_height
 /// to reliably increase the server without syncing the client
 pub async fn increase_height_and_wait_for_client(
     manager: &RegtestManager,
-    client: &LightClient,
+    client: &mut LightClient,
     n: u32,
 ) -> Result<(), String> {
-    wait_until_client_reaches_block_height(
+    sync_to_target_height(
         client,
         generate_n_blocks_return_new_height(manager, n)
             .await
@@ -280,19 +269,18 @@ pub async fn generate_n_blocks_return_new_height(
     Ok(target)
 }
 
-/// will hang if RegtestManager does not reach target_block_height
-pub async fn wait_until_client_reaches_block_height(
-    client: &LightClient,
+/// Will hang if chain does not reach `target_block_height`
+pub async fn sync_to_target_height(
+    client: &mut LightClient,
     target_block_height: u32,
 ) -> Result<(), String> {
-    while check_wallet_chainheight_value(client, target_block_height).await? {
-        sleep(Duration::from_millis(50)).await;
+    while u32::from(client.wallet.lock().await.sync_state.fully_scanned_height())
+        < target_block_height
+    {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        client.sync_and_await(false).await.unwrap();
     }
     Ok(())
-}
-
-async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
-    Ok(get_synced_wallet_height(client).await? != target)
 }
 
 /// TODO: Add Doc Comment Here!
@@ -615,7 +603,7 @@ pub async fn check_proxy_server_works() {
     let (_proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(faucet, HashMap::new());
     proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
     tokio::task::spawn(async move {
-        sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         println!("Wakening proxy!");
         proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
     });

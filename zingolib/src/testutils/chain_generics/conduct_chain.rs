@@ -61,11 +61,11 @@ pub trait ConductChain {
 
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, _value: u64) -> LightClient {
-        let faucet = self.create_faucet().await;
-        let recipient = self.create_client().await;
+        let mut faucet = self.create_faucet().await;
+        let mut recipient = self.create_client().await;
 
         self.bump_chain().await;
-        faucet.do_sync(false).await.unwrap();
+        faucet.sync_and_await(false).await.unwrap();
 
         // FIXME: zingo2
         // from_inputs::quick_send(
@@ -81,7 +81,7 @@ pub trait ConductChain {
 
         self.bump_chain().await;
 
-        recipient.do_sync(false).await.unwrap();
+        recipient.sync_and_await(false).await.unwrap();
 
         recipient
     }

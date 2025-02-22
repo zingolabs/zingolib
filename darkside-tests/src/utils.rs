@@ -724,13 +724,13 @@ pub mod scenarios {
         pub fn get_regtest_network(&self) -> &RegtestNetwork {
             &self.regtest_network
         }
-        pub fn get_faucet(&self) -> &LightClient {
+        pub fn get_faucet(&mut self) -> &mut LightClient {
             self.faucet
-                .as_ref()
+                .as_mut()
                 .expect("scenario should have a faucet lightclient")
         }
-        pub fn get_lightclient(&self, lightclient_index: u64) -> &LightClient {
-            &self.lightclients[lightclient_index as usize]
+        pub fn get_lightclient(&mut self, lightclient_index: u64) -> &mut LightClient {
+            &mut self.lightclients[lightclient_index as usize]
         }
         pub fn get_staged_blockheight(&self) -> &BlockHeight {
             &self.staged_blockheight

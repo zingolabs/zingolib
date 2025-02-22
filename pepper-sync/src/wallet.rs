@@ -196,7 +196,7 @@ impl Default for SyncState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncMode {
     /// Sync is not running.
-    Stopped,
+    NotRunning,
     /// Sync is held in a paused state and the wallet guard is dropped.
     Paused,
     /// Sync is running.
@@ -209,7 +209,7 @@ impl SyncMode {
     /// Returns `None` if `mode` is not a valid enum variant.
     pub fn from_u8(mode: u8) -> Option<Self> {
         match mode {
-            0 => Some(Self::Stopped),
+            0 => Some(Self::NotRunning),
             1 => Some(Self::Paused),
             2 => Some(Self::Running),
             _ => None,
@@ -284,6 +284,49 @@ impl From<SyncStatus> for json::JsonValue {
             "scanned_orchard_outputs" => value.scanned_orchard_outputs,
             "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
             "percentage_outputs_scanned" => value.percentage_outputs_scanned,
+        }
+    }
+}
+
+/// Returned when [`crate::sync::sync`] successfully completes.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct SyncResult {
+    pub sync_start_height: BlockHeight,
+    pub sync_end_height: BlockHeight,
+    pub scanned_blocks: u32,
+    pub scanned_sapling_outputs: u32,
+    pub scanned_orchard_outputs: u32,
+}
+
+impl std::fmt::Display for SyncResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                sync start height: {}
+                sync end height: {}
+                scanned blocks: {}
+                scanned sapling outputs: {}
+                scanned orchard outputs: {}        
+            }}",
+            self.sync_start_height,
+            self.sync_end_height,
+            self.scanned_blocks,
+            self.scanned_sapling_outputs,
+            self.scanned_orchard_outputs
+        )
+    }
+}
+
+impl From<SyncResult> for json::JsonValue {
+    fn from(value: SyncResult) -> Self {
+        json::object! {
+            "sync_start_height" => u32::from(value.sync_start_height),
+            "sync_end_height" => u32::from(value.sync_end_height),
+            "scanned_blocks" => value.scanned_blocks,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
         }
     }
 }

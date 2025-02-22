@@ -28,17 +28,16 @@ async fn simple_sync() {
         .await
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
+    let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
 
-    let result = light_client.do_sync(true).await.unwrap();
+    let result = light_client.sync_and_await(true).await.unwrap();
 
     println!("{}", result);
 
-    assert!(result.success);
-    assert_eq!(result.latest_block, 3);
-    assert_eq!(result.total_blocks_synced, 3);
+    assert_eq!(result.sync_end_height, 3.into());
+    assert_eq!(result.scanned_blocks, 3);
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -68,10 +67,11 @@ async fn reorg_receipt_sync_generic() {
         .unwrap();
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
-    light_client.do_sync(false).await.unwrap();
+    let mut light_client =
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+            .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+            .await;
+    light_client.sync_and_await(false).await.unwrap();
 
     assert_eq!(
         light_client.do_balance().await,
@@ -90,7 +90,7 @@ async fn reorg_receipt_sync_generic() {
     prepare_darksidewalletd(server_id.clone(), false)
         .await
         .unwrap();
-    light_client.do_sync(false).await.unwrap();
+    light_client.sync_and_await(false).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
