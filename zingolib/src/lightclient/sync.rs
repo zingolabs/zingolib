@@ -3,8 +3,6 @@
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
 use std::sync::atomic;
-use std::sync::atomic::AtomicU8;
-use std::sync::Arc;
 use std::time::Duration;
 
 use log::debug;
@@ -50,7 +48,7 @@ impl LightClient {
             let wallet = self.wallet.clone();
             tokio::spawn(async move {
                 loop {
-                    if LightClient::sync_mode(sync_mode.clone()) == SyncMode::NotRunning {
+                    if SyncMode::from_atomic_u8(sync_mode.clone()) == SyncMode::NotRunning {
                         break;
                     };
 
@@ -65,6 +63,7 @@ impl LightClient {
     }
 
     /// Clear the wallet state and rescan from wallet birthday.
+    // TODO: rescan without awaiting
     pub async fn do_rescan(&mut self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
@@ -77,16 +76,21 @@ impl LightClient {
         response
     }
 
-    /// Creates [`pepper_sync::wallet::SyncMode`] from an atomic u8.
-    pub fn sync_mode(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
-        SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
-            .expect("this library does not allow setting of non-valid sync mode variants")
+    /// Returns the lightclient's sync mode in non-atomic (enum) form.
+    pub fn sync_mode(&self) -> SyncMode {
+        SyncMode::from_atomic_u8(self.sync_mode.clone())
     }
 
-    // TODO: split into separate functions with checks
-    pub fn set_sync_mode(&self, sync_mode: SyncMode) {
+    /// Pause the sync engine, releasing the wallet lock until [`self::resume_sync`] is called.
+    pub fn pause_sync(&self) {
         self.sync_mode
-            .store(sync_mode as u8, atomic::Ordering::Release);
+            .store(SyncMode::Paused as u8, atomic::Ordering::Release);
+    }
+
+    /// Resume scanning after [`self::pause_sync`] has been called.
+    pub fn resume_sync(&self) {
+        self.sync_mode
+            .store(SyncMode::Running as u8, atomic::Ordering::Release);
     }
 }
 

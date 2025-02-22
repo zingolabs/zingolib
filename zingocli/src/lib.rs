@@ -6,7 +6,6 @@
 
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
 
 use log::{error, info};
 
@@ -242,7 +241,7 @@ fn start_interactive(
 
 /// TODO: Add Doc Comment Here!
 pub fn command_loop(
-    lightclient: Arc<LightClient>,
+    mut lightclient: LightClient,
 ) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
@@ -251,7 +250,7 @@ pub fn command_loop(
         while let Ok((cmd, args)) = command_receiver.recv() {
             let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
 
-            let cmd_response = commands::do_user_command(&cmd, &args[..], lightclient.as_ref());
+            let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
             resp_transmitter.send(cmd_response).unwrap();
 
             if cmd == "quit" {
@@ -439,16 +438,16 @@ pub fn startup(
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
-    let lightclient = match filled_template.from.clone() {
-        Some(phrase) => Arc::new(LightClient::create_from_wallet_base(
+    let mut lightclient = match filled_template.from.clone() {
+        Some(phrase) => LightClient::create_from_wallet_base(
             WalletBase::from_string(phrase),
             &config,
             filled_template.birthday,
             false,
-        )?),
+        )?,
         None => {
             if config.wallet_path_exists() {
-                Arc::new(LightClient::read_wallet_from_disk(&config)?)
+                LightClient::read_wallet_from_disk(&config)?
             } else {
                 println!("Creating a new wallet");
                 // Call the lightwalletd server to get the current block-height
@@ -456,10 +455,7 @@ pub fn startup(
                 let server_uri = config.get_lightwalletd_uri();
                 let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(
-                    &config,
-                    block_height?.saturating_sub(100),
-                )?)
+                LightClient::new(&config, block_height?.saturating_sub(100))?
             }
         }
     };
@@ -478,7 +474,7 @@ pub fn startup(
 
     // At startup, run a sync.
     if filled_template.sync {
-        let update = commands::do_user_command("sync", &[], lightclient.as_ref());
+        let update = commands::do_user_command("sync", &[], &mut lightclient);
         println!("{}", update);
     }
 

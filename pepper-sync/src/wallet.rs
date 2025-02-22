@@ -7,6 +7,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
     ops::Range,
+    sync::{
+        atomic::{self, AtomicU8},
+        Arc,
+    },
 };
 
 use incrementalmerkletree::Position;
@@ -214,6 +218,18 @@ impl SyncMode {
             2 => Some(Self::Running),
             _ => None,
         }
+    }
+
+    /// Creates [`crate::wallet::SyncMode`] from an atomic u8.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
+    /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
+    /// [`crate::wallet::SyncMode`].
+    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
+        SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+            .expect("this library does not allow setting of non-valid sync mode variants")
     }
 }
 
