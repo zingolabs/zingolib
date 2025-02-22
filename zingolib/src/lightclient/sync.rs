@@ -2,10 +2,13 @@
 //! LightClient sync stuff.
 //! the difference between this and wallet/sync.rs is that these can interact with the network layer.
 
+use std::borrow::BorrowMut;
 use std::sync::atomic;
 use std::time::Duration;
 
+use futures::FutureExt;
 use log::debug;
+use pepper_sync::error::SyncError;
 use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
@@ -92,6 +95,30 @@ impl LightClient {
         self.sync_mode
             .store(SyncMode::Running as u8, atomic::Ordering::Release);
     }
+
+    /// Polls the sync task, returning [`crate::lightclient::SyncPollReport`].
+    pub fn poll_sync(&mut self) -> SyncPollReport {
+        if let Some(mut sync_handle) = self.sync_handle.take() {
+            if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
+                SyncPollReport::Ready(sync_result.unwrap())
+            } else {
+                self.sync_handle = Some(sync_handle);
+                SyncPollReport::NotReady
+            }
+        } else {
+            SyncPollReport::NoHandle
+        }
+    }
+}
+
+/// Returned from [`crate::lightclient::LightClient::poll_sync`].
+pub enum SyncPollReport {
+    /// Sync task has not been launched.
+    NoHandle,
+    /// Sync task is not complete.
+    NotReady,
+    /// Sync task has completed successfully or failed.
+    Ready(Result<SyncResult, SyncError>),
 }
 
 #[cfg(test)]

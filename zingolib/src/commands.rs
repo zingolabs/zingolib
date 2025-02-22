@@ -2,6 +2,7 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
+use crate::lightclient::sync::SyncPollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -356,20 +357,20 @@ impl Command for SyncCommand {
             `run` starts or resumes sync.
             `pause` pauses scanning until sync is resumed.
             `status` returns a report of the wallet's current sync status.
-            `result` reports whether the sync task has finished and if complete, returns a sync result. If sync failed
-            will return the error instead.
+            `poll` polls the sync task handle, returning a sync result if complete. If sync failed, returns the error
+            instead.
 
             Usage:
             sync run
             sync pause
             sync status
-            sync result
+            sync poll
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Sync the wallet with the blockchain"
+        "Sync the wallet to the latest state of the blockchain."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -381,17 +382,17 @@ impl Command for SyncCommand {
             "run" => {
                 if lightclient.sync_mode() == SyncMode::Paused {
                     lightclient.resume_sync();
-                    "Resuming sync...".to_string()
+                    "Resuming sync task...".to_string()
                 } else {
                     if let Err(e) = RT.block_on(async move { lightclient.sync(true).await }) {
                         return format!("Error: {}", e.to_string());
                     }
-                    "Sync running...".to_string()
+                    "Launching sync task...".to_string()
                 }
             }
             "pause" => {
                 lightclient.pause_sync();
-                "Pausing sync...".to_string()
+                "Pausing sync task...".to_string()
             }
             "status" => RT
                 .block_on(async move {
@@ -400,10 +401,14 @@ impl Command for SyncCommand {
                     )
                 })
                 .pretty(2),
-            "result" => RT.block_on(async move {
-                // TODO: check sync handle and report
-                "".to_string()
-            }),
+            "poll" => match lightclient.poll_sync() {
+                SyncPollReport::NoHandle => "Sync task has not been launched.".to_string(),
+                SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
+                SyncPollReport::Ready(sync_result) => match sync_result {
+                    Ok(success) => success.to_string(),
+                    Err(failure) => failure.to_string(),
+                },
+            },
             _ => self.help().to_string(),
         }
     }
