@@ -51,6 +51,21 @@ pub enum SpendStatus {
     Spent(TxId),
 }
 
+impl SpendStatus {
+    pub fn is_unspent(&self) -> bool {
+        matches!(self, Self::Unspent)
+    }
+
+    pub fn is_pending_spent(&self) -> bool {
+        matches!(self, Self::CalculatedSpent(_))
+            || matches!(self, Self::TransmittedSpent(_))
+            || matches!(self, Self::MempoolSpent(_))
+    }
+    pub fn is_confirmed_spent(&self) -> bool {
+        matches!(self, Self::Spent(_))
+    }
+}
+
 impl std::fmt::Display for SpendStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -91,7 +106,7 @@ impl LightWallet {
     }
 
     /// Gets all outputs of a given type in the wallet.
-    pub(super) fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
+    pub fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
         self.wallet_transactions
             .values()
             .flat_map(|transaction| Op::transaction_outputs(transaction))
