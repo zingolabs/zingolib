@@ -640,7 +640,7 @@ pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildProcessHandler) {
+pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
@@ -654,18 +654,17 @@ pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildP
         .client_builder
         .build_faucet(false, regtest_network)
         .await;
-    let _recipient = scenario_builder
+    let recipient = scenario_builder
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     faucet.sync_and_await().await.unwrap();
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+    )
+    .await
+    .unwrap();
     scenario_builder
         .regtest_manager
         .generate_n_blocks(1)
@@ -678,7 +677,7 @@ pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildP
 
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_with_3_txs_mobileclient(
-    _value: u64,
+    value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
@@ -701,43 +700,40 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     // received from a faucet
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to a faucet
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(faucet, "unified"),
-    //         value.checked_div(10).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(faucet, "unified"),
+            value.checked_div(10).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self sapling
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "sapling"),
-    //         value.checked_div(10).unwrap(),
-    //         Some("note-to-self test memo"),
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(recipient, "sapling"),
+            value.checked_div(10).unwrap(),
+            Some("note-to-self test memo"),
+        )],
+    )
+    .await
+    .unwrap();
     scenario_builder
         .regtest_manager
         .generate_n_blocks(4)
@@ -749,7 +745,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 }
 
 /// This scenario funds a client with transparent funds.
-pub async fn funded_transparent_mobileclient(_value: u64) -> (RegtestManager, ChildProcessHandler) {
+pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
@@ -772,17 +768,16 @@ pub async fn funded_transparent_mobileclient(_value: u64) -> (RegtestManager, Ch
         .unwrap();
 
     // received from a faucet to transparent
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "transparent"),
-    //         value.checked_div(4).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "transparent"),
+            value.checked_div(4).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
@@ -800,7 +795,7 @@ pub async fn funded_transparent_mobileclient(_value: u64) -> (RegtestManager, Ch
 
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
-    _value: u64,
+    value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
     let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
@@ -823,113 +818,105 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // received from a faucet to orchard
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "unified"),
-    //         value.checked_div(2).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            value.checked_div(2).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet to sapling
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "sapling"),
-    //         value.checked_div(4).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "sapling"),
+            value.checked_div(4).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet to transparent
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "transparent"),
-    //         value.checked_div(4).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &faucet,
+        vec![(
+            &get_base_address_macro!(recipient, "transparent"),
+            value.checked_div(4).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to a faucet
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(faucet, "unified"),
-    //         value.checked_div(10).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(faucet, "unified"),
+            value.checked_div(10).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self orchard
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "unified"),
-    //         value.checked_div(10).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(recipient, "unified"),
+            value.checked_div(10).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self sapling
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "sapling"),
-    //         value.checked_div(10).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(recipient, "sapling"),
+            value.checked_div(10).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self transparent
-    // FIXME: zingo2
-    // super::lightclient::from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(recipient, "transparent"),
-    //         value.checked_div(10).unwrap(),
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
+    super::lightclient::from_inputs::quick_send(
+        &recipient,
+        vec![(
+            &get_base_address_macro!(recipient, "transparent"),
+            value.checked_div(10).unwrap(),
+            None,
+        )],
+    )
+    .await
+    .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // shield transparent
-    // FIXME: zingo2
-    // recipient.quick_shield().await.unwrap();
+    recipient.quick_shield().await.unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
