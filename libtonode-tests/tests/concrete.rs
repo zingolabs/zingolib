@@ -2758,7 +2758,8 @@ mod slow {
             }
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.do_rescan().await.unwrap();
+            faucet.rescan(false).await.unwrap();
+            faucet.await_sync().await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
@@ -2799,7 +2800,8 @@ mod slow {
             .unwrap();
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.do_rescan().await.unwrap();
+            faucet.rescan(false).await.unwrap();
+            faucet.await_sync().await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
@@ -2823,7 +2825,8 @@ mod slow {
             .unwrap();
             let pre_rescan_transactions = recipient.transaction_summaries().await;
             let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
-            recipient.do_rescan().await.unwrap();
+            recipient.rescan(false).await.unwrap();
+            recipient.await_sync().await.unwrap();
             let post_rescan_transactions = recipient.transaction_summaries().await;
             let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);

@@ -62,7 +62,10 @@ async fn interrupt_initial_tree_fetch() {
         println!("aborted proxy");
     });
     println!("spawned abortion task");
-    let result = light_client.sync_and_await(true).await;
+    let result = light_client
+        .sync_and_await(true)
+        .await
+        .map_err(|e| e.to_string());
     assert_eq!(result.unwrap_err(),"status: Unavailable, message: \"error trying to connect: tcp connect error: Connection refused (os error 111)\", details: [], metadata: MetadataMap { headers: {} }");
 }
 

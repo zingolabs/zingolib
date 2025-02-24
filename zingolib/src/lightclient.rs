@@ -22,6 +22,8 @@ use crate::wallet::{
     keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
 };
 
+pub mod error;
+
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
 pub struct LightWalletSendProgress {
@@ -230,14 +232,9 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient connects one LightWallet to one indexer server via gRPC.
-///  1. initialization of stored state
-///      * from seed
-///      * from keys
-///      * from wallets
-///      * from a fresh start with reasonable defaults
-///  2. synchronization of the client with the state of the blockchain via a gRPC server
-///      *
+/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
+/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
+///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated

@@ -1,4 +1,4 @@
-//! Trait implementations for sync interface
+//! Trait implementations for interfacing [`crate::wallet::LightWallet`] with [`pepper_sync`] sync engine.
 
 use std::collections::{BTreeMap, HashMap};
 

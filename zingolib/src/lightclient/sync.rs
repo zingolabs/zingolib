@@ -1,35 +1,19 @@
-//! AWISOTT
-//! LightClient sync stuff.
-//! the difference between this and wallet/sync.rs is that these can interact with the network layer.
+//! Sync implementations for [crate::lightclient::LightClient] and related types.
 
 use std::borrow::BorrowMut;
 use std::sync::atomic;
 use std::time::Duration;
 
 use futures::FutureExt;
-use log::debug;
 use pepper_sync::error::SyncError;
 use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
+use super::error::LightClientError;
 use super::LightClient;
 use super::SyncResult;
 
 impl LightClient {
-    /// Calls [`self::sync`] and awaits the handle.
-    // TODO: error handling, concrete error types
-    pub async fn sync_and_await(&mut self, print_updates: bool) -> Result<SyncResult, String> {
-        self.sync(print_updates).await.map_err(|e| e.to_string())?;
-
-        Ok(self
-            .sync_handle
-            .take()
-            .expect("handle should always exist after calling `sync`")
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?)
-    }
-
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
     /// `sync_handle` field.
     pub async fn sync(&mut self, print_updates: bool) -> Result<(), GetClientError> {
@@ -65,18 +49,10 @@ impl LightClient {
         Ok(())
     }
 
-    /// Clear the wallet state and rescan from wallet birthday.
-    // TODO: rescan without awaiting
-    pub async fn do_rescan(&mut self) -> Result<SyncResult, String> {
-        debug!("Rescan starting");
-
+    /// Clear the wallet data obtained from the blockchain and launch sync from wallet birthday.
+    pub async fn rescan(&mut self, print_updates: bool) -> Result<(), GetClientError> {
         self.wallet.lock().await.clear_all();
-
-        let response = self.sync_and_await(false).await;
-
-        debug!("Rescan finished");
-
-        response
+        self.sync(print_updates).await
     }
 
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
@@ -84,23 +60,23 @@ impl LightClient {
         SyncMode::from_atomic_u8(self.sync_mode.clone())
     }
 
-    /// Pause the sync engine, releasing the wallet lock until [`self::resume_sync`] is called.
+    /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
     pub fn pause_sync(&self) {
         self.sync_mode
             .store(SyncMode::Paused as u8, atomic::Ordering::Release);
     }
 
-    /// Resume scanning after [`self::pause_sync`] has been called.
+    /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
     pub fn resume_sync(&self) {
         self.sync_mode
             .store(SyncMode::Running as u8, atomic::Ordering::Release);
     }
 
-    /// Polls the sync task, returning [`crate::lightclient::SyncPollReport`].
+    /// Polls the sync task, returning [`self::SyncPollReport`].
     pub fn poll_sync(&mut self) -> SyncPollReport {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
-                SyncPollReport::Ready(sync_result.unwrap())
+                SyncPollReport::Ready(sync_result.expect("task panicked"))
             } else {
                 self.sync_handle = Some(sync_handle);
                 SyncPollReport::NotReady
@@ -108,6 +84,27 @@ impl LightClient {
         } else {
             SyncPollReport::NoHandle
         }
+    }
+
+    /// Awaits until sync has completed
+    /// Returns [`pepper_sync::wallet::SyncResult`] if successful.
+    /// Returns [`crate::lightclient::error::LightClientError`] on failure.
+    pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
+        Ok(self
+            .sync_handle
+            .take()
+            .ok_or(LightClientError::SyncNotRunning)?
+            .await
+            .expect("task panicked")?)
+    }
+
+    /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
+    pub async fn sync_and_await(
+        &mut self,
+        print_updates: bool,
+    ) -> Result<SyncResult, LightClientError> {
+        self.sync(print_updates).await?;
+        self.await_sync().await
     }
 }
 

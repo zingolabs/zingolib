@@ -258,8 +258,7 @@ where
             .expect("should be non-empty after syncing")
             .block_range()
             .end
-            - 1)
-        .into(),
+            - 1),
         scanned_blocks: sync_status.scanned_blocks,
         scanned_sapling_outputs: sync_status.scanned_sapling_outputs,
         scanned_orchard_outputs: sync_status.scanned_orchard_outputs,

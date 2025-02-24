@@ -375,7 +375,8 @@ impl Command for SyncCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         if args.len() != 1 {
-            return self.help().to_string();
+            return "Error: sync command expects 1 argument. Type \"sync help\" for usage."
+                .to_string();
         }
 
         match args[0] {
@@ -385,7 +386,7 @@ impl Command for SyncCommand {
                     "Resuming sync task...".to_string()
                 } else {
                     if let Err(e) = RT.block_on(async move { lightclient.sync(true).await }) {
-                        return format!("Error: {}", e.to_string());
+                        return format!("Error: {e}");
                     }
                     "Launching sync task...".to_string()
                 }
@@ -404,12 +405,12 @@ impl Command for SyncCommand {
             "poll" => match lightclient.poll_sync() {
                 SyncPollReport::NoHandle => "Sync task has not been launched.".to_string(),
                 SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
-                SyncPollReport::Ready(sync_result) => match sync_result {
-                    Ok(success) => success.to_string(),
-                    Err(failure) => format!("Error: {}", failure.to_string()),
+                SyncPollReport::Ready(result) => match result {
+                    Ok(sync_result) => sync_result.to_string(),
+                    Err(e) => format!("Error: {e}"),
                 },
             },
-            _ => self.help().to_string(),
+            _ => "Error: invalid sub-command. Type \"sync help\" for usage.".to_string(),
         }
     }
 }
@@ -442,21 +443,31 @@ struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Rescan the wallet, rescanning all blocks for new transactions
+            Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
+            birthday.
+            
             Usage:
             rescan
-
-            This command will download all blocks since the initial block again from the light client server
-            and attempt to scan each block for transactions belonging to the wallet.
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Rescan the wallet, downloading and scanning all blocks and transactions"
+        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
+        birthday."
     }
 
-    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        todo!()
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if !args.is_empty() {
+            return "Error: rescan command expects no arguments. Type \"rescan help\" for usage."
+                .to_string();
+        }
+
+        RT.block_on(async move {
+            match lightclient.rescan(true).await {
+                Ok(_) => "Launching rescan...".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
