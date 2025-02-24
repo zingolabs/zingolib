@@ -278,7 +278,7 @@ pub async fn sync_to_target_height(
         < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        client.sync_and_await(false).await.unwrap();
+        client.sync_and_await().await.unwrap();
     }
     Ok(())
 }

@@ -63,7 +63,7 @@ async fn interrupt_initial_tree_fetch() {
     });
     println!("spawned abortion task");
     let result = light_client
-        .sync_and_await(true)
+        .sync_and_await()
         .await
         .map_err(|e| e.to_string());
     assert_eq!(result.unwrap_err(),"status: Unavailable, message: \"error trying to connect: tcp connect error: Connection refused (os error 111)\", details: [], metadata: MetadataMap { headers: {} }");
@@ -89,7 +89,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
         scenario
             .stage_and_apply_blocks(thousands_blocks_count * 1000 - 2, 0)
             .await;
-        scenario.get_faucet().sync_and_await(false).await.unwrap();
+        scenario.get_faucet().sync_and_await().await.unwrap();
         let recipient_addr = get_base_address_macro!(scenario.get_lightclient(0), "sapling");
         scenario
             .send_and_write_transaction(
@@ -102,11 +102,7 @@ async fn shielded_note_marked_as_change_chainbuild() {
         scenario
             .apply_blocks(thousands_blocks_count * 1000 - 1)
             .await;
-        scenario
-            .get_lightclient(0)
-            .sync_and_await(false)
-            .await
-            .unwrap();
+        scenario.get_lightclient(0).sync_and_await().await.unwrap();
         scenario
             .shield_and_write_transaction(DarksideSender::IndexedClient(0), &chainbuild_file)
             .await;

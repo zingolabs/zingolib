@@ -462,7 +462,7 @@ mod fast {
         let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
@@ -485,7 +485,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         let no_messages = &recipient.messages_containing(None).await;
 
@@ -510,7 +510,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         let single_message = &recipient.messages_containing(None).await;
 
@@ -689,7 +689,7 @@ mod fast {
         let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
@@ -722,7 +722,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         let value_transfers = &recipient.sorted_value_transfers(true).await;
         let value_transfers1 = &recipient.sorted_value_transfers(true).await;
@@ -817,7 +817,7 @@ mod fast {
         .await
         .unwrap();
 
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         let transactions = &recipient.transaction_summaries().await.0;
         transactions.iter().for_each(|tx| {
@@ -2109,7 +2109,7 @@ mod slow {
         let faucet_to_recipient_amount = 20_000u64;
         let recipient_to_faucet_amount = 5_000u64;
         // check start state
-        faucet.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         let wallet_height = faucet.do_wallet_last_scanned_height().await;
         assert_eq!(
             wallet_height.as_fixed_point_u64(0).unwrap(),
@@ -2140,7 +2140,7 @@ mod slow {
         )
         .await
         .unwrap();
-        faucet.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         let faucet_orch = three_blocks_reward + orch_change + u64::from(MINIMUM_FEE);
 
         println!(
@@ -2169,7 +2169,7 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        recipient.sync_and_await(true).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         let faucet_final_orch = faucet_orch
             + recipient_to_faucet_amount
@@ -2348,7 +2348,7 @@ mod slow {
         )
         .await
         .unwrap();
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         from_inputs::quick_send(
             &faucet,
             vec![
@@ -2758,7 +2758,7 @@ mod slow {
             }
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.rescan(false).await.unwrap();
+            faucet.rescan().await.unwrap();
             faucet.await_sync().await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
@@ -2800,7 +2800,7 @@ mod slow {
             .unwrap();
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.rescan(false).await.unwrap();
+            faucet.rescan().await.unwrap();
             faucet.await_sync().await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
@@ -2825,7 +2825,7 @@ mod slow {
             .unwrap();
             let pre_rescan_transactions = recipient.transaction_summaries().await;
             let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
-            recipient.rescan(false).await.unwrap();
+            recipient.rescan().await.unwrap();
             recipient.await_sync().await.unwrap();
             let post_rescan_transactions = recipient.transaction_summaries().await;
             let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
@@ -3712,8 +3712,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await(true).await.unwrap();
-        faucet.sync_and_await(true).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         for _ in 0..2 {
             from_inputs::quick_send(&faucet, vec![(recipient_addr_ua.as_str(), 40_000, None)])
@@ -3725,8 +3725,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await(true).await.unwrap();
-        faucet.sync_and_await(true).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         from_inputs::quick_send(&recipient, vec![(faucet_addr_ua.as_str(), 50_000, None)])
             .await
@@ -3736,8 +3736,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await(true).await.unwrap();
-        faucet.sync_and_await(true).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
+        faucet.sync_and_await().await.unwrap();
     }
 
     // FIXME:
@@ -4192,7 +4192,7 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         recipient
             .propose_send_all(
@@ -4209,7 +4209,7 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         assert_eq!(
             recipient

@@ -400,7 +400,7 @@ where
     let mut secondary = environment.create_client().await;
     let tertiary = environment.create_client().await;
 
-    secondary.sync_and_await(false).await.unwrap();
+    secondary.sync_and_await().await.unwrap();
 
     let expected_fee = fee_tables::one_to_one(None, pool, true);
 

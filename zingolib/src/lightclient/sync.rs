@@ -2,7 +2,6 @@
 
 use std::borrow::BorrowMut;
 use std::sync::atomic;
-use std::time::Duration;
 
 use futures::FutureExt;
 use pepper_sync::error::SyncError;
@@ -16,7 +15,8 @@ use super::SyncResult;
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
     /// `sync_handle` field.
-    pub async fn sync(&mut self, print_updates: bool) -> Result<(), GetClientError> {
+    // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
+    pub async fn sync(&mut self) -> Result<(), GetClientError> {
         let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
             .get_client()
             .await?;
@@ -29,30 +29,13 @@ impl LightClient {
             );
         self.sync_handle = Some(sync_handle);
 
-        // TODO: replace this with calls to `sync status` in zingo-cli
-        if print_updates {
-            let sync_mode = self.sync_mode.clone();
-            let wallet = self.wallet.clone();
-            tokio::spawn(async move {
-                loop {
-                    if SyncMode::from_atomic_u8(sync_mode.clone()) == SyncMode::NotRunning {
-                        break;
-                    };
-
-                    let sync_status = pepper_sync::sync_status(&*wallet.lock().await).await;
-                    println!("{}", sync_status);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            });
-        }
-
         Ok(())
     }
 
     /// Clear the wallet data obtained from the blockchain and launch sync from wallet birthday.
-    pub async fn rescan(&mut self, print_updates: bool) -> Result<(), GetClientError> {
+    pub async fn rescan(&mut self) -> Result<(), GetClientError> {
         self.wallet.lock().await.clear_all();
-        self.sync(print_updates).await
+        self.sync().await
     }
 
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
@@ -99,11 +82,8 @@ impl LightClient {
     }
 
     /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
-    pub async fn sync_and_await(
-        &mut self,
-        print_updates: bool,
-    ) -> Result<SyncResult, LightClientError> {
-        self.sync(print_updates).await?;
+    pub async fn sync_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        self.sync().await?;
         self.await_sync().await
     }
 }
@@ -135,7 +115,7 @@ pub mod test {
 
         let mut lc = wallet_case.load_example_wallet_with_client().await;
 
-        let sync_result = lc.sync_and_await(false).await.unwrap();
+        let sync_result = lc.sync_and_await().await.unwrap();
         println!("{}", sync_result);
         println!("{:?}", lc.do_balance().await);
         lc

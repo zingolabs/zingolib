@@ -32,7 +32,7 @@ async fn simple_sync() {
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
         .await;
 
-    let result = light_client.sync_and_await(true).await.unwrap();
+    let result = light_client.sync_and_await().await.unwrap();
 
     println!("{}", result);
 
@@ -71,7 +71,7 @@ async fn reorg_receipt_sync_generic() {
         ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
             .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
             .await;
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
         light_client.do_balance().await,
@@ -90,7 +90,7 @@ async fn reorg_receipt_sync_generic() {
     prepare_darksidewalletd(server_id.clone(), false)
         .await
         .unwrap();
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {

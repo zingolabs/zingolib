@@ -160,7 +160,7 @@ where
 
     let option_recipient_mempool_outputs = if test_mempool {
         // mempool scan shows the same
-        sender.sync_and_await(false).await.unwrap();
+        sender.sync_and_await().await.unwrap();
 
         // let the mempool monitor get a chance
         // to listen
@@ -199,7 +199,7 @@ where
 
         let mut recipients_mempool_outputs: Vec<Vec<u64>> = vec![];
         for recipient in recipients.iter_mut() {
-            recipient.sync_and_await(false).await.unwrap();
+            recipient.sync_and_await().await.unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
@@ -236,7 +236,7 @@ where
 
     environment.bump_chain().await;
     // chain scan shows the same
-    sender.sync_and_await(false).await.unwrap();
+    sender.sync_and_await().await.unwrap();
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
@@ -271,7 +271,7 @@ where
 
     let mut recipients_confirmed_outputs = vec![];
     for recipient in recipients.iter_mut() {
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (

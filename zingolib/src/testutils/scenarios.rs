@@ -396,7 +396,7 @@ pub async fn faucet(
     )
     .await;
     let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-    faucet.sync_and_await(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     (
         sb.regtest_manager,
         sb.child_process_handler.unwrap(),
@@ -435,7 +435,7 @@ pub async fn faucet_recipient(
     )
     .await;
     let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-    faucet.sync_and_await(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
 
     let recipient = sb
         .client_builder
@@ -542,7 +542,7 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
-    faucet.sync_and_await(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     (
         regtest_manager,
         child_process_handler,
@@ -658,7 +658,7 @@ pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildP
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
-    faucet.sync_and_await(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     // FIXME: zingo2
     // super::lightclient::from_inputs::quick_send(
     //     &faucet,
@@ -968,7 +968,7 @@ pub mod chainload {
         let mut sb =
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
         let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         let recipient = sb
             .client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)

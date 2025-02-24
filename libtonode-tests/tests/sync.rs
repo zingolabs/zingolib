@@ -34,7 +34,7 @@ async fn sync_mainnet_test() {
     .await
     .unwrap();
 
-    lightclient.sync_and_await(false).await.unwrap();
+    lightclient.sync_and_await().await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -69,7 +69,7 @@ async fn sync_status() {
     .await
     .unwrap();
 
-    lightclient.sync_and_await(true).await.unwrap();
+    lightclient.sync_and_await().await.unwrap();
 }
 
 // temporary test for sync development
@@ -102,10 +102,10 @@ async fn sync_test() {
     // .unwrap();
 
     increase_server_height(&regtest_manager, 1).await;
-    recipient.sync_and_await(false).await.unwrap();
+    recipient.sync_and_await().await.unwrap();
     recipient.quick_shield().await.unwrap();
     increase_server_height(&regtest_manager, 1).await;
-    recipient.sync_and_await(true).await.unwrap();
+    recipient.sync_and_await().await.unwrap();
 
     // let wallet = recipient.wallet.lock().await;
     // dbg!(&wallet.wallet_transactions);

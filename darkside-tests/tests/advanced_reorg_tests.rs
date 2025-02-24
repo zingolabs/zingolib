@@ -44,7 +44,7 @@ async fn reorg_changes_incoming_tx_height() {
             )
             .await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -72,7 +72,7 @@ async fn reorg_changes_incoming_tx_height() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -201,7 +201,7 @@ async fn reorg_changes_incoming_tx_index() {
             )
             .await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -229,7 +229,7 @@ async fn reorg_changes_incoming_tx_index() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -357,7 +357,7 @@ async fn reorg_expires_incoming_tx() {
             )
             .await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -385,7 +385,7 @@ async fn reorg_expires_incoming_tx() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -536,7 +536,7 @@ async fn reorg_changes_outgoing_tx_height() {
             )
             .await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -583,7 +583,7 @@ async fn reorg_changes_outgoing_tx_height() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -641,7 +641,7 @@ async fn reorg_changes_outgoing_tx_height() {
 
     _ = connector.apply_staged(211).await;
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -789,7 +789,7 @@ async fn reorg_expires_outgoing_tx_height() {
         transparent_balance: Some(0),
     };
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
     let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
@@ -816,7 +816,7 @@ async fn reorg_expires_outgoing_tx_height() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -867,7 +867,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // this will remove the submitted transaction from our view of the blockchain
     _ = connector.apply_staged(245).await;
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -955,7 +955,7 @@ async fn reorg_changes_outgoing_tx_index() {
             )
             .await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -1002,7 +1002,7 @@ async fn reorg_changes_outgoing_tx_index() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(true).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -1069,7 +1069,7 @@ async fn reorg_changes_outgoing_tx_index() {
 
     _ = connector.apply_staged(312).await;
 
-    let reorg_sync_result = light_client.sync_and_await(true).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),

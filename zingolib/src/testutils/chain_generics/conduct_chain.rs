@@ -65,7 +65,7 @@ pub trait ConductChain {
         let mut recipient = self.create_client().await;
 
         self.bump_chain().await;
-        faucet.sync_and_await(false).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
 
         // FIXME: zingo2
         // from_inputs::quick_send(
@@ -81,7 +81,7 @@ pub trait ConductChain {
 
         self.bump_chain().await;
 
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await().await.unwrap();
 
         recipient
     }

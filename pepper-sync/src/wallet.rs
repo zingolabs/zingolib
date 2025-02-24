@@ -325,7 +325,7 @@ impl std::fmt::Display for SyncResult {
     sync end height: {}
     scanned blocks: {}
     scanned sapling outputs: {}
-    scanned orchard outputs: {}        
+    scanned orchard outputs: {}
 }}",
             self.sync_start_height,
             self.sync_end_height,
