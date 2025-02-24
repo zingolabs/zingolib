@@ -1440,7 +1440,7 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-// FIXME: zingo2
+// TODO: zingo2
 // struct SetOptionCommand {}
 // impl Command for SetOptionCommand {
 //     fn help(&self) -> &'static str {
@@ -1524,7 +1524,7 @@ impl Command for SendsToAddressCommand {
 //     }
 // }
 
-// FIXME: zingo2
+// TODO: zingo2
 // struct GetOptionCommand {}
 // impl Command for GetOptionCommand {
 //     fn help(&self) -> &'static str {
@@ -1839,8 +1839,6 @@ impl Command for DeprecatedNoCommand {
 
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    // FIXME zingo2, re-impl or delete commented commands
-    #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
@@ -1857,7 +1855,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
-        // ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
@@ -1867,7 +1864,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
-        // ("getoption", Box::new(GetOptionCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
