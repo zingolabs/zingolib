@@ -69,38 +69,30 @@ where
     .await
 }
 
-// FIXME: zingo2
-// /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
-// /// NOTICE this function bumps the chain and syncs the client
-// /// only compatible with zip317
-// /// returns Ok(total_fee, total_shielded)
-// pub async fn assure_propose_shield_bump_sync<CC>(
-//     environment: &mut CC,
-//     client: &LightClient,
-//     test_mempool: bool,
-// ) -> Result<(u64, u64), String>
-// where
-//     CC: ConductChain,
-// {
-//     let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
+/// a test-only generic version of shield that includes assertions that the proposal was fulfilled
+/// NOTICE this function bumps the chain and syncs the client
+/// only compatible with zip317
+/// returns Ok(total_fee, total_shielded)
+pub async fn assure_propose_shield_bump_sync<CC>(
+    environment: &mut CC,
+    client: &mut LightClient,
+    test_mempool: bool,
+) -> Result<(u64, u64), String>
+where
+    CC: ConductChain,
+{
+    let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
 
-//     let txids = client
-//         .complete_and_broadcast_stored_proposal()
-//         .await
-//         .unwrap();
+    let txids = client
+        .complete_and_broadcast_stored_proposal()
+        .await
+        .unwrap();
 
-//     let (total_fee, r_shielded, s_shielded) = follow_proposal(
-//         environment,
-//         client,
-//         vec![client],
-//         &proposal,
-//         txids,
-//         test_mempool,
-//     )
-//     .await?;
-//     assert_eq!(r_shielded, s_shielded);
-//     Ok((total_fee, s_shielded))
-// }
+    let (total_fee, r_shielded, s_shielded) =
+        follow_proposal(environment, client, vec![], &proposal, txids, test_mempool).await?;
+    assert_eq!(r_shielded, s_shielded);
+    Ok((total_fee, s_shielded))
+}
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
 /// returns Ok(total_fee, total_received, total_change)

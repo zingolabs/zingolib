@@ -172,224 +172,200 @@ pub mod send_with_proposal {
 
     #[cfg(test)]
     mod test {
-        // use zcash_client_backend::PoolType;
+        //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
-        // use crate::{
-        //     lightclient::sync::test::sync_example_wallet,
-        //     testutils::chain_generics::{
-        //         conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
-        //     },
-        //     wallet::disk::testing::examples,
-        // };
+        use zcash_client_backend::PoolType;
 
-        // all tests below (and in this mod) use example wallets, which describe real-world chains.
+        use crate::{
+            lightclient::sync::test::sync_example_wallet,
+            testutils::chain_generics::{
+                conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
+            },
+            wallet::disk::testing::examples,
+        };
 
-        // FIXME: zingo2
-        // #[tokio::test]
-        // async fn complete_and_broadcast_unconnected_error() {
-        //     use crate::{
-        //         config::ZingoConfigBuilder, lightclient::LightClient,
-        //         mocks::proposal::ProposalBuilder,
-        //     };
-        //     use testvectors::seeds::ABANDON_ART_SEED;
-        //     let lc = LightClient::create_unconnected(
-        //         &ZingoConfigBuilder::default().create(),
-        //         crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
-        //         1,
-        //     )
-        //     .await
-        //     .unwrap();
-        //     let proposal = ProposalBuilder::default().build();
-        //     lc.complete_and_broadcast(&proposal).await.unwrap_err();
-        //     // TODO: match on specific error
-        // }
+        #[tokio::test]
+        async fn complete_and_broadcast_unconnected_error() {
+            use crate::{
+                config::ZingoConfigBuilder, lightclient::LightClient,
+                mocks::proposal::ProposalBuilder,
+            };
+            use testvectors::seeds::ABANDON_ART_SEED;
+            let lc = LightClient::create_unconnected(
+                &ZingoConfigBuilder::default().create(),
+                crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                1,
+            )
+            .await
+            .unwrap();
+            let proposal = ProposalBuilder::default().build();
+            lc.complete_and_broadcast(&proposal).await.unwrap_err();
+            // TODO: match on specific error
+        }
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod testnet {
-            // use super::*;
+            use zcash_client_backend::ShieldedProtocol;
 
-            // FIXME: zingo2
-            // /// requires 1 confirmation: expect 3 minute runtime
-            // #[ignore = "live testnet: testnet relies on NU6"]
-            // #[tokio::test]
-            // async fn glory_goddess_simple_send() {
-            //     let case = examples::NetworkSeedVersion::Testnet(
-            //         examples::TestnetSeedVersion::GloryGoddess,
-            //     );
-            //     let client = sync_example_wallet(case).await;
+            use crate::testutils::lightclient::get_base_address;
 
-            //     with_assertions::assure_propose_shield_bump_sync(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         true,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+            use super::*;
 
-            // FIXME: zingo2
-            // #[ignore = "live testnet: testnet relies on NU6"]
-            // #[tokio::test]
-            // /// this is a live sync test. its execution time scales linearly since last updated
-            // /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
-            // /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-            // async fn testnet_send_to_self_orchard() {
-            //     let case = examples::NetworkSeedVersion::Testnet(
-            //         examples::TestnetSeedVersion::ChimneyBetter(
-            //             examples::ChimneyBetterVersion::Latest,
-            //         ),
-            //     );
+            /// requires 1 confirmation: expect 3 minute runtime
+            #[ignore = "live testnet: testnet relies on NU6"]
+            #[tokio::test]
+            async fn glory_goddess_simple_send() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
+                );
+                let mut client = sync_example_wallet(case).await;
 
-            //     let client = sync_example_wallet(case).await;
+                with_assertions::assure_propose_shield_bump_sync(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    true,
+                )
+                .await
+                .unwrap();
+            }
 
-            //     with_assertions::propose_send_bump_sync_all_recipients(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         vec![(
-            //             &client,
-            //             PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard),
-            //             10_000,
-            //             None,
-            //         )],
-            //         false,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+            #[ignore = "live testnet: testnet relies on NU6"]
+            #[tokio::test]
+            /// this is a live sync test. its execution time scales linearly since last updated
+            /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
+            /// note: live send waits 2 minutes for confirmation. expect 3min runtime
+            async fn testnet_send_to_self_orchard() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::ChimneyBetter(
+                        examples::ChimneyBetterVersion::Latest,
+                    ),
+                );
 
-            // FIXME: zingo2
-            // #[ignore = "live testnet: testnet relies on NU6"]
-            // #[tokio::test]
-            // /// this is a live sync test. its execution time scales linearly since last updated
-            // /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-            // async fn testnet_shield() {
-            //     let case = examples::NetworkSeedVersion::Testnet(
-            //         examples::TestnetSeedVersion::ChimneyBetter(
-            //             examples::ChimneyBetterVersion::Latest,
-            //         ),
-            //     );
+                let mut client = sync_example_wallet(case).await;
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
-            //     let client = sync_example_wallet(case).await;
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    false,
+                )
+                .await
+                .unwrap();
+            }
 
-            //     with_assertions::assure_propose_shield_bump_sync(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         true,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+            #[ignore = "live testnet: testnet relies on NU6"]
+            #[tokio::test]
+            /// this is a live sync test. its execution time scales linearly since last updated
+            /// note: live send waits 2 minutes for confirmation. expect 3min runtime
+            async fn testnet_shield() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::ChimneyBetter(
+                        examples::ChimneyBetterVersion::Latest,
+                    ),
+                );
+
+                let mut client = sync_example_wallet(case).await;
+
+                with_assertions::assure_propose_shield_bump_sync(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    true,
+                )
+                .await
+                .unwrap();
+            }
         }
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send MAINNET: spends on-chain ZEC.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod mainnet {
-            // use super::*;
+            use zcash_client_backend::ShieldedProtocol;
 
-            // FIXME: zingo2
-            // /// requires 1 confirmation: expect 3 minute runtime
-            // #[tokio::test]
-            // #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            // async fn mainnet_send_to_self_orchard() {
-            //     let case = examples::NetworkSeedVersion::Mainnet(
-            //         examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-            //     );
-            //     let target_pool = PoolType::Shielded(ShieldedProtocol::Orchard);
+            use crate::testutils::lightclient::get_base_address;
 
-            //     let client = sync_example_wallet(case).await;
+            use super::*;
 
-            //     println!(
-            //         "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
-            //         client
-            //             .wallet
-            //             .lock()
-            //             .await
-            //             .transaction_context
-            //             .transaction_metadata_set
-            //             .read()
-            //             .await
-            //             .transaction_records_by_id
-            //             .len()
-            //     );
+            /// requires 1 confirmation: expect 3 minute runtime
+            #[tokio::test]
+            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
+            async fn mainnet_send_to_self_orchard() {
+                let case = examples::NetworkSeedVersion::Mainnet(
+                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
+                );
 
-            //     with_assertions::propose_send_bump_sync_all_recipients(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         vec![(&client, target_pool, 10_000, None)],
-            //         false,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+                let mut client = sync_example_wallet(case).await;
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
-            // FIXME: zingo2
-            // /// requires 1 confirmation: expect 3 minute runtime
-            // #[tokio::test]
-            // #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            // async fn mainnet_send_to_self_sapling() {
-            //     let case = examples::NetworkSeedVersion::Mainnet(
-            //         examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-            //     );
-            //     let target_pool = PoolType::Shielded(ShieldedProtocol::Sapling);
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    false,
+                )
+                .await
+                .unwrap();
+            }
 
-            //     let client = sync_example_wallet(case).await;
+            /// requires 1 confirmation: expect 3 minute runtime
+            #[tokio::test]
+            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
+            async fn mainnet_send_to_self_sapling() {
+                let case = examples::NetworkSeedVersion::Mainnet(
+                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
+                );
 
-            //     println!(
-            //         "mainnet_hhcclaltpcckcsslpcnetblr has {} transactions in it",
-            //         client
-            //             .wallet
-            //             .lock()
-            //             .await
-            //             .transaction_context
-            //             .transaction_metadata_set
-            //             .read()
-            //             .await
-            //             .transaction_records_by_id
-            //             .len()
-            //     );
+                let mut client = sync_example_wallet(case).await;
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
 
-            //     with_assertions::propose_send_bump_sync_all_recipients(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         vec![(&client, target_pool, 400_000, None)],
-            //         false,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 400_000, None)],
+                    vec![],
+                    false,
+                )
+                .await
+                .unwrap();
+            }
 
-            // FIXME: zingo2
-            // /// requires 2 confirmations: expect 6 minute runtime
-            // #[tokio::test]
-            // #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            // async fn mainnet_send_to_self_transparent_and_then_shield() {
-            //     let case = examples::NetworkSeedVersion::Mainnet(
-            //         examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-            //     );
-            //     let target_pool = PoolType::Transparent;
+            /// requires 2 confirmations: expect 6 minute runtime
+            #[tokio::test]
+            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
+            async fn mainnet_send_to_self_transparent_and_then_shield() {
+                let case = examples::NetworkSeedVersion::Mainnet(
+                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
+                );
 
-            //     let client = sync_example_wallet(case).await;
+                let mut client = sync_example_wallet(case).await;
+                let client_addr = get_base_address(&client, PoolType::Transparent).await;
 
-            //     with_assertions::propose_send_bump_sync_all_recipients(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         vec![(&client, target_pool, 400_000, None)],
-            //         false,
-            //     )
-            //     .await
-            //     .unwrap();
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 400_000, None)],
+                    vec![],
+                    false,
+                )
+                .await
+                .unwrap();
 
-            //     with_assertions::assure_propose_shield_bump_sync(
-            //         &mut LiveChain::setup().await,
-            //         &client,
-            //         false,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
+                with_assertions::assure_propose_shield_bump_sync(
+                    &mut LiveChain::setup().await,
+                    &mut client,
+                    false,
+                )
+                .await
+                .unwrap();
+            }
         }
     }
 }
