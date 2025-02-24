@@ -209,7 +209,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     )
 }
 
-// FIXME: zingo2
+// FIXME: zingo2 used in large test that needs re-integrating
 // /// Send from sender to recipient and then sync the recipient
 // pub async fn send_value_between_clients_and_sync(
 //     manager: &RegtestManager,

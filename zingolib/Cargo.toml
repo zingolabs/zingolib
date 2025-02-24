@@ -9,8 +9,6 @@ edition = "2021"
 [features]
 ci = []
 darkside_tests = []
-deprecations = ["lightclient-deprecated"]
-lightclient-deprecated = []
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 zaino-test = ['test-elevation']
 

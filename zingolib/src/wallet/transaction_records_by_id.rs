@@ -219,7 +219,7 @@ impl TransactionRecordsById {
         });
     }
 
-    // FIXME:
+    // FIXME: zingo2 this should be a user API so not to lose failed sends with important memos etc.
     // /// Invalidates all those transactions which were broadcast but never 'confirmed' accepted by a miner.
     // pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
     //     // Pending window: How long to wait past the chain tip before clearing a pending
@@ -471,132 +471,17 @@ impl Default for TransactionRecordsById {
 #[cfg(test)]
 mod tests {
 
-    use crate::{
-        mocks::{orchard_note::OrchardCryptoNoteBuilder, SaplingCryptoNoteBuilder},
-        wallet::{
-            output::{
-                orchard::mocks::OrchardNoteBuilder, query::OutputSpendStatusQuery,
-                sapling::mocks::SaplingNoteBuilder, transparent::mocks::TransparentOutputBuilder,
-                OldOutputInterface,
-            },
-            transaction_record::mocks::nine_note_transaction_record,
-        },
+    use crate::wallet::{
+        output::{query::OutputSpendStatusQuery, OldOutputInterface},
+        transaction_record::mocks::nine_note_transaction_record,
     };
 
     use super::TransactionRecordsById;
 
     use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_client_backend::{wallet::ReceivedNote, ShieldedProtocol};
-    use zcash_primitives::transaction::TxId;
-    use zingo_status::confirmation_status::ConfirmationStatus;
 
-    // FIXME: zingo2
-    // #[test]
-    // fn invalidate_all_transactions_after_or_at_height() {
-    //     let transaction_record_later = TransactionRecordBuilder::default()
-    //         .randomize_txid()
-    //         .status(Confirmed(15.into()))
-    //         .transparent_outputs(TransparentOutputBuilder::default())
-    //         .build();
-    //     let spending_txid = transaction_record_later.txid;
-
-    //     let spend_in_known_tx = Some((spending_txid, Confirmed(15.into())));
-
-    //     let transaction_record_early = TransactionRecordBuilder::default()
-    //         .randomize_txid()
-    //         .status(Confirmed(5.into()))
-    //         .transparent_outputs(
-    //             TransparentOutputBuilder::default()
-    //                 .spending_tx_status(spend_in_known_tx)
-    //                 .clone(),
-    //         )
-    //         .sapling_notes(
-    //             SaplingNoteBuilder::default()
-    //                 .spending_tx_status(spend_in_known_tx)
-    //                 .clone(),
-    //         )
-    //         .orchard_notes(
-    //             OrchardNoteBuilder::default()
-    //                 .spending_tx_status(spend_in_known_tx)
-    //                 .clone(),
-    //         )
-    //         .orchard_notes(OrchardNoteBuilder::default())
-    //         .set_output_indexes()
-    //         .build();
-
-    //     let txid_containing_valid_note_with_invalid_spends = transaction_record_early.txid;
-
-    //     let mut transaction_records_by_id = TransactionRecordsById::default();
-    //     transaction_records_by_id.insert_transaction_record(transaction_record_early);
-    //     transaction_records_by_id.insert_transaction_record(transaction_record_later);
-
-    //     let reorg_height: BlockHeight = 10.into();
-
-    //     transaction_records_by_id.invalidate_all_transactions_after_or_at_height(reorg_height);
-
-    //     assert_eq!(transaction_records_by_id.len(), 1);
-    //     //^ the deleted tx is not around
-    //     let transaction_record_cvnwis = transaction_records_by_id
-    //         .get(&txid_containing_valid_note_with_invalid_spends)
-    //         .unwrap();
-
-    //     let query_for_spentish_notes = OutputSpendStatusQuery::spentish();
-    //     let spentish_sapling_notes_in_tx_cvnwis = Output::get_all_outputs_with_status(
-    //         transaction_record_cvnwis,
-    //         query_for_spentish_notes,
-    //     );
-    //     assert_eq!(spentish_sapling_notes_in_tx_cvnwis.len(), 0);
-    // }
-
-    // TODO: move this into an associated fn of TransparentOutputBuilder
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    fn spent_transparent_output_builder(
-        amount: u64,
-        sent: (TxId, ConfirmationStatus),
-    ) -> TransparentOutputBuilder {
-        TransparentOutputBuilder::default()
-            .value(amount)
-            .spending_tx_status(Some(sent))
-            .to_owned()
-    }
-
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    fn spent_sapling_note_builder(
-        amount: u64,
-        sent: (TxId, ConfirmationStatus),
-        sapling_nullifier: &sapling_crypto::Nullifier,
-    ) -> SaplingNoteBuilder {
-        SaplingNoteBuilder::default()
-            .note(
-                SaplingCryptoNoteBuilder::default()
-                    .value(sapling_crypto::value::NoteValue::from_raw(amount))
-                    .to_owned(),
-            )
-            .spending_tx_status(Some(sent))
-            .nullifier(Some(*sapling_nullifier))
-            .to_owned()
-    }
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    fn spent_orchard_note_builder(
-        amount: u64,
-        sent: (TxId, ConfirmationStatus),
-        orchard_nullifier: &orchard::note::Nullifier,
-    ) -> OrchardNoteBuilder {
-        OrchardNoteBuilder::default()
-            .note(
-                OrchardCryptoNoteBuilder::default()
-                    .value(orchard::value::NoteValue::from_raw(amount))
-                    .to_owned(),
-            )
-            .spending_tx_status(Some(sent))
-            .nullifier(Some(*orchard_nullifier))
-            .to_owned()
-    }
-
-    // FIXME: zingo2
+    // FIXME: zingo2 test with integration tests
     // #[test]
     // fn calculate_transaction_fee() {
     //     let mut sapling_nullifier_builder = SaplingNullifierBuilder::new();
