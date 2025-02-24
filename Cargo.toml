@@ -103,6 +103,12 @@ rayon = "1"
 bip32 = { version = "0.5", default-features = false }
 bs58 = "0.5"
 bech32 = "0.11.0"
+testvectors = { path = "testvectors" }
+zingo-memo = { path = "zingo-memo" }
+zingo-netutils = { path = "zingo-netutils" }
+zingo-status = { path = "zingo-status" }
+zingo-sync = { path = "zingo-sync" }
+zingolib = { path = "zingolib" }
 
 [profile.release]
 debug = false
