@@ -23,21 +23,13 @@ use std::cmp::Ordering;
 
 use bip0039::Mnemonic;
 
-use zcash_note_encryption::Domain;
-
 use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::utils;
-use crate::wallet::output::ShieldedNoteInterface;
-
-use crate::wallet::traits::Diversifiable as _;
 
 use crate::wallet::error::BalanceError;
-use crate::wallet::keys::unified::WalletCapability;
-use crate::wallet::traits::DomainWalletExt;
-use crate::wallet::traits::Recipient;
 
 use crate::wallet::LightWallet;
 use crate::UAReceivers;
@@ -211,27 +203,6 @@ impl LightWallet {
                     .await
                     .ok_or(BalanceError::NoFullViewingKey)?,
         )?)
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    pub(crate) fn note_address<D: DomainWalletExt>(
-        network: &crate::config::ChainType,
-        note: &D::WalletNote,
-        wallet_capability: &WalletCapability,
-    ) -> String
-    where
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        D::unified_key_store_to_fvk(&wallet_capability.unified_key_store).expect("to get fvk from the unified key store")
-        .diversified_address(*note.diversifier())
-        .and_then(|address| {
-            D::ua_from_contained_receiver(wallet_capability, &address)
-                .map(|ua| ua.encode(network))
-        })
-        .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
     }
 
     /// TODO: Add Doc Comment Here!
@@ -786,65 +757,6 @@ impl LightWallet {
     pub async fn value_transfers_json_string(&self) -> String {
         json::JsonValue::from(self.sorted_value_transfers(true).await).pretty(2)
     }
-
-    // FIXME: zingo2, re implement
-    // /// Provides a detailed list of transaction summaries related to this wallet in order of blockheight
-    // pub async fn detailed_transaction_summaries(&self) -> DetailedTransactionSummaries {
-    //     let wallet = self.wallet.lock().await;
-    //     let transaction_map = wallet
-    //         .transaction_context
-    //         .transaction_metadata_set
-    //         .read()
-    //         .await;
-    //     let transaction_records = &transaction_map.transaction_records_by_id;
-
-    //     let mut transaction_summaries = transaction_records
-    //         .values()
-    //         .map(|tx| {
-    //             let (kind, value, fee, orchard_notes, sapling_notes, transparent_coins) =
-    //                 basic_transaction_summary_parts(tx, transaction_records, &self.config().chain);
-    //             let orchard_nullifiers: Vec<String> = tx
-    //                 .spent_orchard_nullifiers
-    //                 .iter()
-    //                 .map(|nullifier| hex::encode(nullifier.to_bytes()))
-    //                 .collect();
-    //             let sapling_nullifiers: Vec<String> = tx
-    //                 .spent_sapling_nullifiers
-    //                 .iter()
-    //                 .map(hex::encode)
-    //                 .collect();
-
-    //             DetailedTransactionSummaryBuilder::new()
-    //                 .txid(tx.txid)
-    //                 .datetime(tx.datetime)
-    //                 .blockheight(tx.status.get_height())
-    //                 .kind(kind)
-    //                 .value(value)
-    //                 .fee(fee)
-    //                 .status(tx.status)
-    //                 .zec_price(tx.price)
-    //                 .orchard_notes(orchard_notes)
-    //                 .sapling_notes(sapling_notes)
-    //                 .transparent_coins(transparent_coins)
-    //                 .outgoing_tx_data(tx.outgoing_tx_data.clone())
-    //                 .orchard_nullifiers(orchard_nullifiers)
-    //                 .sapling_nullifiers(sapling_nullifiers)
-    //                 .build()
-    //                 .expect("all fields should be populated")
-    //         })
-    //         .collect::<Vec<_>>();
-    //     drop(transaction_map);
-    //     drop(wallet);
-
-    //     transaction_summaries.sort_by_key(|tx| tx.blockheight());
-
-    //     DetailedTransactionSummaries::new(transaction_summaries)
-    // }
-
-    // /// TODO: doc comment
-    // pub async fn detailed_transaction_summaries_json_string(&self) -> String {
-    //     json::JsonValue::from(self.detailed_transaction_summaries().await).pretty(2)
-    // }
 }
 
 #[cfg(any(test, feature = "test-elevation"))]
@@ -903,32 +815,7 @@ mod test {
         }
     }
 
-    // FIXME: zingo2
-    // #[cfg(test)]
-    // use crate::Orchard;
-    // #[cfg(test)]
-    // use crate::Sapling;
-    // #[cfg(test)]
-    // use zingo_status::confirmation_status::ConfirmationStatus;
-
-    // #[cfg(test)]
-    // use crate::config::ZingoConfigBuilder;
-    // #[cfg(test)]
-    // use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
-    // #[cfg(test)]
-    // use crate::mocks::SaplingCryptoNoteBuilder;
-    // #[cfg(test)]
-    // use crate::wallet::notes::orchard::mocks::OrchardNoteBuilder;
-    // #[cfg(test)]
-    // use crate::wallet::notes::sapling::mocks::SaplingNoteBuilder;
-    // #[cfg(test)]
-    // use crate::wallet::notes::transparent::mocks::TransparentOutputBuilder;
-    // #[cfg(test)]
-    // use crate::wallet::transaction_record::mocks::TransactionRecordBuilder;
-    // #[cfg(test)]
-    // use crate::wallet::WalletBase;
-
-    // FIXME: zingo2
+    // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]
     // async fn confirmed_balance_excluding_dust() {
     //     let wallet = LightWallet::new(
