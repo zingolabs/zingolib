@@ -25,6 +25,7 @@ pub struct KeyId {
     pub account_id: zcash_primitives::zip32::AccountId,
     /// Scope
     pub scope: Scope,
+    // TODO: add address index and unified address recovery
 }
 
 pub mod transparent;

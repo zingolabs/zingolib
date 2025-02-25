@@ -1310,6 +1310,7 @@ pub mod summaries {
         spend_status: SpendStatus,
         output_index: u32,
         memo: Option<String>,
+        // TODO: add key id with address index, not implemented into sync engine yet
     }
 
     impl BasicNoteSummary {
