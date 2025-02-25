@@ -7,9 +7,9 @@ pub mod scenarios;
 
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
-    BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
+    BasicCoinSummary, BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _,
 };
-use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::keys::unified::{UnifiedKeyStore, WalletCapability};
 use crate::wallet::output::SpendStatus;
 use crate::wallet::WalletBase;
 use grpc_proxy::ProxyServer;
@@ -45,13 +45,12 @@ pub mod paths;
 pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
-pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
-    let orchard_vk: orchard::keys::FullViewingKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
+    let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+        unified_keystore.try_into().unwrap();
     let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+        unified_keystore.try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];
     transparent_vk_bytes.copy_from_slice(&transparent_vk.serialize());
@@ -180,8 +179,8 @@ fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSu
 
 /// TODO: doc comment
 fn check_transparent_coin_summary_equality(
-    first: &[TransparentCoinSummary],
-    second: &[TransparentCoinSummary],
+    first: &[BasicCoinSummary],
+    second: &[BasicCoinSummary],
 ) -> bool {
     if first.len() != second.len() {
         return false;

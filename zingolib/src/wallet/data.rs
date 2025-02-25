@@ -947,7 +947,7 @@ pub mod summaries {
         /// Gets slice of sapling note summaries
         fn sapling_notes(&self) -> &[BasicNoteSummary];
         /// Gets slice of transparent coin summaries
-        fn transparent_coins(&self) -> &[TransparentCoinSummary];
+        fn transparent_coins(&self) -> &[BasicCoinSummary];
         /// Gets slice of outgoing orchard notes
         fn outgoing_orchard_notes(&self) -> &[OutgoingNoteSummary];
         /// Gets slice of outgoing sapling notes
@@ -976,7 +976,7 @@ pub mod summaries {
             String,
             BasicNoteSummaries,
             BasicNoteSummaries,
-            TransparentCoinSummaries,
+            BasicCoinSummaries,
             OutgoingNoteSummaries,
             OutgoingNoteSummaries,
         ) {
@@ -997,7 +997,7 @@ pub mod summaries {
             };
             let orchard_notes = BasicNoteSummaries(self.orchard_notes().to_vec());
             let sapling_notes = BasicNoteSummaries(self.sapling_notes().to_vec());
-            let transparent_coins = TransparentCoinSummaries(self.transparent_coins().to_vec());
+            let transparent_coins = BasicCoinSummaries(self.transparent_coins().to_vec());
             let outgoing_orchard_notes =
                 OutgoingNoteSummaries(self.outgoing_orchard_notes().to_vec());
             let outgoing_sapling_notes =
@@ -1032,7 +1032,7 @@ pub mod summaries {
         zec_price: Option<f64>,
         orchard_notes: Vec<BasicNoteSummary>,
         sapling_notes: Vec<BasicNoteSummary>,
-        transparent_coins: Vec<TransparentCoinSummary>,
+        transparent_coins: Vec<BasicCoinSummary>,
         outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
         outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
     }
@@ -1068,7 +1068,7 @@ pub mod summaries {
         fn sapling_notes(&self) -> &[BasicNoteSummary] {
             &self.sapling_notes
         }
-        fn transparent_coins(&self) -> &[TransparentCoinSummary] {
+        fn transparent_coins(&self) -> &[BasicCoinSummary] {
             &self.transparent_coins
         }
         fn outgoing_orchard_notes(&self) -> &[OutgoingNoteSummary] {
@@ -1202,7 +1202,7 @@ pub mod summaries {
         zec_price: Option<Option<f64>>,
         orchard_notes: Option<Vec<BasicNoteSummary>>,
         sapling_notes: Option<Vec<BasicNoteSummary>>,
-        transparent_coins: Option<Vec<TransparentCoinSummary>>,
+        transparent_coins: Option<Vec<BasicCoinSummary>>,
         outgoing_orchard_notes: Option<Vec<OutgoingNoteSummary>>,
         outgoing_sapling_notes: Option<Vec<OutgoingNoteSummary>>,
     }
@@ -1237,7 +1237,7 @@ pub mod summaries {
         build_method!(zec_price, Option<f64>);
         build_method!(orchard_notes, Vec<BasicNoteSummary>);
         build_method!(sapling_notes, Vec<BasicNoteSummary>);
-        build_method!(transparent_coins, Vec<TransparentCoinSummary>);
+        build_method!(transparent_coins, Vec<BasicCoinSummary>);
         build_method!(outgoing_orchard_notes, Vec<OutgoingNoteSummary>);
         build_method!(outgoing_sapling_notes, Vec<OutgoingNoteSummary>);
 
@@ -1395,16 +1395,16 @@ pub mod summaries {
     /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
     /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
-    pub struct TransparentCoinSummary {
+    pub struct BasicCoinSummary {
         value: u64,
         spend_summary: SpendStatus,
         output_index: u32,
     }
 
-    impl TransparentCoinSummary {
+    impl BasicCoinSummary {
         /// Creates a SaplingNoteSummary from parts
         pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u32) -> Self {
-            TransparentCoinSummary {
+            BasicCoinSummary {
                 value,
                 spend_summary: spend_status,
                 output_index,
@@ -1426,7 +1426,7 @@ pub mod summaries {
         }
     }
 
-    impl std::fmt::Display for TransparentCoinSummary {
+    impl std::fmt::Display for BasicCoinSummary {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
@@ -1439,8 +1439,8 @@ pub mod summaries {
             )
         }
     }
-    impl From<TransparentCoinSummary> for JsonValue {
-        fn from(note: TransparentCoinSummary) -> Self {
+    impl From<BasicCoinSummary> for JsonValue {
+        fn from(note: BasicCoinSummary) -> Self {
             json::object! {
                 "value" => note.value,
                 "spend_status" => note.spend_summary.to_string(),
@@ -1450,9 +1450,9 @@ pub mod summaries {
     }
 
     /// Wraps a vec of transparent coin summaries for the implementation of std::fmt::Display
-    pub struct TransparentCoinSummaries(Vec<TransparentCoinSummary>);
+    pub struct BasicCoinSummaries(Vec<BasicCoinSummary>);
 
-    impl std::fmt::Display for TransparentCoinSummaries {
+    impl std::fmt::Display for BasicCoinSummaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for coin in &self.0 {
                 write!(f, "\n{}", coin)?;

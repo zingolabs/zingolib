@@ -762,14 +762,14 @@ impl Command for ExportUfvkCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let ufvk: UnifiedFullViewingKey =
-                match (&lightclient.wallet.lock().await.unified_key_store).try_into() {
-                    Ok(ufvk) => ufvk,
-                    Err(e) => return e.to_string(),
-                };
+            let wallet = lightclient.wallet.lock().await;
+            let ufvk: UnifiedFullViewingKey = match (&wallet.unified_key_store).try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
             object! {
-                "ufvk" => ufvk.encode(&lightclient.config().chain),
-                "birthday" => u32::from(lightclient.wallet.lock().await.birthday)
+                "ufvk" => ufvk.encode(&wallet.network),
+                "birthday" => u32::from(wallet.birthday)
             }
             .pretty(2)
         })

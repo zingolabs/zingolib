@@ -34,6 +34,7 @@ use crate::wallet::error::BalanceError;
 use crate::wallet::LightWallet;
 use crate::UAReceivers;
 
+use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
 use super::data::summaries::OutgoingNoteSummary;
 use super::data::summaries::SelfSendValueTransfer;
@@ -42,7 +43,6 @@ use super::data::summaries::TransactionSummaries;
 use super::data::summaries::TransactionSummary;
 use super::data::summaries::TransactionSummaryBuilder;
 use super::data::summaries::TransactionSummaryInterface as _;
-use super::data::summaries::TransparentCoinSummary;
 use super::data::summaries::ValueTransfer;
 use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
@@ -369,7 +369,7 @@ impl LightWallet {
         Option<u64>,
         Vec<BasicNoteSummary>,
         Vec<BasicNoteSummary>,
-        Vec<TransparentCoinSummary>,
+        Vec<BasicCoinSummary>,
         Vec<OutgoingNoteSummary>,
         Vec<OutgoingNoteSummary>,
     ) {
@@ -427,7 +427,7 @@ impl LightWallet {
             .map(|output| {
                 let spend_status = self.output_spend_status(output);
 
-                TransparentCoinSummary::from_parts(
+                BasicCoinSummary::from_parts(
                     output.value(),
                     spend_status,
                     output.output_id().output_index() as u32,
