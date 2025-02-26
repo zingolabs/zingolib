@@ -776,112 +776,6 @@ impl Command for ExportUfvkCommand {
     }
 }
 
-struct EncryptMessageCommand {}
-impl Command for EncryptMessageCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Encrypt a memo to be sent to a z-address offline
-            Usage:
-            encryptmessage <address> "memo"
-            OR
-            encryptmessage "{'address': <address>, 'memo': <memo>}"
-
-            NOTE: This command only returns the encrypted payload. It does not broadcast it. You are expected to send the encrypted payload to the recipient offline
-            Example:
-            encryptmessage ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Hello from the command line"
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Encrypt a memo to be sent to a z-address offline"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.is_empty() || args.len() > 3 {
-            return self.help().to_string();
-        }
-
-        // Check for a single argument that can be parsed as JSON
-        let (to, memo) = if args.len() == 1 {
-            let arg_list = args[0];
-            let j = match json::parse(arg_list) {
-                Ok(j) => j,
-                Err(e) => {
-                    let es = format!("Couldn't understand JSON: {}", e);
-                    return format!("{}\n{}", es, self.help());
-                }
-            };
-
-            if !j.has_key("address") || !j.has_key("memo") {
-                let es = "Need 'address' and 'memo'\n".to_string();
-                return format!("{}\n{}", es, self.help());
-            }
-
-            let memo =
-                wallet::utils::interpret_memo_string(j["memo"].as_str().unwrap().to_string());
-            if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
-            }
-            let to = j["address"].as_str().unwrap().to_string();
-
-            (to, memo.unwrap())
-        } else if args.len() == 2 {
-            let to = args[0].to_string();
-
-            let memo = wallet::utils::interpret_memo_string(args[1].to_string());
-            if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
-            }
-
-            (to, memo.unwrap())
-        } else {
-            return format!(
-                "Wrong number of arguments. Was expecting 1 or 2\n{}",
-                self.help()
-            );
-        };
-
-        if let Ok(m) = memo.try_into() {
-            lightclient.do_encrypt_message(to, m).pretty(2)
-        } else {
-            "Couldn't encode memo".to_string()
-        }
-    }
-}
-
-struct DecryptMessageCommand {}
-impl Command for DecryptMessageCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Attempt to decrypt a message with all the view keys in the wallet.
-            Usage:
-            decryptmessage "encrypted_message_base64"
-
-            Example:
-            decryptmessage RW5jb2RlIGFyYml0cmFyeSBvY3RldHMgYXMgYmFzZTY0LiBSZXR1cm5zIGEgU3RyaW5nLg==
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Attempt to decrypt a message with all the view keys in the wallet."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return self.help().to_string();
-        }
-
-        RT.block_on(async move {
-            lightclient
-                .do_decrypt_message(args[0].to_string())
-                .await
-                .pretty(2)
-        })
-    }
-}
-
 struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
@@ -1606,35 +1500,6 @@ impl Command for HeightCommand {
     }
 }
 
-struct DefaultFeeCommand {}
-impl Command for DefaultFeeCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Returns the default fee in zats for outgoing transactions
-            Usage:
-            defaultfee <optional_block_height>
-
-            Example:
-            defaultfee
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Returns the default fee in zats for outgoing transactions"
-    }
-
-    fn exec(&self, args: &[&str], _lightclient: &mut LightClient) -> String {
-        if args.len() > 1 {
-            return format!("Was expecting at most 1 argument\n{}", self.help());
-        }
-
-        RT.block_on(async move {
-            let j = object! { "defaultfee" => u64::from(MINIMUM_FEE)};
-            j.pretty(2)
-        })
-    }
-}
-
 struct NewAddressCommand {}
 impl Command for NewAddressCommand {
     fn help(&self) -> &'static str {
@@ -1817,33 +1682,11 @@ impl Command for QuitCommand {
     }
 }
 
-struct DeprecatedNoCommand {}
-impl Command for DeprecatedNoCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            This command has been deprecated.
-            Usage:
-            dont
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Deprecated command."
-    }
-
-    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        ".deprecated.".to_string()
-    }
-}
-
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
-        ("encryptmessage", Box::new(EncryptMessageCommand {})),
-        ("decryptmessage", Box::new(DecryptMessageCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
@@ -1874,7 +1717,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),
         ("new", Box::new(NewAddressCommand {})),
-        ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
