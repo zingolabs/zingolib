@@ -114,6 +114,7 @@ mod fast {
     use std::str::FromStr as _;
 
     use bip0039::Mnemonic;
+    use pepper_sync::wallet::{OutputInterface, TransparentCoin};
     use zcash_address::ZcashAddress;
     use zcash_client_backend::{
         zip321::{Payment, TransactionRequest},
@@ -859,58 +860,40 @@ mod fast {
         );
     }
 
-    // #[tokio::test]
-    // async fn utxos_are_not_prematurely_confirmed() {
-    //     let (regtest_manager, _cph, faucet, recipient) =
-    //         scenarios::faucet_recipient_default().await;
-    //     from_inputs::quick_send(
-    //         &faucet,
-    //         vec![(
-    //             &get_base_address_macro!(recipient, "transparent"),
-    //             100_000,
-    //             None,
-    //         )],
-    //     )
-    //     .await
-    //     .unwrap();
-    //     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-    //         .await
-    //         .unwrap();
-    //     let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-    //     recipient.quick_shield().await.unwrap();
-    //     let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-    //     assert_eq!(preshield_utxos[0].address, postshield_utxos[0].address);
-    //     assert_eq!(
-    //         preshield_utxos[0].output_index,
-    //         postshield_utxos[0].output_index
-    //     );
-    //     assert_eq!(preshield_utxos[0].value, postshield_utxos[0].value);
-    //     assert_eq!(preshield_utxos[0].script, postshield_utxos[0].script);
-    //     assert!(preshield_utxos[0].spending_tx_status().is_none());
-    //     assert!(postshield_utxos[0].spending_tx_status().is_some());
-    // }
-
-    // TODO: zip317 - check reorg buffer offset is still accounted for in  zip317 sends, fix or delete this test
-    // #[tokio::test]
-    // async fn send_without_reorg_buffer_blocks_gives_correct_error() {
-    //     let (_regtest_manager, _cph, faucet, mut recipient) =
-    //         scenarios::faucet_recipient_default().await;
-    //     recipient
-    //         .wallet
-    //         .transaction_context
-    //         .config
-    //         .reorg_buffer_offset = 4;
-    //     println!(
-    //         "{}",
-    //         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-    //     );
-    //     assert_eq!(
-    //     from_inputs::quick_send(&recipient, vec![(&get_base_address_macro!(faucet, "unified"), 100_000, None)])
-    //         .await
-    //         .unwrap_err(),
-    //     "The reorg buffer offset has been set to 4 but there are only 1 blocks in the wallet. Please sync at least 4 more blocks before trying again"
-    // );
-    // }
+    #[tokio::test]
+    async fn utxos_are_not_prematurely_confirmed() {
+        let (regtest_manager, _cph, faucet, mut recipient) =
+            scenarios::faucet_recipient_default().await;
+        from_inputs::quick_send(
+            &faucet,
+            vec![(
+                &get_base_address_macro!(recipient, "transparent"),
+                100_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+            .await
+            .unwrap();
+        let wallet = recipient.wallet.lock().await;
+        let preshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
+        assert_eq!(preshield_utxos.len(), 1);
+        assert!(wallet
+            .output_spend_status(*preshield_utxos.first().unwrap())
+            .is_unspent());
+        recipient.quick_shield().await.unwrap();
+        let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
+        assert_eq!(postshield_utxos.len(), 1);
+        assert!(wallet
+            .output_spend_status(*preshield_utxos.first().unwrap())
+            .is_confirmed_spent());
+        assert_eq!(
+            preshield_utxos.first().unwrap().output_id(),
+            postshield_utxos.first().unwrap().output_id(),
+        );
+    }
 
     #[tokio::test]
     async fn zcashd_sapling_commitment_tree() {
@@ -1272,7 +1255,6 @@ mod slow {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
-    use zingolib::lightclient::LightClient;
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
