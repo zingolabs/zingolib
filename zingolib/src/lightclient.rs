@@ -419,50 +419,6 @@ impl LightClient {
         &self.config
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
-            Ok(v) => v,
-            Err(e) => {
-                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
-            }
-        };
-
-        match self.wallet.lock().await.decrypt_message(data).await {
-            Ok(m) => {
-                let memo_bytes: MemoBytes = m.memo.clone().into();
-                object! {
-                    "to" => encode_payment_address(self.config.chain.hrp_sapling_payment_address(), &m.to),
-                    "memo" => LightWallet::memo_str(Some(m.memo)),
-                    "memohex" => hex::encode(memo_bytes.as_slice())
-                }
-            }
-            Err(_) => object! { "error" => "Couldn't decrypt with any of the wallet's keys"},
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn do_encrypt_message(&self, recipient_address_str: String, memo: Memo) -> JsonValue {
-        let to = match decode_payment_address(
-            self.config.chain.hrp_sapling_payment_address(),
-            &recipient_address_str,
-        ) {
-            Ok(to) => to,
-            _ => {
-                return object! {"error" => format!("Couldn't parse {} as a z-address", recipient_address_str) };
-            }
-        };
-
-        match Message::new(to, memo).encrypt() {
-            Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
-            }
-            Err(e) => {
-                object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
-            }
-        }
-    }
-
     /// Generates a new unified address from the given `addr_type`.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface

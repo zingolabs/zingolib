@@ -523,6 +523,7 @@ impl Parameters for ChainType {
 }
 
 /// TODO: Add Doc Comment Here!
+// TODO: replace with infrastucture types
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
@@ -610,6 +611,7 @@ impl RegtestNetwork {
 }
 
 /// TODO: Add Doc Comment Here!
+// TODO: replace with infrastucture types
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActivationHeights {
     overwinter: BlockHeight,
@@ -658,7 +660,6 @@ impl ActivationHeights {
 }
 
 mod tests {
-
     /// Validate that the load_clientconfig function creates a valid config from an empty uri
     #[tokio::test]
     async fn test_load_clientconfig() {

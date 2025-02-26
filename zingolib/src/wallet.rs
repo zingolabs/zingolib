@@ -4,10 +4,9 @@
 
 use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::{KeyError, WalletError};
+use error::WalletError;
 use keys::unified::UnifiedKeyStore;
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_primitives::memo::Memo;
+use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};
@@ -33,7 +32,7 @@ use tokio::sync::RwLock;
 use crate::config::ChainType;
 use zcash_encoding::Optional;
 
-use self::{data::WalletZecPriceInfo, message::Message};
+use self::data::WalletZecPriceInfo;
 
 pub mod data;
 pub mod error;
@@ -226,35 +225,6 @@ impl LightWallet {
         self.nullifier_map.clear();
         self.outpoint_map.clear();
         self.sync_state = SyncState::new();
-    }
-
-    ///TODO: Make this work for orchard too
-    pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let ufvk: UnifiedFullViewingKey = match (&self.unified_key_store).try_into() {
-            Ok(ufvk) => ufvk,
-            Err(e) => return Err(e.to_string()),
-        };
-        let sapling_ivk = if let Some(ivk) = ufvk.sapling() {
-            ivk.to_external_ivk().prepare()
-        } else {
-            return Err(KeyError::NoViewCapability.to_string());
-        };
-
-        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
-            // If decryption succeeded for this IVK, return the decrypted memo and the matched address
-            return Ok(msg);
-        }
-
-        Err("No message matched".to_string())
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn memo_str(memo: Option<Memo>) -> Option<String> {
-        match memo {
-            Some(Memo::Text(m)) => Some(m.to_string()),
-            Some(Memo::Arbitrary(_)) => Some("Wallet-internal memo".to_string()),
-            _ => None,
-        }
     }
 
     /// TODO: Add Doc Comment Here!
