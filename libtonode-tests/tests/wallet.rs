@@ -1,10 +1,8 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zingolib::{
-        config::RegtestNetwork,
-        testutils::{paths::get_cargo_manifest_dir, scenarios},
-        wallet::disk::testing::examples,
+        get_base_address_macro,
+        testutils::{lightclient::from_inputs, scenarios},
     };
 
     // FIXME: sync integration semi-complete, need to transribe all the old do_list_transactions printouts to new types
