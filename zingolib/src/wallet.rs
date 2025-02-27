@@ -37,7 +37,7 @@ use self::data::WalletZecPriceInfo;
 pub mod data;
 pub mod error;
 pub mod keys;
-pub(crate) mod message;
+pub(crate) mod legacy;
 pub mod traits;
 pub mod transaction_context;
 pub mod transaction_record;

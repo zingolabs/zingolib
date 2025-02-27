@@ -10,17 +10,9 @@ use tokio::{
     task::JoinHandle,
 };
 
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
-use zcash_primitives::{
-    consensus::NetworkConstants,
-    memo::{Memo, MemoBytes},
-};
-
 use crate::{config::ZingoConfig, data::proposal::ZingoProposal};
 
-use crate::wallet::{
-    keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
-};
+use crate::wallet::{keys::unified::ReceiverSelection, LightWallet, SendProgress};
 
 pub mod error;
 

@@ -3,8 +3,8 @@
 
 use crate::data::proposal;
 use crate::lightclient::sync::SyncPollReport;
+use crate::lightclient::LightClient;
 use crate::wallet::keys::unified::UnifiedKeyStore;
-use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
@@ -17,7 +17,6 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 mod error;
 mod utils;
@@ -1712,7 +1711,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
-        ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),

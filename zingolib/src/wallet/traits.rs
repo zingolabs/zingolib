@@ -8,7 +8,7 @@ use crate::wallet::output::OldOutputInterface;
 use crate::wallet::output::ShieldedNoteInterface;
 use crate::wallet::{
     data::{
-        PoolNullifier, SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
+        SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
         COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
@@ -54,6 +54,7 @@ use zcash_primitives::{
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::keys::unified::UnifiedKeyStore;
+use super::legacy::PoolNullifier;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {

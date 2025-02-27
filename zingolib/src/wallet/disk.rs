@@ -21,19 +21,20 @@ use zcash_encoding::{Optional, Vector};
 
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
+use crate::{
+    config::ChainType,
+    wallet::{
+        keys::{legacy::WalletCapability, unified::UnifiedKeyStore},
+        legacy::BlockData,
+    },
+};
 
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::WalletCapability;
-
 use super::LightWallet;
-use super::{
-    data::{BlockData, WalletZecPriceInfo},
-    tx_map::TxMap,
-};
+use super::{data::WalletZecPriceInfo, tx_map::TxMap};
 
 impl LightWallet {
     /// Changes in version 31:
