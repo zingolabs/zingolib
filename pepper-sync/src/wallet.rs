@@ -23,7 +23,7 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, NetworkConstants, Parameters},
+    consensus::{self, BlockHeight, NetworkConstants, Parameters},
     legacy::Script,
     memo::Memo,
     transaction::{
@@ -38,6 +38,14 @@ use crate::{
     keys::{self, transparent::TransparentAddressId, KeyId},
     sync::MAX_VERIFICATION_WINDOW,
     witness,
+};
+
+#[cfg(feature = "wallet_essentials")]
+use {
+    byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt},
+    read_write::write_string,
+    std::io::Write,
+    zcash_encoding::{Optional, Vector},
 };
 
 pub mod traits;
@@ -241,6 +249,19 @@ pub struct TreeBounds {
     pub sapling_final_tree_size: u32,
     pub orchard_initial_tree_size: u32,
     pub orchard_final_tree_size: u32,
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl TreeBounds {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_u32::<LittleEndian>(self.sapling_initial_tree_size)?;
+        writer.write_u32::<LittleEndian>(self.sapling_final_tree_size)?;
+        writer.write_u32::<LittleEndian>(self.orchard_initial_tree_size)?;
+        writer.write_u32::<LittleEndian>(self.orchard_final_tree_size)?;
+
+        Ok(())
+    }
 }
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -458,6 +479,21 @@ impl WalletBlock {
     }
 }
 
+#[cfg(feature = "wallet_essentials")]
+impl WalletBlock {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u32::<LittleEndian>(self.block_height.into())?;
+        writer.write_all(&self.block_hash.0)?;
+        writer.write_all(&self.prev_hash.0)?;
+        writer.write_u32::<LittleEndian>(self.time)?;
+        Vector::write(&mut writer, self.txids(), |w, txid| txid.write(w))?;
+        self.tree_bounds.write(&mut writer)?;
+
+        Ok(())
+    }
+}
+
 /// Wallet transaction
 pub struct WalletTransaction {
     pub(crate) txid: TxId,
@@ -577,6 +613,38 @@ impl WalletTransaction {
 
 #[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        self.txid.write(&mut writer)?;
+        self.transaction.write(&mut writer)?;
+        self.status.write(&mut writer)?;
+        writer.write_u32::<LittleEndian>(self.datetime)?;
+        Vector::write(&mut writer, self.transparent_coins(), |w, output| {
+            output.write(w)
+        })?;
+        Vector::write(&mut writer, self.sapling_notes(), |w, output| {
+            output.write(w)
+        })?;
+        Vector::write(&mut writer, self.orchard_notes(), |w, output| {
+            output.write(w)
+        })?;
+        Vector::write(&mut writer, self.outgoing_sapling_notes(), |w, output| {
+            output.write(w, consensus_parameters)
+        })?;
+        Vector::write(&mut writer, self.outgoing_orchard_notes(), |w, output| {
+            output.write(w, consensus_parameters)
+        })
+    }
+
     /// Returns the total value sent to receivers, including value explicitly sent to the wallet own addresses but
     /// excluding change.
     pub fn total_value_sent(&self) -> u64 {
@@ -650,6 +718,13 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl<N, Nf: Copy> WalletNote<N, Nf> {
+    fn serialized_version() -> u8 {
+        1
+    }
 }
 
 /// Provides a common API for all output types.
@@ -757,6 +832,34 @@ impl OutputInterface for TransparentCoin {
     }
 }
 
+#[cfg(feature = "wallet_essentials")]
+impl TransparentCoin {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id().into())?;
+        writer.write_u8(self.key_id.scope() as u8)?;
+        writer.write_u32::<LittleEndian>(self.key_id.address_index())?;
+
+        write_string(&mut writer, &self.address)?;
+        self.script.write(&mut writer)?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        Optional::write(&mut writer, self.spending_transaction, |w, txid| {
+            txid.write(w)
+        })?;
+
+        Ok(())
+    }
+}
+
 /// Provides a common API for all shielded output types.
 pub trait NoteInterface: OutputInterface + Sized {
     /// Decrypted note type.
@@ -838,6 +941,78 @@ impl NoteInterface for SaplingNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl SaplingNote {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
+        writer.write_u8(self.key_id.scope as u8)?;
+
+        writer.write_all(&self.note.recipient().to_bytes())?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        match self.note.rseed() {
+            sapling_crypto::Rseed::BeforeZip212(fr) => {
+                writer.write_u8(1)?;
+                writer.write_all(&fr.to_bytes())?;
+            }
+            sapling_crypto::Rseed::AfterZip212(bytes) => {
+                writer.write_u8(2)?;
+                writer.write_all(bytes)?;
+            }
+        }
+
+        Optional::write(&mut writer, self.nullifier, |w, nullifier| {
+            w.write_all(nullifier.as_ref())
+        })?;
+        Optional::write(&mut writer, self.position, |w, position| {
+            w.write_u64::<LittleEndian>(position.into())
+        })?;
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(&mut writer, self.spending_transaction, |w, txid| {
+            txid.write(w)
+        })?;
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl OrchardNote {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
+        writer.write_u8(self.key_id.scope as u8)?;
+
+        writer.write_all(&self.note.recipient().to_raw_address_bytes())?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        writer.write_all(&self.note.rho().to_bytes())?;
+        writer.write_all(self.note.rseed().as_bytes())?;
+
+        Optional::write(&mut writer, self.nullifier, |w, nullifier| {
+            w.write_all(&nullifier.to_bytes())
+        })?;
+        Optional::write(&mut writer, self.position, |w, position| {
+            w.write_u64::<LittleEndian>(position.into())
+        })?;
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(&mut writer, self.spending_transaction, |w, txid| {
+            txid.write(w)
+        })?;
+
+        Ok(())
     }
 }
 
@@ -954,6 +1129,13 @@ pub struct OutgoingNote<N> {
     pub(crate) recipient_unified_address: Option<UnifiedAddress>,
 }
 
+#[cfg(feature = "wallet_essentials")]
+impl<N> OutgoingNote<N> {
+    fn serialized_version() -> u8 {
+        1
+    }
+}
+
 /// Outgoing sapling note.
 pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 
@@ -1006,6 +1188,46 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
     }
 }
 
+#[cfg(feature = "wallet_essentials")]
+impl OutgoingSaplingNote {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
+        writer.write_u8(self.key_id.scope as u8)?;
+
+        writer.write_all(&self.note.recipient().to_bytes())?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        match self.note.rseed() {
+            sapling_crypto::Rseed::BeforeZip212(fr) => {
+                writer.write_u8(1)?;
+                writer.write_all(&fr.to_bytes())?;
+            }
+            sapling_crypto::Rseed::AfterZip212(bytes) => {
+                writer.write_u8(2)?;
+                writer.write_all(bytes)?;
+            }
+        }
+
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(
+            &mut writer,
+            self.recipient_unified_address.as_ref(),
+            |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
+        )?;
+
+        Ok(())
+    }
+}
+
 /// Outgoing orchard note.
 pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
@@ -1052,6 +1274,38 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
         &transaction.outgoing_orchard_notes
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl OutgoingOrchardNote {
+    /// Serialize into `writer`
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
+        writer.write_u8(self.key_id.scope as u8)?;
+
+        writer.write_all(&self.note.recipient().to_raw_address_bytes())?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        writer.write_all(&self.note.rho().to_bytes())?;
+        writer.write_all(self.note.rseed().as_bytes())?;
+
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(
+            &mut writer,
+            self.recipient_unified_address.as_ref(),
+            |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
+        )?;
+
+        Ok(())
     }
 }
 
@@ -1102,5 +1356,17 @@ impl ShardTrees {
 impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+mod read_write {
+    use std::io::Write;
+
+    use byteorder::{LittleEndian, WriteBytesExt};
+
+    pub(super) fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
+        writer.write_u64::<LittleEndian>(str.len() as u64)?;
+        writer.write_all(str.as_bytes())
     }
 }

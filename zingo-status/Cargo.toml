@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 zcash_primitives = { workspace = true }
+byteorder = { workspace = true }

@@ -1,6 +1,10 @@
 //! If a note is confirmed, it is:
 //!  Confirmed === on-record on-chain at BlockHeight
 
+use std::io::Write;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
 use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
@@ -211,6 +215,24 @@ impl ConfirmationStatus {
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
         }
+    }
+
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u8(match self {
+            Self::Calculated(_) => 0,
+            Self::Transmitted(_) => 1,
+            Self::Mempool(_) => 2,
+            Self::Confirmed(_) => 3,
+        })?;
+        writer.write_u32::<LittleEndian>(self.get_height().into())?;
+
+        Ok(())
     }
 }
 

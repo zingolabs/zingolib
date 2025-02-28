@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = [ "wallet_essentials" ]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
-wallet_essentials = []
+wallet_essentials = [ "dep:byteorder", "dep:zcash_encoding" ]
 
 [dependencies]
 # Zingo
@@ -15,6 +15,7 @@ zingo-memo = { path = "../zingo-memo" }
 zingo-status = { path = "../zingo-status" }
 
 # Zcash
+zcash_encoding = { workspace = true, optional = true }
 zcash_client_backend.workspace = true
 zcash_primitives.workspace = true
 zcash_note_encryption.workspace = true
@@ -47,6 +48,9 @@ thiserror.workspace = true
 
 # JSON
 json.workspace = true
+
+# Read write
+byteorder = { workspace = true, optional = true }
 
 # temp
 zcash_address.workspace = true

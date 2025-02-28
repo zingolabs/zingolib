@@ -3,6 +3,7 @@ use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use log::{error, info};
+use pepper_sync::keys::transparent::TransparentScope;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zip32::AccountId;
 
@@ -19,7 +20,7 @@ use bip0039::Mnemonic;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::{self, BlockHeight};
 
 use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
 
@@ -27,7 +28,7 @@ use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::WalletCapability;
+use super::keys::unified::{ReceiverSelection, WalletCapability};
 
 use super::LightWallet;
 use super::{
@@ -36,39 +37,60 @@ use super::{
 };
 
 impl LightWallet {
-    /// Changes in version 31:
+    /// Changes in version 32:
     /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        31 // FIXME: double check this is correctly incremented before sync integration is complete
+        32 // FIXME: double check this is correctly incremented before sync integration is complete
     }
 
     /// TODO: Add Doc Comment Here!
-    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Write the version
+    // FIXME: sync integration, write rest of wallet data
+    pub async fn write<W: Write>(
+        &self,
+        mut writer: W,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> io::Result<()> {
+        // TODO: version can be u32 (or u16?)
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+        self.unified_key_store.write(&mut writer, self.network)?;
 
-        // FIXME: sync integration, write keys and addresses
-        // Write all the keys
-        // self.transaction_context
-        //     .key
-        //     .write(&mut writer, self.transaction_context.config.chain)?;
+        for scope in [
+            TransparentScope::External,
+            TransparentScope::Internal,
+            TransparentScope::Refund,
+        ] {
+            let transparent_address_count = self
+                .transparent_addresses
+                .keys()
+                .filter(|address_id| address_id.scope() == scope)
+                .map(|address_id| address_id.address_index())
+                .max()
+                .map(|max_index| max_index + 1)
+                .unwrap_or(0);
+            writer.write_u32::<LittleEndian>(transparent_address_count)?;
+        }
 
-        // self.transaction_context
-        //     .transaction_metadata_set
-        //     .write()
-        //     .await
-        //     .write(&mut writer)
+        // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
+        Vector::write(
+            &mut writer,
+            &self.unified_addresses.iter().collect::<Vec<_>>(),
+            |w, address| {
+                ReceiverSelection {
+                    orchard: address.orchard().is_some(),
+                    sapling: address.sapling().is_some(),
+                    transparent: address.transparent().is_some(),
+                }
+                .write(w, ())
+            },
+        )?;
 
-        utils::write_string(&mut writer, &self.network.to_string())?; //     .await?;
-
+        utils::write_string(&mut writer, &self.network.to_string())?;
         self.wallet_options.read().await.write(&mut writer)?;
-
-        // TODO: make sure wallet always has a birthday
+        // TODO: birthday can be u32
         writer.write_u64::<LittleEndian>(self.birthday.into())?;
-
-        // Price info
         self.price.read().await.write(&mut writer)?;
 
+        // TODO: consider writing mnemonic before keys
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.0.clone().into_entropy(),
             None => vec![],
@@ -78,6 +100,17 @@ impl LightWallet {
         if let Some(m) = &self.mnemonic {
             writer.write_u32::<LittleEndian>(m.1)?;
         }
+
+        Vector::write(
+            &mut writer,
+            &self.wallet_blocks.values().collect::<Vec<_>>(),
+            |w, &block| block.write(w),
+        )?;
+        Vector::write(
+            &mut writer,
+            &self.wallet_transactions.values().collect::<Vec<_>>(),
+            |w, &transaction| transaction.write(w, consensus_parameters),
+        )?;
 
         Ok(())
     }

@@ -79,6 +79,7 @@ pub enum MemoDownloadOption {
 }
 
 /// TODO: Add Doc Comment Here!
+// FIXME: zingo2 re-implement options
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,

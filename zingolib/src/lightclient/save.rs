@@ -41,10 +41,10 @@ impl LightClient {
     /// write down the state of the lightclient as a `Vec<u8>`
     pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
-        self.wallet
-            .lock()
-            .await
-            .write(&mut buffer)
+        let wallet = self.wallet.lock().await;
+        let network = wallet.network;
+        wallet
+            .write(&mut buffer, &network)
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
         (self.save_buffer.buffer.write().await).clone_from(&buffer);

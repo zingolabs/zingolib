@@ -275,7 +275,7 @@ pub mod instantiation {
             wallet: LightWallet,
         ) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
-            wallet.write(&mut buffer).await?;
+            wallet.write(&mut buffer, &config.chain).await?;
             Ok(LightClient {
                 config,
                 wallet: Arc::new(Mutex::new(wallet)),

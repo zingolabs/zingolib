@@ -1237,7 +1237,7 @@ where
             self.spending_tx_status().as_ref(),
             |w, &(transaction_id, status)| {
                 w.write_all(transaction_id.as_ref())?;
-                status.write(w, ())
+                ReadableWriteable::write(&status, w, ())
             },
         )?;
 
