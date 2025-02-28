@@ -103,7 +103,7 @@ impl Default for InitialSyncState {
 #[cfg(feature = "wallet_essentials")]
 impl InitialSyncState {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -228,7 +228,7 @@ impl Default for SyncState {
 #[cfg(feature = "wallet_essentials")]
 impl SyncState {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -255,8 +255,7 @@ impl SyncState {
                 locator.1.write(w)
             },
         )?;
-
-        Ok(())
+        self.initial_sync_state.write(&mut writer)
     }
 }
 
@@ -310,14 +309,17 @@ pub struct TreeBounds {
 
 #[cfg(feature = "wallet_essentials")]
 impl TreeBounds {
+    fn serialized_version() -> u8 {
+        0
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
         writer.write_u32::<LittleEndian>(self.sapling_initial_tree_size)?;
         writer.write_u32::<LittleEndian>(self.sapling_final_tree_size)?;
         writer.write_u32::<LittleEndian>(self.orchard_initial_tree_size)?;
-        writer.write_u32::<LittleEndian>(self.orchard_final_tree_size)?;
-
-        Ok(())
+        writer.write_u32::<LittleEndian>(self.orchard_final_tree_size)
     }
 }
 
@@ -496,7 +498,7 @@ impl Default for NullifierMap {
 #[cfg(feature = "wallet_essentials")]
 impl NullifierMap {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -701,7 +703,7 @@ impl WalletTransaction {
 #[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -810,7 +812,7 @@ pub struct WalletNote<N, Nf: Copy> {
 #[cfg(feature = "wallet_essentials")]
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 }
 
@@ -922,7 +924,7 @@ impl OutputInterface for TransparentCoin {
 #[cfg(feature = "wallet_essentials")]
 impl TransparentCoin {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -1219,7 +1221,7 @@ pub struct OutgoingNote<N> {
 #[cfg(feature = "wallet_essentials")]
 impl<N> OutgoingNote<N> {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 }
 
@@ -1449,7 +1451,7 @@ impl Default for ShardTrees {
 #[cfg(feature = "wallet_essentials")]
 impl ShardTrees {
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -1492,10 +1494,8 @@ impl ShardTrees {
                     .get_shard(*root)
                     .expect("Infallible")
                     .expect("cannot find root that shard store claims to have");
-                write_shard(w, shard.root())?; // s.root returns &Tree
-                Ok(())
-            })?;
-            Ok(())
+                write_shard(w, shard.root())
+            })
         }
 
         fn write_checkpoints<W, Cid>(
@@ -1527,8 +1527,7 @@ impl ShardTrees {
                         },
                     )
                 },
-            )?;
-            Ok(())
+            )
         }
 
         // Replace original tree with empty tree, and mutate new version into store.
@@ -1537,6 +1536,7 @@ impl ShardTrees {
             shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
         )
         .into_store();
+
         macro_rules! write_with_error_handling {
             ($writer: ident, $from: ident) => {
                 if let Err(e) = $writer(&mut writer, &$from) {
@@ -1545,8 +1545,11 @@ impl ShardTrees {
                 }
             };
         }
+
         // Write located prunable trees
         write_with_error_handling!(write_shards, store);
+
+        // Write checkpoints
         let mut checkpoints = Vec::new();
         store
             .with_checkpoints(
@@ -1557,11 +1560,12 @@ impl ShardTrees {
                 },
             )
             .expect("Infallible");
-        // Write checkpoints
         write_with_error_handling!(write_checkpoints, checkpoints);
-        let cap = store.get_cap().expect("Infallible");
+
         // Write cap
+        let cap = store.get_cap().expect("Infallible");
         write_with_error_handling!(write_shard, cap);
+
         *tree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
 
         Ok(())

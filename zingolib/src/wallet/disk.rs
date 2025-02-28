@@ -50,7 +50,7 @@ impl LightWallet {
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
-        // TODO: version can be u32 (or u16?)
+        // TODO: version can be u8
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
         self.unified_key_store.write(&mut writer, self.network)?;
 

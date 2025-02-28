@@ -218,7 +218,7 @@ impl ConfirmationStatus {
     }
 
     fn serialized_version() -> u8 {
-        1
+        0
     }
 
     /// Serialize into `writer`
@@ -230,9 +230,7 @@ impl ConfirmationStatus {
             Self::Mempool(_) => 2,
             Self::Confirmed(_) => 3,
         })?;
-        writer.write_u32::<LittleEndian>(self.get_height().into())?;
-
-        Ok(())
+        writer.write_u32::<LittleEndian>(self.get_height().into())
     }
 }
 
