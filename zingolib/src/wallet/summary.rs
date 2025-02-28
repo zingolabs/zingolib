@@ -96,12 +96,12 @@ impl From<NoteSummary> for json::JsonValue {
         json::object! {
             "value" => note.value,
             "status" => format!("{} at block height {}", note.status, note.block_height),
-            "spend status" => note.spend_status.to_string(),
+            "spend_status" => note.spend_status.to_string(),
             "memo" => note.memo,
             "time" => note.time,
             "txid" => note.txid.to_string(),
-            "output index" => note.output_index,
-            "account id" => u32::from(note.account_id),
+            "output_index" => note.output_index,
+            "account_id" => u32::from(note.account_id),
             "scope" => note.scope.to_string(),
         }
     }
@@ -164,13 +164,13 @@ impl From<CoinSummary> for json::JsonValue {
         json::object! {
             "value" => coin.value,
             "status" => format!("{} at block height {}", coin.status, coin.block_height),
-            "spend status" => coin.spend_status.to_string(),
+            "spend_status" => coin.spend_status.to_string(),
             "time" => coin.time,
             "txid" => coin.txid.to_string(),
-            "output index" => coin.output_index,
-            "account id" => u32::from(coin.account_id),
+            "output_index" => coin.output_index,
+            "account_id" => u32::from(coin.account_id),
             "scope" => coin.scope.to_string(),
-            "address index" => coin.address_index
+            "address_index" => coin.address_index
         }
     }
 }

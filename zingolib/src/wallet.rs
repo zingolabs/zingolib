@@ -219,9 +219,7 @@ pub struct LightWallet {
 }
 
 impl LightWallet {
-    /// Clears all the downloaded blocks and resets the state back to the initial block.
-    /// After this, the wallet's initial state will need to be set
-    /// and the wallet will need to be rescanned
+    /// Clears all wallet data obtained from the block chain including the sync state.
     pub fn clear_all(&mut self) {
         self.wallet_blocks.clear();
         self.wallet_transactions.clear();

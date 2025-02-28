@@ -395,8 +395,8 @@ pub async fn faucet(
         lightwalletd_feature,
     )
     .await;
-    let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-    faucet.do_sync(false).await.unwrap();
+    let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    faucet.sync_and_await().await.unwrap();
     (
         sb.regtest_manager,
         sb.child_process_handler.unwrap(),
@@ -434,8 +434,8 @@ pub async fn faucet_recipient(
         lightwalletd_feature,
     )
     .await;
-    let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-    faucet.do_sync(false).await.unwrap();
+    let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    faucet.sync_and_await().await.unwrap();
 
     let recipient = sb
         .client_builder
@@ -487,9 +487,9 @@ pub async fn faucet_funded_recipient(
     Option<String>,
     Option<String>,
 ) {
-    let (regtest_manager, child_process_handler, faucet, recipient) =
+    let (regtest_manager, child_process_handler, mut faucet, mut recipient) =
         faucet_recipient(mine_to_pool, regtest_network, lightwalletd_feature).await;
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
 
@@ -539,10 +539,10 @@ pub async fn faucet_funded_recipient(
     } else {
         None
     };
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
-    faucet.do_sync(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     (
         regtest_manager,
         child_process_handler,
@@ -650,7 +650,7 @@ pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildP
         true,
     )
     .await;
-    let faucet = scenario_builder
+    let mut faucet = scenario_builder
         .client_builder
         .build_faucet(false, regtest_network)
         .await;
@@ -658,7 +658,7 @@ pub async fn funded_orchard_mobileclient(_value: u64) -> (RegtestManager, ChildP
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
-    faucet.do_sync(false).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     // FIXME: zingo2
     // super::lightclient::from_inputs::quick_send(
     //     &faucet,
@@ -689,15 +689,15 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         true,
     )
     .await;
-    let faucet = scenario_builder
+    let mut faucet = scenario_builder
         .client_builder
         .build_faucet(false, regtest_network)
         .await;
-    let recipient = scenario_builder
+    let mut recipient = scenario_builder
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet
@@ -708,7 +708,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to a faucet
@@ -723,7 +723,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self sapling
@@ -759,15 +759,15 @@ pub async fn funded_transparent_mobileclient(_value: u64) -> (RegtestManager, Ch
         true,
     )
     .await;
-    let faucet = scenario_builder
+    let mut faucet = scenario_builder
         .client_builder
         .build_faucet(false, regtest_network)
         .await;
-    let recipient = scenario_builder
+    let mut recipient = scenario_builder
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
 
@@ -783,7 +783,7 @@ pub async fn funded_transparent_mobileclient(_value: u64) -> (RegtestManager, Ch
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
 
@@ -811,15 +811,15 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         true,
     )
     .await;
-    let faucet = scenario_builder
+    let mut faucet = scenario_builder
         .client_builder
         .build_faucet(false, regtest_network)
         .await;
-    let recipient = scenario_builder
+    let mut recipient = scenario_builder
         .client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet to orchard
@@ -834,7 +834,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet to sapling
@@ -849,7 +849,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
     // received from a faucet to transparent
@@ -864,7 +864,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to a faucet
@@ -879,7 +879,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self orchard
@@ -894,7 +894,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self sapling
@@ -909,7 +909,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // send to self transparent
@@ -924,13 +924,13 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     // )
     // .await
     // .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // shield transparent
     // FIXME: zingo2
     // recipient.quick_shield().await.unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
     // end
@@ -967,8 +967,8 @@ pub mod chainload {
         let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut sb =
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        faucet.do_sync(false).await.unwrap();
+        let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+        faucet.sync_and_await().await.unwrap();
         let recipient = sb
             .client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)

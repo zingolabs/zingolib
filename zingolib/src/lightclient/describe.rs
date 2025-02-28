@@ -217,7 +217,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
-    // TODO: revisit
+    // TODO: remove
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
         json::JsonValue::from(u32::from(
             self.wallet.lock().await.sync_state.fully_scanned_height(),

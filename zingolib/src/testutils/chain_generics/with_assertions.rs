@@ -111,8 +111,8 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 /// returns Ok(total_fee, total_received, total_change)
 pub async fn follow_proposal<CC, NoteRef>(
     environment: &mut CC,
-    sender: &LightClient,
-    recipients: Vec<&LightClient>,
+    sender: &mut LightClient,
+    mut recipients: Vec<&mut LightClient>,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
     txids: NonEmpty<TxId>,
     test_mempool: bool,
@@ -160,7 +160,7 @@ where
 
     let option_recipient_mempool_outputs = if test_mempool {
         // mempool scan shows the same
-        sender.do_sync(false).await.unwrap();
+        sender.sync_and_await().await.unwrap();
 
         // let the mempool monitor get a chance
         // to listen
@@ -198,8 +198,8 @@ where
         }
 
         let mut recipients_mempool_outputs: Vec<Vec<u64>> = vec![];
-        for recipient in recipients.clone() {
-            recipient.do_sync(false).await.unwrap();
+        for recipient in recipients.iter_mut() {
+            recipient.sync_and_await().await.unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
@@ -236,7 +236,7 @@ where
 
     environment.bump_chain().await;
     // chain scan shows the same
-    sender.do_sync(false).await.unwrap();
+    sender.sync_and_await().await.unwrap();
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
@@ -270,8 +270,8 @@ where
     }
 
     let mut recipients_confirmed_outputs = vec![];
-    for recipient in recipients {
-        recipient.do_sync(false).await.unwrap();
+    for recipient in recipients.iter_mut() {
+        recipient.sync_and_await().await.unwrap();
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (

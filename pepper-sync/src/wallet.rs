@@ -7,6 +7,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
     ops::Range,
+    sync::{
+        atomic::{self, AtomicU8},
+        Arc,
+    },
 };
 
 use incrementalmerkletree::Position;
@@ -191,6 +195,44 @@ impl Default for SyncState {
     }
 }
 
+/// Sync modes.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncMode {
+    /// Sync is not running.
+    NotRunning,
+    /// Sync is held in a paused state and the wallet guard is dropped.
+    Paused,
+    /// Sync is running.
+    Running,
+}
+
+impl SyncMode {
+    /// Constructor from u8.
+    ///
+    /// Returns `None` if `mode` is not a valid enum variant.
+    pub fn from_u8(mode: u8) -> Option<Self> {
+        match mode {
+            0 => Some(Self::NotRunning),
+            1 => Some(Self::Paused),
+            2 => Some(Self::Running),
+            _ => None,
+        }
+    }
+
+    /// Creates [`crate::wallet::SyncMode`] from an atomic u8.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
+    /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
+    /// [`crate::wallet::SyncMode`].
+    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
+        SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
+            .expect("this library does not allow setting of non-valid sync mode variants")
+    }
+}
+
 /// Initial and final tree sizes.
 #[derive(Debug, Clone, Copy)]
 #[allow(missing_docs)]
@@ -208,6 +250,7 @@ pub struct TreeBounds {
 #[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
+    pub sync_start_height: BlockHeight,
     pub scanned_blocks: u32,
     pub unscanned_blocks: u32,
     pub percentage_blocks_scanned: f32,
@@ -218,6 +261,7 @@ pub struct SyncStatus {
     pub percentage_outputs_scanned: f32,
 }
 
+// TODO: complete display, scan ranges in raw form are too verbose
 impl std::fmt::Display for SyncStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -228,6 +272,79 @@ impl std::fmt::Display for SyncStatus {
             }}",
             self.scanned_blocks, self.percentage_outputs_scanned
         )
+    }
+}
+
+impl From<SyncStatus> for json::JsonValue {
+    fn from(value: SyncStatus) -> Self {
+        let scan_ranges: Vec<json::JsonValue> = value
+            .scan_ranges
+            .iter()
+            .map(|range| {
+                json::object! {
+                    "priority" => format!("{:?}", range.priority()),
+                    "start_block" => range.block_range().start.to_string(),
+                    "end_block" => (range.block_range().end - 1).to_string(),
+                }
+            })
+            .collect();
+
+        json::object! {
+            "scan_ranges" => scan_ranges,
+            "sync_start_height" => u32::from(value.sync_start_height),
+            "scanned_blocks" => value.scanned_blocks,
+            "unscanned_blocks" => value.unscanned_blocks,
+            "percentage_blocks_scanned" => value.percentage_blocks_scanned,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "unscanned_sapling_outputs" => value.unscanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+            "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
+            "percentage_outputs_scanned" => value.percentage_outputs_scanned,
+        }
+    }
+}
+
+/// Returned when [`crate::sync::sync`] successfully completes.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct SyncResult {
+    pub sync_start_height: BlockHeight,
+    pub sync_end_height: BlockHeight,
+    pub scanned_blocks: u32,
+    pub scanned_sapling_outputs: u32,
+    pub scanned_orchard_outputs: u32,
+}
+
+impl std::fmt::Display for SyncResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Sync completed succesfully:
+{{
+    sync start height: {}
+    sync end height: {}
+    scanned blocks: {}
+    scanned sapling outputs: {}
+    scanned orchard outputs: {}
+}}",
+            self.sync_start_height,
+            self.sync_end_height,
+            self.scanned_blocks,
+            self.scanned_sapling_outputs,
+            self.scanned_orchard_outputs
+        )
+    }
+}
+
+impl From<SyncResult> for json::JsonValue {
+    fn from(value: SyncResult) -> Self {
+        json::object! {
+            "sync_start_height" => u32::from(value.sync_start_height),
+            "sync_end_height" => u32::from(value.sync_end_height),
+            "scanned_blocks" => value.scanned_blocks,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+        }
     }
 }
 

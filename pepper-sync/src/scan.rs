@@ -135,12 +135,12 @@ where
         .first()
         .expect("compacts blocks should not be empty")
         .height
-        != scan_range.block_range().start.into()
+        != u64::from(scan_range.block_range().start)
         || compact_blocks
             .last()
             .expect("compacts blocks should not be empty")
             .height
-            != (scan_range.block_range().end - 1).into()
+            != u64::from(scan_range.block_range().end - 1)
     {
         panic!("compact blocks do not match scan range!")
     }

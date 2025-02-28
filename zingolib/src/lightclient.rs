@@ -2,9 +2,13 @@
 
 use json::{array, object, JsonValue};
 use log::error;
+use pepper_sync::{error::SyncError, wallet::SyncResult};
 use serde::Serialize;
-use std::sync::{atomic::AtomicBool, Arc};
-use tokio::sync::{Mutex, RwLock};
+use std::sync::{atomic::AtomicU8, Arc};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinHandle,
+};
 
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
@@ -12,69 +16,13 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
 };
 
-use crate::config::ZingoConfig;
+use crate::{config::ZingoConfig, data::proposal::ZingoProposal};
 
 use crate::wallet::{
     keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
 };
 
-use crate::data::proposal::ZingoProposal;
-
-/// TODO: Add Doc Comment Here!
-#[derive(Clone, Debug, Default)]
-pub struct SyncResult {
-    /// TODO: Add Doc Comment Here!
-    pub success: bool,
-    /// TODO: Add Doc Comment Here!
-    pub latest_block: u64,
-    /// TODO: Add Doc Comment Here!
-    pub total_blocks_synced: u64,
-}
-
-impl SyncResult {
-    /// Converts this object to a JSON object that meets the contract expected by Zingo Mobile.
-    pub fn to_json(&self) -> JsonValue {
-        object! {
-            "result" => if self.success { "success" } else { "failure" },
-            "latest_block" => self.latest_block,
-            "total_blocks_synced" => self.total_blocks_synced,
-        }
-    }
-}
-
-impl std::fmt::Display for SyncResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            format!(
-                "{{ success: {}, latest_block: {}, total_blocks_synced: {}}}",
-                self.success, self.latest_block, self.total_blocks_synced
-            )
-            .as_str(),
-        )
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Clone, Debug, Default)]
-pub struct WalletStatus {
-    /// TODO: Add Doc Comment Here!
-    pub is_syncing: bool,
-    /// TODO: Add Doc Comment Here!
-    pub total_blocks: u64,
-    /// TODO: Add Doc Comment Here!
-    pub synced_blocks: u64,
-}
-
-impl WalletStatus {
-    /// TODO: Add Doc Comment Here!
-    pub fn new() -> Self {
-        WalletStatus {
-            is_syncing: false,
-            total_blocks: 0,
-            synced_blocks: 0,
-        }
-    }
-}
+pub mod error;
 
 /// TODO: Add Doc Comment Here!
 #[derive(Debug, Clone)]
@@ -284,31 +232,28 @@ pub struct UserBalances {
     pub incoming_dust: u64,
 }
 
-/// The LightClient connects one LightWallet to one indexer server via gRPC.
-///  1. initialization of stored state
-///      * from seed
-///      * from keys
-///      * from wallets
-///      * from a fresh start with reasonable defaults
-///  2. synchronization of the client with the state of the blockchain via a gRPC server
-///      *
-#[allow(dead_code)] // TODO: remove after sync integration
+/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
+/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
+///
+/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
-    syncing: Arc<AtomicBool>, // TODO: add interrupt to sync engine
+    sync_mode: Arc<AtomicU8>,
+    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
-    save_buffer: ZingoSaveBuffer, // TODO: move save buffer to wallet itself?
+    save_buffer: ZingoSaveBuffer,                        // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
 pub mod instantiation {
     use log::debug;
+    use pepper_sync::wallet::SyncMode;
     use std::{
         io::{self, Error, ErrorKind},
-        sync::{atomic::AtomicBool, Arc},
+        sync::{atomic::AtomicU8, Arc},
     };
     use tokio::{
         runtime::Runtime,
@@ -334,7 +279,8 @@ pub mod instantiation {
             Ok(LightClient {
                 config,
                 wallet: Arc::new(Mutex::new(wallet)),
-                syncing: Arc::new(AtomicBool::new(false)),
+                sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+                sync_handle: None,
                 latest_proposal: Arc::new(RwLock::new(None)),
                 save_buffer: ZingoSaveBuffer::new(buffer),
             })

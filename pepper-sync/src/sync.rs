@@ -32,7 +32,7 @@ use crate::scan::ScanResults;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
-use crate::wallet::{NullifierMap, SyncStatus};
+use crate::wallet::{NullifierMap, SyncMode, SyncResult, SyncStatus};
 use crate::witness;
 
 pub mod error;
@@ -43,16 +43,32 @@ pub(crate) mod transparent;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 
-/// Syncs a wallet to the latest state of the blockchain
+/// Syncs a wallet to the latest state of the blockchain.
+///
+/// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
+/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` or `NotRunning`
+/// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
+/// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
+/// scanning when the wallet guard is next available.
+// TODO: setting sync_mode to `NotRunning` should kill the sync task immediately.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
-) -> Result<(), SyncError>
+    sync_mode: Arc<AtomicU8>,
+) -> Result<SyncResult, SyncError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
+    let mut sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+    if sync_mode_enum == SyncMode::NotRunning {
+        sync_mode_enum = SyncMode::Running;
+        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
+    } else {
+        panic!("Sync is already running!");
+    }
+
     tracing::info!("Starting sync...");
 
     // create channel for sending fetch requests and launch fetcher task
@@ -179,6 +195,18 @@ where
 
                 // allow tasks outside the sync engine access to the wallet data
                 drop(wallet_guard);
+
+                sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+                if sync_mode_enum == SyncMode::Paused {
+                    let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
+                    pause_interval.tick().await;
+                    while sync_mode_enum != SyncMode::Running {
+                        pause_interval.tick().await;
+                        sync_mode_enum = SyncMode::from_u8(sync_mode.load(atomic::Ordering::Acquire)).unwrap();
+                    }
+
+                }
+
                 wallet_guard = wallet.lock().await;
             }
 
@@ -208,25 +236,44 @@ where
         }
     }
 
+    let sync_status = sync_status(&*wallet_guard).await;
+
     drop(wallet_guard);
     drop(scanner);
     drop(fetch_request_sender);
-    mempool_handle.await.unwrap()?;
-    fetcher_handle.await.unwrap().unwrap();
 
-    Ok(())
+    match mempool_handle.await.unwrap() {
+        Ok(_) => (),
+        Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
+        Err(e) => return Err(e.into()),
+    }
+    fetcher_handle.await.unwrap().unwrap();
+    sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+
+    Ok(SyncResult {
+        sync_start_height: sync_status.sync_start_height,
+        sync_end_height: (sync_status
+            .scan_ranges
+            .last()
+            .expect("should be non-empty after syncing")
+            .block_range()
+            .end
+            - 1),
+        scanned_blocks: sync_status.scanned_blocks,
+        scanned_sapling_outputs: sync_status.scanned_sapling_outputs,
+        scanned_orchard_outputs: sync_status.scanned_orchard_outputs,
+    })
 }
 
 /// Obtains the mutex guard to the wallet and creates a [`crate::wallet::SyncStatus`] from the wallet's current
 /// [`crate::wallet::SyncState`].
 ///
 /// Designed to be called during the sync process with minimal interruption.
-pub async fn sync_status<W>(wallet: Arc<Mutex<W>>) -> SyncStatus
+pub async fn sync_status<W>(wallet: &W) -> SyncStatus
 where
     W: SyncWallet + SyncBlocks,
 {
-    let wallet_guard = wallet.lock().await;
-    let sync_state = wallet_guard.get_sync_state().unwrap().clone();
+    let sync_state = wallet.get_sync_state().unwrap().clone();
 
     let unscanned_blocks = sync_state
         .scan_ranges()
@@ -244,7 +291,7 @@ where
         (scanned_blocks as f32 / sync_state.initial_sync_state.total_blocks_to_scan as f32) * 100.0;
 
     let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
-        state::calculate_unscanned_outputs(&*wallet_guard);
+        state::calculate_unscanned_outputs(wallet);
     let scanned_sapling_outputs = sync_state
         .initial_sync_state
         .total_sapling_outputs_to_scan
@@ -260,6 +307,7 @@ where
 
     SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
+        sync_start_height: sync_state.initial_sync_state.sync_start_height,
         scanned_blocks,
         unscanned_blocks,
         percentage_blocks_scanned,

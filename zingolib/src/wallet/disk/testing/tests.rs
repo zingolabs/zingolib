@@ -178,23 +178,25 @@ async fn verify_example_wallet_mainnet_hhcclaltpcckcsslpcnetblr_latest() {
 }
 
 async fn loaded_wallet_assert(
-    lightclient: LightClient,
+    mut lightclient: LightClient,
     expected_seed_phrase: String,
     expected_balance: u64,
     expected_num_addresses: usize,
 ) {
-    let wallet = lightclient.wallet.lock().await;
-    assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
+    {
+        let wallet = lightclient.wallet.lock().await;
+        assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
-    assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
-    for addr in wallet.unified_addresses.iter() {
-        assert!(addr.orchard().is_some());
-        assert!(addr.sapling().is_some());
-        assert!(addr.transparent().is_some());
+        assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
+        for addr in wallet.unified_addresses.iter() {
+            assert!(addr.orchard().is_some());
+            assert!(addr.sapling().is_some());
+            assert!(addr.transparent().is_some());
+        }
+
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(expected_balance));
     }
-
-    let balance = lightclient.do_balance().await;
-    assert_eq!(balance.orchard_balance, Some(expected_balance));
     if expected_balance > 0 {
         // FIXME: zingo2
         // crate::testutils::lightclient::from_inputs::quick_send(
@@ -207,7 +209,7 @@ async fn loaded_wallet_assert(
         // )
         // .await
         // .unwrap();
-        lightclient.do_sync(true).await.unwrap();
+        lightclient.sync_and_await().await.unwrap();
         // FIXME: zingo2
         // crate::testutils::lightclient::from_inputs::quick_send(
         //     &lightclient,

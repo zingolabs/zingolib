@@ -1819,7 +1819,7 @@ pub mod summaries {
                 "value" => note.value,
                 "memo" => note.memo,
                 "recipient" => note.recipient,
-                "recipient unified address" => note.recipient_unified_address
+                "recipient_unified_address" => note.recipient_unified_address
             }
         }
     }
