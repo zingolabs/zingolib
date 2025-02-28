@@ -16,7 +16,7 @@ impl LightClient {
     //        SAVE METHODS
 
     /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
-    pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
+    pub(super) async fn save_internal_rust(&mut self) -> ZingoLibResult<bool> {
         match self.save_internal_buffer().await {
             Ok(_vu8) => {
                 // Save_internal_buffer ran without error. At this point, we assume that the save buffer is good to go. Depending on operating system, we may be able to write it to disk. (Otherwise, we wait for the FFI to offer save export.
@@ -39,9 +39,9 @@ impl LightClient {
     }
 
     /// write down the state of the lightclient as a `Vec<u8>`
-    pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
+    pub async fn save_internal_buffer(&mut self) -> ZingoLibResult<Vec<u8>> {
         let mut buffer: Vec<u8> = vec![];
-        let wallet = self.wallet.lock().await;
+        let mut wallet = self.wallet.lock().await;
         let network = wallet.network;
         wallet
             .write(&mut buffer, &network)

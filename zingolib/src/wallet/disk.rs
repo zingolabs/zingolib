@@ -46,7 +46,7 @@ impl LightWallet {
     /// TODO: Add Doc Comment Here!
     // FIXME: sync integration, write rest of wallet data
     pub async fn write<W: Write>(
-        &self,
+        &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
@@ -111,8 +111,19 @@ impl LightWallet {
             &self.wallet_transactions.values().collect::<Vec<_>>(),
             |w, &transaction| transaction.write(w, consensus_parameters),
         )?;
-
-        Ok(())
+        self.nullifier_map.write(&mut writer)?;
+        Vector::write(
+            &mut writer,
+            &self.outpoint_map.iter().collect::<Vec<_>>(),
+            |w, (&output_id, &locator)| {
+                output_id.txid().write(&mut *w)?;
+                w.write_u16::<LittleEndian>(output_id.output_index())?;
+                w.write_u32::<LittleEndian>(locator.0.into())?;
+                locator.1.write(w)
+            },
+        )?;
+        self.shard_trees.write(&mut writer)?;
+        self.sync_state.write(&mut writer)
     }
 
     /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet

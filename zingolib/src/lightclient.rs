@@ -272,7 +272,7 @@ pub mod instantiation {
         /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
         pub async fn create_from_wallet_async(
             config: ZingoConfig,
-            wallet: LightWallet,
+            mut wallet: LightWallet,
         ) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
             wallet.write(&mut buffer, &config.chain).await?;
@@ -321,7 +321,7 @@ pub mod instantiation {
                 ));
                 }
             }
-            let lightclient = LightClient::create_from_wallet_async(
+            let mut lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
                 LightWallet::new(
                     config.chain,
@@ -367,8 +367,9 @@ pub mod instantiation {
 
         fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
             Runtime::new().unwrap().block_on(async move {
-                let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
-                    .await?;
+                let mut l =
+                    LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
+                        .await?;
 
                 debug!("Created new wallet with a new seed!");
                 debug!("Created LightClient to {}", &config.get_lightwalletd_uri());

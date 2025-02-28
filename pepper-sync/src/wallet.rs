@@ -13,11 +13,15 @@ use std::{
     },
 };
 
-use incrementalmerkletree::Position;
+use incrementalmerkletree::{Hashable, Position};
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{store::memory::MemoryShardStore, ShardTree};
+use shardtree::{
+    store::{memory::MemoryShardStore, Checkpoint, ShardStore},
+    ShardTree,
+};
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
+    serialization::shardtree::write_shard,
     PoolType, ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
@@ -26,6 +30,7 @@ use zcash_primitives::{
     consensus::{self, BlockHeight, NetworkConstants, Parameters},
     legacy::Script,
     memo::Memo,
+    merkle_tree::HashSer,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
         TxId,
@@ -92,6 +97,23 @@ impl InitialSyncState {
 impl Default for InitialSyncState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl InitialSyncState {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u32::<LittleEndian>(self.sync_start_height.into())?;
+        self.sync_tree_bounds.write(&mut writer)?;
+        writer.write_u32::<LittleEndian>(self.total_blocks_to_scan)?;
+        writer.write_u32::<LittleEndian>(self.total_sapling_outputs_to_scan)?;
+        writer.write_u32::<LittleEndian>(self.total_orchard_outputs_to_scan)
     }
 }
 
@@ -200,6 +222,41 @@ impl SyncState {
 impl Default for SyncState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl SyncState {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        Vector::write(&mut writer, self.scan_ranges(), |w, scan_range| {
+            w.write_u32::<LittleEndian>(scan_range.block_range().start.into())?;
+            w.write_u32::<LittleEndian>(scan_range.block_range().end.into())?;
+            w.write_u8(scan_range.priority() as u8)
+        })?;
+        Vector::write(&mut writer, &self.sapling_shard_ranges, |w, shard_range| {
+            w.write_u32::<LittleEndian>(shard_range.start.into())?;
+            w.write_u32::<LittleEndian>(shard_range.end.into())
+        })?;
+        Vector::write(&mut writer, &self.orchard_shard_ranges, |w, shard_range| {
+            w.write_u32::<LittleEndian>(shard_range.start.into())?;
+            w.write_u32::<LittleEndian>(shard_range.end.into())
+        })?;
+        Vector::write(
+            &mut writer,
+            &self.locators.iter().collect::<Vec<_>>(),
+            |w, &locator| {
+                w.write_u32::<LittleEndian>(locator.0.into())?;
+                locator.1.write(w)
+            },
+        )?;
+
+        Ok(())
     }
 }
 
@@ -433,6 +490,36 @@ impl NullifierMap {
 impl Default for NullifierMap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl NullifierMap {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        Vector::write(
+            &mut writer,
+            &self.sapling.iter().collect::<Vec<_>>(),
+            |w, (&nullifier, &locator)| {
+                w.write_all(nullifier.as_ref())?;
+                w.write_u32::<LittleEndian>(locator.0.into())?;
+                locator.1.write(w)
+            },
+        )?;
+        Vector::write(
+            &mut writer,
+            &self.orchard.iter().collect::<Vec<_>>(),
+            |w, (&nullifier, &locator)| {
+                w.write_all(&nullifier.to_bytes())?;
+                w.write_u32::<LittleEndian>(locator.0.into())?;
+                locator.1.write(w)
+            },
+        )
     }
 }
 
@@ -1356,6 +1443,128 @@ impl ShardTrees {
 impl Default for ShardTrees {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl ShardTrees {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        Self::write_shardtree(&mut writer, &mut self.sapling)?;
+        Self::write_shardtree(&mut writer, &mut self.orchard)?;
+
+        Ok(())
+    }
+
+    /// Write memory-backed shardstore, represented tree.
+    fn write_shardtree<
+        H: Hashable + Clone + Eq + HashSer,
+        C: Ord + std::fmt::Debug + Copy,
+        W: Write,
+        const DEPTH: u8,
+        const SHARD_HEIGHT: u8,
+    >(
+        mut writer: W,
+        tree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
+    ) -> std::io::Result<()>
+    where
+        u32: From<C>,
+    {
+        fn write_shards<W, H, C>(
+            mut writer: W,
+            store: &MemoryShardStore<H, C>,
+        ) -> std::io::Result<()>
+        where
+            H: Hashable + Clone + Eq + HashSer,
+            C: Ord + std::fmt::Debug + Copy,
+            W: Write,
+        {
+            let roots = store.get_shard_roots().expect("Infallible");
+            Vector::write(&mut writer, &roots, |w, root| {
+                w.write_u8(root.level().into())?;
+                w.write_u64::<LittleEndian>(root.index())?;
+                let shard = store
+                    .get_shard(*root)
+                    .expect("Infallible")
+                    .expect("cannot find root that shard store claims to have");
+                write_shard(w, shard.root())?; // s.root returns &Tree
+                Ok(())
+            })?;
+            Ok(())
+        }
+
+        fn write_checkpoints<W, Cid>(
+            mut writer: W,
+            checkpoints: &[(Cid, Checkpoint)],
+        ) -> std::io::Result<()>
+        where
+            W: Write,
+            Cid: Ord + std::fmt::Debug + Copy,
+            u32: From<Cid>,
+        {
+            Vector::write(
+                &mut writer,
+                checkpoints,
+                |mut w, (checkpoint_id, checkpoint)| {
+                    w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
+                    match checkpoint.tree_state() {
+                        shardtree::store::TreeState::Empty => w.write_u8(0),
+                        shardtree::store::TreeState::AtPosition(pos) => {
+                            w.write_u8(1)?;
+                            w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
+                        }
+                    }?;
+                    Vector::write(
+                        &mut w,
+                        &checkpoint.marks_removed().iter().collect::<Vec<_>>(),
+                        |w, mark| {
+                            w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark))
+                        },
+                    )
+                },
+            )?;
+            Ok(())
+        }
+
+        // Replace original tree with empty tree, and mutate new version into store.
+        let mut store = std::mem::replace(
+            tree,
+            shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
+        )
+        .into_store();
+        macro_rules! write_with_error_handling {
+            ($writer: ident, $from: ident) => {
+                if let Err(e) = $writer(&mut writer, &$from) {
+                    *tree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+                    return Err(e);
+                }
+            };
+        }
+        // Write located prunable trees
+        write_with_error_handling!(write_shards, store);
+        let mut checkpoints = Vec::new();
+        store
+            .with_checkpoints(
+                MAX_VERIFICATION_WINDOW as usize,
+                |checkpoint_id, checkpoint| {
+                    checkpoints.push((*checkpoint_id, checkpoint.clone()));
+                    Ok(())
+                },
+            )
+            .expect("Infallible");
+        // Write checkpoints
+        write_with_error_handling!(write_checkpoints, checkpoints);
+        let cap = store.get_cap().expect("Infallible");
+        // Write cap
+        write_with_error_handling!(write_shard, cap);
+        *tree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+
+        Ok(())
     }
 }
 

@@ -9,7 +9,7 @@ use zcash_primitives::transaction::TxId;
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
-    template_client: &LightClient,
+    template_client: &mut LightClient,
 ) -> Result<LightClient, ZingoLibError> {
     let buffer = template_client.save_internal_buffer().await?;
 
