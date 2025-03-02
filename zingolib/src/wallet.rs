@@ -180,25 +180,25 @@ impl WalletBase {
 
 /// In-memory wallet data struct
 pub struct LightWallet {
-    /// The block height at which the wallet was created.
-    ///
-    /// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
-    /// this block height.
-    pub birthday: BlockHeight,
+    /// Network type
+    pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     /// Can be `None` in case of wallet without spending capability
     /// or created directly from spending keys.
     // TODO: we seem to support generating keys for a single account of choice which is stored here, this should be
     // reworked to support multiple accounts during sync integration
     mnemonic: Option<(Mnemonic, u32)>,
-    /// Wallet options
-    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
-    /// Progress of an outgoing transaction
-    send_progress: Arc<RwLock<SendProgress>>,
-    /// The current price of ZEC. (time_fetched, price in USD)
-    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    /// The block height at which the wallet was created.
+    ///
+    /// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
+    /// this block height.
+    pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
+    /// Unified_addresses
+    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
+    /// Transparent addresses
+    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
@@ -211,12 +211,12 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Transparent addresses
-    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
-    /// Unified_addresses
-    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
-    /// Network type
-    pub network: ChainType,
+    /// Wallet options
+    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
+    /// The current price of ZEC. (time_fetched, price in USD)
+    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    /// Progress of an outgoing transaction
+    send_progress: Arc<RwLock<SendProgress>>,
 }
 
 impl LightWallet {

@@ -51,23 +51,17 @@ impl LightWallet {
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-        self.unified_key_store.write(&mut writer, self.network)?;
-
-        for scope in [
-            TransparentScope::External,
-            TransparentScope::Internal,
-            TransparentScope::Refund,
-        ] {
-            let transparent_address_count = self
-                .transparent_addresses
-                .keys()
-                .filter(|address_id| address_id.scope() == scope)
-                .map(|address_id| address_id.address_index())
-                .max()
-                .map(|max_index| max_index + 1)
-                .unwrap_or(0);
-            writer.write_u32::<LittleEndian>(transparent_address_count)?;
+        utils::write_string(&mut writer, &self.network.to_string())?;
+        let seed_bytes = match &self.mnemonic {
+            Some(m) => m.0.clone().into_entropy(),
+            None => vec![],
+        };
+        Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
+        if let Some(m) = &self.mnemonic {
+            writer.write_u32::<LittleEndian>(m.1)?;
         }
+        writer.write_u32::<LittleEndian>(self.birthday.into())?;
+        self.unified_key_store.write(&mut writer, self.network)?;
 
         // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
         Vector::write(
@@ -82,22 +76,20 @@ impl LightWallet {
                 .write(w, ())
             },
         )?;
-
-        utils::write_string(&mut writer, &self.network.to_string())?;
-        self.wallet_options.read().await.write(&mut writer)?;
-        // TODO: birthday can be u32
-        writer.write_u64::<LittleEndian>(self.birthday.into())?;
-        self.price.read().await.write(&mut writer)?;
-
-        // TODO: consider writing mnemonic before keys
-        let seed_bytes = match &self.mnemonic {
-            Some(m) => m.0.clone().into_entropy(),
-            None => vec![],
-        };
-        Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
-
-        if let Some(m) = &self.mnemonic {
-            writer.write_u32::<LittleEndian>(m.1)?;
+        for scope in [
+            TransparentScope::External,
+            TransparentScope::Internal,
+            TransparentScope::Refund,
+        ] {
+            let transparent_address_count = self
+                .transparent_addresses
+                .keys()
+                .filter(|address_id| address_id.scope() == scope)
+                .map(|address_id| address_id.address_index())
+                .max()
+                .map(|max_index| max_index + 1)
+                .unwrap_or(0);
+            writer.write_u32::<LittleEndian>(transparent_address_count)?;
         }
 
         Vector::write(
@@ -122,7 +114,10 @@ impl LightWallet {
             },
         )?;
         self.shard_trees.write(&mut writer)?;
-        self.sync_state.write(&mut writer)
+        self.sync_state.write(&mut writer)?;
+
+        self.wallet_options.read().await.write(&mut writer)?;
+        self.price.read().await.write(&mut writer)
     }
 
     /// Deserialize into `reader`
@@ -147,9 +142,7 @@ impl LightWallet {
 
     fn read_v0<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
         let mut wallet_capability = WalletCapability::read(&mut reader, network)?;
-
         let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-
         let _transactions = if version <= 14 {
             TxMap::read_old(&mut reader, &wallet_capability)?
         } else {
@@ -157,7 +150,6 @@ impl LightWallet {
         };
 
         let chain_name = utils::read_string(&mut reader)?;
-
         if chain_name != network.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
@@ -173,7 +165,6 @@ impl LightWallet {
         } else {
             WalletOptions::read(&mut reader)?
         };
-
         let birthday = BlockHeight::from_u32(
             reader
                 .read_u64::<LittleEndian>()?
@@ -188,7 +179,6 @@ impl LightWallet {
                 reader.read_u8()? == 1
             };
         }
-
         let _verified_tree = if version <= 21 {
             None
         } else {
