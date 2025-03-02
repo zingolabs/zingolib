@@ -44,7 +44,6 @@ impl LightWallet {
     }
 
     /// TODO: Add Doc Comment Here!
-    // FIXME: sync integration, write rest of wallet data
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,

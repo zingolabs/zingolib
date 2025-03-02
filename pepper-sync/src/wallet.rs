@@ -100,23 +100,6 @@ impl Default for InitialSyncState {
     }
 }
 
-#[cfg(feature = "wallet_essentials")]
-impl InitialSyncState {
-    fn serialized_version() -> u8 {
-        0
-    }
-
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-        writer.write_u32::<LittleEndian>(self.sync_start_height.into())?;
-        self.sync_tree_bounds.write(&mut writer)?;
-        writer.write_u32::<LittleEndian>(self.total_blocks_to_scan)?;
-        writer.write_u32::<LittleEndian>(self.total_sapling_outputs_to_scan)?;
-        writer.write_u32::<LittleEndian>(self.total_orchard_outputs_to_scan)
-    }
-}
-
 /// Encapsulates the current state of sync
 #[derive(Debug, Clone)]
 pub struct SyncState {
@@ -254,8 +237,7 @@ impl SyncState {
                 w.write_u32::<LittleEndian>(locator.0.into())?;
                 locator.1.write(w)
             },
-        )?;
-        self.initial_sync_state.write(&mut writer)
+        )
     }
 }
 
