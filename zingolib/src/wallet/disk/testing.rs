@@ -10,9 +10,8 @@ use super::LightWallet;
 
 impl LightWallet {
     /// connects a wallet to a local regtest node.
-    pub async fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
-        Self::read_internal(data, network)
-            .await
+    pub fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
+        Self::read(data, network)
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
     }

@@ -43,13 +43,13 @@ impl LightWallet {
         32 // FIXME: double check this is correctly incremented before sync integration is complete
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Serialize into `writer`
+    // FIXME: remove arc mutex on price and options and make sync fn
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
-        // TODO: version can be u8
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
         self.unified_key_store.write(&mut writer, self.network)?;
 
@@ -125,50 +125,36 @@ impl LightWallet {
         self.sync_state.write(&mut writer)
     }
 
-    /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet
-    /// read procedures, by reducing its visibility we constrain possible uses.
-    /// Each type that can be deserialized has an associated serialization version.  Our
-    /// convention is to omit the type e.g. "wallet" from the local variable ident, and
-    /// make explicit (via ident) which variable refers to a value deserialized from
-    /// some source ("external") and which is represented as a source-code constant
-    /// ("internal").
-    pub async fn read_internal<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
-        let external_version = reader.read_u64::<LittleEndian>()?;
-        if external_version > Self::serialized_version() {
-            let e = format!(
-                "Don't know how to read wallet version {}. Do you have the latest version?\n{}",
-                external_version,
-                "Note: wallet files from zecwallet or beta zingo are not compatible"
-            );
-            error!("{}", e);
-            return Err(io::Error::new(ErrorKind::InvalidData, e));
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        info!("Reading wallet version {}", version);
+        match version {
+            ..32 => Self::read_v0(reader, network, version),
+            32 => Self::read_v32(reader, network),
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "Failed to read wallet version {}. Do you have the latest version?\n{}",
+                        version,
+                        "Note: wallet files from zecwallet or beta zingo are not compatible"
+                    ),
+                ));
+            }
         }
+    }
 
-        info!("Reading wallet version {}", external_version);
+    fn read_v0<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
+        let mut wallet_capability = WalletCapability::read(&mut reader, network)?;
 
-        let mut wallet_capability = None;
-        let mut _transactions = None;
-        if external_version < 31 {
-            wallet_capability = Some(WalletCapability::read(&mut reader, network)?);
+        let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
 
-            let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-
-            _transactions = if external_version <= 14 {
-                Some(TxMap::read_old(
-                    &mut reader,
-                    wallet_capability
-                        .as_ref()
-                        .expect("wallet capability should exist for versions pre-31"),
-                )?)
-            } else {
-                Some(TxMap::read(
-                    &mut reader,
-                    wallet_capability
-                        .as_ref()
-                        .expect("wallet capability should exist for versions pre-31"),
-                )?)
-            };
-        }
+        let _transactions = if version <= 14 {
+            TxMap::read_old(&mut reader, &wallet_capability)?
+        } else {
+            TxMap::read(&mut reader, &wallet_capability)?
+        };
 
         let chain_name = utils::read_string(&mut reader)?;
 
@@ -182,7 +168,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if external_version <= 23 {
+        let wallet_options = if version <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -195,35 +181,33 @@ impl LightWallet {
                 .expect("should never overflow"),
         );
 
-        if external_version <= 22 {
-            let _sapling_tree_verified = if external_version <= 12 {
+        if version <= 22 {
+            let _sapling_tree_verified = if version <= 12 {
                 true
             } else {
                 reader.read_u8()? == 1
             };
         }
 
-        if external_version < 31 {
-            let _verified_tree = if external_version <= 21 {
-                None
-            } else {
-                Optional::read(&mut reader, |r| {
-                    use prost::Message;
+        let _verified_tree = if version <= 21 {
+            None
+        } else {
+            Optional::read(&mut reader, |r| {
+                use prost::Message;
 
-                    let buf = Vector::read(r, |r| r.read_u8())?;
-                    TreeState::decode(&buf[..])
-                        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-                })?
-            };
-        }
+                let buf = Vector::read(r, |r| r.read_u8())?;
+                TreeState::decode(&buf[..])
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
+            })?
+        };
 
-        let price = if external_version <= 13 {
+        let price = if version <= 13 {
             WalletZecPriceInfo::default()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
-        let _orchard_anchor_height_pairs = if external_version == 25 {
+        let _orchard_anchor_height_pairs = if version == 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
                 r.read_exact(&mut anchor_bytes)?;
@@ -240,7 +224,7 @@ impl LightWallet {
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
         let mnemonic = if !seed_bytes.is_empty() {
-            let account_index = if external_version >= 28 {
+            let account_index = if version >= 28 {
                 reader.read_u32::<LittleEndian>()?
             } else {
                 0
@@ -259,12 +243,9 @@ impl LightWallet {
         // UnifiedSpendingKey is initially incomplete for old wallet versions.
         // This is due to the legacy transparent extended private key (ExtendedPrivKey) not containing all information required for BIP0032.
         // There is also the issue that the legacy transparent private key is derived an extra level to the external scope.
-        if external_version < 29 {
+        if version < 29 {
             if let Some(mnemonic) = mnemonic.as_ref() {
-                wallet_capability
-                    .as_mut()
-                    .expect("wallet capability should exist for versions pre-31")
-                    .unified_key_store = UnifiedKeyStore::Spend(Box::new(
+                wallet_capability.unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
                         &network,
                         &mnemonic.0.to_seed(""),
@@ -280,11 +261,7 @@ impl LightWallet {
                         )
                     })?,
                 ));
-            } else if let UnifiedKeyStore::Spend(_) = &wallet_capability
-                .as_ref()
-                .expect("wallet capability should exist for versions pre-31")
-                .unified_key_store
-            {
+            } else if let UnifiedKeyStore::Spend(_) = &wallet_capability.unified_key_store {
                 return Err(io::Error::new(
                     ErrorKind::Other,
                     "loading from legacy spending keys with no seed phrase to recover",
@@ -292,14 +269,7 @@ impl LightWallet {
             }
         }
 
-        let unified_key_store = if external_version >= 31 {
-            UnifiedKeyStore::read(&mut reader, network)?
-            // FIXME: sync integration, check write matches read for v31
-        } else {
-            wallet_capability
-                .expect("wallet capability should exist for versions pre-31")
-                .unified_key_store
-        };
+        let unified_key_store = wallet_capability.unified_key_store;
 
         info!("Keys in this wallet:");
         match &unified_key_store {
@@ -322,11 +292,7 @@ impl LightWallet {
             UnifiedKeyStore::Empty => info!("  - no keys found"),
         }
 
-        if external_version >= 31 {
-            // FIXME: sync integration, load new wallet format
-        } else {
-            // FIXME: sync integration, add locators for targetted rescan
-        }
+        // FIXME: sync integration, add locators for targetted rescan
 
         let lw = Self {
             mnemonic,
@@ -347,6 +313,10 @@ impl LightWallet {
         };
 
         Ok(lw)
+    }
+
+    fn read_v32<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+        todo!()
     }
 }
 

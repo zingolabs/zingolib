@@ -242,7 +242,6 @@ impl SyncState {
 }
 
 /// Sync modes.
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncMode {
     /// Sync is not running.
