@@ -198,29 +198,27 @@ async fn loaded_wallet_assert(
         assert_eq!(balance.orchard_balance, Some(expected_balance));
     }
     if expected_balance > 0 {
-        // FIXME: zingo2
-        // crate::testutils::lightclient::from_inputs::quick_send(
-        //     &lightclient,
-        //     vec![(
-        //         &crate::get_base_address_macro!(lightclient, "sapling"),
-        //         11011,
-        //         None,
-        //     )],
-        // )
-        // .await
-        // .unwrap();
+        crate::testutils::lightclient::from_inputs::quick_send(
+            &lightclient,
+            vec![(
+                &crate::get_base_address_macro!(lightclient, "sapling"),
+                11011,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
         lightclient.sync_and_await().await.unwrap();
-        // FIXME: zingo2
-        // crate::testutils::lightclient::from_inputs::quick_send(
-        //     &lightclient,
-        //     vec![(
-        //         &crate::get_base_address_macro!(lightclient, "transparent"),
-        //         28000,
-        //         None,
-        //     )],
-        // )
-        // .await
-        // .unwrap();
+        crate::testutils::lightclient::from_inputs::quick_send(
+            &lightclient,
+            vec![(
+                &crate::get_base_address_macro!(lightclient, "transparent"),
+                28000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
     }
 }
 

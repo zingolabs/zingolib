@@ -86,6 +86,12 @@ impl LightClient {
         self.sync().await?;
         self.await_sync().await
     }
+
+    /// Calls [`crate::lightclient::LightClient::rescan`] and then [`crate::lightclient::LightClient::await_sync`].
+    pub async fn rescan_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        self.rescan().await?;
+        self.await_sync().await
+    }
 }
 
 /// Returned from [`crate::lightclient::LightClient::poll_sync`].

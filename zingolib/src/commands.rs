@@ -762,14 +762,14 @@ impl Command for ExportUfvkCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let ufvk: UnifiedFullViewingKey =
-                match (&lightclient.wallet.lock().await.unified_key_store).try_into() {
-                    Ok(ufvk) => ufvk,
-                    Err(e) => return e.to_string(),
-                };
+            let wallet = lightclient.wallet.lock().await;
+            let ufvk: UnifiedFullViewingKey = match (&wallet.unified_key_store).try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
             object! {
-                "ufvk" => ufvk.encode(&lightclient.config().chain),
-                "birthday" => u32::from(lightclient.wallet.lock().await.birthday)
+                "ufvk" => ufvk.encode(&wallet.network),
+                "birthday" => u32::from(wallet.birthday)
             }
             .pretty(2)
         })
@@ -1440,7 +1440,7 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-// FIXME: zingo2
+// TODO: zingo2
 // struct SetOptionCommand {}
 // impl Command for SetOptionCommand {
 //     fn help(&self) -> &'static str {
@@ -1524,7 +1524,7 @@ impl Command for SendsToAddressCommand {
 //     }
 // }
 
-// FIXME: zingo2
+// TODO: zingo2
 // struct GetOptionCommand {}
 // impl Command for GetOptionCommand {
 //     fn help(&self) -> &'static str {
@@ -1839,8 +1839,6 @@ impl Command for DeprecatedNoCommand {
 
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    // FIXME zingo2, re-impl or delete commented commands
-    #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
@@ -1857,7 +1855,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
-        // ("setoption", Box::new(SetOptionCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
@@ -1867,7 +1864,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
-        // ("getoption", Box::new(GetOptionCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),

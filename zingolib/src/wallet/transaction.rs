@@ -63,6 +63,7 @@ impl LightWallet {
     /// Calculate the fee for a transaction in the wallet.
     ///
     /// Fails if transparent spends are not found in the wallet.
+    // FIXME: zingo2, write integration tests
     pub fn calculate_transaction_fee(
         &self,
         transaction: &WalletTransaction,

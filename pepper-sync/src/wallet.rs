@@ -620,7 +620,9 @@ impl WalletTransaction {
 impl std::fmt::Debug for WalletTransaction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("WalletTransaction")
+            .field("txid", &self.txid)
             .field("confirmation_status", &self.status)
+            .field("datetime", &self.datetime)
             .field("transparent_coins", &self.transparent_coins)
             .field("sapling_notes", &self.sapling_notes)
             .field("orchard_notes", &self.orchard_notes)

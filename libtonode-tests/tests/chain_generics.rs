@@ -42,11 +42,10 @@ mod chain_generics {
     async fn ignore_dust_inputs() {
         fixtures::ignore_dust_inputs::<LibtonodeEnvironment>().await;
     }
-    // FIXME: zingo2
-    // #[tokio::test]
-    // async fn note_selection_order() {
-    //     fixtures::note_selection_order::<LibtonodeEnvironment>().await;
-    // }
+    #[tokio::test]
+    async fn note_selection_order() {
+        fixtures::note_selection_order::<LibtonodeEnvironment>().await;
+    }
     #[tokio::test]
     async fn simpool_insufficient_1_sapling_to_transparent() {
         fixtures::shpool_to_pool_insufficient_error::<LibtonodeEnvironment>(

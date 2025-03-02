@@ -164,6 +164,8 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
+    use crate::wallet::propose::ProposeShieldError;
+
     async fn create_basic_client() -> crate::lightclient::LightClient {
         crate::lightclient::LightClient::create_unconnected(
             &crate::config::ZingoConfigBuilder::default().create(),
@@ -175,23 +177,22 @@ mod shielding {
         .await
         .unwrap()
     }
-    // FIXME: zingo2
-    // #[tokio::test]
-    // async fn propose_shield_missing_scan_prerequisite() {
-    //     let basic_client = create_basic_client().await;
-    //     let propose_shield_result = basic_client
-    //         .wallet
-    //         .lock()
-    //         .await
-    //         .create_shield_proposal()
-    //         .await;
-    //     match propose_shield_result {
-    //         Err(ProposeShieldError::Component(
-    //             zcash_client_backend::data_api::error::Error::ScanRequired,
-    //         )) => true,
-    //         _ => panic!("Unexpected error state!"),
-    //     };
-    // }
+    #[tokio::test]
+    async fn propose_shield_missing_scan_prerequisite() {
+        let basic_client = create_basic_client().await;
+        let propose_shield_result = basic_client
+            .wallet
+            .lock()
+            .await
+            .create_shield_proposal()
+            .await;
+        match propose_shield_result {
+            Err(ProposeShieldError::Component(
+                zcash_client_backend::data_api::error::Error::ScanRequired,
+            )) => true,
+            _ => panic!("Unexpected error state!"),
+        };
+    }
     #[tokio::test]
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client().await;

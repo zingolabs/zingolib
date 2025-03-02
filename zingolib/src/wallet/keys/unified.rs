@@ -2,7 +2,6 @@
 
 use std::sync::atomic;
 use std::{
-    collections::HashSet,
     io::{self, Read, Write},
     sync::atomic::AtomicBool,
 };
@@ -474,17 +473,6 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    pub(crate) fn get_ua_from_contained_transparent_receiver(
-        &self,
-        receiver: &TransparentAddress,
-    ) -> Option<UnifiedAddress> {
-        self.unified_addresses
-            .iter()
-            .find(|ua| ua.transparent() == Some(receiver))
-            .cloned()
-    }
     /// TODO: Add Doc Comment Here!
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.unified_addresses
@@ -660,40 +648,6 @@ impl WalletCapability {
         Self::new_from_seed(config, &bip39_seed, position)
     }
 
-    /// external here refers to HD keys:
-    /// <https://zips.z.cash/zip-0032>
-    /// where external and internal were inherited from the BIP44 conventions
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    fn get_external_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.unified_addresses
-            .iter()
-            .filter_map(|address| {
-                address.transparent().and_then(|transparent_receiver| {
-                    if let zcash_primitives::legacy::TransparentAddress::PublicKeyHash(hash) =
-                        transparent_receiver
-                    {
-                        Some(super::ToBase58Check::to_base58check(
-                            hash.as_slice(),
-                            &chain.b58_pubkey_address_prefix(),
-                            &[],
-                        ))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect()
-    }
-
-    // FIXME: zingo2
-    #[allow(dead_code)]
-    pub(crate) fn get_taddrs(&self, chain: &crate::config::ChainType) -> HashSet<String> {
-        self.get_external_taddrs(chain)
-            .union(&self.get_rejection_address_set(chain))
-            .cloned()
-            .collect()
-    }
     /// TODO: Add Doc Comment Here!
     pub fn first_sapling_address(&self) -> sapling_crypto::PaymentAddress {
         // This index is dangerous, but all ways to instantiate a UnifiedSpendAuthority
@@ -985,11 +939,11 @@ impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
     }
 }
 mod rejection {
-    use std::{collections::HashSet, sync::Arc};
+    use std::sync::Arc;
 
     use append_only_vec::AppendOnlyVec;
     use zcash_client_backend::wallet::TransparentAddressMetadata;
-    use zcash_keys::{encoding::AddressCodec, keys::DerivationError};
+    use zcash_keys::keys::DerivationError;
     use zcash_primitives::legacy::{
         keys::{AccountPubKey, NonHardenedChildIndex, TransparentKeyScope},
         TransparentAddress,
@@ -1027,17 +981,6 @@ mod rejection {
             &self,
         ) -> &Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>> {
             &self.rejection_addresses
-        }
-        // FIXME: zingo2
-        #[allow(dead_code)]
-        pub(crate) fn get_rejection_address_set(
-            &self,
-            chain: &crate::config::ChainType,
-        ) -> HashSet<String> {
-            self.rejection_addresses
-                .iter()
-                .map(|(transparent_address, _metadata)| transparent_address.encode(chain))
-                .collect()
         }
     }
 }

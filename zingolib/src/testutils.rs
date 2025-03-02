@@ -5,15 +5,18 @@
 
 pub mod scenarios;
 
+use crate::lightclient::error::LightClientError;
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
-    BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _, TransparentCoinSummary,
+    BasicCoinSummary, BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _,
 };
-use crate::wallet::keys::unified::WalletCapability;
+use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::WalletBase;
+use crate::UAReceivers;
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
+use lightclient::get_base_address;
 use std::collections::HashMap;
 use std::io::Read;
 use std::string::String;
@@ -45,13 +48,12 @@ pub mod paths;
 pub mod regtest;
 
 /// TODO: Add Doc Comment Here!
-pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
-    let orchard_vk: orchard::keys::FullViewingKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
+    let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+        unified_keystore.try_into().unwrap();
     let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
-        (&wallet_capability.unified_key_store).try_into().unwrap();
+        unified_keystore.try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];
     transparent_vk_bytes.copy_from_slice(&transparent_vk.serialize());
@@ -180,8 +182,8 @@ fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSu
 
 /// TODO: doc comment
 fn check_transparent_coin_summary_equality(
-    first: &[TransparentCoinSummary],
-    second: &[TransparentCoinSummary],
+    first: &[BasicCoinSummary],
+    second: &[BasicCoinSummary],
 ) -> bool {
     if first.len() != second.len() {
         return false;
@@ -209,33 +211,32 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     )
 }
 
-// FIXME: zingo2
-// /// Send from sender to recipient and then sync the recipient
-// pub async fn send_value_between_clients_and_sync(
-//     manager: &RegtestManager,
-//     sender: &LightClient,
-//     recipient: &LightClient,
-//     value: u64,
-//     address_type: &str,
-// ) -> Result<String, String> {
-//     debug!(
-//         "recipient address is: {}",
-//         &recipient.do_addresses(UAReceivers::All).await[0]["address"]
-//     );
-//     let txid = lightclient::from_inputs::quick_send(
-//         sender,
-//         vec![(
-//             &crate::get_base_address_macro!(recipient, address_type),
-//             value,
-//             None,
-//         )],
-//     )
-//     .await
-//     .unwrap();
-//     increase_height_and_wait_for_client(manager, sender, 1).await?;
-//     recipient.do_sync(false).await?;
-//     Ok(txid.first().to_string())
-// }
+/// Send from sender to recipient and then sync the recipient
+pub async fn send_value_between_clients_and_sync(
+    manager: &RegtestManager,
+    sender: &mut LightClient,
+    recipient: &mut LightClient,
+    value: u64,
+    address_pool: PoolType,
+) -> Result<String, LightClientError> {
+    log::debug!(
+        "recipient address is: {}",
+        recipient.do_addresses(UAReceivers::All).await[0]["address"]
+    );
+    let txid = lightclient::from_inputs::quick_send(
+        sender,
+        vec![(
+            &get_base_address(recipient, address_pool).await,
+            value,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(manager, sender, 1).await?;
+    recipient.sync_and_await().await?;
+    Ok(txid.first().to_string())
+}
 
 /// This function increases the chain height reliably (with polling) but
 /// it _also_ ensures that the client state is synced.
@@ -245,7 +246,7 @@ pub async fn increase_height_and_wait_for_client(
     manager: &RegtestManager,
     client: &mut LightClient,
     n: u32,
-) -> Result<(), String> {
+) -> Result<(), LightClientError> {
     sync_to_target_height(
         client,
         generate_n_blocks_return_new_height(manager, n)
@@ -273,12 +274,14 @@ pub async fn generate_n_blocks_return_new_height(
 pub async fn sync_to_target_height(
     client: &mut LightClient,
     target_block_height: u32,
-) -> Result<(), String> {
+) -> Result<(), LightClientError> {
+    // sync first so ranges exist for the `fully_scanned_height` call
+    client.sync_and_await().await?;
     while u32::from(client.wallet.lock().await.sync_state.fully_scanned_height())
         < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        client.sync_and_await().await.unwrap();
+        client.sync_and_await().await?;
     }
     Ok(())
 }
@@ -322,7 +325,7 @@ pub struct TxActionsCount {
     pub orchard_tx_actions: usize,
 }
 
-// FIXME:
+// FIXME: zingo2 rewrite with wallet data or note summaries
 // /// Returns number of notes used as inputs for txid as TxNotesCount (transparent_notes, sapling_notes, orchard_notes).
 // pub async fn tx_inputs(client: &LightClient, txid: &str) -> TxNotesCount {
 //     let notes = client.do_list_notes(true).await;

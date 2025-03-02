@@ -181,19 +181,18 @@ mod test {
         )
         .load_example_wallet_with_client()
         .await;
-        let wallet = client.wallet.lock().await;
+        let mut wallet = client.wallet.lock().await;
 
         let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
         let self_address = wallet.get_first_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
-        let _request = transaction_request_from_send_inputs(receivers)
+        let request = transaction_request_from_send_inputs(receivers)
             .expect("actually all of this logic oughta be internal to propose");
 
-        // FIXME: zingo2
-        // wallet
-        //     .create_send_proposal(request)
-        //     .await
-        //     .expect("can propose from existing data");
+        wallet
+            .create_send_proposal(request)
+            .await
+            .expect("can propose from existing data");
     }
 }
