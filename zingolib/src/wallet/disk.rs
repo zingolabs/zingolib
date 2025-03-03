@@ -33,7 +33,7 @@ use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::{ReceiverSelection, WalletCapability};
+use super::keys::unified::{ReceiverSelection, UnifiedAddressId, WalletCapability};
 
 use super::LightWallet;
 use super::{
@@ -69,11 +69,12 @@ impl LightWallet {
         self.unified_key_store.write(&mut writer, self.network)?;
 
         // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
-        // FIXME: write ua ID also
         Vector::write(
             &mut writer,
-            &self.unified_addresses.values().collect::<Vec<_>>(),
-            |w, address| {
+            &self.unified_addresses.iter().collect::<Vec<_>>(),
+            |w, (address_id, address)| {
+                w.write_u32::<LittleEndian>(address_id.account_id.into())?;
+                w.write_u32::<LittleEndian>(address_id.address_index)?;
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
                     sapling: address.sapling().is_some(),
@@ -335,18 +336,24 @@ impl LightWallet {
         let birthday = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
         let unified_key_store = UnifiedKeyStore::read(&mut reader, network)?;
 
-        let receiver_selections = Vector::read(&mut reader, |r| ReceiverSelection::read(r, ()))?;
+        let unified_addresses = Vector::read(&mut reader, |r| {
+            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
+                .expect("only valid account ids are stored");
+            let address_index = r.read_u32::<LittleEndian>()?;
+            let receivers = ReceiverSelection::read(r, ())?;
 
-        // FIXME: read ua ID also
-        let unified_addresses = BTreeMap::new();
-        // let unified_addresses = receiver_selections
-        //     .into_iter()
-        //     .enumerate()
-        //     .map(|(address_index, receivers)| {
-        //         unified_key_store.generate_unified_address(address_index as u32, receivers, false)
-        //     })
-        //     .collect::<Result<Vec<_>, KeyError>>()
-        //     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            Ok((
+                UnifiedAddressId {
+                    account_id,
+                    address_index,
+                },
+                unified_key_store
+                    .generate_unified_address(address_index, receivers, false)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+            ))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
 
         let mut transparent_addresses = BTreeMap::new();
         for scope in [
