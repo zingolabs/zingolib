@@ -69,7 +69,7 @@ pub async fn assert_wallet_capability_contains_n_triple_pool_receivers(
     expected_num_addresses: usize,
 ) {
     assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
-    for addr in wallet.unified_addresses.iter() {
+    for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());

@@ -2641,7 +2641,14 @@ mod slow {
         assert_eq!(balance.spendable_sapling_balance.unwrap(), value);
 
         {
-            let recipient_sapling_address = *recipient.wallet.lock().await.unified_addresses[0]
+            let recipient_sapling_address = *recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses
+                .values()
+                .next()
+                .unwrap()
                 .sapling()
                 .unwrap();
             let transactions = &recipient.wallet.lock().await.wallet_transactions;

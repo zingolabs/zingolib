@@ -188,7 +188,7 @@ async fn loaded_wallet_assert(
         assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
         assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
-        for addr in wallet.unified_addresses.iter() {
+        for addr in wallet.unified_addresses.values() {
             assert!(addr.orchard().is_some());
             assert!(addr.sapling().is_some());
             assert!(addr.transparent().is_some());
@@ -273,7 +273,7 @@ async fn reload_wallet_from_buffer() {
     );
 
     assert_eq!(wallet.unified_addresses.len(), 3);
-    for addr in wallet.unified_addresses.iter() {
+    for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());

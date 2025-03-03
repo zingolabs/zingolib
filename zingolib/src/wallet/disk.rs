@@ -1,9 +1,11 @@
 //! This mod contains write and read functionality of impl LightWallet
-use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use log::{error, info};
-use pepper_sync::keys::transparent::TransparentScope;
+use log::info;
+use pepper_sync::{
+    keys::transparent::{self, TransparentAddressId, TransparentScope},
+    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
+};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zip32::AccountId;
 
@@ -20,7 +22,10 @@ use bip0039::Mnemonic;
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 
-use zcash_primitives::consensus::{self, BlockHeight};
+use zcash_primitives::{
+    consensus::{self, BlockHeight},
+    transaction::TxId,
+};
 
 use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
 
@@ -64,9 +69,10 @@ impl LightWallet {
         self.unified_key_store.write(&mut writer, self.network)?;
 
         // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
+        // FIXME: write ua ID also
         Vector::write(
             &mut writer,
-            &self.unified_addresses.iter().collect::<Vec<_>>(),
+            &self.unified_addresses.values().collect::<Vec<_>>(),
             |w, address| {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
@@ -121,22 +127,20 @@ impl LightWallet {
     }
 
     /// Deserialize into `reader`
+    // TODO: update to return WalletError
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
             32 => Self::read_v32(reader, network),
-            _ => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "Failed to read wallet version {}. Do you have the latest version?\n{}",
-                        version,
-                        "Note: wallet files from zecwallet or beta zingo are not compatible"
-                    ),
-                ));
-            }
+            _ => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Failed to read wallet version {}. Do you have the latest version?\n{}",
+                    version, "Note: wallet files from zecwallet or beta zingo are not compatible"
+                ),
+            )),
         }
     }
 
@@ -298,7 +302,7 @@ impl LightWallet {
             shard_trees: pepper_sync::wallet::ShardTrees::new(),
             sync_state: pepper_sync::wallet::SyncState::new(),
             transparent_addresses: BTreeMap::new(),
-            unified_addresses: AppendOnlyVec::new(),
+            unified_addresses: BTreeMap::new(),
             network,
         };
 
@@ -306,7 +310,109 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
-        todo!()
+        let saved_network = utils::read_string(&mut reader)?;
+        if saved_network != network.to_string() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Wallet chain name {} doesn't match expected {}",
+                    saved_network, network
+                ),
+            ));
+        }
+
+        let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
+        let mnemonic = if !seed_bytes.is_empty() {
+            let account_index = reader.read_u32::<LittleEndian>()?;
+            Some((
+                <Mnemonic>::from_entropy(seed_bytes)
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
+                account_index,
+            ))
+        } else {
+            None
+        };
+        let birthday = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+        let unified_key_store = UnifiedKeyStore::read(&mut reader, network)?;
+
+        let receiver_selections = Vector::read(&mut reader, |r| ReceiverSelection::read(r, ()))?;
+
+        // FIXME: read ua ID also
+        let unified_addresses = BTreeMap::new();
+        // let unified_addresses = receiver_selections
+        //     .into_iter()
+        //     .enumerate()
+        //     .map(|(address_index, receivers)| {
+        //         unified_key_store.generate_unified_address(address_index as u32, receivers, false)
+        //     })
+        //     .collect::<Result<Vec<_>, KeyError>>()
+        //     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let mut transparent_addresses = BTreeMap::new();
+        for scope in [
+            TransparentScope::External,
+            TransparentScope::Internal,
+            TransparentScope::Refund,
+        ] {
+            let transparent_address_count = reader.read_u32::<LittleEndian>()? as usize;
+            for address_index in 0..transparent_address_count {
+                transparent_addresses.insert(
+                    TransparentAddressId::new(zip32::AccountId::ZERO, scope, address_index as u32),
+                    transparent::encode_address(
+                        &network,
+                        unified_key_store
+                            .generate_transparent_address(address_index as u32, scope, false)
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                    ),
+                );
+            }
+        }
+
+        let wallet_blocks = Vector::read(&mut reader, |r| WalletBlock::read(r))?
+            .into_iter()
+            .map(|block| (block.block_height(), block))
+            .collect::<BTreeMap<_, _>>();
+        let wallet_transactions = Vector::read(&mut reader, |r| WalletTransaction::read(r))?
+            .into_iter()
+            .map(|transaction| (transaction.txid(), transaction))
+            .collect::<HashMap<_, _>>();
+        let nullifier_map = NullifierMap::read(&mut reader)?;
+        let outpoint_map = Vector::read(&mut reader, |mut r| {
+            let outpoint_txid = TxId::read(&mut r)?;
+            let output_index = r.read_u16::<LittleEndian>()?;
+            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let locator_txid = TxId::read(&mut r)?;
+
+            Ok((
+                OutputId::new(outpoint_txid, output_index),
+                (locator_height, locator_txid),
+            ))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+        let shard_trees = ShardTrees::read(&mut reader)?;
+        let sync_state = SyncState::read(&mut reader)?;
+
+        let wallet_options = WalletOptions::read(&mut reader)?;
+        let price = WalletZecPriceInfo::read(&mut reader)?;
+
+        Ok(Self {
+            network,
+            mnemonic,
+            birthday,
+            unified_key_store,
+            unified_addresses,
+            transparent_addresses,
+            wallet_blocks,
+            wallet_transactions,
+            nullifier_map,
+            outpoint_map,
+            shard_trees,
+            sync_state,
+            wallet_options: Arc::new(RwLock::new(wallet_options)),
+            price: Arc::new(RwLock::new(price)),
+            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+        })
     }
 }
 

@@ -12,6 +12,8 @@ use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use orchard::note_encryption::OrchardDomain;
+use pepper_sync::keys::transparent::TransparentScope;
+use pepper_sync::keys::AddressIndex;
 use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_address::unified::{Encoding as _, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
@@ -36,6 +38,13 @@ use super::legacy::{generate_transparent_address_from_legacy_key, legacy_sks_to_
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
 pub(crate) const KEY_TYPE_VIEW: u8 = 1;
 pub(crate) const KEY_TYPE_SPEND: u8 = 2;
+
+/// Unique ID for unified addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnifiedAddressId {
+    pub account_id: AccountId,
+    pub address_index: AddressIndex,
+}
 
 /// In-memory store for wallet spending or viewing keys
 #[derive(Debug)]
@@ -174,7 +183,11 @@ impl UnifiedKeyStore {
         };
 
         let transparent_receiver = if receivers.transparent {
-            Some(self.generate_transparent_address(unified_address_index, legacy_key)?)
+            Some(self.generate_transparent_address(
+                unified_address_index,
+                TransparentScope::External,
+                legacy_key,
+            )?)
         } else {
             None
         };
@@ -189,14 +202,17 @@ impl UnifiedKeyStore {
         Ok(unified_address)
     }
 
-    /// Generates a transparent address for the external scope at the given `address_index`.
+    /// Generates a transparent address for the given `address_index` and `scope`.
     ///
     /// Panics if `address_index` has the hardened bit set.
     pub fn generate_transparent_address(
         &self,
         address_index: u32,
-        // this should only be `true` when generating transparent addresses while loading from legacy keys (pre wallet version 29)
-        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will skip this scope derivation
+        scope: TransparentScope,
+        // this should only be `true` when generating externally scoped transparent addresses while loading from legacy
+        // keys (pre wallet version 29).
+        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will
+        // skip this scope derivation.
         legacy_key: bool,
     ) -> Result<TransparentAddress, KeyError> {
         let child_index = NonHardenedChildIndex::from_index(address_index)
@@ -206,34 +222,25 @@ impl UnifiedKeyStore {
             .ok_or(KeyError::NoViewCapability)?
             .clone();
 
-        let transparent_address = if legacy_key {
-            generate_transparent_address_from_legacy_key(&account_pubkey, child_index)?
-        } else {
-            account_pubkey
-                .derive_external_ivk()?
-                .derive_address(child_index)?
+        let transparent_address = match scope {
+            TransparentScope::External => {
+                if legacy_key {
+                    generate_transparent_address_from_legacy_key(&account_pubkey, child_index)?
+                } else {
+                    account_pubkey
+                        .derive_external_ivk()?
+                        .derive_address(child_index)?
+                }
+            }
+            TransparentScope::Internal => account_pubkey
+                .derive_internal_ivk()?
+                .derive_address(child_index)?,
+            TransparentScope::Refund => account_pubkey
+                .derive_ephemeral_ivk()?
+                .derive_ephemeral_address(child_index)?,
         };
 
         Ok(transparent_address)
-    }
-
-    /// Generates a transparent address for the refund scope at the given `address_index`.
-    ///
-    /// Panics if `address_index` has the hardened bit set.
-    pub fn generate_refund_address(
-        &self,
-        address_index: u32,
-    ) -> Result<TransparentAddress, KeyError> {
-        let child_index = NonHardenedChildIndex::from_index(address_index)
-            .expect("hardened bit should not be set for non-hardened child indexes");
-        let account_pubkey = UnifiedFullViewingKey::try_from(self)?
-            .transparent()
-            .ok_or(KeyError::NoViewCapability)?
-            .clone();
-
-        Ok(account_pubkey
-            .derive_ephemeral_ivk()?
-            .derive_ephemeral_address(child_index)?)
     }
 }
 

@@ -6,6 +6,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
+    io::Read,
     ops::Range,
     sync::{
         atomic::{self, AtomicU8},
@@ -212,6 +213,11 @@ impl Default for SyncState {
 impl SyncState {
     fn serialized_version() -> u8 {
         0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        todo!()
     }
 
     /// Serialize into `writer`
@@ -482,6 +488,11 @@ impl NullifierMap {
         0
     }
 
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        todo!()
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
@@ -551,8 +562,18 @@ impl WalletBlock {
 
 #[cfg(feature = "wallet_essentials")]
 impl WalletBlock {
+    fn serialized_version() -> u8 {
+        0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        todo!()
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
         writer.write_u32::<LittleEndian>(self.block_height.into())?;
         writer.write_all(&self.block_hash.0)?;
         writer.write_all(&self.prev_hash.0)?;
@@ -685,6 +706,11 @@ impl WalletTransaction {
 impl WalletTransaction {
     fn serialized_version() -> u8 {
         0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        todo!()
     }
 
     /// Serialize into `writer`
@@ -1435,6 +1461,11 @@ impl ShardTrees {
         0
     }
 
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        todo!()
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
@@ -1555,9 +1586,18 @@ impl ShardTrees {
 
 #[cfg(feature = "wallet_essentials")]
 mod read_write {
-    use std::io::Write;
+    use std::io::{Read, Write};
 
-    use byteorder::{LittleEndian, WriteBytesExt};
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+    pub(super) fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
+        let str_len = reader.read_u64::<LittleEndian>()?;
+        let mut str_bytes = vec![0; str_len as usize];
+        reader.read_exact(&mut str_bytes)?;
+
+        String::from_utf8(str_bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+    }
 
     pub(super) fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(str.len() as u64)?;

@@ -2,10 +2,9 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
-use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::{KeyError, WalletError};
-use keys::unified::UnifiedKeyStore;
+use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -196,7 +195,7 @@ pub struct LightWallet {
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
     /// Unified_addresses
-    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
+    pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
@@ -321,26 +320,32 @@ impl LightWallet {
             }
         };
 
-        let unified_addresses = AppendOnlyVec::new();
-        unified_addresses.push(unified_key_store.generate_unified_address(
-            0,
+        let first_address_index = 0;
+        let first_unified_address = unified_key_store.generate_unified_address(
+            first_address_index,
             unified_key_store.can_view(),
             false,
-        )?);
+        )?;
+        let mut unified_addresses = BTreeMap::new();
+        unified_addresses.insert(
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: first_address_index,
+            },
+            first_unified_address.clone(),
+        );
 
         let mut transparent_addresses = BTreeMap::new();
-        unified_addresses.iter().for_each(|unified_address| {
-            if let Some(transparent_address) = unified_address.transparent() {
-                transparent_addresses.insert(
-                    TransparentAddressId::new(
-                        zip32::AccountId::ZERO,
-                        TransparentScope::External,
-                        0,
-                    ),
-                    transparent::encode_address(&network, *transparent_address),
-                );
-            }
-        });
+        if let Some(transparent_address) = first_unified_address.transparent() {
+            transparent_addresses.insert(
+                TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    first_address_index,
+                ),
+                transparent::encode_address(&network, *transparent_address),
+            );
+        }
 
         Ok(Self {
             mnemonic,
