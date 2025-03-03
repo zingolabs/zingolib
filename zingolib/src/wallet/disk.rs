@@ -83,21 +83,15 @@ impl LightWallet {
                 .write(w, ())
             },
         )?;
-        for scope in [
-            TransparentScope::External,
-            TransparentScope::Internal,
-            TransparentScope::Refund,
-        ] {
-            let transparent_address_count = self
-                .transparent_addresses
-                .keys()
-                .filter(|address_id| address_id.scope() == scope)
-                .map(|address_id| address_id.address_index())
-                .max()
-                .map(|max_index| max_index + 1)
-                .unwrap_or(0);
-            writer.write_u32::<LittleEndian>(transparent_address_count)?;
-        }
+        Vector::write(
+            &mut writer,
+            &self.transparent_addresses.keys().collect::<Vec<_>>(),
+            |w, address_id| {
+                w.write_u32::<LittleEndian>(address_id.account_id().into())?;
+                w.write_u8(address_id.scope() as u8)?;
+                w.write_u32::<LittleEndian>(address_id.address_index())
+            },
+        )?;
 
         Vector::write(
             &mut writer,
@@ -354,26 +348,24 @@ impl LightWallet {
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+        let transparent_addresses = Vector::read(&mut reader, |r| {
+            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
+                .expect("only valid account ids are stored");
+            let scope = TransparentScope::try_from(r.read_u8()?)?;
+            let address_index = r.read_u32::<LittleEndian>()?;
 
-        let mut transparent_addresses = BTreeMap::new();
-        for scope in [
-            TransparentScope::External,
-            TransparentScope::Internal,
-            TransparentScope::Refund,
-        ] {
-            let transparent_address_count = reader.read_u32::<LittleEndian>()? as usize;
-            for address_index in 0..transparent_address_count {
-                transparent_addresses.insert(
-                    TransparentAddressId::new(zip32::AccountId::ZERO, scope, address_index as u32),
-                    transparent::encode_address(
-                        &network,
-                        unified_key_store
-                            .generate_transparent_address(address_index as u32, scope, false)
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                    ),
-                );
-            }
-        }
+            Ok((
+                TransparentAddressId::new(account_id, scope, address_index),
+                transparent::encode_address(
+                    &network,
+                    unified_key_store
+                        .generate_transparent_address(address_index as u32, scope, false)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                ),
+            ))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
 
         let wallet_blocks = Vector::read(&mut reader, |r| WalletBlock::read(r))?
             .into_iter()
