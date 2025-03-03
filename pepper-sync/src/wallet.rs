@@ -300,6 +300,22 @@ impl TreeBounds {
         0
     }
 
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+        let sapling_initial_tree_size = reader.read_u32::<LittleEndian>()?;
+        let sapling_final_tree_size = reader.read_u32::<LittleEndian>()?;
+        let orchard_initial_tree_size = reader.read_u32::<LittleEndian>()?;
+        let orchard_final_tree_size = reader.read_u32::<LittleEndian>()?;
+
+        Ok(Self {
+            sapling_initial_tree_size,
+            sapling_final_tree_size,
+            orchard_initial_tree_size,
+            orchard_final_tree_size,
+        })
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
@@ -568,7 +584,24 @@ impl WalletBlock {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        todo!()
+        let _version = reader.read_u8()?;
+        let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+        let mut block_hash = BlockHash([0u8; 32]);
+        reader.read_exact(&mut block_hash.0)?;
+        let mut prev_hash = BlockHash([0u8; 32]);
+        reader.read_exact(&mut prev_hash.0)?;
+        let time = reader.read_u32::<LittleEndian>()?;
+        let txids = Vector::read(&mut reader, |r| TxId::read(r))?;
+        let tree_bounds = TreeBounds::read(&mut reader)?;
+
+        Ok(Self {
+            block_height,
+            block_hash,
+            prev_hash,
+            time,
+            txids,
+            tree_bounds,
+        })
     }
 
     /// Serialize into `writer`
@@ -579,9 +612,7 @@ impl WalletBlock {
         writer.write_all(&self.prev_hash.0)?;
         writer.write_u32::<LittleEndian>(self.time)?;
         Vector::write(&mut writer, self.txids(), |w, txid| txid.write(w))?;
-        self.tree_bounds.write(&mut writer)?;
-
-        Ok(())
+        self.tree_bounds.write(&mut writer)
     }
 }
 
