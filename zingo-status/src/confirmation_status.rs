@@ -1,7 +1,7 @@
 //! If a note is confirmed, it is:
 //!  Confirmed === on-record on-chain at BlockHeight
 
-use std::io::Write;
+use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
@@ -219,6 +219,24 @@ impl ConfirmationStatus {
 
     fn serialized_version() -> u8 {
         0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+        let status = reader.read_u8()?;
+        let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+
+        match status {
+            0 => Ok(Self::Calculated(block_height)),
+            1 => Ok(Self::Transmitted(block_height)),
+            2 => Ok(Self::Mempool(block_height)),
+            3 => Ok(Self::Confirmed(block_height)),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "failed to read status",
+            )),
+        }
     }
 
     /// Serialize into `writer`

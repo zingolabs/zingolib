@@ -16,32 +16,38 @@ use std::{
 
 use incrementalmerkletree::{Hashable, Position};
 use orchard::tree::MerkleHashOrchard;
+use read_write::read_string;
 use shardtree::{
     store::{memory::MemoryShardStore, Checkpoint, ShardStore},
-    ShardTree,
+    LocatedPrunableTree, ShardTree,
 };
+use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
-    serialization::shardtree::write_shard,
+    serialization::shardtree::{read_shard, write_shard},
     PoolType, ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight, NetworkConstants, Parameters},
+    consensus::{self, BlockHeight, BranchId, NetworkConstants, Parameters},
     legacy::Script,
     memo::Memo,
     merkle_tree::HashSer,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
-        TxId,
+        Transaction, TxId,
     },
 };
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::{
+        self,
+        transparent::{TransparentAddressId, TransparentScope},
+        KeyId,
+    },
     sync::MAX_VERIFICATION_WINDOW,
     witness,
 };
@@ -217,7 +223,54 @@ impl SyncState {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        todo!()
+        let _version = reader.read_u8()?;
+        let scan_ranges = Vector::read(&mut reader, |r| {
+            let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let priority = match r.read_u8()? {
+                0 => Ok(ScanPriority::Ignored),
+                1 => Ok(ScanPriority::Scanned),
+                2 => Ok(ScanPriority::Historic),
+                3 => Ok(ScanPriority::OpenAdjacent),
+                4 => Ok(ScanPriority::FoundNote),
+                5 => Ok(ScanPriority::ChainTip),
+                6 => Ok(ScanPriority::Verify),
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid scan priority",
+                )),
+            }?;
+
+            Ok(ScanRange::from_parts(start..end, priority))
+        })?;
+        let sapling_shard_ranges = Vector::read(&mut reader, |r| {
+            let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+
+            Ok(start..end)
+        })?;
+        let orchard_shard_ranges = Vector::read(&mut reader, |r| {
+            let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+
+            Ok(start..end)
+        })?;
+        let locators = Vector::read(&mut reader, |r| {
+            let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let txid = TxId::read(r)?;
+
+            Ok((block_height, txid))
+        })?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        Ok(Self {
+            scan_ranges,
+            sapling_shard_ranges,
+            orchard_shard_ranges,
+            locators,
+            initial_sync_state: InitialSyncState::new(),
+        })
     }
 
     /// Serialize into `writer`
@@ -472,8 +525,10 @@ impl From<OutputId> for OutPoint {
 /// Binary tree map of nullifiers from transaction spends or actions
 #[derive(Debug)]
 pub struct NullifierMap {
-    pub(crate) sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
-    pub(crate) orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    /// Sapling nullifer map
+    pub sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    /// Orchard nullifer map
+    pub orchard: BTreeMap<orchard::note::Nullifier, Locator>,
 }
 
 impl NullifierMap {
@@ -506,7 +561,40 @@ impl NullifierMap {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        todo!()
+        let _version = reader.read_u8()?;
+
+        let sapling = Vector::read(&mut reader, |mut r| {
+            let mut nullifier_bytes = [0u8; 32];
+            r.read_exact(&mut nullifier_bytes)?;
+            let nullifier =
+                sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("failed to read nullifier. {e}"),
+                    )
+                })?;
+            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let locator_txid = TxId::read(&mut r)?;
+
+            Ok((nullifier, (locator_height, locator_txid)))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+        let orchard = Vector::read(&mut reader, |mut r| {
+            let mut nullifier_bytes = [0u8; 32];
+            r.read_exact(&mut nullifier_bytes)?;
+            let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
+                .expect("nullifier bytes should be valid");
+            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+            let locator_txid = TxId::read(&mut r)?;
+
+            Ok((nullifier, (locator_height, locator_txid)))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+        Ok(NullifierMap { sapling, orchard })
     }
 
     /// Serialize into `writer`
@@ -619,8 +707,8 @@ impl WalletBlock {
 /// Wallet transaction
 pub struct WalletTransaction {
     pub(crate) txid: TxId,
-    pub(crate) transaction: zcash_primitives::transaction::Transaction,
     pub(crate) status: ConfirmationStatus,
+    pub(crate) transaction: zcash_primitives::transaction::Transaction,
     pub(crate) datetime: u32,
     pub(crate) transparent_coins: Vec<TransparentCoin>,
     pub(crate) sapling_notes: Vec<SaplingNote>,
@@ -635,14 +723,14 @@ impl WalletTransaction {
         self.txid
     }
 
-    /// [`zcash_primitives::transaction::Transaction`]
-    pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
-        &self.transaction
-    }
-
     /// Confirmation status
     pub fn status(&self) -> ConfirmationStatus {
         self.status
+    }
+
+    /// [`zcash_primitives::transaction::Transaction`]
+    pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
+        &self.transaction
     }
 
     /// Datetime. In form of seconds since unix epoch.
@@ -740,8 +828,39 @@ impl WalletTransaction {
     }
 
     /// Deserialize into `reader`
-    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        todo!()
+    pub fn read<R: Read>(
+        mut reader: R,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+        let txid = TxId::read(&mut reader)?;
+        let status = ConfirmationStatus::read(&mut reader)?;
+        let transaction = Transaction::read(
+            &mut reader,
+            BranchId::for_height(consensus_parameters, status.get_height()),
+        )?;
+        let datetime = reader.read_u32::<LittleEndian>()?;
+        let transparent_coins = Vector::read(&mut reader, |r| TransparentCoin::read(r))?;
+        let sapling_notes = Vector::read(&mut reader, |r| SaplingNote::read(r))?;
+        let orchard_notes = Vector::read(&mut reader, |r| OrchardNote::read(r))?;
+        let outgoing_sapling_notes = Vector::read(&mut reader, |r| {
+            OutgoingSaplingNote::read(r, consensus_parameters)
+        })?;
+        let outgoing_orchard_notes = Vector::read(&mut reader, |r| {
+            OutgoingOrchardNote::read(r, consensus_parameters)
+        })?;
+
+        Ok(Self {
+            txid,
+            status,
+            transaction,
+            datetime,
+            transparent_coins,
+            sapling_notes,
+            orchard_notes,
+            outgoing_sapling_notes,
+            outgoing_orchard_notes,
+        })
     }
 
     /// Serialize into `writer`
@@ -752,8 +871,8 @@ impl WalletTransaction {
     ) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
         self.txid.write(&mut writer)?;
-        self.transaction.write(&mut writer)?;
         self.status.write(&mut writer)?;
+        self.transaction.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.datetime)?;
         Vector::write(&mut writer, self.transparent_coins(), |w, output| {
             output.write(w)
@@ -824,33 +943,6 @@ impl std::fmt::Debug for WalletTransaction {
             .field("outgoing_sapling_notes", &self.outgoing_sapling_notes)
             .field("outgoing_orchard_notes", &self.outgoing_orchard_notes)
             .finish()
-    }
-}
-
-/// Wallet note, shielded output with metadata relevant to the wallet.
-#[derive(Debug, Clone)]
-pub struct WalletNote<N, Nf: Copy> {
-    /// Output ID.
-    pub(crate) output_id: OutputId,
-    /// Identifier for key used to decrypt output.
-    pub(crate) key_id: KeyId,
-    /// Decrypted note with recipient and value.
-    pub(crate) note: N,
-    /// Derived nullifier.
-    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
-    /// Commitment tree leaf position.
-    pub(crate) position: Option<Position>,
-    /// Memo.
-    pub(crate) memo: Memo,
-    /// Transaction ID of transaction this output was spent.
-    /// If `None`, output is not spent.
-    pub(crate) spending_transaction: Option<TxId>,
-}
-
-#[cfg(feature = "wallet_essentials")]
-impl<N, Nf: Copy> WalletNote<N, Nf> {
-    fn serialized_version() -> u8 {
-        0
     }
 }
 
@@ -965,6 +1057,34 @@ impl TransparentCoin {
         0
     }
 
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let txid = TxId::read(&mut reader)?;
+        let output_index = reader.read_u16::<LittleEndian>()?;
+
+        let account_id = zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?)
+            .expect("only valid account ids written");
+        let scope = TransparentScope::try_from(reader.read_u8()?)?;
+        let address_index = reader.read_u32::<LittleEndian>()?;
+
+        let address = read_string(&mut reader)?;
+        let script = Script::read(&mut reader)?;
+        let value = NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?)
+            .expect("only valid values written");
+        let spending_transaction = Optional::read(&mut reader, TxId::read)?;
+
+        Ok(Self {
+            output_id: OutputId { txid, output_index },
+            key_id: TransparentAddressId::new(account_id, scope, address_index),
+            address,
+            value,
+            script,
+            spending_transaction,
+        })
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
@@ -1008,6 +1128,33 @@ pub trait NoteInterface: OutputInterface + Sized {
 
     /// Memo
     fn memo(&self) -> &Memo;
+}
+
+/// Wallet note, shielded output with metadata relevant to the wallet.
+#[derive(Debug, Clone)]
+pub struct WalletNote<N, Nf: Copy> {
+    /// Output ID.
+    pub(crate) output_id: OutputId,
+    /// Identifier for key used to decrypt output.
+    pub(crate) key_id: KeyId,
+    /// Decrypted note with recipient and value.
+    pub(crate) note: N,
+    /// Derived nullifier.
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    /// Commitment tree leaf position.
+    pub(crate) position: Option<Position>,
+    /// Memo.
+    pub(crate) memo: Memo,
+    /// Transaction ID of transaction this output was spent.
+    /// If `None`, output is not spent.
+    pub(crate) spending_transaction: Option<TxId>,
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl<N, Nf: Copy> WalletNote<N, Nf> {
+    fn serialized_version() -> u8 {
+        0
+    }
 }
 
 /// Sapling note.
@@ -1073,6 +1220,91 @@ impl NoteInterface for SaplingNote {
 
 #[cfg(feature = "wallet_essentials")]
 impl SaplingNote {
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let txid = TxId::read(&mut reader)?;
+        let output_index = reader.read_u16::<LittleEndian>()?;
+
+        let account_id =
+            zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read account id. {e}"),
+                )
+            })?;
+        let scope = match reader.read_u8()? {
+            0 => Ok(zip32::Scope::External),
+            1 => Ok(zip32::Scope::Internal),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid scope value",
+            )),
+        }?;
+
+        let mut address_bytes = [0u8; 43];
+        reader.read_exact(&mut address_bytes)?;
+        let recipient =
+            sapling_crypto::PaymentAddress::from_bytes(&address_bytes).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read payment address",
+                )
+            })?;
+        let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
+        let rseed_zip212 = reader.read_u8()?;
+        let mut rseed_bytes = [0u8; 32];
+        reader.read_exact(&mut rseed_bytes)?;
+        let rseed = match rseed_zip212 {
+            0 => sapling_crypto::Rseed::BeforeZip212(
+                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
+            ),
+            1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid rseed zip212 byte",
+                ))
+            }
+        };
+
+        let nullifier = Optional::read(&mut reader, |r| {
+            let mut nullifier_bytes = [0u8; 32];
+            r.read_exact(&mut nullifier_bytes)?;
+
+            sapling_crypto::Nullifier::from_slice(&nullifier_bytes).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read nullifier. {e}"),
+                )
+            })
+        })?;
+        let position = Optional::read(&mut reader, |r| {
+            Ok(Position::from(r.read_u64::<LittleEndian>()?))
+        })?;
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to read memo. {e}"),
+            )
+        })?;
+
+        let spending_transaction = Optional::read(&mut reader, TxId::read)?;
+
+        Ok(Self {
+            output_id: OutputId::new(txid, output_index),
+            key_id: KeyId::from_parts(account_id, scope),
+            note: sapling_crypto::Note::from_parts(recipient, value, rseed),
+            nullifier,
+            position,
+            memo,
+            spending_transaction,
+        })
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
@@ -1087,11 +1319,11 @@ impl SaplingNote {
         writer.write_u64::<LittleEndian>(self.value())?;
         match self.note.rseed() {
             sapling_crypto::Rseed::BeforeZip212(fr) => {
-                writer.write_u8(1)?;
+                writer.write_u8(0)?;
                 writer.write_all(&fr.to_bytes())?;
             }
             sapling_crypto::Rseed::AfterZip212(bytes) => {
-                writer.write_u8(2)?;
+                writer.write_u8(1)?;
                 writer.write_all(bytes)?;
             }
         }
@@ -1103,43 +1335,10 @@ impl SaplingNote {
             w.write_u64::<LittleEndian>(position.into())
         })?;
         writer.write_all(self.memo.encode().as_array())?;
+
         Optional::write(&mut writer, self.spending_transaction, |w, txid| {
             txid.write(w)
-        })?;
-
-        Ok(())
-    }
-}
-
-#[cfg(feature = "wallet_essentials")]
-impl OrchardNote {
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-
-        self.output_id.txid().write(&mut writer)?;
-        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
-
-        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
-        writer.write_u8(self.key_id.scope as u8)?;
-
-        writer.write_all(&self.note.recipient().to_raw_address_bytes())?;
-        writer.write_u64::<LittleEndian>(self.value())?;
-        writer.write_all(&self.note.rho().to_bytes())?;
-        writer.write_all(self.note.rseed().as_bytes())?;
-
-        Optional::write(&mut writer, self.nullifier, |w, nullifier| {
-            w.write_all(&nullifier.to_bytes())
-        })?;
-        Optional::write(&mut writer, self.position, |w, position| {
-            w.write_u64::<LittleEndian>(position.into())
-        })?;
-        writer.write_all(self.memo.encode().as_array())?;
-        Optional::write(&mut writer, self.spending_transaction, |w, txid| {
-            txid.write(w)
-        })?;
-
-        Ok(())
+        })
     }
 }
 
@@ -1201,6 +1400,107 @@ impl NoteInterface for OrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+}
+
+#[cfg(feature = "wallet_essentials")]
+impl OrchardNote {
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let txid = TxId::read(&mut reader)?;
+        let output_index = reader.read_u16::<LittleEndian>()?;
+
+        let account_id =
+            zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read account id. {e}"),
+                )
+            })?;
+        let scope = match reader.read_u8()? {
+            0 => Ok(zip32::Scope::External),
+            1 => Ok(zip32::Scope::Internal),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid scope value",
+            )),
+        }?;
+
+        let mut address_bytes = [0u8; 43];
+        reader.read_exact(&mut address_bytes)?;
+        let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
+            .expect("should be a valid address");
+        let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
+        let mut rho_bytes = [0u8; 32];
+        reader.read_exact(&mut rho_bytes)?;
+        let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
+        let mut rseed_bytes = [0u8; 32];
+        reader.read_exact(&mut rseed_bytes)?;
+        let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
+            .expect("should be valid random seed bytes");
+
+        let nullifier = Optional::read(&mut reader, |r| {
+            let mut nullifier_bytes = [0u8; 32];
+            r.read_exact(&mut nullifier_bytes)?;
+
+            Ok(orchard::note::Nullifier::from_bytes(&nullifier_bytes)
+                .expect("should be valid nullfiier bytes"))
+        })?;
+        let position = Optional::read(&mut reader, |r| {
+            Ok(Position::from(r.read_u64::<LittleEndian>()?))
+        })?;
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to read memo. {e}"),
+            )
+        })?;
+
+        let spending_transaction = Optional::read(&mut reader, TxId::read)?;
+
+        Ok(Self {
+            output_id: OutputId::new(txid, output_index),
+            key_id: KeyId::from_parts(account_id, scope),
+            note: orchard::note::Note::from_parts(recipient, value, rho, rseed)
+                .expect("should be a valid orchard note"),
+            nullifier,
+            position,
+            memo,
+            spending_transaction,
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        self.output_id.txid().write(&mut writer)?;
+        writer.write_u16::<LittleEndian>(self.output_id.output_index())?;
+
+        writer.write_u32::<LittleEndian>(self.key_id.account_id.into())?;
+        writer.write_u8(self.key_id.scope as u8)?;
+
+        writer.write_all(&self.note.recipient().to_raw_address_bytes())?;
+        writer.write_u64::<LittleEndian>(self.value())?;
+        writer.write_all(&self.note.rho().to_bytes())?;
+        writer.write_all(self.note.rseed().as_bytes())?;
+
+        Optional::write(&mut writer, self.nullifier, |w, nullifier| {
+            w.write_all(&nullifier.to_bytes())
+        })?;
+        Optional::write(&mut writer, self.position, |w, position| {
+            w.write_u64::<LittleEndian>(position.into())
+        })?;
+        writer.write_all(self.memo.encode().as_array())?;
+        Optional::write(&mut writer, self.spending_transaction, |w, txid| {
+            txid.write(w)
+        })?;
+
+        Ok(())
     }
 }
 
@@ -1317,6 +1617,101 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
 #[cfg(feature = "wallet_essentials")]
 impl OutgoingSaplingNote {
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(
+        mut reader: R,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let txid = TxId::read(&mut reader)?;
+        let output_index = reader.read_u16::<LittleEndian>()?;
+
+        let account_id =
+            zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read account id. {e}"),
+                )
+            })?;
+        let scope = match reader.read_u8()? {
+            0 => Ok(zip32::Scope::External),
+            1 => Ok(zip32::Scope::Internal),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid scope value",
+            )),
+        }?;
+
+        let mut address_bytes = [0u8; 43];
+        reader.read_exact(&mut address_bytes)?;
+        let recipient =
+            sapling_crypto::PaymentAddress::from_bytes(&address_bytes).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read payment address",
+                )
+            })?;
+        let value = sapling_crypto::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
+        let rseed_zip212 = reader.read_u8()?;
+        let mut rseed_bytes = [0u8; 32];
+        reader.read_exact(&mut rseed_bytes)?;
+        let rseed = match rseed_zip212 {
+            0 => sapling_crypto::Rseed::BeforeZip212(
+                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
+            ),
+            1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid rseed zip212 byte",
+                ))
+            }
+        };
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to read memo. {e}"),
+            )
+        })?;
+
+        let recipient_unified_address = Optional::read(&mut reader, |r| {
+            let encoded_address = read_string(r)?;
+
+            // TODO: surely there is a more straightforward way to decode unified address from string
+            let unified_address = ZcashAddress::try_from_encoded(&encoded_address)
+                .unwrap()
+                .convert_if_network::<read_write::UnifiedAddress>(
+                    consensus_parameters.network_type(),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("failed to convert recipient unified address. {e}"),
+                    )
+                })?
+                .0;
+
+            zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to convert recipient unified address. {e}"),
+                )
+            })
+        })?;
+
+        Ok(Self {
+            output_id: OutputId::new(txid, output_index),
+            key_id: KeyId::from_parts(account_id, scope),
+            note: sapling_crypto::Note::from_parts(recipient, value, rseed),
+            memo,
+            recipient_unified_address,
+        })
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(
         &self,
@@ -1406,6 +1801,89 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 
 #[cfg(feature = "wallet_essentials")]
 impl OutgoingOrchardNote {
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(
+        mut reader: R,
+        consensus_parameters: &impl consensus::Parameters,
+    ) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let txid = TxId::read(&mut reader)?;
+        let output_index = reader.read_u16::<LittleEndian>()?;
+
+        let account_id =
+            zip32::AccountId::try_from(reader.read_u32::<LittleEndian>()?).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to read account id. {e}"),
+                )
+            })?;
+        let scope = match reader.read_u8()? {
+            0 => Ok(zip32::Scope::External),
+            1 => Ok(zip32::Scope::Internal),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid scope value",
+            )),
+        }?;
+
+        let mut address_bytes = [0u8; 43];
+        reader.read_exact(&mut address_bytes)?;
+        let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
+            .expect("should be a valid address");
+        let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
+        let mut rho_bytes = [0u8; 32];
+        reader.read_exact(&mut rho_bytes)?;
+        let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
+        let mut rseed_bytes = [0u8; 32];
+        reader.read_exact(&mut rseed_bytes)?;
+        let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
+            .expect("should be valid random seed bytes");
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = Memo::from_bytes(&memo_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to read memo. {e}"),
+            )
+        })?;
+
+        let recipient_unified_address = Optional::read(&mut reader, |r| {
+            let encoded_address = read_string(r)?;
+
+            // TODO: surely there is a more straightforward way to decode unified address from string
+            let unified_address = ZcashAddress::try_from_encoded(&encoded_address)
+                .unwrap()
+                .convert_if_network::<read_write::UnifiedAddress>(
+                    consensus_parameters.network_type(),
+                )
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("failed to convert recipient unified address. {e}"),
+                    )
+                })?
+                .0;
+
+            zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to convert recipient unified address. {e}"),
+                )
+            })
+        })?;
+
+        Ok(Self {
+            output_id: OutputId::new(txid, output_index),
+            key_id: KeyId::from_parts(account_id, scope),
+            note: orchard::note::Note::from_parts(recipient, value, rho, rseed)
+                .expect("should be a valid orchard note"),
+            memo,
+            recipient_unified_address,
+        })
+    }
+
     /// Serialize into `writer`
     pub fn write<W: Write>(
         &self,
@@ -1494,7 +1972,11 @@ impl ShardTrees {
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        todo!()
+        let _version = reader.read_u8()?;
+        let sapling = Self::read_shardtree(&mut reader)?;
+        let orchard = Self::read_shardtree(&mut reader)?;
+
+        Ok(Self { sapling, orchard })
     }
 
     /// Serialize into `writer`
@@ -1506,6 +1988,62 @@ impl ShardTrees {
         Ok(())
     }
 
+    fn read_shardtree<
+        H: Hashable + Clone + HashSer + Eq,
+        C: Ord + std::fmt::Debug + Copy + From<u32>,
+        R: Read,
+        const DEPTH: u8,
+        const SHARD_HEIGHT: u8,
+    >(
+        mut reader: R,
+    ) -> std::io::Result<shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>> {
+        let shards = Vector::read(&mut reader, |r| {
+            let level = incrementalmerkletree::Level::from(r.read_u8()?);
+            let index = r.read_u64::<LittleEndian>()?;
+            let root_addr = incrementalmerkletree::Address::from_parts(level, index);
+            let shard = read_shard(r)?;
+            Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+        })?;
+        let mut store = MemoryShardStore::empty();
+        for shard in shards {
+            store.put_shard(shard).expect("Infallible");
+        }
+        let checkpoints = Vector::read(&mut reader, |r| {
+            let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
+            let tree_state = match r.read_u8()? {
+                0 => shardtree::store::TreeState::Empty,
+                1 => shardtree::store::TreeState::AtPosition(Position::from(
+                    r.read_u64::<LittleEndian>()?,
+                )),
+                otherwise => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "failed to read TreeState. expected boolean value, found {otherwise}"
+                        ),
+                    ))
+                }
+            };
+            let marks_removed =
+                Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
+            Ok((
+                checkpoint_id,
+                Checkpoint::from_parts(tree_state, marks_removed.into_iter().collect()),
+            ))
+        })?;
+        for (checkpoint_id, checkpoint) in checkpoints {
+            store
+                .add_checkpoint(checkpoint_id, checkpoint)
+                .expect("Infallible");
+        }
+        store.put_cap(read_shard(reader)?).expect("Infallible");
+
+        Ok(shardtree::ShardTree::new(
+            store,
+            MAX_VERIFICATION_WINDOW as usize,
+        ))
+    }
+
     /// Write memory-backed shardstore, represented tree.
     fn write_shardtree<
         H: Hashable + Clone + Eq + HashSer,
@@ -1515,7 +2053,7 @@ impl ShardTrees {
         const SHARD_HEIGHT: u8,
     >(
         mut writer: W,
-        tree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
+        shardtree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>,
     ) -> std::io::Result<()>
     where
         u32: From<C>,
@@ -1575,7 +2113,7 @@ impl ShardTrees {
 
         // Replace original tree with empty tree, and mutate new version into store.
         let mut store = std::mem::replace(
-            tree,
+            shardtree,
             shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
         )
         .into_store();
@@ -1583,7 +2121,7 @@ impl ShardTrees {
         macro_rules! write_with_error_handling {
             ($writer: ident, $from: ident) => {
                 if let Err(e) = $writer(&mut writer, &$from) {
-                    *tree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+                    *shardtree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
                     return Err(e);
                 }
             };
@@ -1609,7 +2147,7 @@ impl ShardTrees {
         let cap = store.get_cap().expect("Infallible");
         write_with_error_handling!(write_shard, cap);
 
-        *tree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+        *shardtree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
 
         Ok(())
     }
@@ -1633,5 +2171,16 @@ mod read_write {
     pub(super) fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(str.len() as u64)?;
         writer.write_all(str.as_bytes())
+    }
+
+    pub(super) struct UnifiedAddress(pub(super) zcash_address::unified::Address);
+    impl zcash_address::TryFromRawAddress for UnifiedAddress {
+        type Error = std::convert::Infallible;
+
+        fn try_from_raw_unified(
+            ua: zcash_address::unified::Address,
+        ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+            Ok(UnifiedAddress(ua))
+        }
     }
 }

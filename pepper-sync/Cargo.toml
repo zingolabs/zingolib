@@ -26,6 +26,9 @@ incrementalmerkletree.workspace = true
 shardtree.workspace = true
 zip32.workspace = true
 
+# Cryptography
+jubjub.workspace = true
+
 # Async
 futures.workspace = true
 tokio.workspace = true

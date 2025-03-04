@@ -1150,7 +1150,7 @@ where
             let mut transaction_id_bytes = [0u8; 32];
             r.read_exact(&mut transaction_id_bytes)?;
             let status = match external_version {
-                5.. => ConfirmationStatus::read(r, ()),
+                5.. => ReadableWriteable::read(r, ()),
                 ..5 => {
                     let height = r.read_u32::<LittleEndian>()?;
                     Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))

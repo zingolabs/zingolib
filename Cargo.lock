@@ -2291,6 +2291,7 @@ dependencies = [
  "futures",
  "incrementalmerkletree",
  "json",
+ "jubjub",
  "memuse",
  "orchard",
  "rayon",

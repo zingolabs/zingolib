@@ -359,7 +359,7 @@ impl LightWallet {
                 transparent::encode_address(
                     &network,
                     unified_key_store
-                        .generate_transparent_address(address_index as u32, scope, false)
+                        .generate_transparent_address(address_index, scope, false)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                 ),
             ))
@@ -371,10 +371,11 @@ impl LightWallet {
             .into_iter()
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
-        let wallet_transactions = Vector::read(&mut reader, |r| WalletTransaction::read(r))?
-            .into_iter()
-            .map(|transaction| (transaction.txid(), transaction))
-            .collect::<HashMap<_, _>>();
+        let wallet_transactions =
+            Vector::read(&mut reader, |r| WalletTransaction::read(r, &network))?
+                .into_iter()
+                .map(|transaction| (transaction.txid(), transaction))
+                .collect::<HashMap<_, _>>();
         let nullifier_map = NullifierMap::read(&mut reader)?;
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
