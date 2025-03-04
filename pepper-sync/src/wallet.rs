@@ -6,7 +6,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    io::Read,
     ops::Range,
     sync::{
         atomic::{self, AtomicU8},
@@ -14,50 +13,50 @@ use std::{
     },
 };
 
-use incrementalmerkletree::{Hashable, Position};
+use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
-use read_write::read_string;
-use shardtree::{
-    store::{memory::MemoryShardStore, Checkpoint, ShardStore},
-    LocatedPrunableTree, ShardTree,
-};
-use zcash_address::ZcashAddress;
+use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
-    serialization::shardtree::{read_shard, write_shard},
     PoolType, ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight, BranchId, NetworkConstants, Parameters},
+    consensus::{self, BlockHeight},
     legacy::Script,
     memo::Memo,
-    merkle_tree::HashSer,
     transaction::{
         components::{amount::NonNegativeAmount, OutPoint},
-        Transaction, TxId,
+        TxId,
     },
 };
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
-    keys::{
-        self,
-        transparent::{TransparentAddressId, TransparentScope},
-        KeyId,
-    },
+    keys::{self, transparent::TransparentAddressId, KeyId},
     sync::MAX_VERIFICATION_WINDOW,
     witness,
 };
 
 #[cfg(feature = "wallet_essentials")]
 use {
+    crate::keys::transparent::TransparentScope,
     byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt},
+    incrementalmerkletree::Hashable,
+    read_write::read_string,
     read_write::write_string,
+    shardtree::{
+        store::{Checkpoint, ShardStore},
+        LocatedPrunableTree,
+    },
+    std::io::Read,
     std::io::Write,
+    zcash_address::ZcashAddress,
+    zcash_client_backend::serialization::shardtree::{read_shard, write_shard},
     zcash_encoding::{Optional, Vector},
+    zcash_primitives::{merkle_tree::HashSer, transaction::Transaction},
 };
 
 pub mod traits;
@@ -837,7 +836,7 @@ impl WalletTransaction {
         let status = ConfirmationStatus::read(&mut reader)?;
         let transaction = Transaction::read(
             &mut reader,
-            BranchId::for_height(consensus_parameters, status.get_height()),
+            consensus::BranchId::for_height(consensus_parameters, status.get_height()),
         )?;
         let datetime = reader.read_u32::<LittleEndian>()?;
         let transparent_coins = Vector::read(&mut reader, |r| TransparentCoin::read(r))?;
@@ -1530,12 +1529,12 @@ pub trait OutgoingNoteInterface: Sized {
     /// Encoded recipient address recorded in note on chain (single receiver).
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants;
+        P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Encoded recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants;
+        P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Outgoing notes within `transaction`.
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self];
@@ -1593,7 +1592,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
     fn encoded_recipient<P>(&self, consensus_parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         encode_payment_address(
             consensus_parameters.hrp_sapling_payment_address(),
@@ -1603,7 +1602,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         self.recipient_unified_address
             .as_ref()
@@ -1780,14 +1779,14 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         keys::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
     }
 
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         self.recipient_unified_address
             .as_ref()
@@ -2174,6 +2173,7 @@ mod read_write {
     }
 
     pub(super) struct UnifiedAddress(pub(super) zcash_address::unified::Address);
+
     impl zcash_address::TryFromRawAddress for UnifiedAddress {
         type Error = std::convert::Infallible;
 

@@ -16,7 +16,7 @@ zingo-status = { path = "../zingo-status" }
 
 # Zcash
 zcash_encoding = { workspace = true, optional = true }
-zcash_client_backend.workspace = true
+zcash_client_backend = { workspace = true, features = [ "unstable-serialization" ] }
 zcash_primitives.workspace = true
 zcash_note_encryption.workspace = true
 zcash_keys.workspace = true
