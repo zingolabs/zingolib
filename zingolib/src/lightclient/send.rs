@@ -102,21 +102,9 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
-            if self.sync_mode() == SyncMode::Running {
-                self.pause_sync();
-            }
-
-            let calculated_txids = {
-                let mut wallet = self.wallet.lock().await;
-                wallet.save_required = true;
-                wallet.create_transactions(proposal).await?
-            };
-            // drop wallet lock to allow the save task to acquire it with the sync engine paused.
-
             let mut wallet = self.wallet.lock().await;
-            if self.sync_mode() == SyncMode::Paused {
-                self.resume_sync();
-            }
+            let calculated_txids = wallet.create_transactions(proposal).await?;
+            wallet.save_required = true;
             let broadcast_result = wallet
                 .broadcast_calculated_transactions(self.get_server_uri(), calculated_txids)
                 .await;

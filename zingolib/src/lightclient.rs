@@ -452,13 +452,11 @@ impl LightClient {
             transparent: addr_type.contains('t'),
         };
 
-        let new_address = {
-            let mut wallet = self.wallet.lock().await;
-            wallet.save_required = true;
-            wallet
-                .generate_unified_address(desired_receivers)
-                .map_err(|e| e.to_string())?
-        };
+        let mut wallet = self.wallet.lock().await;
+        let new_address = wallet
+            .generate_unified_address(desired_receivers)
+            .map_err(|e| e.to_string())?;
+        wallet.save_required = true;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
