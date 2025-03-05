@@ -103,6 +103,9 @@ pub mod send_with_proposal {
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
             let mut wallet = self.wallet.lock().await;
             let calculated_txids = wallet.create_transactions(proposal).await?;
+
+            // FIXME: zingo2, save wallet here in case send fails and tx is lost
+
             let broadcast_result = wallet
                 .broadcast_calculated_transactions(self.get_server_uri(), calculated_txids)
                 .await;

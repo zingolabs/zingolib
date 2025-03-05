@@ -483,6 +483,7 @@ impl LightClient {
             .generate_unified_address(desired_receivers)
             .map_err(|e| e.to_string())?;
 
+        // FIXME: zingo2, rework wallet save to save while the wallet guard is acquired
         if SyncMode::from_atomic_u8(self.sync_mode.clone()) == SyncMode::NotRunning {
             self.save_internal_rust().await?;
         }
