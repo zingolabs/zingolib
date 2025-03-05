@@ -137,41 +137,34 @@ impl SyncState {
     }
 
     /// Returns the block height at which all blocks equal to and below this height are scanned.
-    ///
-    /// Will panic if called before scan ranges are updated for the first time.
-    pub fn fully_scanned_height(&self) -> BlockHeight {
+    /// Returns `None` if `self.scan_ranges` is empty.
+    pub fn fully_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .scan_ranges
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
-            scan_range.block_range().start - 1
+            Some(scan_range.block_range().start - 1)
         } else {
             self.scan_ranges
                 .last()
-                .expect("scan ranges always non-empty")
-                .block_range()
-                .end
-                - 1
+                .map(|range| range.block_range().end - 1)
         }
     }
 
     /// Returns the highest block height that has been scanned.
-    ///
     /// If no scan ranges have been scanned, returns the block below the wallet birthday.
-    /// Will panic if called before scan ranges are updated for the first time.
-    pub fn highest_scanned_height(&self) -> BlockHeight {
+    /// Returns `None` if `self.scan_ranges` is empty.
+    pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(last_scanned_range) = self
             .scan_ranges
             .iter()
             .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
             .last()
         {
-            last_scanned_range.block_range().end - 1
+            Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday()
-                .expect("scan ranges always non-empty")
-                - 1
+            self.wallet_birthday().map(|birthday| birthday - 1)
         }
     }
 

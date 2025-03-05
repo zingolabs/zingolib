@@ -192,7 +192,6 @@ impl NullifierMap {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
-
         let sapling = Vector::read(&mut reader, |mut r| {
             let mut nullifier_bytes = [0u8; 32];
             r.read_exact(&mut nullifier_bytes)?;

@@ -94,7 +94,10 @@ pub(super) async fn update_scan_ranges(
     )?;
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height)?;
 
-    let verification_height = sync_state.highest_scanned_height() + 1;
+    let verification_height = sync_state
+        .highest_scanned_height()
+        .expect("scan ranges must be non-empty")
+        + 1;
     if verification_height <= chain_height {
         set_verify_scan_range(sync_state, verification_height, VerifyEnd::VerifyLowest);
     }
@@ -111,7 +114,10 @@ fn merge_scanned_ranges(sync_state: &mut SyncState) {
         .enumerate()
         .filter(|(_, scan_range)| {
             scan_range.priority() == ScanPriority::Scanned
-                && scan_range.block_range().end - 1 <= sync_state.fully_scanned_height()
+                && scan_range.block_range().end - 1
+                    <= sync_state
+                        .fully_scanned_height()
+                        .expect("scan ranges must be non-empty")
         })
         .collect::<Vec<_>>();
 
@@ -649,7 +655,11 @@ pub(super) async fn set_initial_state<W>(
 ) where
     W: SyncWallet + SyncBlocks,
 {
-    let fully_scanned_height = wallet.get_sync_state().unwrap().fully_scanned_height();
+    let fully_scanned_height = wallet
+        .get_sync_state()
+        .unwrap()
+        .fully_scanned_height()
+        .expect("scan ranges must be non-empty");
     let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(
         consensus_parameters,
         fetch_request_sender.clone(),

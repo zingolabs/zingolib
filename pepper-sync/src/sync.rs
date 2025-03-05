@@ -174,6 +174,7 @@ where
         .get_sync_state()
         .unwrap()
         .highest_scanned_height()
+        .expect("scan ranges must be non-empty")
         + 1;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -607,8 +608,12 @@ where
     W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
     let sync_state = wallet.get_sync_state().unwrap();
-    let fully_scanned_height = sync_state.fully_scanned_height();
-    let highest_scanned_height = sync_state.highest_scanned_height();
+    let fully_scanned_height = sync_state
+        .fully_scanned_height()
+        .expect("scan ranges must be non-empty");
+    let highest_scanned_height = sync_state
+        .highest_scanned_height()
+        .expect("scan ranges must be non-empty");
     let sync_start_height = sync_state.initial_sync_state.sync_start_height;
 
     let scanned_block_range_bounds = sync_state

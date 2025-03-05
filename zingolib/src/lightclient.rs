@@ -2,7 +2,10 @@
 
 use json::{array, object, JsonValue};
 use log::error;
-use pepper_sync::{error::SyncError, wallet::SyncResult};
+use pepper_sync::{
+    error::SyncError,
+    wallet::{SyncMode, SyncResult},
+};
 use serde::Serialize;
 use std::sync::{atomic::AtomicU8, Arc};
 use tokio::{
@@ -465,7 +468,7 @@ impl LightClient {
     }
 
     /// Generates a new unified address from the given `addr_type`.
-    pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
+    pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
@@ -480,7 +483,9 @@ impl LightClient {
             .generate_unified_address(desired_receivers)
             .map_err(|e| e.to_string())?;
 
-        // self.save_internal_rust().await?;
+        if SyncMode::from_atomic_u8(self.sync_mode.clone()) == SyncMode::NotRunning {
+            self.save_internal_rust().await?;
+        }
 
         Ok(array![new_address.encode(&self.config.chain)])
     }

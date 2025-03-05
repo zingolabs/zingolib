@@ -61,6 +61,7 @@ impl LightWallet {
             Some(m) => m.0.clone().into_entropy(),
             None => vec![],
         };
+
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
         if let Some(m) = &self.mnemonic {
             writer.write_u32::<LittleEndian>(m.1)?;

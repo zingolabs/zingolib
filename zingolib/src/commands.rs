@@ -1586,22 +1586,21 @@ struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the latest block height that the wallet is at.
+            Returns the blockchain height at the time the wallet last requested the latest block height from the server.
+
             Usage:
             height
-
-            Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the latest block height that the wallet is at"
+        "Returns the blockchain height at the time the wallet last requested the latest block height from the server."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     }
 }
