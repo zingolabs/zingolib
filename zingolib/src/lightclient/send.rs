@@ -101,11 +101,14 @@ pub mod send_with_proposal {
             &self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
         ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+            let calculated_txids = {
+                let mut wallet = self.wallet.lock().await;
+                wallet.save_required = true;
+                wallet.create_transactions(proposal).await?
+            };
+            // drop wallet lock to allow save task to acquire it.
+
             let mut wallet = self.wallet.lock().await;
-            let calculated_txids = wallet.create_transactions(proposal).await?;
-
-            // FIXME: zingo2, save wallet here in case send fails and tx is lost
-
             let broadcast_result = wallet
                 .broadcast_calculated_transactions(self.get_server_uri(), calculated_txids)
                 .await;

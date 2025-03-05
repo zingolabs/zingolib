@@ -216,6 +216,12 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
     /// Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
+    /// Boolean for tracking whether the wallet state has changed since last save.
+    ///
+    /// When wallet state is changed due to sync, send or creating addresses, this will be set to `true` automatically.
+    /// Calling [`crate::lightclient::LightClient::save`] will serialize (and in some cases persist) the wallet and
+    /// reset `save_required` to false.
+    pub save_required: bool,
 }
 
 impl LightWallet {
@@ -363,6 +369,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             network,
+            save_required: false,
         })
     }
 

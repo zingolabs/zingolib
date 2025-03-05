@@ -23,7 +23,7 @@ mod error;
 mod utils;
 
 lazy_static! {
-    static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
+    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
 /// This command interface is used both by cli and also consumers.

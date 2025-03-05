@@ -5,90 +5,51 @@ use log::error;
 use std::{
     fs::{remove_file, File},
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
-use tokio::runtime::Runtime;
 
 use super::LightClient;
-use crate::error::{ZingoLibError, ZingoLibResult};
+use crate::{error::ZingoLibError, wallet::LightWallet};
 
 impl LightClient {
-    //        SAVE METHODS
-
-    /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
-    pub(super) async fn save_internal_rust(&mut self) -> ZingoLibResult<bool> {
-        match self.save_internal_buffer().await {
-            Ok(_vu8) => {
-                // Save_internal_buffer ran without error. At this point, we assume that the save buffer is good to go. Depending on operating system, we may be able to write it to disk. (Otherwise, we wait for the FFI to offer save export.
-
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                {
-                    self.rust_write_save_buffer_to_file().await?;
-                    Ok(true)
-                }
-                #[cfg(any(target_os = "ios", target_os = "android"))]
-                {
-                    Ok(false)
-                }
-            }
-            Err(err) => {
-                error!("{}", err);
-                Err(err)
-            }
-        }
-    }
-
-    /// write down the state of the lightclient as a `Vec<u8>`
-    pub async fn save_internal_buffer(&mut self) -> ZingoLibResult<Vec<u8>> {
+    /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
+    /// For OSs that are not iOS and Android, also persists the wallet bytes to file.
+    /// Returns `Ok(None)` if the wallet state has not changed and save is not required.
+    /// Returns error if serialization or persistance fails.
+    ///
+    /// Intended to be called from a save task which calls `save` repeatedly.
+    // FIXME: zingo-cli needs a save task
+    pub async fn save(&self, wallet: &mut LightWallet) -> std::io::Result<Option<Vec<u8>>> {
         let mut buffer: Vec<u8> = vec![];
-        let mut wallet = self.wallet.lock().await;
-        let network = wallet.network;
-        wallet
-            .write(&mut buffer, &network)
-            .await
-            .map_err(ZingoLibError::InternalWriteBufferError)?;
-        (self.save_buffer.buffer.write().await).clone_from(&buffer);
-        Ok(buffer)
-    }
-
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    /// If possible, write to disk.
-    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<()> {
-        {
-            let read_buffer = self.save_buffer.buffer.read().await;
-            if !read_buffer.is_empty() {
-                LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(ZingoLibError::WriteFileError)?;
-                Ok(())
-            } else {
-                ZingoLibError::EmptySaveBuffer.handle()
-            }
+        if wallet.save_required {
+            let network = wallet.network;
+            wallet.write(&mut buffer, &network).await?;
+            wallet.save_required = false;
         }
-    }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
-        let mut file = File::create(path)?;
-        file.write_all(buffer)?;
-        Ok(())
-    }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        if !buffer.is_empty() {
+            let mut file = File::create(self.config.get_wallet_path())?;
+            file.write_all(&buffer)?;
+        }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
-        let read_buffer = self.save_buffer.buffer.read().await;
-        if !read_buffer.is_empty() {
-            Ok(read_buffer.clone())
+        if buffer.is_empty() {
+            Ok(None)
         } else {
-            ZingoLibError::EmptySaveBuffer.handle()
+            Ok(Some(buffer))
         }
     }
 
-    /// This function is the sole correct way to ask LightClient to save.
-    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(String::from)
+    /// Calls `save` in a runtime and returns an empty buffer in the case save was not required.
+    // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
+    pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
+        crate::commands::RT.block_on(async move {
+            match self.save(&mut *self.wallet.lock().await).await {
+                Ok(Some(wallet_bytes)) => Ok(wallet_bytes),
+                Ok(None) => Ok(vec![]),
+                Err(e) => Err(e.to_string()),
+            }
+        })
     }
 
     /// Only relevant in non-mobile, this function removes the save file.

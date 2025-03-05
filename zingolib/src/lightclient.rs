@@ -2,10 +2,7 @@
 
 use json::{array, object, JsonValue};
 use log::error;
-use pepper_sync::{
-    error::SyncError,
-    wallet::{SyncMode, SyncResult},
-};
+use pepper_sync::{error::SyncError, wallet::SyncResult};
 use serde::Serialize;
 use std::sync::{atomic::AtomicU8, Arc};
 use tokio::{
@@ -159,19 +156,6 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
-#[derive(Default)]
-struct ZingoSaveBuffer {
-    pub buffer: Arc<RwLock<Vec<u8>>>,
-}
-
-impl ZingoSaveBuffer {
-    fn new(buffer: Vec<u8>) -> Self {
-        ZingoSaveBuffer {
-            buffer: Arc::new(RwLock::new(buffer)),
-        }
-    }
-}
-
 /// Balances that may be presented to a user in a wallet app.
 /// The goal is to present a user-friendly and useful view of what the user has or can soon expect
 /// *without* requiring the user to understand the details of the Zcash protocol.
@@ -247,7 +231,6 @@ pub struct LightClient {
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
-    save_buffer: ZingoSaveBuffer,                        // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
@@ -266,7 +249,7 @@ pub mod instantiation {
 
     use crate::config::ZingoConfig;
 
-    use super::{LightClient, ZingoSaveBuffer};
+    use super::LightClient;
     use crate::wallet::{LightWallet, WalletBase};
 
     impl LightClient {
@@ -285,7 +268,6 @@ pub mod instantiation {
                 sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
                 sync_handle: None,
                 latest_proposal: Arc::new(RwLock::new(None)),
-                save_buffer: ZingoSaveBuffer::new(buffer),
             })
         }
 
@@ -324,7 +306,7 @@ pub mod instantiation {
                 ));
                 }
             }
-            let mut lightclient = LightClient::create_from_wallet_async(
+            let lightclient = LightClient::create_from_wallet_async(
                 config.clone(),
                 LightWallet::new(
                     config.chain,
@@ -337,10 +319,7 @@ pub mod instantiation {
             )
             .await?;
 
-            lightclient
-                .save_internal_rust()
-                .await
-                .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+            lightclient.wallet.lock().await.save_required = true;
 
             debug!("Created new wallet!");
 
@@ -370,19 +349,16 @@ pub mod instantiation {
 
         fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
             Runtime::new().unwrap().block_on(async move {
-                let mut l =
+                let lightclient =
                     LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
                         .await?;
 
                 debug!("Created new wallet with a new seed!");
                 debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
-                // Save
-                l.save_internal_rust()
-                    .await
-                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+                lightclient.wallet.lock().await.save_required = true;
 
-                Ok(l)
+                Ok(lightclient)
             })
         }
 
@@ -476,17 +452,13 @@ impl LightClient {
             transparent: addr_type.contains('t'),
         };
 
-        let new_address = self
-            .wallet
-            .lock()
-            .await
-            .generate_unified_address(desired_receivers)
-            .map_err(|e| e.to_string())?;
-
-        // FIXME: zingo2, rework wallet save to save while the wallet guard is acquired
-        if SyncMode::from_atomic_u8(self.sync_mode.clone()) == SyncMode::NotRunning {
-            self.save_internal_rust().await?;
-        }
+        let new_address = {
+            let mut wallet = self.wallet.lock().await;
+            wallet.save_required = true;
+            wallet
+                .generate_unified_address(desired_receivers)
+                .map_err(|e| e.to_string())?
+        };
 
         Ok(array![new_address.encode(&self.config.chain)])
     }

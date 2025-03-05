@@ -1,21 +1,21 @@
 //! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
 //! (obviously) in a test environment.
-use crate::{
-    error::ZingoLibError,
-    lightclient::{describe::UAReceivers, LightClient},
-};
+use crate::lightclient::{describe::UAReceivers, LightClient};
 use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_primitives::transaction::TxId;
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
     template_client: &mut LightClient,
-) -> Result<LightClient, ZingoLibError> {
-    let buffer = template_client.save_internal_buffer().await?;
+) -> std::io::Result<LightClient> {
+    let mut wallet = template_client.wallet.lock().await;
+    wallet.save_required = true;
+    let buffer = template_client
+        .save(&mut wallet)
+        .await?
+        .expect("forced save_required true");
 
-    LightClient::read_wallet_from_buffer_async(template_client.config(), buffer.as_slice())
-        .await
-        .map_err(ZingoLibError::CantReadWallet)
+    LightClient::read_wallet_from_buffer_async(template_client.config(), buffer.as_slice()).await
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 /// calling \[0] on json may panic? not sure -fv

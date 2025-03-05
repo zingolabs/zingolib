@@ -300,6 +300,7 @@ impl LightWallet {
             transparent_addresses: BTreeMap::new(),
             unified_addresses: BTreeMap::new(),
             network,
+            save_required: false,
         };
 
         Ok(lw)
@@ -413,6 +414,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             price: Arc::new(RwLock::new(price)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            save_required: false,
         })
     }
 }
