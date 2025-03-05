@@ -44,12 +44,14 @@ impl LightClient {
     }
 
     /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
+    // FIXME: zingo2, error if not running
     pub fn pause_sync(&self) {
         self.sync_mode
             .store(SyncMode::Paused as u8, atomic::Ordering::Release);
     }
 
     /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
+    // FIXME: zingo2, error if not running
     pub fn resume_sync(&self) {
         self.sync_mode
             .store(SyncMode::Running as u8, atomic::Ordering::Release);

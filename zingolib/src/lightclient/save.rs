@@ -9,42 +9,46 @@ use std::{
 };
 
 use super::LightClient;
-use crate::{error::ZingoLibError, wallet::LightWallet};
+use crate::error::ZingoLibError;
 
 impl LightClient {
     /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
-    /// For OSs that are not iOS and Android, also persists the wallet bytes to file.
     /// Returns `Ok(None)` if the wallet state has not changed and save is not required.
-    /// Returns error if serialization or persistance fails.
+    /// Returns error if serialization fails.
     ///
-    /// Intended to be called from a save task which calls `save` repeatedly.
+    /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
+    /// `save_required` status, writing the returned wallet bytes to persistance.
     // FIXME: zingo-cli needs a save task
-    pub async fn save(&self, wallet: &mut LightWallet) -> std::io::Result<Option<Vec<u8>>> {
-        let mut buffer: Vec<u8> = vec![];
-        if wallet.save_required {
-            let network = wallet.network;
-            wallet.write(&mut buffer, &network).await?;
-            wallet.save_required = false;
+    pub async fn save(&self) -> std::io::Result<Option<Vec<u8>>> {
+        let mut wallet_bytes: Vec<u8> = vec![];
+        {
+            let mut wallet = self.wallet.lock().await;
+            if wallet.save_required {
+                let network = wallet.network;
+                wallet.write(&mut wallet_bytes, &network).await?;
+                wallet.save_required = false;
+            }
         }
 
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        if !buffer.is_empty() {
-            let mut file = File::create(self.config.get_wallet_path())?;
-            file.write_all(&buffer)?;
-        }
-
-        if buffer.is_empty() {
+        if wallet_bytes.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(buffer))
+            Ok(Some(wallet_bytes))
         }
+    }
+
+    /// Persists the `wallet_bytes` returned from [`crate::lightclient::LightClient::save`] to the wallet path specified
+    /// in `self.config`.
+    pub async fn persist_wallet_bytes(&self, wallet_bytes: Vec<u8>) -> std::io::Result<()> {
+        let mut file = File::create(self.config.get_wallet_path())?;
+        file.write_all(&wallet_bytes)
     }
 
     /// Calls `save` in a runtime and returns an empty buffer in the case save was not required.
     // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
     pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
         crate::commands::RT.block_on(async move {
-            match self.save(&mut *self.wallet.lock().await).await {
+            match self.save().await {
                 Ok(Some(wallet_bytes)) => Ok(wallet_bytes),
                 Ok(None) => Ok(vec![]),
                 Err(e) => Err(e.to_string()),

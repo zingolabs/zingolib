@@ -8,14 +8,14 @@ use zcash_primitives::transaction::TxId;
 pub async fn new_client_from_save_buffer(
     template_client: &mut LightClient,
 ) -> std::io::Result<LightClient> {
-    let mut wallet = template_client.wallet.lock().await;
-    wallet.save_required = true;
-    let buffer = template_client
-        .save(&mut wallet)
+    template_client.wallet.lock().await.save_required = true;
+    let wallet_bytes = template_client
+        .save()
         .await?
         .expect("forced save_required true");
 
-    LightClient::read_wallet_from_buffer_async(template_client.config(), buffer.as_slice()).await
+    LightClient::read_wallet_from_buffer_async(template_client.config(), wallet_bytes.as_slice())
+        .await
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 /// calling \[0] on json may panic? not sure -fv
