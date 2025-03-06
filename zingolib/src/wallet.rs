@@ -178,19 +178,24 @@ impl WalletBase {
 }
 
 /// In-memory wallet data struct
+///
+/// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
+///
+/// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
+/// `birthday` block height.
+///
+/// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
+/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
+/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
+/// methods for a save task implementation.
 pub struct LightWallet {
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
-    /// Can be `None` in case of wallet without spending capability
-    /// or created directly from spending keys.
     // TODO: we seem to support generating keys for a single account of choice which is stored here, this should be
     // reworked to support multiple accounts during sync integration
     mnemonic: Option<(Mnemonic, u32)>,
     /// The block height at which the wallet was created.
-    ///
-    /// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
-    /// this block height.
     pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
@@ -217,10 +222,6 @@ pub struct LightWallet {
     /// Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
     /// Boolean for tracking whether the wallet state has changed since last save.
-    ///
-    /// When wallet state is changed due to sync, send or creating addresses, this will be set to `true` automatically.
-    /// Calling [`crate::lightclient::LightClient::save`] will serialize (and in some cases persist) the wallet and
-    /// reset `save_required` to false.
     pub save_required: bool,
 }
 
