@@ -19,7 +19,6 @@ pub mod send_with_proposal {
 
     use nonempty::NonEmpty;
 
-    use pepper_sync::wallet::SyncMode;
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;

@@ -1,54 +1,80 @@
 //! LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 
+use futures::FutureExt as _;
 use log::error;
 
-use std::{
-    fs::{remove_file, File},
-    io::Write,
-    path::PathBuf,
-};
+use std::{borrow::BorrowMut as _, fs::remove_file, path::PathBuf, sync::atomic};
 
 use super::LightClient;
-use crate::error::ZingoLibError;
+use crate::{
+    error::ZingoLibError,
+    utils::{self, PollReport},
+};
 
 impl LightClient {
-    /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
-    /// Returns `Ok(None)` if the wallet state has not changed and save is not required.
-    /// Returns error if serialization fails.
-    ///
-    /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
-    /// `save_required` status, writing the returned wallet bytes to persistance.
-    // FIXME: zingo-cli needs a save task
-    pub async fn save(&self) -> std::io::Result<Option<Vec<u8>>> {
-        let mut wallet_bytes: Vec<u8> = vec![];
-        {
-            let mut wallet = self.wallet.lock().await;
-            if wallet.save_required {
-                let network = wallet.network;
-                wallet.write(&mut wallet_bytes, &network).await?;
-                wallet.save_required = false;
+    pub async fn save_task(&mut self) {
+        self.save_active.store(true, atomic::Ordering::Release);
+        let save_active = self.save_active.clone();
+        let wallet = self.wallet.clone();
+        let wallet_path = self.config.get_wallet_path();
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let save_handle = tokio::spawn(async move {
+            loop {
+                interval.tick().await;
+                if let Some(wallet_bytes) = wallet.lock().await.save().await? {
+                    utils::write_to_path(&wallet_path, wallet_bytes).await?
+                }
+                if !save_active.load(atomic::Ordering::Acquire) {
+                    return Ok(());
+                }
             }
-        }
+        });
+        self.save_handle = Some(save_handle);
+    }
 
-        if wallet_bytes.is_empty() {
-            Ok(None)
+    /// Polls the save task, returning [`self::PollReport`].
+    fn poll_save_task(&mut self) -> PollReport<(), std::io::Error> {
+        if let Some(mut save_handle) = self.save_handle.take() {
+            if let Some(save_result) = save_handle.borrow_mut().now_or_never() {
+                PollReport::Ready(save_result.expect("task panicked"))
+            } else {
+                self.save_handle = Some(save_handle);
+                PollReport::NotReady
+            }
         } else {
-            Ok(Some(wallet_bytes))
+            PollReport::NoHandle
         }
     }
 
-    /// Persists the `wallet_bytes` returned from [`crate::lightclient::LightClient::save`] to the wallet path specified
-    /// in `self.config`.
-    pub async fn persist_wallet_bytes(&self, wallet_bytes: Vec<u8>) -> std::io::Result<()> {
-        let mut file = File::create(self.config.get_wallet_path())?;
-        file.write_all(&wallet_bytes)
+    /// Checks the save task handle in case of failure.
+    /// On save task failure, restarts the save task and returns the error.
+    pub async fn check_save_error(&mut self) -> std::io::Result<()> {
+        match self.poll_save_task() {
+            PollReport::Ready(save_result) => {
+                if save_result.is_err() {
+                    self.save_task().await;
+                }
+                save_result
+            }
+            _ => Ok(()),
+        }
     }
 
-    /// Calls `save` in a runtime and returns an empty buffer in the case save was not required.
+    pub async fn shutdown_save_task(&mut self) -> std::io::Result<()> {
+        self.save_active.store(false, atomic::Ordering::Release);
+        if let Some(save_handle) = self.save_handle.take() {
+            save_handle.await.expect("task panicked")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Calls [`crate::wallet::LightWallet::save`] in a runtime and returns an empty buffer in the case save was not required.
     // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
     pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
         crate::commands::RT.block_on(async move {
-            match self.save().await {
+            match self.wallet.lock().await.save().await {
                 Ok(Some(wallet_bytes)) => Ok(wallet_bytes),
                 Ok(None) => Ok(vec![]),
                 Err(e) => Err(e.to_string()),

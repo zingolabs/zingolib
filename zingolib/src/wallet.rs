@@ -369,7 +369,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             network,
-            save_required: false,
+            save_required: true,
         })
     }
 
@@ -395,6 +395,25 @@ impl LightWallet {
 
         p.is_send_in_progress = false;
         p.last_result = Some(result);
+    }
+
+    /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
+    /// Returns `Ok(None)` if the wallet state has not changed and save is not required.
+    /// Returns error if serialization fails.
+    ///
+    /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
+    /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    // FIXME: zingo-cli needs a save task
+    pub async fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+        if self.save_required {
+            let network = self.network;
+            let mut wallet_bytes: Vec<u8> = vec![];
+            self.write(&mut wallet_bytes, &network).await?;
+            self.save_required = false;
+            Ok(Some(wallet_bytes))
+        } else {
+            Ok(None)
+        }
     }
 }
 

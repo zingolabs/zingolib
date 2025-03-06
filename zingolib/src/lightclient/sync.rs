@@ -8,6 +8,8 @@ use pepper_sync::error::SyncError;
 use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
+use crate::utils::PollReport;
+
 use super::error::LightClientError;
 use super::LightClient;
 use super::SyncResult;
@@ -57,17 +59,17 @@ impl LightClient {
             .store(SyncMode::Running as u8, atomic::Ordering::Release);
     }
 
-    /// Polls the sync task, returning [`self::SyncPollReport`].
-    pub fn poll_sync(&mut self) -> SyncPollReport {
+    /// Polls the sync task, returning [`self::PollReport`].
+    pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
-                SyncPollReport::Ready(sync_result.expect("task panicked"))
+                PollReport::Ready(sync_result.expect("task panicked"))
             } else {
                 self.sync_handle = Some(sync_handle);
-                SyncPollReport::NotReady
+                PollReport::NotReady
             }
         } else {
-            SyncPollReport::NoHandle
+            PollReport::NoHandle
         }
     }
 
@@ -94,16 +96,6 @@ impl LightClient {
         self.rescan().await?;
         self.await_sync().await
     }
-}
-
-/// Returned from [`crate::lightclient::LightClient::poll_sync`].
-pub enum SyncPollReport {
-    /// Sync task has not been launched.
-    NoHandle,
-    /// Sync task is not complete.
-    NotReady,
-    /// Sync task has completed successfully or failed.
-    Ready(Result<SyncResult, SyncError>),
 }
 
 #[cfg(test)]

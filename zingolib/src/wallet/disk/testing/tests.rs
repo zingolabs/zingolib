@@ -234,12 +234,14 @@ async fn reload_wallet_from_buffer() {
             .await;
     let mid_client_network = mid_client.wallet.lock().await.network;
 
-    mid_client.wallet.lock().await.save_required = true;
-    let mid_buffer = mid_client
-        .save()
+    let mut mid_buffer: Vec<u8> = vec![];
+    mid_client
+        .wallet
+        .lock()
         .await
-        .unwrap()
-        .expect("forced save_required true");
+        .write(&mut mid_buffer, &mid_client.config.chain)
+        .await
+        .unwrap();
 
     let client =
         LightClient::read_wallet_from_buffer_async(&ZingoConfig::create_testnet(), &mid_buffer[..])

@@ -8,11 +8,13 @@ use zcash_primitives::transaction::TxId;
 pub async fn new_client_from_save_buffer(
     template_client: &mut LightClient,
 ) -> std::io::Result<LightClient> {
-    template_client.wallet.lock().await.save_required = true;
-    let wallet_bytes = template_client
-        .save()
-        .await?
-        .expect("forced save_required true");
+    let mut wallet_bytes: Vec<u8> = vec![];
+    template_client
+        .wallet
+        .lock()
+        .await
+        .write(&mut wallet_bytes, &template_client.config.chain)
+        .await?;
 
     LightClient::read_wallet_from_buffer_async(template_client.config(), wallet_bytes.as_slice())
         .await

@@ -484,6 +484,9 @@ pub fn startup(
         println!("{}", update);
     }
 
+    let update = commands::do_user_command("save", &["run"], &mut lightclient);
+    println!("{}", update);
+
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);
 
@@ -533,6 +536,16 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 );
                 eprintln!("{}", e);
                 error!("{}", e);
+            }
+        }
+
+        command_transmitter
+            .send(("save".to_string(), vec!["shutdown".to_string()]))
+            .unwrap();
+        match resp_receiver.recv() {
+            Ok(s) => println!("{}", s),
+            Err(e) => {
+                eprintln!("{}", e);
             }
         }
     }

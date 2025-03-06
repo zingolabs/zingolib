@@ -4,7 +4,10 @@ use json::{array, object, JsonValue};
 use log::error;
 use pepper_sync::{error::SyncError, wallet::SyncResult};
 use serde::Serialize;
-use std::sync::{atomic::AtomicU8, Arc};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU8},
+    Arc,
+};
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
@@ -230,6 +233,8 @@ pub struct LightClient {
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
+    save_active: Arc<AtomicBool>,
+    save_handle: Option<JoinHandle<std::io::Result<()>>>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
 }
 
@@ -239,7 +244,10 @@ pub mod instantiation {
     use pepper_sync::wallet::SyncMode;
     use std::{
         io::{self, Error, ErrorKind},
-        sync::{atomic::AtomicU8, Arc},
+        sync::{
+            atomic::{AtomicBool, AtomicU8},
+            Arc,
+        },
     };
     use tokio::{
         runtime::Runtime,
@@ -267,6 +275,8 @@ pub mod instantiation {
                 wallet: Arc::new(Mutex::new(wallet)),
                 sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
                 sync_handle: None,
+                save_active: Arc::new(AtomicBool::new(false)),
+                save_handle: None,
                 latest_proposal: Arc::new(RwLock::new(None)),
             })
         }
@@ -319,8 +329,6 @@ pub mod instantiation {
             )
             .await?;
 
-            lightclient.wallet.lock().await.save_required = true;
-
             debug!("Created new wallet!");
 
             Ok(lightclient)
@@ -355,8 +363,6 @@ pub mod instantiation {
 
                 debug!("Created new wallet with a new seed!");
                 debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-                lightclient.wallet.lock().await.save_required = true;
 
                 Ok(lightclient)
             })

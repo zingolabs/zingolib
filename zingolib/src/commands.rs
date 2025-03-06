@@ -2,7 +2,7 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
-use crate::lightclient::sync::SyncPollReport;
+use crate::utils::PollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
@@ -375,7 +375,7 @@ impl Command for SyncCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         if args.len() != 1 {
-            return "Error: sync command expects 1 argument. Type \"sync help\" for usage."
+            return "Error: sync command expects 1 argument. Type \"help sync\" for usage."
                 .to_string();
         }
 
@@ -403,14 +403,14 @@ impl Command for SyncCommand {
                 })
                 .pretty(2),
             "poll" => match lightclient.poll_sync() {
-                SyncPollReport::NoHandle => "Sync task has not been launched.".to_string(),
-                SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
-                SyncPollReport::Ready(result) => match result {
+                PollReport::NoHandle => "Sync task has not been launched.".to_string(),
+                PollReport::NotReady => "Sync task is not complete.".to_string(),
+                PollReport::Ready(result) => match result {
                     Ok(sync_result) => sync_result.to_string(),
                     Err(e) => format!("Error: {e}"),
                 },
             },
-            _ => "Error: invalid sub-command. Type \"sync help\" for usage.".to_string(),
+            _ => "Error: invalid sub-command. Type \"help sync\" for usage.".to_string(),
         }
     }
 }
@@ -1760,6 +1760,55 @@ impl Command for CoinsCommand {
     }
 }
 
+struct SaveCommand {}
+impl Command for SaveCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Launches a save task which saves the wallet to persistance when the wallet state changes.
+            Not intended to be called manually.
+
+            usage:
+            save run
+            save check
+            save shutdown
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Launches a save task. Not intended to be called manually."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: save command expects 1 argument. Type \"help save\" for usage."
+                .to_string();
+        }
+
+        match args[0] {
+            "run" => {
+                RT.block_on(async move { lightclient.save_task().await });
+                "Launching save task...".to_string()
+            }
+            "check" => match RT.block_on(async move { lightclient.check_save_error().await }) {
+                Ok(_) => "".to_string(),
+                Err(e) => {
+                    format!("Error: save failed. {}\nRestarting save task...", e)
+                }
+            },
+            "shutdown" => {
+                match RT.block_on(async move { lightclient.shutdown_save_task().await }) {
+                    Ok(_) => "".to_string(),
+                    Err(e) => {
+                        format!("Error: save failed. {}", e)
+                    }
+                }
+            }
+            _ => "Error: invalid sub-command. Type \"help save\" for usage.".to_string(),
+        }
+    }
+}
+
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
@@ -1816,26 +1865,6 @@ impl Command for QuitCommand {
     }
 }
 
-struct DeprecatedNoCommand {}
-impl Command for DeprecatedNoCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            This command has been deprecated.
-            Usage:
-            dont
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Deprecated command."
-    }
-
-    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        ".deprecated.".to_string()
-    }
-}
-
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
@@ -1868,7 +1897,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
-        ("save", Box::new(DeprecatedNoCommand {})),
+        ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),
