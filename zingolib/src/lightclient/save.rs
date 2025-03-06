@@ -13,6 +13,10 @@ use crate::{
 
 impl LightClient {
     pub async fn save_task(&mut self) {
+        if self.save_active.load(atomic::Ordering::Acquire) {
+            return;
+        }
+
         self.save_active.store(true, atomic::Ordering::Release);
         let save_active = self.save_active.clone();
         let wallet = self.wallet.clone();

@@ -192,6 +192,7 @@ where
                 )
                 .await
                 .unwrap();
+                wallet_guard.set_save_flag().unwrap();
 
                 // allow tasks outside the sync engine access to the wallet data
                 drop(wallet_guard);
@@ -237,6 +238,7 @@ where
     }
 
     let sync_status = sync_status(&*wallet_guard).await;
+    wallet_guard.set_save_flag().unwrap();
 
     drop(wallet_guard);
     drop(scanner);

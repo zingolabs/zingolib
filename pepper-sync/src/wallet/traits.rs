@@ -45,6 +45,13 @@ pub trait SyncWallet {
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
+
+    /// Aids in-memory wallets to only save when the wallet state has changed by setting a flag to mark that save is
+    /// required.
+    /// Persitance wallets may use the default implementation.
+    fn set_save_flag(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 /// Trait for interfacing [`crate::wallet::WalletBlock`]s with wallet data
