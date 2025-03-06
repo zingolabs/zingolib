@@ -1798,7 +1798,7 @@ impl Command for SaveCommand {
             },
             "shutdown" => {
                 match RT.block_on(async move { lightclient.shutdown_save_task().await }) {
-                    Ok(_) => "".to_string(),
+                    Ok(_) => "Save task shutdown successfully.".to_string(),
                     Err(e) => {
                         format!("Error: save failed. {}", e)
                     }
@@ -1825,6 +1825,8 @@ impl Command for QuitCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        let save_shutdown = do_user_command("save", &["shutdown"], lightclient);
+
         // before shutting down, shut down all child processes..
         // ...but only if the network being used is regtest.
         let o = RT.block_on(async move { lightclient.do_info().await });
@@ -1861,7 +1863,7 @@ impl Command for QuitCommand {
                     .expect("error while killing regtest-spawned processes!");
             }
         }
-        "quit".to_string()
+        format!("{}\nZingo CLI quit successfully.", save_shutdown)
     }
 }
 

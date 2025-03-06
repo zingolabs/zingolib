@@ -196,6 +196,11 @@ fn start_interactive(
             _ => (),
         }
 
+        match send_command("save".to_string(), vec!["check".to_string()]) {
+            check if check.starts_with("Error:") => eprintln!("{check}"),
+            _ => (),
+        }
+
         let readline = rl.readline(&format!(
             "({}) Block:{} (type 'help') >> ",
             chain_name, height
@@ -540,7 +545,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
         }
 
         command_transmitter
-            .send(("save".to_string(), vec!["shutdown".to_string()]))
+            .send(("quit".to_string(), vec![]))
             .unwrap();
         match resp_receiver.recv() {
             Ok(s) => println!("{}", s),
