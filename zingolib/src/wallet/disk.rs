@@ -143,7 +143,7 @@ impl LightWallet {
     fn read_v0<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
         let mut wallet_capability = WalletCapability::read(&mut reader, network)?;
         let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-        let _transactions = if version <= 14 {
+        let transactions = if version <= 14 {
             TxMap::read_old(&mut reader, &wallet_capability)?
         } else {
             TxMap::read(&mut reader, &wallet_capability)?
@@ -282,7 +282,21 @@ impl LightWallet {
             UnifiedKeyStore::Empty => info!("  - no keys found"),
         }
 
-        // FIXME: sync integration, add locators for targetted rescan
+        // setup targetted scanning from zingo 1.x transaction data
+        let mut sync_state = SyncState::new();
+        pepper_sync::add_scan_targets(
+            &mut sync_state,
+            &transactions
+                .transaction_records_by_id
+                .values()
+                .filter_map(|transaction| {
+                    transaction
+                        .status
+                        .get_confirmed_height()
+                        .map(|height| (height, transaction.txid))
+                })
+                .collect::<Vec<_>>(),
+        );
 
         let lw = Self {
             mnemonic,
@@ -293,10 +307,10 @@ impl LightWallet {
             price: Arc::new(RwLock::new(price)),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
-            nullifier_map: pepper_sync::wallet::NullifierMap::new(),
+            nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
-            shard_trees: pepper_sync::wallet::ShardTrees::new(),
-            sync_state: pepper_sync::wallet::SyncState::new(),
+            shard_trees: ShardTrees::new(),
+            sync_state,
             transparent_addresses: BTreeMap::new(),
             unified_addresses: BTreeMap::new(),
             network,

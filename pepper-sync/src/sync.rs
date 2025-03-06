@@ -32,7 +32,7 @@ use crate::scan::ScanResults;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
-use crate::wallet::{NullifierMap, SyncMode, SyncResult, SyncStatus};
+use crate::wallet::{Locator, NullifierMap, SyncMode, SyncResult, SyncState, SyncStatus};
 use crate::witness;
 
 pub mod error;
@@ -401,6 +401,22 @@ pub fn scan_pending_transaction<W>(
         sapling_spend_locators,
         orchard_spend_locators,
     );
+}
+
+/// API for targetted scanning.
+///
+/// Allows `scan_targets` to be added externally to the wallet's `sync_state` and be prioritised for scanning. Each
+/// scan target must include the block height which will be used to prioritise the block range containing the note
+/// commitments to the surrounding orchard shard(s). If the block height is pre-orchard then the surrounding sapling
+/// shard(s) will be prioritised instead. The txid in each scan target may be omitted and set to [0u8; 32] in order to
+/// prioritise the surrounding blocks for scanning but be ignored when fetching specific relevant transactions to the
+/// wallet. However, in the case where a relevant spending transaction at a given height contains no decryptable
+/// incoming notes (change), only the nullifier will be mapped and this transaction will be scanned when the
+/// transaction containing the spent notes is scanned instead.
+pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[Locator]) {
+    for scan_target in scan_targets {
+        sync_state.locators.insert(*scan_target);
+    }
 }
 
 /// Returns true if sync is complete.

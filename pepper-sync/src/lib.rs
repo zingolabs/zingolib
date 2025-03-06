@@ -23,6 +23,7 @@ pub mod sync;
 pub mod wallet;
 pub(crate) mod witness;
 
+pub use sync::add_scan_targets;
 pub use sync::scan_pending_transaction;
 pub use sync::sync;
 pub use sync::sync_status;

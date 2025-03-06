@@ -479,11 +479,11 @@ fn determine_block_range(
         Range {
             start: target_ranges
                 .first()
-                .expect("should not be empty in this closure")
+                .expect("should not be empty in this scope")
                 .start,
             end: target_ranges
                 .last()
-                .expect("should not be empty in this closure")
+                .expect("should not be empty in this scope")
                 .end,
         }
     }
