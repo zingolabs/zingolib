@@ -1487,8 +1487,8 @@ pub mod summaries {
             write!(
                 f,
                 "\t{{
-            account id: {}
             output index: {}
+            account id: {}
             value: {}
             memo: {}
             recipient: {}
