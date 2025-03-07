@@ -11,7 +11,6 @@ use crate::wallet::{
         SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
         COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
-    keys::unified::WalletCapability,
     output::{OrchardNote, SaplingNote},
     tx_map::TxMap,
 };
@@ -474,7 +473,7 @@ pub trait DomainWalletExt:
         + Send
         + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
         + for<'a> TryFrom<&'a UnifiedKeyStore>
-        + super::keys::unified::Fvk<Self>;
+        + super::keys::legacy::Fvk<Self>;
 
     /// TODO: Add Doc Comment Here!
     type SpendingKey: for<'a> TryFrom<&'a UnifiedKeyStore> + Clone;

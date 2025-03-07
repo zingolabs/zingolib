@@ -13,6 +13,8 @@ use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use bip32::ExtendedPublicKey;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use orchard::note_encryption::OrchardDomain;
+use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_address::unified::Typecode;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
@@ -28,7 +30,10 @@ use zip32::{AccountId, DiversifierIndex};
 
 use crate::{
     config::{ChainType, ZingoConfig},
-    wallet::{error::KeyError, traits::ReadableWriteable},
+    wallet::{
+        error::KeyError,
+        traits::{DomainWalletExt, ReadableWriteable, Recipient},
+    },
 };
 
 use super::unified::{
