@@ -111,16 +111,13 @@ pub(crate) mod conduct_chain {
             )
             .await
             .unwrap();
-            let mut sapling_tree: sapling_crypto::CommitmentTree = zcash_primitives::merkle_tree::read_commitment_tree(
-                hex::decode(<sapling_crypto::note_encryption::SaplingDomain as zingolib::wallet::traits::DomainWalletExt>::get_tree(
-                    &trees,
-                ))
-                .unwrap()
-                .as_slice(),
-            )
-            .unwrap();
+            let mut sapling_tree: sapling_crypto::CommitmentTree =
+                zcash_primitives::merkle_tree::read_commitment_tree(
+                    hex::decode(trees.sapling_tree).unwrap().as_slice(),
+                )
+                .unwrap();
             let mut orchard_tree: zingolib::testutils::incrementalmerkletree::frontier::CommitmentTree<MerkleHashOrchard, 32> = zcash_primitives::merkle_tree::read_commitment_tree(
-                hex::decode(<orchard::note_encryption::OrchardDomain as zingolib::wallet::traits::DomainWalletExt>::get_tree(&trees))
+                hex::decode(trees.orchard_tree)
                     .unwrap()
                     .as_slice(),
             )

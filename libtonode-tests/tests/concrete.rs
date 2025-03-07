@@ -1266,7 +1266,7 @@ mod slow {
     };
     use zingolib::wallet::error::{KeyError, WalletError};
     use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::transaction_record::{SendType, TransactionKind};
+    use zingolib::wallet::summary::{SendType, TransactionKind};
     use zingolib::{utils, UAReceivers};
 
     use super::*;
