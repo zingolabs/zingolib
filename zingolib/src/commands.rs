@@ -2,8 +2,8 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
-use crate::lightclient::sync::SyncPollReport;
 use crate::lightclient::LightClient;
+use crate::utils::PollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use indoc::indoc;
 use json::object;
@@ -22,7 +22,7 @@ mod error;
 mod utils;
 
 lazy_static! {
-    static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
+    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
 /// This command interface is used both by cli and also consumers.
@@ -374,7 +374,7 @@ impl Command for SyncCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         if args.len() != 1 {
-            return "Error: sync command expects 1 argument. Type \"sync help\" for usage."
+            return "Error: sync command expects 1 argument. Type \"help sync\" for usage."
                 .to_string();
         }
 
@@ -402,14 +402,14 @@ impl Command for SyncCommand {
                 })
                 .pretty(2),
             "poll" => match lightclient.poll_sync() {
-                SyncPollReport::NoHandle => "Sync task has not been launched.".to_string(),
-                SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
-                SyncPollReport::Ready(result) => match result {
+                PollReport::NoHandle => "Sync task has not been launched.".to_string(),
+                PollReport::NotReady => "Sync task is not complete.".to_string(),
+                PollReport::Ready(result) => match result {
                     Ok(sync_result) => sync_result.to_string(),
                     Err(e) => format!("Error: {e}"),
                 },
             },
-            _ => "Error: invalid sub-command. Type \"sync help\" for usage.".to_string(),
+            _ => "Error: invalid sub-command. Type \"help sync\" for usage.".to_string(),
         }
     }
 }
@@ -1479,22 +1479,21 @@ struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the latest block height that the wallet is at.
+            Returns the blockchain height at the time the wallet last requested the latest block height from the server.
+
             Usage:
             height
-
-            Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the latest block height that the wallet is at"
+        "Returns the blockchain height at the time the wallet last requested the latest block height from the server."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     }
 }
@@ -1625,6 +1624,55 @@ impl Command for CoinsCommand {
     }
 }
 
+struct SaveCommand {}
+impl Command for SaveCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Launches a save task which saves the wallet to persistance when the wallet state changes.
+            Not intended to be called manually.
+
+            usage:
+            save run
+            save check
+            save shutdown
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Launches a save task. Not intended to be called manually."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: save command expects 1 argument. Type \"help save\" for usage."
+                .to_string();
+        }
+
+        match args[0] {
+            "run" => {
+                RT.block_on(async move { lightclient.save_task().await });
+                "Launching save task...".to_string()
+            }
+            "check" => match RT.block_on(async move { lightclient.check_save_error().await }) {
+                Ok(_) => "".to_string(),
+                Err(e) => {
+                    format!("Error: save failed. {}\nRestarting save task...", e)
+                }
+            },
+            "shutdown" => {
+                match RT.block_on(async move { lightclient.shutdown_save_task().await }) {
+                    Ok(_) => "Save task shutdown successfully.".to_string(),
+                    Err(e) => {
+                        format!("Error: save failed. {}", e)
+                    }
+                }
+            }
+            _ => "Error: invalid sub-command. Type \"help save\" for usage.".to_string(),
+        }
+    }
+}
+
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
@@ -1641,6 +1689,8 @@ impl Command for QuitCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        let save_shutdown = do_user_command("save", &["shutdown"], lightclient);
+
         // before shutting down, shut down all child processes..
         // ...but only if the network being used is regtest.
         let o = RT.block_on(async move { lightclient.do_info().await });
@@ -1677,7 +1727,7 @@ impl Command for QuitCommand {
                     .expect("error while killing regtest-spawned processes!");
             }
         }
-        "quit".to_string()
+        format!("{}\nZingo CLI quit successfully.", save_shutdown)
     }
 }
 
@@ -1711,6 +1761,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
+        ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),

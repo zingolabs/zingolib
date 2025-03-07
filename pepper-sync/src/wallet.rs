@@ -23,7 +23,7 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, NetworkConstants, Parameters},
+    consensus::{self, BlockHeight},
     legacy::Script,
     memo::Memo,
     transaction::{
@@ -41,6 +41,9 @@ use crate::{
 };
 
 pub mod traits;
+
+#[cfg(feature = "wallet_essentials")]
+pub mod serialization;
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
 /// output/spend discovery or for targetted rescan.
@@ -134,41 +137,34 @@ impl SyncState {
     }
 
     /// Returns the block height at which all blocks equal to and below this height are scanned.
-    ///
-    /// Will panic if called before scan ranges are updated for the first time.
-    pub fn fully_scanned_height(&self) -> BlockHeight {
+    /// Returns `None` if `self.scan_ranges` is empty.
+    pub fn fully_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .scan_ranges
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
-            scan_range.block_range().start - 1
+            Some(scan_range.block_range().start - 1)
         } else {
             self.scan_ranges
                 .last()
-                .expect("scan ranges always non-empty")
-                .block_range()
-                .end
-                - 1
+                .map(|range| range.block_range().end - 1)
         }
     }
 
     /// Returns the highest block height that has been scanned.
-    ///
     /// If no scan ranges have been scanned, returns the block below the wallet birthday.
-    /// Will panic if called before scan ranges are updated for the first time.
-    pub fn highest_scanned_height(&self) -> BlockHeight {
+    /// Returns `None` if `self.scan_ranges` is empty.
+    pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(last_scanned_range) = self
             .scan_ranges
             .iter()
             .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
             .last()
         {
-            last_scanned_range.block_range().end - 1
+            Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday()
-                .expect("scan ranges always non-empty")
-                - 1
+            self.wallet_birthday().map(|birthday| birthday - 1)
         }
     }
 
@@ -196,7 +192,6 @@ impl Default for SyncState {
 }
 
 /// Sync modes.
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncMode {
     /// Sync is not running.
@@ -389,8 +384,10 @@ impl From<OutputId> for OutPoint {
 /// Binary tree map of nullifiers from transaction spends or actions
 #[derive(Debug)]
 pub struct NullifierMap {
-    pub(crate) sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
-    pub(crate) orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    /// Sapling nullifer map
+    pub sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    /// Orchard nullifer map
+    pub orchard: BTreeMap<orchard::note::Nullifier, Locator>,
 }
 
 impl NullifierMap {
@@ -461,8 +458,8 @@ impl WalletBlock {
 /// Wallet transaction
 pub struct WalletTransaction {
     pub(crate) txid: TxId,
-    pub(crate) transaction: zcash_primitives::transaction::Transaction,
     pub(crate) status: ConfirmationStatus,
+    pub(crate) transaction: zcash_primitives::transaction::Transaction,
     pub(crate) datetime: u32,
     pub(crate) transparent_coins: Vec<TransparentCoin>,
     pub(crate) sapling_notes: Vec<SaplingNote>,
@@ -477,14 +474,14 @@ impl WalletTransaction {
         self.txid
     }
 
-    /// [`zcash_primitives::transaction::Transaction`]
-    pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
-        &self.transaction
-    }
-
     /// Confirmation status
     pub fn status(&self) -> ConfirmationStatus {
         self.status
+    }
+
+    /// [`zcash_primitives::transaction::Transaction`]
+    pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
+        &self.transaction
     }
 
     /// Datetime. In form of seconds since unix epoch.
@@ -632,26 +629,6 @@ impl std::fmt::Debug for WalletTransaction {
     }
 }
 
-/// Wallet note, shielded output with metadata relevant to the wallet.
-#[derive(Debug, Clone)]
-pub struct WalletNote<N, Nf: Copy> {
-    /// Output ID.
-    pub(crate) output_id: OutputId,
-    /// Identifier for key used to decrypt output.
-    pub(crate) key_id: KeyId,
-    /// Decrypted note with recipient and value.
-    pub(crate) note: N,
-    /// Derived nullifier.
-    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
-    /// Commitment tree leaf position.
-    pub(crate) position: Option<Position>,
-    /// Memo.
-    pub(crate) memo: Memo,
-    /// Transaction ID of transaction this output was spent.
-    /// If `None`, output is not spent.
-    pub(crate) spending_transaction: Option<TxId>,
-}
-
 /// Provides a common API for all output types.
 pub trait OutputInterface: Sized {
     /// Identifier for key used to decrypt output.
@@ -690,6 +667,29 @@ pub trait OutputInterface: Sized {
 
     /// Outputs within `transaction`.
     fn transaction_outputs(transaction: &WalletTransaction) -> &[Self];
+}
+
+/// Provides a common API for all shielded output types.
+pub trait NoteInterface: OutputInterface {
+    /// Decrypted note type.
+    type ZcashNote;
+    /// Nullifier type.
+    type Nullifier: Copy;
+
+    /// Note's associated shielded protocol.
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+
+    /// Decrypted note with recipient and value
+    fn note(&self) -> &Self::ZcashNote;
+
+    /// Derived nullifier
+    fn nullifier(&self) -> Option<Self::Nullifier>;
+
+    /// Commitment tree leaf position
+    fn position(&self) -> Option<Position>;
+
+    /// Memo
+    fn memo(&self) -> &Memo;
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet.
@@ -757,27 +757,24 @@ impl OutputInterface for TransparentCoin {
     }
 }
 
-/// Provides a common API for all shielded output types.
-pub trait NoteInterface: OutputInterface + Sized {
-    /// Decrypted note type.
-    type ZcashNote;
-    /// Nullifier type.
-    type Nullifier: Copy;
-
-    /// Note's associated shielded protocol.
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
-
-    /// Decrypted note with recipient and value
-    fn note(&self) -> &Self::ZcashNote;
-
-    /// Derived nullifier
-    fn nullifier(&self) -> Option<Self::Nullifier>;
-
-    /// Commitment tree leaf position
-    fn position(&self) -> Option<Position>;
-
-    /// Memo
-    fn memo(&self) -> &Memo;
+/// Wallet note, shielded output with metadata relevant to the wallet.
+#[derive(Debug, Clone)]
+pub struct WalletNote<N, Nf: Copy> {
+    /// Output ID.
+    pub(crate) output_id: OutputId,
+    /// Identifier for key used to decrypt output.
+    pub(crate) key_id: KeyId,
+    /// Decrypted note with recipient and value.
+    pub(crate) note: N,
+    /// Derived nullifier.
+    pub(crate) nullifier: Option<Nf>, //TODO: syncing without nullifier deriving key
+    /// Commitment tree leaf position.
+    pub(crate) position: Option<Position>,
+    /// Memo.
+    pub(crate) memo: Memo,
+    /// Transaction ID of transaction this output was spent.
+    /// If `None`, output is not spent.
+    pub(crate) spending_transaction: Option<TxId>,
 }
 
 /// Sapling note.
@@ -820,7 +817,7 @@ impl OutputInterface for SaplingNote {
 
 impl NoteInterface for SaplingNote {
     type ZcashNote = sapling_crypto::Note;
-    type Nullifier = sapling_crypto::Nullifier;
+    type Nullifier = Self::Input;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
@@ -928,12 +925,12 @@ pub trait OutgoingNoteInterface: Sized {
     /// Encoded recipient address recorded in note on chain (single receiver).
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants;
+        P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Encoded recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants;
+        P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Outgoing notes within `transaction`.
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self];
@@ -984,7 +981,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
     fn encoded_recipient<P>(&self, consensus_parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         encode_payment_address(
             consensus_parameters.hrp_sapling_payment_address(),
@@ -994,7 +991,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         self.recipient_unified_address
             .as_ref()
@@ -1036,14 +1033,14 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         keys::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
     }
 
     fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
-        P: Parameters + NetworkConstants,
+        P: consensus::Parameters + consensus::NetworkConstants,
     {
         self.recipient_unified_address
             .as_ref()

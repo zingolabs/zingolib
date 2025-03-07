@@ -10,9 +10,8 @@ use super::LightWallet;
 
 impl LightWallet {
     /// connects a wallet to a local regtest node.
-    pub async fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
-        Self::read_internal(data, network)
-            .await
+    pub fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
+        Self::read(data, network)
             .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
             .unwrap()
     }
@@ -70,7 +69,7 @@ pub async fn assert_wallet_capability_contains_n_triple_pool_receivers(
     expected_num_addresses: usize,
 ) {
     assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
-    for addr in wallet.unified_addresses.iter() {
+    for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());

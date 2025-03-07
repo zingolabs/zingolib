@@ -18,7 +18,7 @@ impl LightClient {
         config: &ZingoConfig, // TODO: take owned config not reference
         mut reader: R,
     ) -> io::Result<Self> {
-        let wallet = LightWallet::read_internal(&mut reader, config.chain).await?;
+        let wallet = LightWallet::read(&mut reader, config.chain)?;
 
         let lc = LightClient::create_from_wallet_async(config.clone(), wallet).await?;
 

@@ -2,11 +2,11 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
-use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::WalletError;
-use keys::unified::UnifiedKeyStore;
-use zcash_keys::address::UnifiedAddress;
+use error::{KeyError, WalletError};
+use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_primitives::memo::Memo;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};
@@ -78,6 +78,7 @@ pub enum MemoDownloadOption {
 }
 
 /// TODO: Add Doc Comment Here!
+// FIXME: zingo2 re-implement options
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
@@ -177,26 +178,31 @@ impl WalletBase {
 }
 
 /// In-memory wallet data struct
+///
+/// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
+///
+/// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
+/// `birthday` block height.
+///
+/// When wallet state is changed due to sync, send or creating addresses, `save_required` will be set to `true`
+/// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
+/// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
+/// methods for a save task implementation.
 pub struct LightWallet {
-    /// The block height at which the wallet was created.
-    ///
-    /// As no relevant transactions related to this wallet will exist below the wallet's birthday, sync will start from
-    /// this block height.
-    pub birthday: BlockHeight,
+    /// Network type
+    pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
-    /// Can be `None` in case of wallet without spending capability
-    /// or created directly from spending keys.
     // TODO: we seem to support generating keys for a single account of choice which is stored here, this should be
     // reworked to support multiple accounts during sync integration
     mnemonic: Option<(Mnemonic, u32)>,
-    /// Wallet options
-    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
-    /// Progress of an outgoing transaction
-    send_progress: Arc<RwLock<SendProgress>>,
-    /// The current price of ZEC. (time_fetched, price in USD)
-    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    /// The block height at which the wallet was created.
+    pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: UnifiedKeyStore,
+    /// Unified_addresses
+    pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    /// Transparent addresses
+    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
@@ -209,12 +215,14 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Transparent addresses
-    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
-    /// Unified_addresses
-    pub unified_addresses: AppendOnlyVec<UnifiedAddress>,
-    /// Network type
-    pub network: ChainType,
+    /// Wallet options
+    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
+    /// The current price of ZEC. (time_fetched, price in USD)
+    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    /// Progress of an outgoing transaction
+    send_progress: Arc<RwLock<SendProgress>>,
+    /// Boolean for tracking whether the wallet state has changed since last save.
+    pub save_required: bool,
 }
 
 impl LightWallet {
@@ -290,26 +298,32 @@ impl LightWallet {
             }
         };
 
-        let unified_addresses = AppendOnlyVec::new();
-        unified_addresses.push(unified_key_store.generate_unified_address(
-            0,
+        let first_address_index = 0;
+        let first_unified_address = unified_key_store.generate_unified_address(
+            first_address_index,
             unified_key_store.can_view(),
             false,
-        )?);
+        )?;
+        let mut unified_addresses = BTreeMap::new();
+        unified_addresses.insert(
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: first_address_index,
+            },
+            first_unified_address.clone(),
+        );
 
         let mut transparent_addresses = BTreeMap::new();
-        unified_addresses.iter().for_each(|unified_address| {
-            if let Some(transparent_address) = unified_address.transparent() {
-                transparent_addresses.insert(
-                    TransparentAddressId::new(
-                        zip32::AccountId::ZERO,
-                        TransparentScope::External,
-                        0,
-                    ),
-                    transparent::encode_address(&network, *transparent_address),
-                );
-            }
-        });
+        if let Some(transparent_address) = first_unified_address.transparent() {
+            transparent_addresses.insert(
+                TransparentAddressId::new(
+                    zip32::AccountId::ZERO,
+                    TransparentScope::External,
+                    first_address_index,
+                ),
+                transparent::encode_address(&network, *transparent_address),
+            );
+        }
 
         Ok(Self {
             mnemonic,
@@ -327,6 +341,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             network,
+            save_required: true,
         })
     }
 
@@ -352,6 +367,25 @@ impl LightWallet {
 
         p.is_send_in_progress = false;
         p.last_result = Some(result);
+    }
+
+    /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
+    /// Returns `Ok(None)` if the wallet state has not changed and save is not required.
+    /// Returns error if serialization fails.
+    ///
+    /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
+    /// `self.save_required` status, writing the returned wallet bytes to persistance.
+    // FIXME: zingo-cli needs a save task
+    pub async fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+        if self.save_required {
+            let network = self.network;
+            let mut wallet_bytes: Vec<u8> = vec![];
+            self.write(&mut wallet_bytes, &network).await?;
+            self.save_required = false;
+            Ok(Some(wallet_bytes))
+        } else {
+            Ok(None)
+        }
     }
 }
 

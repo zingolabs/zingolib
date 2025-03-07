@@ -87,6 +87,22 @@ impl From<TransparentScope> for TransparentKeyScope {
     }
 }
 
+impl TryFrom<u8> for TransparentScope {
+    type Error = std::io::Error;
+
+    fn try_from(value: u8) -> std::io::Result<Self> {
+        match value {
+            0 => Ok(TransparentScope::External),
+            1 => Ok(TransparentScope::Internal),
+            2 => Ok(TransparentScope::Refund),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid scope value",
+            )),
+        }
+    }
+}
+
 pub(crate) fn derive_address<P>(
     consensus_parameters: &P,
     account_pubkey: &AccountPubKey,

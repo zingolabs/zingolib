@@ -9,7 +9,7 @@ use sapling_crypto::{
     PaymentAddress,
 };
 use sha2::Sha256;
-use unified::ReceiverSelection;
+use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{
     consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
@@ -28,8 +28,14 @@ impl LightWallet {
         &mut self,
         receivers: ReceiverSelection,
     ) -> Result<UnifiedAddress, KeyError> {
+        // filter as preparation for multi-account support
+        let unified_address_index = self
+            .unified_addresses
+            .keys()
+            .filter(|&address_id| address_id.account_id == zip32::AccountId::ZERO)
+            .count() as u32;
         let unified_address = self.unified_key_store.generate_unified_address(
-            self.unified_addresses.len() as u32,
+            unified_address_index,
             receivers,
             false,
         )?;
@@ -39,13 +45,19 @@ impl LightWallet {
                 TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::External,
-                    self.unified_addresses.len() as u32,
+                    unified_address_index,
                 ),
                 transparent::encode_address(&self.network, *transparent_address),
             );
         }
 
-        self.unified_addresses.push(unified_address.clone());
+        self.unified_addresses.insert(
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: unified_address_index,
+            },
+            unified_address.clone(),
+        );
 
         Ok(unified_address)
     }
@@ -68,9 +80,11 @@ impl LightWallet {
                     TransparentScope::Refund,
                     address_index as u32,
                 );
-                let refund_address = self
-                    .unified_key_store
-                    .generate_refund_address(address_index as u32)?;
+                let refund_address = self.unified_key_store.generate_transparent_address(
+                    address_index as u32,
+                    TransparentScope::Refund,
+                    false,
+                )?;
 
                 self.transparent_addresses.insert(
                     transparent_address_id,

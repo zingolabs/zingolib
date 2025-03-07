@@ -1,94 +1,89 @@
 //! LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 
+use futures::FutureExt as _;
 use log::error;
 
-use std::{
-    fs::{remove_file, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
-use tokio::runtime::Runtime;
+use std::{borrow::BorrowMut as _, fs::remove_file, path::PathBuf, sync::atomic};
 
 use super::LightClient;
-use crate::error::{ZingoLibError, ZingoLibResult};
+use crate::{
+    error::ZingoLibError,
+    utils::{self, PollReport},
+};
 
 impl LightClient {
-    //        SAVE METHODS
-
-    /// Called internally at sync checkpoints to save state. Should not be called midway through sync.
-    pub(super) async fn save_internal_rust(&self) -> ZingoLibResult<bool> {
-        match self.save_internal_buffer().await {
-            Ok(_vu8) => {
-                // Save_internal_buffer ran without error. At this point, we assume that the save buffer is good to go. Depending on operating system, we may be able to write it to disk. (Otherwise, we wait for the FFI to offer save export.
-
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                {
-                    self.rust_write_save_buffer_to_file().await?;
-                    Ok(true)
-                }
-                #[cfg(any(target_os = "ios", target_os = "android"))]
-                {
-                    Ok(false)
-                }
-            }
-            Err(err) => {
-                error!("{}", err);
-                Err(err)
-            }
+    pub async fn save_task(&mut self) {
+        if self.save_active.load(atomic::Ordering::Acquire) {
+            return;
         }
+
+        self.save_active.store(true, atomic::Ordering::Release);
+        let save_active = self.save_active.clone();
+        let wallet = self.wallet.clone();
+        let wallet_path = self.config.get_wallet_path();
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let save_handle = tokio::spawn(async move {
+            loop {
+                interval.tick().await;
+                if let Some(wallet_bytes) = wallet.lock().await.save().await? {
+                    utils::write_to_path(&wallet_path, wallet_bytes).await?
+                }
+                if !save_active.load(atomic::Ordering::Acquire) {
+                    return Ok(());
+                }
+            }
+        });
+        self.save_handle = Some(save_handle);
     }
 
-    /// write down the state of the lightclient as a `Vec<u8>`
-    pub async fn save_internal_buffer(&self) -> ZingoLibResult<Vec<u8>> {
-        let mut buffer: Vec<u8> = vec![];
-        self.wallet
-            .lock()
-            .await
-            .write(&mut buffer)
-            .await
-            .map_err(ZingoLibError::InternalWriteBufferError)?;
-        (self.save_buffer.buffer.write().await).clone_from(&buffer);
-        Ok(buffer)
-    }
-
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    /// If possible, write to disk.
-    async fn rust_write_save_buffer_to_file(&self) -> ZingoLibResult<()> {
-        {
-            let read_buffer = self.save_buffer.buffer.read().await;
-            if !read_buffer.is_empty() {
-                LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(ZingoLibError::WriteFileError)?;
-                Ok(())
+    /// Polls the save task, returning [`self::PollReport`].
+    fn poll_save_task(&mut self) -> PollReport<(), std::io::Error> {
+        if let Some(mut save_handle) = self.save_handle.take() {
+            if let Some(save_result) = save_handle.borrow_mut().now_or_never() {
+                PollReport::Ready(save_result.expect("task panicked"))
             } else {
-                ZingoLibError::EmptySaveBuffer.handle()
+                self.save_handle = Some(save_handle);
+                PollReport::NotReady
             }
-        }
-    }
-
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
-        let mut file = File::create(path)?;
-        file.write_all(buffer)?;
-        Ok(())
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn export_save_buffer_async(&self) -> ZingoLibResult<Vec<u8>> {
-        let read_buffer = self.save_buffer.buffer.read().await;
-        if !read_buffer.is_empty() {
-            Ok(read_buffer.clone())
         } else {
-            ZingoLibError::EmptySaveBuffer.handle()
+            PollReport::NoHandle
         }
     }
 
-    /// This function is the sole correct way to ask LightClient to save.
-    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(String::from)
+    /// Checks the save task handle in case of failure.
+    /// On save task failure, restarts the save task and returns the error.
+    pub async fn check_save_error(&mut self) -> std::io::Result<()> {
+        match self.poll_save_task() {
+            PollReport::Ready(save_result) => {
+                if save_result.is_err() {
+                    self.save_task().await;
+                }
+                save_result
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub async fn shutdown_save_task(&mut self) -> std::io::Result<()> {
+        self.save_active.store(false, atomic::Ordering::Release);
+        if let Some(save_handle) = self.save_handle.take() {
+            save_handle.await.expect("task panicked")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Calls [`crate::wallet::LightWallet::save`] in a runtime and returns an empty buffer in the case save was not required.
+    // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
+    pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
+        crate::commands::RT.block_on(async move {
+            match self.wallet.lock().await.save().await {
+                Ok(Some(wallet_bytes)) => Ok(wallet_bytes),
+                Ok(None) => Ok(vec![]),
+                Err(e) => Err(e.to_string()),
+            }
+        })
     }
 
     /// Only relevant in non-mobile, this function removes the save file.

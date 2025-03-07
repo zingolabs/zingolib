@@ -45,7 +45,7 @@ pub trait ConductChain {
 
         LightClient::create_from_wallet_async(
             config,
-            LightWallet::unsafe_from_buffer(network, data).await,
+            LightWallet::unsafe_from_buffer(network, data),
         )
         .await
         .unwrap()

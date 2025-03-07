@@ -81,6 +81,10 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
     let mut wallet_transactions = HashMap::with_capacity(locators.len());
 
     for (_, txid) in locators {
+        if txid == TxId::from_bytes([0u8; 32]) {
+            continue;
+        }
+
         let (transaction, block_height) =
             client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
                 .await

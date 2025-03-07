@@ -1006,7 +1006,7 @@ mod fast {
         let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let recipient1 = client_builder
+        let mut recipient1 = client_builder
             .build_client(seed_phrase, 0, false, regtest_network)
             .await;
         let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
@@ -2232,11 +2232,14 @@ mod slow {
         let recipient_to_faucet_amount = 5_000u64;
         // check start state
         faucet.sync_and_await().await.unwrap();
-        let wallet_height = faucet.do_wallet_last_scanned_height().await;
-        assert_eq!(
-            wallet_height.as_fixed_point_u64(0).unwrap(),
-            BASE_HEIGHT as u64
-        );
+        let wallet_fully_scanned_height = faucet
+            .wallet
+            .lock()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
+        assert_eq!(wallet_fully_scanned_height, BASE_HEIGHT.into());
         let three_blocks_reward = block_rewards::CANOPY
             .checked_mul(BASE_HEIGHT as u64)
             .unwrap();
@@ -2629,7 +2632,8 @@ mod slow {
                 .lock()
                 .await
                 .sync_state
-                .fully_scanned_height(),
+                .fully_scanned_height()
+                .unwrap(),
             4.into()
         );
 
@@ -2641,7 +2645,14 @@ mod slow {
         assert_eq!(balance.spendable_sapling_balance.unwrap(), value);
 
         {
-            let recipient_sapling_address = *recipient.wallet.lock().await.unified_addresses[0]
+            let recipient_sapling_address = *recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses
+                .values()
+                .next()
+                .unwrap()
                 .sapling()
                 .unwrap();
             let transactions = &recipient.wallet.lock().await.wallet_transactions;
