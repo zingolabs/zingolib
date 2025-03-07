@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
-    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -15,12 +14,10 @@ use shardtree::{
 };
 use zcash_client_backend::{
     proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
-    wallet::TransparentAddressMetadata,
 };
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::{keys::EphemeralIvk, TransparentAddress},
     memo::{Memo, MemoBytes},
     merkle_tree::{read_commitment_tree, read_incremental_witness, HashSer},
     transaction::TxId,
@@ -178,6 +175,7 @@ impl TxMap {
     }
 
     /// TODO: Doc-comment!
+    #[allow(unused_assignments)]
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
@@ -254,6 +252,7 @@ impl TransactionRecordsById {
 }
 
 ///  Everything (SOMETHING) about a transaction
+#[allow(dead_code)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: zingo_status::confirmation_status::ConfirmationStatus,
@@ -574,6 +573,7 @@ impl TransparentOutput {
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct SaplingNote {
     /// TODO: Add Doc Comment Here!
     pub diversifier: sapling_crypto::Diversifier,
@@ -916,6 +916,7 @@ impl
 
 /// Only for TransactionRecords *from* "this" capability
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct OutgoingTxData {
     /// TODO: Add Doc Comment Here!
     pub recipient_address: String,
@@ -994,23 +995,6 @@ impl OutgoingTxData {
             recipient_ua: None,
             output_index,
         })
-    }
-}
-
-/// the subsection of TxMap that only applies to spending wallets
-pub(crate) struct SpendingData {
-    pub(crate) witness_trees: WitnessTrees,
-    pub(crate) cached_raw_transactions: Vec<(TxId, Vec<u8>)>,
-    pub(crate) rejection_ivk: EphemeralIvk,
-}
-
-impl SpendingData {
-    pub fn new(witness_trees: WitnessTrees, rejection_ivk: EphemeralIvk) -> Self {
-        SpendingData {
-            witness_trees,
-            cached_raw_transactions: Vec::new(),
-            rejection_ivk,
-        }
     }
 }
 
@@ -1104,6 +1088,7 @@ pub(crate) type SapStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 
 /// TODO: Add Doc Comment Here!
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct WitnessCache<Node: Hashable> {
     /// TODO: Add Doc Comment Here!

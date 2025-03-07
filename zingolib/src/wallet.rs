@@ -3,10 +3,9 @@
 //! TODO: Add Mod Description Here
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::{KeyError, WalletError};
+use error::WalletError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_primitives::memo::Memo;
+use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};

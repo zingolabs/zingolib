@@ -17,7 +17,7 @@ use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::{
     address::UnifiedAddress,
-    keys::{DerivationError, Era, UnifiedFullViewingKey, UnifiedSpendingKey},
+    keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::legacy::{
     keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex},
@@ -260,15 +260,6 @@ impl WalletCapability {
         } else {
             None
         }
-    }
-
-    pub(crate) fn rejection_ivk(
-        &self,
-    ) -> Result<zcash_primitives::legacy::keys::EphemeralIvk, KeyError> {
-        AccountPubKey::try_from(&self.unified_key_store)?
-            .derive_ephemeral_ivk()
-            .map_err(DerivationError::Transparent)
-            .map_err(KeyError::KeyDerivationError)
     }
 
     /// TODO: Add Doc Comment Here!

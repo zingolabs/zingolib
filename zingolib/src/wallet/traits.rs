@@ -2,45 +2,17 @@
 use std::io::{self, Read, Write};
 
 use crate::config::ChainType;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
-use nonempty::NonEmpty;
-use orchard::{
-    note_encryption::{CompactAction, OrchardDomain},
-    primitives::redpallas::{Signature, SpendAuth},
-    tree::MerkleHashOrchard,
-    Action,
-};
-use sapling_crypto::{bundle::GrothProofBytes, note_encryption::SaplingDomain};
-use shardtree::store::memory::MemoryShardStore;
-use shardtree::ShardTree;
+use byteorder::ReadBytesExt;
+use incrementalmerkletree::{Hashable, Level};
+use orchard::tree::MerkleHashOrchard;
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
-use zcash_client_backend::{
-    address::UnifiedAddress,
-    encoding::encode_payment_address,
-    proto::{
-        compact_formats::{CompactOrchardAction, CompactSaplingOutput, CompactTx},
-        service::TreeState,
-    },
-    ShieldedProtocol,
-};
-use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::{
-    BatchDomain, Domain, EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
-};
+use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters},
+    consensus::{NetworkConstants, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::read_incremental_witness,
-    transaction::{
-        components::{Amount, OutputDescription, SpendDescription},
-        Transaction, TxId,
-    },
 };
-use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::keys::unified::UnifiedKeyStore;
 use super::legacy::PoolNullifier;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
