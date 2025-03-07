@@ -62,7 +62,7 @@ pub mod from_inputs {
     }
 
     /// Panics if the address, amount or memo conversion fails.
-    pub fn receivers_from_send_inputs(
+    pub(crate) fn receivers_from_send_inputs(
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> crate::data::receivers::Receivers {
         raw_receivers

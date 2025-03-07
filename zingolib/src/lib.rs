@@ -32,6 +32,7 @@ include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 pub struct SaplingParams;
 
 /// TODO: Add Doc Comment Here!
+// TODO: move to zingo-mobile and use `get_latest_block`
 pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
     tokio::runtime::Runtime::new()
         .unwrap()

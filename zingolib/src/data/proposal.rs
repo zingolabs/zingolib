@@ -15,7 +15,7 @@ use zcash_primitives::transaction::{
 /// as the fee structure for a transaction series.  This innovation was created in response
 /// "Binance Constraint" that t-addresses that only receive from t-addresses be supported.
 /// <https://zips.z.cash/zip-0320>
-pub type ProportionalFeeProposal =
+pub(crate) type ProportionalFeeProposal =
     Proposal<transaction::fees::zip317::FeeRule, zcash_client_backend::wallet::NoteId>;
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
@@ -37,7 +37,7 @@ pub(crate) enum ZingoProposal {
 
 /// total sum of all transaction request payment amounts in a proposal
 /// TODO: test for multi-step, zip320 currently unsupported.
-pub fn total_payment_amount(
+pub(crate) fn total_payment_amount(
     proposal: &ProportionalFeeProposal,
 ) -> Result<NonNegativeAmount, BalanceError> {
     proposal
@@ -51,7 +51,9 @@ pub fn total_payment_amount(
 
 /// total sum of all fees in a proposal
 /// TODO: test for multi-step, zip320 currently unsupported.
-pub fn total_fee(proposal: &ProportionalFeeProposal) -> Result<NonNegativeAmount, BalanceError> {
+pub(crate) fn total_fee(
+    proposal: &ProportionalFeeProposal,
+) -> Result<NonNegativeAmount, BalanceError> {
     proposal
         .steps()
         .iter()

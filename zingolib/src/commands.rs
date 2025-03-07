@@ -1,9 +1,8 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::data::proposal;
+use crate::data::{proposal, PollReport};
 use crate::lightclient::LightClient;
-use crate::utils::PollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use indoc::indoc;
 use json::object;

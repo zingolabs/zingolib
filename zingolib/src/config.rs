@@ -39,28 +39,9 @@ pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// TODO: Add Doc Comment Here!
-pub const MAX_REORG: usize = 100;
-/// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
-/// TODO: Add Doc Comment Here!
-pub const REORG_BUFFER_OFFSET: u32 = 0;
-/// TODO: Add Doc Comment Here!
-pub const BATCH_SIZE: u64 = 100;
-
-/// TODO: Add Doc Comment Here!
-#[cfg(any(target_os = "ios", target_os = "android"))]
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
-
-/// TODO: Add Doc Comment Here!
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
-
-/// TODO: Add Doc Comment Here!
-pub fn margin_fee() -> u64 {
-    zcash_primitives::transaction::fees::zip317::MARGINAL_FEE.into_u64()
-}
 
 /// Same as load_clientconfig but doesn't panic when the server can't be reached
 pub fn load_clientconfig(
@@ -453,13 +434,12 @@ impl ZingoConfig {
                 self.get_wallet_path().to_str()
             ));
         }
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
         backup_file_path.push(format!(
             "zingo-wallet.backup.{}.dat",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
         ));

@@ -6,10 +6,7 @@ use log::error;
 use std::{borrow::BorrowMut as _, fs::remove_file, path::PathBuf, sync::atomic};
 
 use super::LightClient;
-use crate::{
-    error::ZingoLibError,
-    utils::{self, PollReport},
-};
+use crate::{data::PollReport, error::ZingoLibError, utils};
 
 impl LightClient {
     pub async fn save_task(&mut self) {
