@@ -83,15 +83,6 @@ impl BlockData {
         Self { ecb, height }
     }
 
-    pub(crate) fn cb(&self) -> CompactBlock {
-        let b = self.ecb.clone();
-        CompactBlock::decode(&b[..]).unwrap()
-    }
-
-    pub(crate) fn hash(&self) -> String {
-        self.cb().hash().to_string()
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let height = reader.read_i32::<LittleEndian>()? as u64;
@@ -127,13 +118,6 @@ impl BlockData {
 pub struct TxMap {
     /// TODO: Doc-comment!
     pub transaction_records_by_id: TransactionRecordsById,
-    pub(crate) spending_data: Option<SpendingData>,
-    // as below
-    pub(crate) transparent_child_addresses:
-        Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
-    /// rejection_addresses are called "ephemeral" in LRZ 320
-    pub(crate) rejection_addresses:
-        Arc<append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
 }
 
 impl TxMap {
@@ -190,11 +174,6 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: map,
-            spending_data: witness_trees
-                .zip(wallet_capability.rejection_ivk().ok())
-                .map(|(trees, key)| SpendingData::new(trees, key)),
-            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
-            rejection_addresses: wallet_capability.get_rejection_addresses().clone(),
         })
     }
 
@@ -260,11 +239,6 @@ impl TxMap {
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
-            spending_data: witness_trees
-                .zip(wallet_capability.rejection_ivk().ok())
-                .map(|(trees, key)| SpendingData::new(trees, key)),
-            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
-            rejection_addresses: wallet_capability.get_rejection_addresses().clone(),
         })
     }
 }
@@ -430,7 +404,7 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
-        let rseed = super::data::read_sapling_rseed(&mut reader)?;
+        let rseed = read_sapling_rseed(&mut reader)?;
 
         Ok(
             sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
@@ -448,6 +422,22 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
     fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
         unimplemented!()
     }
+}
+
+// Reading a note also needs the corresponding address to read from.
+fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<sapling_crypto::Rseed> {
+    let note_type = reader.read_u8()?;
+
+    let mut r_bytes: [u8; 32] = [0; 32];
+    reader.read_exact(&mut r_bytes)?;
+
+    let r = match note_type {
+        1 => sapling_crypto::Rseed::BeforeZip212(jubjub::Fr::from_bytes(&r_bytes).unwrap()),
+        2 => sapling_crypto::Rseed::AfterZip212(r_bytes),
+        _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bad note type")),
+    };
+
+    Ok(r)
 }
 
 impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {

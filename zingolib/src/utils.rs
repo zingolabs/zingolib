@@ -22,6 +22,7 @@ macro_rules! build_method_push {
         }
     };
 }
+#[allow(unused_macros)]
 #[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_push_list {
     ($name:ident, $builder:ident, $struct:ident) => {
@@ -36,6 +37,7 @@ use std::path::Path;
 pub(crate) use build_method;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;
+#[allow(unused_imports)]
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_push_list;
 use tokio::io::AsyncWriteExt as _;

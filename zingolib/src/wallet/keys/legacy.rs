@@ -20,7 +20,7 @@ use zcash_keys::{
     keys::{DerivationError, Era, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::legacy::{
-    keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope},
+    keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex},
     TransparentAddress,
 };
 use zip32::{AccountId, DiversifierIndex};
@@ -270,20 +270,6 @@ impl WalletCapability {
             .map_err(DerivationError::Transparent)
             .map_err(KeyError::KeyDerivationError)
     }
-    pub(crate) fn get_rejection_address_by_index(
-        rejection_ivk: &zcash_primitives::legacy::keys::EphemeralIvk,
-        rejection_address_index: u32,
-    ) -> Result<(TransparentAddress, TransparentAddressMetadata), KeyError> {
-        let address_index = NonHardenedChildIndex::from_index(rejection_address_index)
-            .ok_or(KeyError::InvalidNonHardenedChildIndex)?;
-        Ok((
-            rejection_ivk
-                .derive_ephemeral_address(address_index)
-                .map_err(DerivationError::Transparent)
-                .map_err(KeyError::KeyDerivationError)?,
-            TransparentAddressMetadata::new(TransparentKeyScope::EPHEMERAL, address_index),
-        ))
-    }
 
     /// TODO: Add Doc Comment Here!
     pub fn get_rejection_addresses(
@@ -299,13 +285,10 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
         let legacy_key: bool;
-        let length_of_rejection_addresses: u32;
-
         let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
                 legacy_key = true;
-                length_of_rejection_addresses = 0;
 
                 // Create a temporary USK for address generation to load old wallets
                 // due to missing BIP0032 transparent extended private key data
@@ -324,7 +307,6 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             2 => {
                 legacy_key = true;
-                length_of_rejection_addresses = 0;
 
                 let orchard_capability = Capability::<
                     orchard::keys::FullViewingKey,
@@ -415,7 +397,6 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             3 => {
                 legacy_key = false;
-                length_of_rejection_addresses = 0;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,
@@ -424,7 +405,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
             }
             4 => {
                 legacy_key = false;
-                length_of_rejection_addresses = reader.read_u32::<LittleEndian>()?;
+                let _length_of_rejection_addresses = reader.read_u32::<LittleEndian>()?;
 
                 Self {
                     unified_key_store: UnifiedKeyStore::read(&mut reader, input)?,

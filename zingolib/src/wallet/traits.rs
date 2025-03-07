@@ -2,7 +2,6 @@
 use std::io::{self, Read, Write};
 
 use crate::config::ChainType;
-use crate::wallet::data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
@@ -203,14 +202,6 @@ impl Recipient for sapling_crypto::PaymentAddress {
         encode_payment_address(chain.hrp_sapling_payment_address(), self)
     }
 }
-
-fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
-    <&[u8; N]>::try_from(slice).unwrap_or(&[0; N])
-    //todo: This default feels dangerous. Find better solution
-}
-
-type MemoryStoreShardTree<T> =
-    ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
 
 /// TODO: Add Doc Comment Here!
 pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
