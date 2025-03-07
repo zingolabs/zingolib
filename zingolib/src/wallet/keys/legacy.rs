@@ -2,7 +2,6 @@
 
 use std::{
     io::{self, Read, Write},
-    marker::PhantomData,
     sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -13,8 +12,6 @@ use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use bip32::ExtendedPublicKey;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::SaplingDomain;
 use zcash_address::unified::Typecode;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
@@ -30,11 +27,7 @@ use zip32::{AccountId, DiversifierIndex};
 
 use crate::{
     config::{ChainType, ZingoConfig},
-    wallet::{
-        error::KeyError,
-        legacy::WitnessTrees,
-        traits::{DomainWalletExt, ReadableWriteable, Recipient},
-    },
+    wallet::{error::KeyError, legacy::WitnessTrees, traits::ReadableWriteable},
 };
 
 use super::unified::{
@@ -641,95 +634,4 @@ pub(crate) fn generate_transparent_address_from_legacy_key(
     Ok(zcash_primitives::legacy::keys::pubkey_to_address(
         child_key.public_key(),
     ))
-}
-
-/// The external, default scope for deriving an fvk's component viewing keys
-pub struct External;
-
-/// The internal scope, used for change only
-pub struct Internal;
-
-mod scope {
-    use super::*;
-    use zcash_primitives::zip32::Scope as ScopeEnum;
-    pub trait Scope {
-        fn scope() -> ScopeEnum;
-    }
-
-    impl Scope for External {
-        fn scope() -> ScopeEnum {
-            ScopeEnum::External
-        }
-    }
-    impl Scope for Internal {
-        fn scope() -> ScopeEnum {
-            ScopeEnum::Internal
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-pub struct Ivk<D, Scope>
-where
-    D: zcash_note_encryption::Domain,
-{
-    /// TODO: Add Doc Comment Here!
-    pub ivk: D::IncomingViewingKey,
-    __scope: PhantomData<Scope>,
-}
-
-/// This is of questionable utility, but internally-scoped ovks
-/// exist, and so we represent them at the type level despite
-/// having no current use for them
-pub struct Ovk<D, Scope>
-where
-    D: zcash_note_encryption::Domain,
-{
-    /// TODO: Add Doc Comment Here!
-    pub ovk: D::OutgoingViewingKey,
-    __scope: PhantomData<Scope>,
-}
-
-/// TODO: Add Doc Comment Here!
-pub trait Fvk<D: DomainWalletExt>
-where
-    <D as zcash_note_encryption::Domain>::Note: PartialEq + Clone,
-    <D as zcash_note_encryption::Domain>::Recipient: Recipient,
-{
-    /// TODO: Add Doc Comment Here!
-    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<D, S>;
-    /// TODO: Add Doc Comment Here!
-    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<D, S>;
-}
-
-impl Fvk<OrchardDomain> for orchard::keys::FullViewingKey {
-    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<OrchardDomain, S> {
-        Ivk {
-            ivk: orchard::keys::PreparedIncomingViewingKey::new(&self.to_ivk(S::scope())),
-            __scope: PhantomData,
-        }
-    }
-
-    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<OrchardDomain, S> {
-        Ovk {
-            ovk: self.to_ovk(S::scope()),
-            __scope: PhantomData,
-        }
-    }
-}
-
-impl Fvk<SaplingDomain> for sapling_crypto::zip32::DiversifiableFullViewingKey {
-    fn derive_ivk<S: scope::Scope>(&self) -> Ivk<SaplingDomain, S> {
-        Ivk {
-            ivk: sapling_crypto::keys::PreparedIncomingViewingKey::new(&self.to_ivk(S::scope())),
-            __scope: PhantomData,
-        }
-    }
-
-    fn derive_ovk<S: scope::Scope>(&self) -> Ovk<SaplingDomain, S> {
-        Ovk {
-            ovk: self.to_ovk(S::scope()),
-            __scope: PhantomData,
-        }
-    }
 }
