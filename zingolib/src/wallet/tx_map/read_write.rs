@@ -10,7 +10,7 @@ use zcash_primitives::transaction::TxId;
 
 use crate::{
     data::witness_trees::WitnessTrees,
-    wallet::{data::TransactionRecord, keys::unified::WalletCapability},
+    wallet::{data::TransactionRecord, keys::legacy::WalletCapability},
 };
 
 use super::{spending_data::SpendingData, TransactionRecordsById, TxMap};

@@ -32,6 +32,7 @@ use crate::{
     config::{ChainType, ZingoConfig},
     wallet::{
         error::KeyError,
+        legacy::WitnessTrees,
         traits::{DomainWalletExt, ReadableWriteable, Recipient},
     },
 };
@@ -260,9 +261,9 @@ impl WalletCapability {
 
     /// TODO: Add Doc Comment Here!
     //TODO: NAME?????!!
-    pub fn get_trees_witness_trees(&self) -> Option<crate::data::witness_trees::WitnessTrees> {
+    pub fn get_trees_witness_trees(&self) -> Option<WitnessTrees> {
         if self.unified_key_store.is_spending_key() {
-            Some(crate::data::witness_trees::WitnessTrees::default())
+            Some(WitnessTrees::default())
         } else {
             None
         }
@@ -453,22 +454,28 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
         Ok(wc)
     }
 
-    fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        writer.write_u32::<LittleEndian>(self.rejection_addresses.len() as u32)?;
-        self.unified_key_store.write(&mut writer, input)?;
-        Vector::write(
-            &mut writer,
-            &self.unified_addresses.iter().collect::<Vec<_>>(),
-            |w, address| {
-                ReceiverSelection {
-                    orchard: address.orchard().is_some(),
-                    sapling: address.sapling().is_some(),
-                    transparent: address.transparent().is_some(),
-                }
-                .write(w, ())
-            },
-        )
+    fn write<W: Write>(&self, mut _writer: W, _input: ChainType) -> io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl ReadableWriteable for orchard::keys::SpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let mut data = [0u8; 32];
+        reader.read_exact(&mut data)?;
+
+        Option::from(Self::from_bytes(data)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to deserialize a valid Orchard SpendingKey from bytes".to_owned(),
+            )
+        })
+    }
+
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
     }
 }
 
@@ -506,19 +513,8 @@ where
         })
     }
 
-    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        match self {
-            Capability::None => writer.write_u8(KEY_TYPE_EMPTY),
-            Capability::View(vk) => {
-                writer.write_u8(KEY_TYPE_VIEW)?;
-                vk.write(&mut writer, ())
-            }
-            Capability::Spend(sk) => {
-                writer.write_u8(KEY_TYPE_SPEND)?;
-                sk.write(&mut writer, ())
-            }
-        }
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
     }
 }
 
@@ -645,6 +641,31 @@ pub(crate) fn generate_transparent_address_from_legacy_key(
     Ok(zcash_primitives::legacy::keys::pubkey_to_address(
         child_key.public_key(),
     ))
+}
+
+/// The external, default scope for deriving an fvk's component viewing keys
+pub struct External;
+
+/// The internal scope, used for change only
+pub struct Internal;
+
+mod scope {
+    use super::*;
+    use zcash_primitives::zip32::Scope as ScopeEnum;
+    pub trait Scope {
+        fn scope() -> ScopeEnum;
+    }
+
+    impl Scope for External {
+        fn scope() -> ScopeEnum {
+            ScopeEnum::External
+        }
+    }
+    impl Scope for Internal {
+        fn scope() -> ScopeEnum {
+            ScopeEnum::Internal
+        }
+    }
 }
 
 /// TODO: Add Doc Comment Here!

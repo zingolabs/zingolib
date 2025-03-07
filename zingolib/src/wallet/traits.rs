@@ -927,26 +927,6 @@ pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
     }
 }
 
-impl ReadableWriteable for orchard::keys::SpendingKey {
-    const VERSION: u8 = 0; //Not applicable
-
-    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
-        let mut data = [0u8; 32];
-        reader.read_exact(&mut data)?;
-
-        Option::from(Self::from_bytes(data)).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Unable to deserialize a valid Orchard SpendingKey from bytes".to_owned(),
-            )
-        })
-    }
-
-    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
-        writer.write_all(self.to_bytes())
-    }
-}
-
 impl ReadableWriteable for sapling_crypto::zip32::ExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
@@ -1252,49 +1232,6 @@ where
         writer.write_u32::<LittleEndian>(self.output_index().unwrap_or(u32::MAX))?;
 
         Ok(())
-    }
-}
-
-impl ReadableWriteable for ConfirmationStatus {
-    const VERSION: u8 = 0;
-
-    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
-        let _external_version = Self::get_version(&mut reader);
-        let status = reader.read_u8()?;
-        let height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
-        match status {
-            0 => Ok(Self::Calculated(height)),
-            1 => Ok(Self::Transmitted(height)),
-            2 => Ok(Self::Mempool(height)),
-            3 => Ok(Self::Confirmed(height)),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Bad confirmation status",
-            )),
-        }
-    }
-
-    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        let height = match self {
-            ConfirmationStatus::Calculated(h) => {
-                writer.write_u8(0)?;
-                h
-            }
-            ConfirmationStatus::Transmitted(h) => {
-                writer.write_u8(1)?;
-                h
-            }
-            ConfirmationStatus::Mempool(h) => {
-                writer.write_u8(2)?;
-                h
-            }
-            ConfirmationStatus::Confirmed(h) => {
-                writer.write_u8(3)?;
-                h
-            }
-        };
-        writer.write_u32::<LittleEndian>(u32::from(*height))
     }
 }
 

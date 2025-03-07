@@ -3,7 +3,7 @@ use std::io;
 use zcash_primitives::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::ReadBytesExt;
 use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
@@ -161,8 +161,8 @@ impl ReadableWriteable for SecretKey {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
-        writer.write(&self.secret_bytes()).map(|_| ())
+    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
+        unimplemented!()
     }
 }
 
@@ -179,11 +179,8 @@ impl ReadableWriteable for ExtendedPrivKey {
         })
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        self.private_key.write(&mut writer, ())?;
-        Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
-        Ok(())
+    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
+        unimplemented!()
     }
 }
 
@@ -234,8 +231,8 @@ impl ReadableWriteable for PublicKey {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
-        writer.write(&self.serialize()).map(|_| ())
+    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
+        unimplemented!()
     }
 }
 
@@ -252,11 +249,8 @@ impl ReadableWriteable for ExtendedPubKey {
         })
     }
 
-    fn write<W: std::io::Write>(&self, mut writer: W, _input: ()) -> std::io::Result<()> {
-        writer.write_u8(Self::VERSION)?;
-        self.public_key.write(&mut writer, ())?;
-        Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
-        Ok(())
+    fn write<W: std::io::Write>(&self, mut _writer: W, _input: ()) -> std::io::Result<()> {
+        unimplemented!()
     }
 }
 

@@ -31,7 +31,7 @@ use crate::{
     config::ChainType,
     wallet::{
         keys::{legacy::WalletCapability, unified::UnifiedKeyStore},
-        legacy::BlockData,
+        legacy::{BlockData, TxMap},
     },
 };
 
@@ -39,9 +39,9 @@ use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::WalletOptions;
 use crate::wallet::{utils, SendProgress};
 
-use super::keys::unified::{ReceiverSelection, UnifiedAddressId, WalletCapability};
+use super::data::WalletZecPriceInfo;
+use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
 use super::LightWallet;
-use super::{data::WalletZecPriceInfo, tx_map::TxMap};
 
 impl LightWallet {
     /// Changes in version 32:
@@ -290,6 +290,7 @@ impl LightWallet {
             &mut sync_state,
             &transactions
                 .transaction_records_by_id
+                .0
                 .values()
                 .filter_map(|transaction| {
                     transaction

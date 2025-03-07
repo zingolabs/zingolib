@@ -1,20 +1,42 @@
-use std::io::{self, Read, Write};
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+    sync::Arc,
+};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
+use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
-use incrementalmerkletree::frontier::CommitmentTree;
-use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_encoding::Vector;
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use incrementalmerkletree::{witness::IncrementalWitness, Address, Hashable, Level, Position};
+use shardtree::{
+    store::{memory::MemoryShardStore, Checkpoint, ShardStore as _},
+    LocatedPrunableTree, ShardTree,
+};
+use zcash_client_backend::{
+    proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
+    wallet::TransparentAddressMetadata,
+};
+use zcash_encoding::{CompactSize, Optional, Vector};
+use zcash_primitives::{
+    consensus::BlockHeight,
+    legacy::{keys::EphemeralIvk, TransparentAddress},
+    memo::{Memo, MemoBytes},
+    merkle_tree::{read_commitment_tree, read_incremental_witness, HashSer},
+    transaction::TxId,
+};
+use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::traits::ToBytes;
+use super::{
+    keys::legacy::WalletCapability,
+    traits::{ReadableWriteable, ToBytes},
+};
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
 /// type to handle nullifiers from different domains.
 /// <https://github.com/zingolabs/zingolib/issues/64>
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PoolNullifier {
     /// TODO: Add Doc Comment Here!
     Sapling(sapling_crypto::Nullifier),
@@ -38,7 +60,7 @@ impl std::hash::Hash for PoolNullifier {
 }
 
 /// TODO: Add Doc Comment Here!
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct BlockData {
     /// TODO: Add Doc Comment Here!
     pub(crate) ecb: Vec<u8>,
@@ -47,11 +69,6 @@ pub struct BlockData {
 }
 
 impl BlockData {
-    /// TODO: Add Doc Comment Here!
-    pub fn serialized_version() -> u64 {
-        20
-    }
-
     pub(crate) fn new_with(height: u64, hash: &[u8]) -> Self {
         let hash = hash.iter().copied().rev().collect::<Vec<_>>();
 
@@ -102,27 +119,1044 @@ impl BlockData {
             Ok(BlockData { ecb, height })
         }
     }
+}
+
+/// HashMap of all transactions in a wallet, keyed by txid.
+/// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
+/// this struct are threadsafe/locked properly.
+pub struct TxMap {
+    /// TODO: Doc-comment!
+    pub transaction_records_by_id: TransactionRecordsById,
+    pub(crate) spending_data: Option<SpendingData>,
+    // as below
+    pub(crate) transparent_child_addresses:
+        Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
+    /// rejection_addresses are called "ephemeral" in LRZ 320
+    pub(crate) rejection_addresses:
+        Arc<append_only_vec::AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
+}
+
+impl TxMap {
+    /// TODO: Doc-comment!
+    pub fn serialized_version() -> u64 {
+        22
+    }
+
+    /// TODO: Doc-comment!
+    pub fn read_old<R: Read>(
+        mut reader: R,
+        wallet_capability: &WalletCapability,
+    ) -> io::Result<Self> {
+        // Note, witness_trees will be Some(x) if the wallet has spend capability
+        // so this check is a very un-ergonomic way of checking if the wallet
+        // can spend.
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
+        let txs = Vector::read_collected_mut(&mut reader, |r| {
+            let mut txid_bytes = [0u8; 32];
+            r.read_exact(&mut txid_bytes)?;
+
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                    .unwrap(),
+            ))
+        })?;
+
+        let map = TransactionRecordsById::from_map(txs);
+
+        if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+            for (sap_wit, height) in old_sap_wits {
+                sap_tree
+                    .insert_witness_nodes(sap_wit, height - 1)
+                    .expect("infallible");
+                sap_tree.checkpoint(height).expect("infallible");
+            }
+            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+            for (orch_wit, height) in old_orch_wits {
+                orch_tree
+                    .insert_witness_nodes(orch_wit, height - 1)
+                    .expect("infallible");
+                orch_tree.checkpoint(height).expect("infallible");
+            }
+        }
+
+        Ok(Self {
+            transaction_records_by_id: map,
+            spending_data: witness_trees
+                .zip(wallet_capability.rejection_ivk().ok())
+                .map(|(trees, key)| SpendingData::new(trees, key)),
+            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            rejection_addresses: wallet_capability.get_rejection_addresses().clone(),
+        })
+    }
+
+    /// TODO: Doc-comment!
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        if version > Self::serialized_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Can't read wallettxns because of incorrect version",
+            ));
+        }
+
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
+        let map: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
+            let mut txid_bytes = [0u8; 32];
+            r.read_exact(&mut txid_bytes)?;
+
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
+            ))
+        })?;
+
+        let _mempool: Vec<(TxId, TransactionRecord)> = if version <= 20 {
+            Vector::read_collected_mut(&mut reader, |r| {
+                let mut txid_bytes = [0u8; 32];
+                r.read_exact(&mut txid_bytes)?;
+                let transaction_metadata =
+                    TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
+
+                Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
+            })?
+        } else {
+            vec![]
+        };
+
+        if version >= 22 {
+            witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
+        } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+            for (sap_wit, height) in old_sap_wits {
+                sap_tree
+                    .insert_witness_nodes(sap_wit, height - 1)
+                    .expect("infallible");
+                sap_tree.checkpoint(height).expect("infallible");
+            }
+            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+            for (orch_wit, height) in old_orch_wits {
+                orch_tree
+                    .insert_witness_nodes(orch_wit, height - 1)
+                    .expect("infallible");
+                orch_tree.checkpoint(height).expect("infallible");
+            }
+        };
+
+        Ok(Self {
+            transaction_records_by_id: TransactionRecordsById::from_map(map),
+            spending_data: witness_trees
+                .zip(wallet_capability.rejection_ivk().ok())
+                .map(|(trees, key)| SpendingData::new(trees, key)),
+            transparent_child_addresses: wallet_capability.transparent_child_addresses().clone(),
+            rejection_addresses: wallet_capability.get_rejection_addresses().clone(),
+        })
+    }
+}
+
+/// A convenience wrapper, to impl behavior on.
+pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
+
+impl TransactionRecordsById {
+    /// Constructs a TransactionRecordsById from a HashMap
+    pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
+        TransactionRecordsById(map)
+    }
+}
+
+///  Everything (SOMETHING) about a transaction
+pub struct TransactionRecord {
+    /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
+    pub status: zingo_status::confirmation_status::ConfirmationStatus,
+    /// Timestamp of Tx. Added in v4
+    pub datetime: u64,
+    /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
+    /// WalletTx in LightWallet::txs)
+    pub txid: TxId,
+    /// List of all nullifiers spent by this wallet in this Tx.
+    pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
+    /// List of all nullifiers spent by this wallet in this Tx. These nullifiers belong to the wallet.
+    pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    pub sapling_notes: Vec<SaplingNote>,
+    /// List of all sapling notes received by this wallet in this tx. Some of these might be change notes.
+    pub orchard_notes: Vec<OrchardNote>,
+    /// List of all Utxos by this wallet received in this Tx. Some of these might be change notes
+    pub transparent_outputs: Vec<TransparentOutput>,
+    /// Total amount of transparent funds that belong to us that were spent by this wallet in this Tx.
+    pub total_transparent_value_spent: u64,
+    /// Total value of all the sapling nullifiers that were spent by this wallet in this Tx
+    pub total_sapling_value_spent: u64,
+    /// Total value of all the orchard nullifiers that were spent by this wallet in this Tx
+    pub total_orchard_value_spent: u64,
+    /// All outgoing sends
+    pub outgoing_tx_data: Vec<OutgoingTxData>,
+    /// Price of Zec when this Tx was created
+    pub price: Option<f64>,
+}
+
+impl TransactionRecord {
+    /// TODO: Add Doc Comment Here!
+    #[allow(clippy::type_complexity)]
+    pub fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, mut trees): (
+            &WalletCapability,
+            Option<&mut (
+                Vec<(
+                    IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+                Vec<(
+                    IncrementalWitness<MerkleHashOrchard, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            )>,
+        ),
+    ) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+
+        let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
+
+        let pending = if version <= 20 {
+            false
+        } else {
+            reader.read_u8()? == 1
+        };
+
+        let datetime = if version >= 4 {
+            reader.read_u64::<LittleEndian>()?
+        } else {
+            0
+        };
+
+        let mut transaction_id_bytes = [0u8; 32];
+        reader.read_exact(&mut transaction_id_bytes)?;
+
+        let transaction_id = TxId::from_bytes(transaction_id_bytes);
+
+        let sapling_notes = zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
+            SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
+        })?;
+        let orchard_notes = if version > 22 {
+            zcash_encoding::Vector::read_collected_mut(&mut reader, |r| {
+                OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
+            })?
+        } else {
+            vec![]
+        };
+
+        let utxos = zcash_encoding::Vector::read(&mut reader, |r| TransparentOutput::read(r))?;
+
+        let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_orchard_value_spent = if version >= 22 {
+            reader.read_u64::<LittleEndian>()?
+        } else {
+            0
+        };
+
+        let outgoing_metadata = match version {
+            ..24 => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read_old(r))?,
+            24.. => zcash_encoding::Vector::read(&mut reader, |r| OutgoingTxData::read(r))?,
+        };
+        let _full_tx_scanned = reader.read_u8()? > 0;
+
+        let zec_price = if version <= 4 {
+            None
+        } else {
+            zcash_encoding::Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
+        };
+
+        let spent_sapling_nullifiers = if version <= 5 {
+            vec![]
+        } else {
+            zcash_encoding::Vector::read(&mut reader, |r| {
+                let mut n = [0u8; 32];
+                r.read_exact(&mut n)?;
+                Ok(sapling_crypto::Nullifier(n))
+            })?
+        };
+
+        let spent_orchard_nullifiers = if version <= 21 {
+            vec![]
+        } else {
+            zcash_encoding::Vector::read(&mut reader, |r| {
+                let mut n = [0u8; 32];
+                r.read_exact(&mut n)?;
+                Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
+            })?
+        };
+        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool(block, pending);
+        Ok(Self {
+            status,
+            datetime,
+            txid: transaction_id,
+            sapling_notes,
+            orchard_notes,
+            transparent_outputs: utxos,
+            spent_sapling_nullifiers,
+            spent_orchard_nullifiers,
+            total_transparent_value_spent,
+            total_sapling_value_spent,
+            total_orchard_value_spent,
+            outgoing_tx_data: outgoing_metadata,
+            price: zec_price,
+        })
+    }
+}
+
+impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sapling_crypto::Note {
+    const VERSION: u8 = 1;
+
+    fn read<R: Read>(
+        mut reader: R,
+        (diversifier, wallet_capability): (sapling_crypto::Diversifier, &WalletCapability),
+    ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
+        let value = reader.read_u64::<LittleEndian>()?;
+        let rseed = super::data::read_sapling_rseed(&mut reader)?;
+
+        Ok(
+            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
+                &wallet_capability.unified_key_store,
+            )
+            .expect("to get an fvk from the unified key store")
+            .fvk()
+            .vk
+            .to_payment_address(diversifier)
+            .unwrap()
+            .create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed),
+        )
+    }
+
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
+    }
+}
+
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
+    const VERSION: u8 = 1;
+
+    fn read<R: Read>(
+        mut reader: R,
+        (diversifier, wallet_capability): (orchard::keys::Diversifier, &WalletCapability),
+    ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
+        let value = reader.read_u64::<LittleEndian>()?;
+        let mut nullifier_bytes = [0; 32];
+        reader.read_exact(&mut nullifier_bytes)?;
+        let rho_nullifier = Option::from(orchard::note::Rho::from_bytes(&nullifier_bytes))
+            .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Bad Nullifier"))?;
+
+        let mut random_seed_bytes = [0; 32];
+        reader.read_exact(&mut random_seed_bytes)?;
+        let random_seed = Option::from(orchard::note::RandomSeed::from_bytes(
+            random_seed_bytes,
+            &rho_nullifier,
+        ))
+        .ok_or(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Nullifier not for note",
+        ))?;
+
+        let fvk = orchard::keys::FullViewingKey::try_from(&wallet_capability.unified_key_store)
+            .expect("to get an fvk from the unified key store");
+        Option::from(orchard::note::Note::from_parts(
+            fvk.address(diversifier, orchard::keys::Scope::External),
+            orchard::value::NoteValue::from_raw(value),
+            rho_nullifier,
+            random_seed,
+        ))
+        .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
+    }
+
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
+    }
+}
+
+/// TODO: Add Doc Comment Here!
+#[derive(Clone, PartialEq)]
+pub struct TransparentOutput {
+    /// TODO: Add Doc Comment Here!
+    pub address: String,
+    /// TODO: Add Doc Comment Here!
+    pub txid: TxId,
+    /// TODO: Add Doc Comment Here!
+    pub output_index: u64,
+    /// TODO: Add Doc Comment Here!
+    pub script: Vec<u8>,
+    /// TODO: Add Doc Comment Here!
+    pub value: u64,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
+}
+
+impl TransparentOutput {
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
+        let version = reader.read_u64::<byteorder::LittleEndian>()?;
+
+        let address_len = reader.read_i32::<byteorder::LittleEndian>()?;
+        let mut address_bytes = vec![0; address_len as usize];
+        reader.read_exact(&mut address_bytes)?;
+        let address = String::from_utf8(address_bytes).unwrap();
+        assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
+
+        let mut transaction_id_bytes = [0; 32];
+        reader.read_exact(&mut transaction_id_bytes)?;
+        let transaction_id = TxId::from_bytes(transaction_id_bytes);
+
+        let output_index = reader.read_u64::<byteorder::LittleEndian>()?;
+        let value = reader.read_u64::<byteorder::LittleEndian>()?;
+        let _height = reader.read_i32::<byteorder::LittleEndian>()?;
+
+        let script = zcash_encoding::Vector::read(&mut reader, |r| {
+            let mut byte = [0; 1];
+            r.read_exact(&mut byte)?;
+            Ok(byte[0])
+        })?;
+
+        let spent = zcash_encoding::Optional::read(&mut reader, |r| {
+            let mut transaction_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_bytes)?;
+            Ok(TxId::from_bytes(transaction_bytes))
+        })?;
+
+        let spent_at_height = if version <= 1 {
+            None
+        } else {
+            zcash_encoding::Optional::read(&mut reader, |r| {
+                r.read_i32::<byteorder::LittleEndian>()
+            })?
+        };
+
+        let _pending_spent = if version == 3 {
+            zcash_encoding::Optional::read(&mut reader, |r| {
+                let mut transaction_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_bytes)?;
+
+                let height = r.read_u32::<byteorder::LittleEndian>()?;
+                Ok((TxId::from_bytes(transaction_bytes), height))
+            })?
+        } else {
+            None
+        };
+
+        let spent_tuple: Option<(TxId, u32)> = if let Some(txid) = spent {
+            if let Some(height) = spent_at_height {
+                Some((txid, height as u32))
+            } else {
+                Some((txid, 0))
+            }
+        } else {
+            None
+        };
+        let spend =
+            spent_tuple.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
+
+        Ok(TransparentOutput {
+            address,
+            txid: transaction_id,
+            output_index,
+            script,
+            value,
+            spend,
+        })
+    }
+}
+
+/// TODO: Add Doc Comment Here!
+#[derive(Clone)]
+pub struct SaplingNote {
+    /// TODO: Add Doc Comment Here!
+    pub diversifier: sapling_crypto::Diversifier,
+    /// TODO: Add Doc Comment Here!
+    pub sapling_crypto_note: sapling_crypto::Note,
+    // The position of this note's value commitment in the global commitment tree
+    // We need to create a witness to it, to spend
+    pub(crate) witnessed_position: Option<Position>,
+    // The note's index in its containing transaction
+    pub(crate) output_index: Option<u32>,
+    /// TODO: Add Doc Comment Here!
+    pub nullifier: Option<sapling_crypto::Nullifier>,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
+    /// TODO: Add Doc Comment Here!
+    pub memo: Option<Memo>,
+    /// DEPRECATED
+    pub is_change: bool,
+    /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date) Todo should this data point really be here?
+    pub have_spending_key: bool,
+}
+
+impl
+    ReadableWriteable<(
+        &WalletCapability,
+        Option<
+            &mut Vec<(
+                IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
+        >,
+    )> for SaplingNote
+{
+    const VERSION: u8 = 5;
+
+    fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, inc_wit_vec): (
+            &WalletCapability,
+            Option<
+                &mut Vec<(
+                    IncrementalWitness<sapling_crypto::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            >,
+        ),
+    ) -> io::Result<Self> {
+        let external_version = Self::get_version(&mut reader)?;
+
+        if external_version < 2 {
+            let mut discarded_bytes = vec![0u8; 169];
+            reader
+                .read_exact(&mut discarded_bytes)
+                .expect("To not used this data.");
+        }
+
+        let mut diversifier_bytes = [0u8; 11];
+        reader.read_exact(&mut diversifier_bytes)?;
+        let diversifier = sapling_crypto::Diversifier(diversifier_bytes);
+
+        let note = sapling_crypto::Note::read(&mut reader, (diversifier, wallet_capability))?;
+
+        let witnessed_position = match external_version {
+            5.. => Optional::read(&mut reader, <R>::read_u64::<LittleEndian>)?.map(Position::from),
+            4 => Some(Position::from(reader.read_u64::<LittleEndian>()?)),
+            ..4 => {
+                let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+
+                let top_height = reader.read_u64::<LittleEndian>()?;
+                let witnesses =
+                    WitnessCache::<sapling_crypto::Node>::new(witnesses_vec, top_height);
+
+                let pos = witnesses.last().map(|w| w.witnessed_position());
+                for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
+                    let height = BlockHeight::from(top_height as u32 - i as u32);
+                    if let Some(&mut ref mut wits) = inc_wit_vec {
+                        wits.push((witness, height));
+                    }
+                }
+                pos
+            }
+        };
+
+        let read_nullifier = |r: &mut R| {
+            let mut nullifier = [0u8; 32];
+            r.read_exact(&mut nullifier)?;
+            Ok(sapling_crypto::Nullifier::from_slice(&nullifier).unwrap())
+        };
+
+        let nullifier = match external_version {
+            5.. => Optional::read(&mut reader, read_nullifier)?,
+            ..5 => Some(read_nullifier(&mut reader)?),
+        };
+
+        let spend = Optional::read(&mut reader, |r| {
+            let mut transaction_id_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_id_bytes)?;
+            let status = match external_version {
+                5.. => ReadableWriteable::read(r, ()),
+                ..5 => {
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
+                }
+            }?;
+            Ok((TxId::from_bytes(transaction_id_bytes), status))
+        })?;
+
+        // Note that the spent field is now an enum, that contains what used to be
+        // a separate 'pending_spent' field. As they're mutually exclusive states,
+        // they are now stored in the same field.
+        if external_version < 3 {
+            let _pending_spent = {
+                Optional::read(&mut reader, |r| {
+                    let mut transaction_bytes = [0u8; 32];
+                    r.read_exact(&mut transaction_bytes)?;
+
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok((TxId::from_bytes(transaction_bytes), height))
+                })?
+            };
+        }
+
+        let memo = Optional::read(&mut reader, |r| {
+            let mut memo_bytes = [0u8; 512];
+            r.read_exact(&mut memo_bytes)?;
+
+            // Attempt to read memo, first as text, else as arbitrary 512 bytes
+            match MemoBytes::from_bytes(&memo_bytes) {
+                Ok(mb) => match Memo::try_from(mb.clone()) {
+                    Ok(m) => Ok(m),
+                    Err(_) => Ok(Memo::Future(mb)),
+                },
+                Err(e) => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Couldn't create memo: {}", e),
+                )),
+            }
+        })?;
+
+        let is_change: bool = reader.read_u8()? > 0;
+
+        let have_spending_key = reader.read_u8()? > 0;
+
+        let output_index = if external_version >= 4 {
+            match reader.read_u32::<LittleEndian>()? {
+                u32::MAX => None,
+                otherwise => Some(otherwise),
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            diversifier,
+            sapling_crypto_note: note,
+            witnessed_position,
+            nullifier,
+            spend,
+            memo,
+            is_change,
+            have_spending_key,
+            output_index,
+        })
+    }
+
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
+    }
+}
+
+/// TODO: Add Doc Comment Here!
+#[derive(Clone, PartialEq)]
+pub struct OrchardNote {
+    /// TODO: Add Doc Comment Here!
+    pub diversifier: orchard::keys::Diversifier,
+    /// TODO: Add Doc Comment Here!
+    pub orchard_crypto_note: orchard::note::Note,
+    /// The position of this note's value commitment in the global commitment tree
+    /// We need to create a witness to it, to spend
+    pub witnessed_position: Option<Position>,
+    /// The note's index in its containing transaction
+    pub(crate) output_index: Option<u32>,
+    pub(crate) nullifier: Option<orchard::note::Nullifier>,
+    /// whether, where, and when it was spent
+    spend: Option<(TxId, ConfirmationStatus)>,
+    /// TODO: Add Doc Comment Here!
+    pub memo: Option<Memo>,
+    /// DEPRECATED
+    pub is_change: bool,
+    /// If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
+    pub have_spending_key: bool,
+}
+
+impl
+    ReadableWriteable<(
+        &WalletCapability,
+        Option<
+            &mut Vec<(
+                IncrementalWitness<MerkleHashOrchard, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
+        >,
+    )> for OrchardNote
+{
+    const VERSION: u8 = 5;
+
+    fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, inc_wit_vec): (
+            &WalletCapability,
+            Option<
+                &mut Vec<(
+                    IncrementalWitness<MerkleHashOrchard, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            >,
+        ),
+    ) -> io::Result<Self> {
+        let external_version = Self::get_version(&mut reader)?;
+
+        if external_version < 2 {
+            let mut discarded_bytes = vec![0u8; 96];
+            reader
+                .read_exact(&mut discarded_bytes)
+                .expect("To not used this data.");
+        }
+
+        let mut diversifier_bytes = [0u8; 11];
+        reader.read_exact(&mut diversifier_bytes)?;
+        let diversifier = orchard::keys::Diversifier::from_bytes(diversifier_bytes);
+
+        let note = orchard::Note::read(&mut reader, (diversifier, wallet_capability))?;
+
+        let witnessed_position = match external_version {
+            5.. => Optional::read(&mut reader, <R>::read_u64::<LittleEndian>)?.map(Position::from),
+            4 => Some(Position::from(reader.read_u64::<LittleEndian>()?)),
+            ..4 => {
+                let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+
+                let top_height = reader.read_u64::<LittleEndian>()?;
+                let witnesses = WitnessCache::<MerkleHashOrchard>::new(witnesses_vec, top_height);
+
+                let pos = witnesses.last().map(|w| w.witnessed_position());
+                for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
+                    let height = BlockHeight::from(top_height as u32 - i as u32);
+                    if let Some(&mut ref mut wits) = inc_wit_vec {
+                        wits.push((witness, height));
+                    }
+                }
+                pos
+            }
+        };
+
+        let read_nullifier = |r: &mut R| {
+            let mut nullifier = [0u8; 32];
+            r.read_exact(&mut nullifier)?;
+            Ok(orchard::note::Nullifier::from_bytes(&nullifier).unwrap())
+        };
+
+        let nullifier = match external_version {
+            5.. => Optional::read(&mut reader, read_nullifier)?,
+            ..5 => Some(read_nullifier(&mut reader)?),
+        };
+
+        let spend = Optional::read(&mut reader, |r| {
+            let mut transaction_id_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_id_bytes)?;
+            let status = match external_version {
+                5.. => ReadableWriteable::read(r, ()),
+                ..5 => {
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
+                }
+            }?;
+            Ok((TxId::from_bytes(transaction_id_bytes), status))
+        })?;
+
+        // Note that the spent field is now an enum, that contains what used to be
+        // a separate 'pending_spent' field. As they're mutually exclusive states,
+        // they are now stored in the same field.
+        if external_version < 3 {
+            let _pending_spent = {
+                Optional::read(&mut reader, |r| {
+                    let mut transaction_bytes = [0u8; 32];
+                    r.read_exact(&mut transaction_bytes)?;
+
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok((TxId::from_bytes(transaction_bytes), height))
+                })?
+            };
+        }
+
+        let memo = Optional::read(&mut reader, |r| {
+            let mut memo_bytes = [0u8; 512];
+            r.read_exact(&mut memo_bytes)?;
+
+            // Attempt to read memo, first as text, else as arbitrary 512 bytes
+            match MemoBytes::from_bytes(&memo_bytes) {
+                Ok(mb) => match Memo::try_from(mb.clone()) {
+                    Ok(m) => Ok(m),
+                    Err(_) => Ok(Memo::Future(mb)),
+                },
+                Err(e) => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Couldn't create memo: {}", e),
+                )),
+            }
+        })?;
+
+        let is_change: bool = reader.read_u8()? > 0;
+
+        let have_spending_key = reader.read_u8()? > 0;
+
+        let output_index = if external_version >= 4 {
+            match reader.read_u32::<LittleEndian>()? {
+                u32::MAX => None,
+                otherwise => Some(otherwise),
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            diversifier,
+            orchard_crypto_note: note,
+            witnessed_position,
+            nullifier,
+            spend,
+            memo,
+            is_change,
+            have_spending_key,
+            output_index,
+        })
+    }
+
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
+    }
+}
+
+/// Only for TransactionRecords *from* "this" capability
+#[derive(Clone)]
+pub struct OutgoingTxData {
+    /// TODO: Add Doc Comment Here!
+    pub recipient_address: String,
+    /// Amount to this receiver
+    pub value: u64,
+    /// Note to the receiver, why not an option?
+    pub memo: Memo,
+    /// What if it wasn't provided?  How does this relate to
+    /// recipient_address?
+    pub recipient_ua: Option<String>,
+    /// This output's index in its containing transaction
+    pub output_index: Option<u64>,
+}
+
+impl OutgoingTxData {
+    /// Before version 0, OutgoingTxData didn't have a version field
+    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
+        let address_len = reader.read_u64::<LittleEndian>()?;
+        let mut address_bytes = vec![0; address_len as usize];
+        reader.read_exact(&mut address_bytes)?;
+        let address = String::from_utf8(address_bytes).unwrap();
+
+        let value = reader.read_u64::<LittleEndian>()?;
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = match MemoBytes::from_bytes(&memo_bytes) {
+            Ok(mb) => match Memo::try_from(mb.clone()) {
+                Ok(m) => Ok(m),
+                Err(_) => Ok(Memo::Future(mb)),
+            },
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Couldn't create memo: {}", e),
+            )),
+        }?;
+
+        Ok(OutgoingTxData {
+            recipient_address: address,
+            value,
+            memo,
+            recipient_ua: None,
+            output_index: None,
+        })
+    }
+
+    /// Read an OutgoingTxData from its serialized
+    /// representation
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _external_version = CompactSize::read(&mut reader)?;
+        let address_len = reader.read_u64::<LittleEndian>()?;
+        let mut address_bytes = vec![0; address_len as usize];
+        reader.read_exact(&mut address_bytes)?;
+        let address = String::from_utf8(address_bytes).unwrap();
+
+        let value = reader.read_u64::<LittleEndian>()?;
+
+        let mut memo_bytes = [0u8; 512];
+        reader.read_exact(&mut memo_bytes)?;
+        let memo = match MemoBytes::from_bytes(&memo_bytes) {
+            Ok(mb) => match Memo::try_from(mb.clone()) {
+                Ok(m) => Ok(m),
+                Err(_) => Ok(Memo::Future(mb)),
+            },
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Couldn't create memo: {}", e),
+            )),
+        }?;
+        let output_index = Optional::read(&mut reader, CompactSize::read)?;
+
+        Ok(OutgoingTxData {
+            recipient_address: address,
+            value,
+            memo,
+            recipient_ua: None,
+            output_index,
+        })
+    }
+}
+
+/// the subsection of TxMap that only applies to spending wallets
+pub(crate) struct SpendingData {
+    pub(crate) witness_trees: WitnessTrees,
+    pub(crate) cached_raw_transactions: Vec<(TxId, Vec<u8>)>,
+    pub(crate) rejection_ivk: EphemeralIvk,
+}
+
+impl SpendingData {
+    pub fn new(witness_trees: WitnessTrees, rejection_ivk: EphemeralIvk) -> Self {
+        SpendingData {
+            witness_trees,
+            cached_raw_transactions: Vec::new(),
+            rejection_ivk,
+        }
+    }
+}
+
+/// TODO: Add Doc Comment Here!
+pub const COMMITMENT_TREE_LEVELS: u8 = 32;
+/// TODO: Add Doc Comment Here!
+pub const MAX_SHARD_LEVEL: u8 = 16;
+/// TODO: Add Doc Comment Here!
+pub const MAX_REORG: usize = 100;
+
+/// TODO: Add Doc Comment Here!
+#[derive(Debug)]
+pub struct WitnessTrees {
+    /// TODO: Add Doc Comment Here!
+    pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+    /// TODO: Add Doc Comment Here!
+    pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+}
+
+impl WitnessTrees {
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _serialized_version = reader.read_u8()?;
+        let witness_tree_sapling = read_shardtree(&mut reader)?;
+        let witness_tree_orchard = read_shardtree(reader)?;
+        Ok(Self {
+            witness_tree_sapling,
+            witness_tree_orchard,
+        })
+    }
+}
+
+impl Default for WitnessTrees {
+    fn default() -> WitnessTrees {
+        Self {
+            witness_tree_sapling: shardtree::ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
+            witness_tree_orchard: shardtree::ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
+        }
+    }
+}
+
+fn read_shardtree<
+    H: Hashable + Clone + HashSer + Eq,
+    C: Ord + std::fmt::Debug + Copy + From<u32>,
+    R: Read,
+>(
+    mut reader: R,
+) -> io::Result<shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>>
+{
+    let shards = Vector::read(&mut reader, |r| {
+        let level = Level::from(r.read_u8()?);
+        let index = r.read_u64::<LittleEndian>()?;
+        let root_addr = Address::from_parts(level, index);
+        let shard = read_shard(r)?;
+        Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+    })?;
+    let mut store = MemoryShardStore::empty();
+    for shard in shards {
+        store.put_shard(shard).expect("Infallible");
+    }
+    let checkpoints = Vector::read(&mut reader, |r| {
+        let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
+        let tree_state = match r.read_u8()? {
+            0 => shardtree::store::TreeState::Empty,
+            1 => shardtree::store::TreeState::AtPosition(Position::from(
+                r.read_u64::<LittleEndian>()?,
+            )),
+            otherwise => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("error reading TreeState: expected boolean value, found {otherwise}"),
+                ))
+            }
+        };
+        let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
+        Ok((
+            checkpoint_id,
+            Checkpoint::from_parts(tree_state, marks_removed.into_iter().collect()),
+        ))
+    })?;
+    for (checkpoint_id, checkpoint) in checkpoints {
+        store
+            .add_checkpoint(checkpoint_id, checkpoint)
+            .expect("Infallible");
+    }
+    store.put_cap(read_shard(reader)?).expect("Infallible");
+    Ok(shardtree::ShardTree::new(store, MAX_REORG))
+}
+
+pub(crate) type SapStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
+pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+
+/// TODO: Add Doc Comment Here!
+#[derive(Clone)]
+pub struct WitnessCache<Node: Hashable> {
+    /// TODO: Add Doc Comment Here!
+    pub(crate) witnesses: Vec<IncrementalWitness<Node, 32>>,
+    /// TODO: Add Doc Comment Here!
+    pub top_height: u64,
+}
+
+impl<Node: Hashable> WitnessCache<Node> {
+    /// TODO: Add Doc Comment Here!
+    pub fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
+        Self {
+            witnesses,
+            top_height,
+        }
+    }
 
     /// TODO: Add Doc Comment Here!
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        writer.write_i32::<LittleEndian>(self.height as i32)?;
+    pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
+        self.witnesses.last()
+    }
+}
 
-        let hash_bytes: Vec<_> = hex::decode(self.hash())
-            .unwrap()
-            .into_iter()
-            .rev()
-            .collect();
-        writer.write_all(&hash_bytes[..])?;
+impl ReadableWriteable for ConfirmationStatus {
+    const VERSION: u8 = 0;
 
-        write_commitment_tree(
-            &CommitmentTree::<sapling_crypto::Node, 32>::empty(),
-            &mut writer,
-        )?;
-        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let _external_version = Self::get_version(&mut reader);
+        let status = reader.read_u8()?;
+        let height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+        match status {
+            0 => Ok(Self::Calculated(height)),
+            1 => Ok(Self::Transmitted(height)),
+            2 => Ok(Self::Mempool(height)),
+            3 => Ok(Self::Confirmed(height)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Bad confirmation status",
+            )),
+        }
+    }
 
-        // Write the ecb as well
-        Vector::write(&mut writer, &self.ecb, |w, b| w.write_u8(*b))?;
-
-        Ok(())
+    fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
+        unimplemented!()
     }
 }
