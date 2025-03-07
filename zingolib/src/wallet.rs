@@ -39,10 +39,6 @@ pub mod error;
 pub mod keys;
 pub(crate) mod legacy;
 pub mod traits;
-pub mod transaction_context;
-pub mod transaction_record;
-pub mod transaction_records_by_id;
-pub mod tx_map;
 pub mod utils;
 
 //these mods contain pieces of the impl LightWallet

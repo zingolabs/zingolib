@@ -48,8 +48,8 @@ use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
 use super::data::summaries::ValueTransfers;
 use super::keys::unified::UnifiedKeyStore;
-use super::transaction_record::SendType;
-use super::transaction_record::TransactionKind;
+use super::summary::SendType;
+use super::summary::TransactionKind;
 
 impl LightWallet {
     /// Returns wallet addresses in a JSON array

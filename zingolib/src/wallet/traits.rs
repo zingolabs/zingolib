@@ -1,18 +1,8 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use crate::wallet::output::interface::OutputConstructor;
 use std::io::{self, Read, Write};
 
 use crate::config::ChainType;
-use crate::wallet::output::OldOutputInterface;
-use crate::wallet::output::ShieldedNoteInterface;
-use crate::wallet::{
-    data::{
-        SpendableOrchardNote, SpendableSaplingNote, TransactionRecord, WitnessCache,
-        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
-    },
-    output::{OrchardNote, SaplingNote},
-    tx_map::TxMap,
-};
+use crate::wallet::data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
@@ -158,29 +148,6 @@ impl FromCommitment for MerkleHashOrchard {
     }
 }
 
-/// The component that transfers value.  In the common case, from one output to another.
-pub trait Spend {
-    /// TODO: Add Doc Comment Here!
-    type Nullifier: Nullifier;
-
-    /// TODO: Add Doc Comment Here!
-    fn nullifier(&self) -> &Self::Nullifier;
-}
-
-impl<Auth: sapling_crypto::bundle::Authorization> Spend for SpendDescription<Auth> {
-    type Nullifier = sapling_crypto::Nullifier;
-    fn nullifier(&self) -> &Self::Nullifier {
-        self.nullifier()
-    }
-}
-
-impl<Auth> Spend for Action<Auth> {
-    type Nullifier = orchard::note::Nullifier;
-    fn nullifier(&self) -> &Self::Nullifier {
-        self.nullifier()
-    }
-}
-
 impl From<orchard::note::Nullifier> for PoolNullifier {
     fn from(n: orchard::note::Nullifier) -> Self {
         PoolNullifier::Orchard(n)
@@ -242,69 +209,8 @@ fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
     //todo: This default feels dangerous. Find better solution
 }
 
-/// TODO: Documentation neeeeeds help!!!!  XXXX
-pub trait Nullifier:
-    PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send + Into<PoolNullifier>
-{
-    /// TODO: Add Doc Comment Here!
-    fn get_nullifiers_spent_in_transaction(transaction: &TransactionRecord) -> &Vec<Self>;
-}
-
-impl Nullifier for sapling_crypto::Nullifier {
-    fn get_nullifiers_spent_in_transaction(
-        transaction_metadata_set: &TransactionRecord,
-    ) -> &Vec<Self> {
-        &transaction_metadata_set.spent_sapling_nullifiers
-    }
-}
-
-impl Nullifier for orchard::note::Nullifier {
-    fn get_nullifiers_spent_in_transaction(transaction: &TransactionRecord) -> &Vec<Self> {
-        &transaction.spent_orchard_nullifiers
-    }
-}
-
 type MemoryStoreShardTree<T> =
     ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
-
-/// TODO: Add Doc Comment Here!
-pub trait Diversifiable {
-    /// TODO: Add Doc Comment Here!
-    type Note: ShieldedNoteInterface;
-    /// TODO: Add Doc Comment Here!
-    type Address: Recipient;
-
-    /// TODO: Add Doc Comment Here!
-    fn diversified_address(
-        &self,
-        div: <Self::Note as ShieldedNoteInterface>::Diversifier,
-    ) -> Option<Self::Address>;
-}
-
-impl Diversifiable for sapling_crypto::zip32::DiversifiableFullViewingKey {
-    type Note = SaplingNote;
-
-    type Address = sapling_crypto::PaymentAddress;
-
-    fn diversified_address(
-        &self,
-        div: <<sapling_crypto::zip32::DiversifiableFullViewingKey as Diversifiable>::Note as ShieldedNoteInterface>::Diversifier,
-    ) -> Option<Self::Address> {
-        self.fvk().vk.to_payment_address(div)
-    }
-}
-
-impl Diversifiable for orchard::keys::FullViewingKey {
-    type Note = OrchardNote;
-    type Address = orchard::Address;
-
-    fn diversified_address(
-        &self,
-        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as ShieldedNoteInterface>::Diversifier,
-    ) -> Option<Self::Address> {
-        Some(self.address(div, orchard::keys::Scope::External))
-    }
-}
 
 /// TODO: Add Doc Comment Here!
 pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {

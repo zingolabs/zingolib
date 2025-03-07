@@ -14,8 +14,6 @@ use zcash_encoding::{CompactSize, Optional};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::{memo::Memo, transaction::TxId};
 
-pub use crate::wallet::transaction_record::TransactionRecord; // TODO: is this necessary? can we import this directly where its used?
-
 /// TODO: Add Doc Comment Here!
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 /// TODO: Add Doc Comment Here!
@@ -367,7 +365,7 @@ pub mod summaries {
         utils::build_method,
         wallet::{
             output::SpendStatus,
-            transaction_record::{SendType, TransactionKind},
+            summary::{SendType, TransactionKind},
         },
     };
 

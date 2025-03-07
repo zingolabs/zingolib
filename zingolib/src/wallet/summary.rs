@@ -177,6 +177,37 @@ impl From<CoinSummary> for json::JsonValue {
     }
 }
 
+/// TODO: doc comment
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TransactionKind {
+    /// TODO: doc comment
+    Sent(SendType),
+    /// TODO: doc comment
+    Received,
+}
+
+impl std::fmt::Display for TransactionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            TransactionKind::Received => write!(f, "received"),
+            TransactionKind::Sent(SendType::Send) => write!(f, "sent"),
+            TransactionKind::Sent(SendType::Shield) => write!(f, "shield"),
+            TransactionKind::Sent(SendType::SendToSelf) => write!(f, "send-to-self"),
+        }
+    }
+}
+
+/// TODO: doc comment
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum SendType {
+    /// Transaction is sending funds to recipient other than the creator
+    Send,
+    /// Transaction is only sending funds from transparent pool to the creator's shielded pool
+    Shield,
+    /// Transaction is only sending funds to the creator's address(es) and is not a shield
+    SendToSelf,
+}
+
 impl LightWallet {
     pub fn note_summaries<N>(&self, include_spent_notes: bool) -> Vec<NoteSummary>
     where
