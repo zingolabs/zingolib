@@ -27,12 +27,12 @@ use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
+use crate::lightclient::describe::UAReceivers;
 use crate::utils;
 
 use crate::wallet::error::BalanceError;
 
 use crate::wallet::LightWallet;
-use crate::UAReceivers;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;

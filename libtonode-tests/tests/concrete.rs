@@ -126,6 +126,7 @@ mod fast {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        lightclient::describe::UAReceivers,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             lightclient::{from_inputs, get_base_address},
@@ -137,7 +138,6 @@ mod fast {
             },
             keys::unified::ReceiverSelection,
         },
-        UAReceivers,
     };
 
     use super::*;
@@ -1254,11 +1254,13 @@ mod slow {
     use zcash_primitives::zip32::{self, AccountId};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
+    use zingolib::lightclient::describe::UAReceivers;
     use zingolib::lightclient::send::send_with_proposal::QuickSendError;
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
     };
+    use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::data::summaries::{
         BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
@@ -1267,7 +1269,6 @@ mod slow {
     use zingolib::wallet::error::{KeyError, WalletError};
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::{SendType, TransactionKind};
-    use zingolib::{utils, UAReceivers};
 
     use super::*;
 
@@ -1643,7 +1644,7 @@ mod slow {
             log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-            let mut watch_client = build_fvk_client(fvks, &zingo_config).await;
+            let mut watch_client = build_fvk_client(fvks, zingo_config.clone()).await;
             // assert empty wallet before rescan
             let balance = watch_client.do_balance().await;
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);

@@ -39,6 +39,7 @@ pub(crate) mod conduct_chain {
     use orchard::tree::MerkleHashOrchard;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+    use zingolib::wallet::LightWallet;
     use zingolib::wallet::WalletBase;
 
     use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
@@ -67,16 +68,19 @@ pub(crate) mod conduct_chain {
         async fn create_faucet(&mut self) -> LightClient {
             self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
                 .await;
-            let zingo_config = self
+            let config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.regtest_network);
-            LightClient::create_from_wallet_base_async(
-                WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
-                &zingo_config,
-                0,
+            LightClient::create_from_wallet_async(
+                LightWallet::new(
+                    config.chain,
+                    WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
+                    0.into(),
+                )
+                .unwrap(),
+                config,
                 true,
             )
-            .await
             .unwrap()
         }
 

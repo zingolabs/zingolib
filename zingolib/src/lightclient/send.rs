@@ -1,15 +1,13 @@
 //! TODO: Add Mod Description Here!
 
+use crate::wallet::SendProgress;
+
 use super::LightClient;
-use super::LightWalletSendProgress;
 
 impl LightClient {
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
-        let progress = self.wallet.lock().await.get_send_progress().await;
-        Ok(LightWalletSendProgress {
-            progress: progress.clone(),
-        })
+    /// Wrapper for [`crate::wallet::LightWallet::send_progress`].
+    pub async fn send_progress(&self) -> SendProgress {
+        self.wallet.lock().await.send_progress().await
     }
 }
 
@@ -182,7 +180,7 @@ pub mod send_with_proposal {
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
-            wallet::disk::testing::examples,
+            wallet::{disk::testing::examples, LightWallet, WalletBase},
         };
 
         #[tokio::test]
@@ -192,12 +190,18 @@ pub mod send_with_proposal {
                 mocks::proposal::ProposalBuilder,
             };
             use testvectors::seeds::ABANDON_ART_SEED;
-            let lc = LightClient::create_unconnected(
-                &ZingoConfigBuilder::default().create(),
-                crate::wallet::WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
-                1,
+
+            let config = ZingoConfigBuilder::default().create();
+            let lc = LightClient::create_from_wallet_async(
+                LightWallet::new(
+                    config.chain,
+                    WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                    1.into(),
+                )
+                .unwrap(),
+                config,
+                false,
             )
-            .await
             .unwrap();
             let proposal = ProposalBuilder::default().build();
             lc.complete_and_broadcast(&proposal).await.unwrap_err();

@@ -243,10 +243,13 @@ async fn reload_wallet_from_buffer() {
         .await
         .unwrap();
 
-    let client =
-        LightClient::read_wallet_from_buffer_async(&ZingoConfig::create_testnet(), &mid_buffer[..])
-            .await
-            .unwrap();
+    let config = ZingoConfig::create_testnet();
+    let client = LightClient::create_from_wallet_async(
+        LightWallet::read(&mid_buffer[..], config.chain).unwrap(),
+        config,
+        false,
+    )
+    .unwrap();
     let wallet = client.wallet.lock().await;
 
     let expected_mnemonic = (

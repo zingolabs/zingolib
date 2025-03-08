@@ -34,6 +34,7 @@ pub mod setup {
     use crate::testutils::poll_server_height;
     use crate::testutils::regtest::ChildProcessHandler;
     use crate::testutils::RegtestManager;
+    use crate::wallet::LightWallet;
     use crate::{lightclient::LightClient, wallet::WalletBase};
     use std::path::PathBuf;
     use tokio::time::sleep;
@@ -239,14 +240,17 @@ pub mod setup {
             overwrite: bool,
             regtest_network: crate::config::RegtestNetwork,
         ) -> LightClient {
-            let zingo_config = self.make_unique_data_dir_and_load_config(regtest_network);
-            LightClient::create_from_wallet_base_async(
-                WalletBase::MnemonicPhrase(mnemonic_phrase),
-                &zingo_config,
-                birthday,
+            let config = self.make_unique_data_dir_and_load_config(regtest_network);
+            LightClient::create_from_wallet_async(
+                LightWallet::new(
+                    config.chain,
+                    WalletBase::MnemonicPhrase(mnemonic_phrase),
+                    (birthday as u32).into(),
+                )
+                .unwrap(),
+                config,
                 overwrite,
             )
-            .await
             .unwrap()
         }
     }

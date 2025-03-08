@@ -28,26 +28,17 @@ pub trait ConductChain {
 
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
-        let zingo_config = self.zingo_config();
-        LightClient::create_from_wallet_base_async(
-            crate::wallet::WalletBase::FreshEntropy,
-            &zingo_config,
-            0,
-            false,
-        )
-        .await
-        .unwrap()
+        let config = self.zingo_config();
+        LightClient::new(config, 0.into(), false).unwrap()
     }
 
     /// loads a client from bytes
     async fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        let network = config.chain;
-
         LightClient::create_from_wallet_async(
+            LightWallet::read(data, config.chain).unwrap(),
             config,
-            LightWallet::unsafe_from_buffer(network, data),
+            false,
         )
-        .await
         .unwrap()
     }
 

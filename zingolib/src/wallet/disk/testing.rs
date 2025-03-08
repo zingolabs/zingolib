@@ -4,22 +4,9 @@
 use bip0039::Mnemonic;
 use zcash_keys::keys::{Era, UnifiedSpendingKey};
 
-use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
+use crate::wallet::keys::unified::UnifiedKeyStore;
 
 use super::LightWallet;
-
-impl LightWallet {
-    /// connects a wallet to a local regtest node.
-    pub fn unsafe_from_buffer(network: ChainType, data: &[u8]) -> Self {
-        Self::read(data, network)
-            .map_err(|e| format!("Cannot deserialize LightWallet file!: {}", e))
-            .unwrap()
-    }
-}
-
-// async fn assert_test_wallet(case: examples::LegacyWalletCase) {
-//     let wallet = LightWallet::load_example_wallet(case).await;
-// }
 
 /// example wallets
 /// including from different versions of the software.

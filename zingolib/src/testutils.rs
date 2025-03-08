@@ -5,6 +5,7 @@
 
 pub mod scenarios;
 
+use crate::lightclient::describe::UAReceivers;
 use crate::lightclient::error::LightClientError;
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
@@ -12,8 +13,7 @@ use crate::wallet::data::summaries::{
 };
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
-use crate::wallet::WalletBase;
-use crate::UAReceivers;
+use crate::wallet::{LightWallet, WalletBase};
 use grpc_proxy::ProxyServer;
 pub use incrementalmerkletree;
 use lightclient::get_base_address;
@@ -66,7 +66,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
+pub async fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
             fvks.iter().copied().cloned().collect(),
@@ -74,9 +74,12 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
-    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0)
-        .await
-        .unwrap()
+    LightClient::create_from_wallet_async(
+        LightWallet::new(config.chain, WalletBase::Ufvk(ufvk), 0.into()).unwrap(),
+        config,
+        false,
+    )
+    .unwrap()
 }
 
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {

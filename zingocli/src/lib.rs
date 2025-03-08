@@ -12,7 +12,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
-use zingolib::wallet::WalletBase;
+use zingolib::wallet::{LightWallet, WalletBase};
 use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
@@ -450,15 +450,36 @@ pub fn startup(
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
     let mut lightclient = match filled_template.from.clone() {
-        Some(phrase) => LightClient::create_from_wallet_base(
-            WalletBase::from_string(phrase),
-            &config,
-            filled_template.birthday,
+        Some(phrase) => LightClient::create_from_wallet_async(
+            LightWallet::new(
+                config.chain,
+                WalletBase::from_string(phrase),
+                (filled_template.birthday as u32).into(),
+            )
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to create wallet. {}", e.to_string()),
+                )
+            })?,
+            config.clone(),
             false,
-        )?,
+        )
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create lightclient. {}", e.to_string()),
+            )
+        })?,
+
         None => {
             if config.wallet_path_exists() {
-                LightClient::read_wallet_from_disk(&config)?
+                LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to create lightclient. {}", e.to_string()),
+                    )
+                })?
             } else {
                 println!("Creating a new wallet");
                 // Call the lightwalletd server to get the current block-height
@@ -466,7 +487,17 @@ pub fn startup(
                 let server_uri = config.get_lightwalletd_uri();
                 let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                LightClient::new(&config, block_height?.saturating_sub(100))?
+                LightClient::new(
+                    config.clone(),
+                    (block_height?.saturating_sub(100) as u32).into(),
+                    false,
+                )
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to create lightclient. {}", e.to_string()),
+                    )
+                })?
             }
         }
     };
