@@ -217,7 +217,7 @@ pub mod setup {
         }
 
         /// TODO: Add Doc Comment Here!
-        pub async fn build_faucet(
+        pub fn build_faucet(
             &mut self,
             overwrite: bool,
             regtest_network: crate::config::RegtestNetwork,
@@ -229,11 +229,10 @@ pub mod setup {
                 overwrite,
                 regtest_network,
             )
-            .await
         }
 
         /// TODO: Add Doc Comment Here!
-        pub async fn build_client(
+        pub fn build_client(
             &mut self,
             mnemonic_phrase: String,
             birthday: u64,
@@ -241,7 +240,7 @@ pub mod setup {
             regtest_network: crate::config::RegtestNetwork,
         ) -> LightClient {
             let config = self.make_unique_data_dir_and_load_config(regtest_network);
-            LightClient::create_from_wallet_async(
+            LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
@@ -363,10 +362,12 @@ pub async fn unfunded_client(
     (
         scenario_builder.regtest_manager,
         scenario_builder.child_process_handler.unwrap(),
-        scenario_builder
-            .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await,
+        scenario_builder.client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        ),
     )
 }
 
@@ -399,7 +400,7 @@ pub async fn faucet(
         lightwalletd_feature,
     )
     .await;
-    let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
     faucet.sync_and_await().await.unwrap();
     (
         sb.regtest_manager,
@@ -438,18 +439,15 @@ pub async fn faucet_recipient(
         lightwalletd_feature,
     )
     .await;
-    let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
     faucet.sync_and_await().await.unwrap();
 
-    let recipient = sb
-        .client_builder
-        .build_client(
-            HOSPITAL_MUSEUM_SEED.to_string(),
-            BASE_HEIGHT as u64,
-            false,
-            regtest_network,
-        )
-        .await;
+    let recipient = sb.client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        BASE_HEIGHT as u64,
+        false,
+        regtest_network,
+    );
     (
         sb.regtest_manager,
         sb.child_process_handler.unwrap(),
@@ -656,12 +654,13 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network)
-        .await;
-    let recipient = scenario_builder
-        .client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-        .await;
+        .build_faucet(false, regtest_network);
+    let recipient = scenario_builder.client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        0,
+        false,
+        regtest_network,
+    );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
         &faucet,
@@ -694,12 +693,13 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network)
-        .await;
-    let mut recipient = scenario_builder
-        .client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-        .await;
+        .build_faucet(false, regtest_network);
+    let mut recipient = scenario_builder.client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        0,
+        false,
+        regtest_network,
+    );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
@@ -761,12 +761,13 @@ pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, Chi
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network)
-        .await;
-    let mut recipient = scenario_builder
-        .client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-        .await;
+        .build_faucet(false, regtest_network);
+    let mut recipient = scenario_builder.client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        0,
+        false,
+        regtest_network,
+    );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
@@ -812,12 +813,13 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network)
-        .await;
-    let mut recipient = scenario_builder
-        .client_builder
-        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-        .await;
+        .build_faucet(false, regtest_network);
+    let mut recipient = scenario_builder.client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        0,
+        false,
+        regtest_network,
+    );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
@@ -958,12 +960,14 @@ pub mod chainload {
         let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut sb =
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
-        let mut faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+        let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
         faucet.sync_and_await().await.unwrap();
-        let recipient = sb
-            .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let recipient = sb.client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
@@ -982,11 +986,13 @@ pub mod chainload {
         let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
         let mut sb =
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        let recipient = sb
-            .client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network);
+        let recipient = sb.client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),

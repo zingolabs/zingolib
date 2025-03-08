@@ -20,7 +20,7 @@ pub async fn new_client_from_save_buffer(
         .write(&mut wallet_bytes, &template_client.config.chain)
         .await?;
 
-    LightClient::create_from_wallet_async(
+    LightClient::create_from_wallet(
         LightWallet::read(wallet_bytes.as_slice(), template_client.config.chain)?,
         template_client.config.clone(),
         false,

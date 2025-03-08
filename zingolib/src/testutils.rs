@@ -66,7 +66,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
+pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
             fvks.iter().copied().cloned().collect(),
@@ -74,7 +74,7 @@ pub async fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
-    LightClient::create_from_wallet_async(
+    LightClient::create_from_wallet(
         LightWallet::new(config.chain, WalletBase::Ufvk(ufvk), 0.into()).unwrap(),
         config,
         false,

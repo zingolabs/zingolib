@@ -35,14 +35,12 @@ async fn reorg_changes_incoming_tx_height() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -192,14 +190,12 @@ async fn reorg_changes_incoming_tx_index() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -348,14 +344,12 @@ async fn reorg_expires_incoming_tx() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -527,14 +521,12 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -768,14 +760,12 @@ async fn reorg_expires_outgoing_tx_height() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     let expected_initial_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -946,14 +936,12 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(
-                ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-                202,
-                true,
-                RegtestNetwork::all_upgrades_active(),
-            )
-            .await;
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(

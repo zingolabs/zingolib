@@ -450,7 +450,7 @@ pub fn startup(
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
     let mut lightclient = match filled_template.from.clone() {
-        Some(phrase) => LightClient::create_from_wallet_async(
+        Some(phrase) => LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::from_string(phrase),
@@ -459,7 +459,7 @@ pub fn startup(
             .map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e.to_string()),
+                    format!("Failed to create wallet. {}", e),
                 )
             })?,
             config.clone(),
@@ -468,7 +468,7 @@ pub fn startup(
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e.to_string()),
+                format!("Failed to create lightclient. {}", e),
             )
         })?,
 
@@ -477,7 +477,7 @@ pub fn startup(
                 LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e.to_string()),
+                        format!("Failed to create lightclient. {}", e),
                     )
                 })?
             } else {
@@ -495,7 +495,7 @@ pub fn startup(
                 .map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e.to_string()),
+                        format!("Failed to create lightclient. {}", e),
                     )
                 })?
             }

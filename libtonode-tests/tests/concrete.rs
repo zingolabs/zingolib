@@ -472,7 +472,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client().await;
+        let mut recipient = environment.create_client();
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -699,7 +699,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client().await;
+        let mut recipient = environment.create_client();
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -1006,9 +1006,7 @@ mod fast {
         let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let mut recipient1 = client_builder
-            .build_client(seed_phrase, 0, false, regtest_network)
-            .await;
+        let mut recipient1 = client_builder.build_client(seed_phrase, 0, false, regtest_network);
         let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
         assert_eq!(
             &get_base_address_macro!(recipient1, "transparent"),
@@ -1082,9 +1080,12 @@ mod fast {
         // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
         let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
-        let client_b = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let client_b = client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
 
         assert_eq!(
             get_base_address_macro!(client_b, "transparent"),
@@ -1577,10 +1578,13 @@ mod slow {
 
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(false, regtest_network).await;
-        let mut original_recipient = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let mut faucet = client_builder.build_faucet(false, regtest_network);
+        let mut original_recipient = client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir),
@@ -1644,7 +1648,7 @@ mod slow {
             log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
             log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-            let mut watch_client = build_fvk_client(fvks, zingo_config.clone()).await;
+            let mut watch_client = build_fvk_client(fvks, zingo_config.clone());
             // assert empty wallet before rescan
             let balance = watch_client.do_balance().await;
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -3244,10 +3248,13 @@ mod slow {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(false, regtest_network).await;
-        let mut pool_migration_client = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let mut faucet = client_builder.build_faucet(false, regtest_network);
+        let mut pool_migration_client = client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
@@ -3290,10 +3297,13 @@ mod slow {
         // sapling value into the orchard value pool.
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let mut sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
-        let mut client = client_builder
-            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-            .await;
+        let mut sapling_faucet = client_builder.build_faucet(false, regtest_network);
+        let mut client = client_builder.build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network,
+        );
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");
         let pmc_unified = get_base_address_macro!(client, "unified");

@@ -40,7 +40,6 @@ impl ConductChain for LibtonodeEnvironment {
         self.scenario_builder
             .client_builder
             .build_faucet(false, self.regtest_network)
-            .await
     }
 
     fn zingo_config(&mut self) -> crate::config::ZingoConfig {

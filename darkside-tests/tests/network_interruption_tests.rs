@@ -38,8 +38,7 @@ async fn interrupt_initial_tree_fetch() {
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
     let mut cond_log =
         HashMap::<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync + 'static>>::new();
     let (sender, receiver) = std::sync::mpsc::channel();

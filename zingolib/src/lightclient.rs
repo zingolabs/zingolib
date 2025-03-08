@@ -164,7 +164,7 @@ impl LightClient {
         chain_height: BlockHeight,
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
-        Self::create_from_wallet_async(
+        Self::create_from_wallet(
             LightWallet::new(config.chain, WalletBase::FreshEntropy, chain_height)?,
             config,
             overwrite,
@@ -174,7 +174,7 @@ impl LightClient {
     /// Creates a LightClient from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     // TODO: rename
-    pub fn create_from_wallet_async(
+    pub fn create_from_wallet(
         wallet: LightWallet,
         config: ZingoConfig,
         overwrite: bool,
@@ -216,7 +216,7 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet_async(LightWallet::read(buffer, config.chain)?, config, false)
+        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, false)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -385,7 +385,7 @@ mod tests {
         let config = ZingoConfig::build(ChainType::Regtest(regtest_network))
             .set_wallet_dir(data_dir)
             .create();
-        let lc = LightClient::create_from_wallet_async(
+        let lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
@@ -398,7 +398,7 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            LightClient::create_from_wallet_async(
+            LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
                     WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),

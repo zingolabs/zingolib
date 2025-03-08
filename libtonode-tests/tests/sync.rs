@@ -25,7 +25,7 @@ async fn sync_mainnet_test() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet_async(
+    let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
             WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
@@ -62,7 +62,7 @@ async fn sync_status() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet_async(
+    let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
             WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),

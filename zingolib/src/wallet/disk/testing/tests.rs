@@ -244,7 +244,7 @@ async fn reload_wallet_from_buffer() {
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
-    let client = LightClient::create_from_wallet_async(
+    let client = LightClient::create_from_wallet(
         LightWallet::read(&mid_buffer[..], config.chain).unwrap(),
         config,
         false,

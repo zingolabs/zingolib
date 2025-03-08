@@ -288,7 +288,7 @@ impl NetworkSeedVersion {
 
         let wallet = self.load_example_wallet(config.chain);
 
-        LightClient::create_from_wallet_async(wallet, config, false).unwrap()
+        LightClient::create_from_wallet(wallet, config, false).unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     pub fn example_wallet_base(&self) -> String {

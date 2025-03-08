@@ -71,7 +71,7 @@ pub(crate) mod conduct_chain {
             let config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.regtest_network);
-            LightClient::create_from_wallet_async(
+            LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
                     WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),

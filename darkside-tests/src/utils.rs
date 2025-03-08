@@ -433,16 +433,12 @@ pub mod scenarios {
             if self.faucet.is_some() {
                 panic!("Error: Faucet already exists!");
             }
-            self.faucet = Some(
-                self.client_builder
-                    .build_client(
-                        testvectors::seeds::DARKSIDE_SEED.to_string(),
-                        0,
-                        true,
-                        self.regtest_network,
-                    )
-                    .await,
-            );
+            self.faucet = Some(self.client_builder.build_client(
+                testvectors::seeds::DARKSIDE_SEED.to_string(),
+                0,
+                true,
+                self.regtest_network,
+            ));
 
             let faucet_funding_transaction = match funded_pool {
                 PoolType::Shielded(ShieldedProtocol::Orchard) => {
@@ -464,10 +460,9 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient = self
-                .client_builder
-                .build_client(seed, birthday, true, self.regtest_network)
-                .await;
+            let lightclient =
+                self.client_builder
+                    .build_client(seed, birthday, true, self.regtest_network);
             self.lightclients.push(lightclient);
             self
         }

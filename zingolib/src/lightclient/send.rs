@@ -192,7 +192,7 @@ pub mod send_with_proposal {
             use testvectors::seeds::ABANDON_ART_SEED;
 
             let config = ZingoConfigBuilder::default().create();
-            let lc = LightClient::create_from_wallet_async(
+            let lc = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
                     WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
