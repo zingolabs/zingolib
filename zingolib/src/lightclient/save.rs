@@ -3,10 +3,10 @@
 use futures::FutureExt as _;
 use log::error;
 
-use std::{borrow::BorrowMut as _, fs::remove_file, path::PathBuf, sync::atomic};
+use std::{borrow::BorrowMut as _, fs::remove_file, sync::atomic};
 
 use super::LightClient;
-use crate::{data::PollReport, error::ZingoLibError, utils};
+use crate::{data::PollReport, utils};
 
 impl LightClient {
     pub async fn save_task(&mut self) {
@@ -105,29 +105,6 @@ impl LightClient {
             error!("{}", err);
             log::debug!("File does not exist, nothing to delete.");
             Err(err)
-        }
-    }
-
-    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
-    /// ZingoConfig specifies both a wallet file and a directory containing it.
-    /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
-    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
-        if let Some(mut loc) = self.config.wallet_dir.clone() {
-            loc.push(self.config.wallet_name.clone());
-            Ok(loc)
-        } else {
-            Err(ZingoLibError::NoWalletLocation)
-        }
-    }
-
-    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
-    /// ZingoConfig specifies both a wallet file and a directory containing it.
-    /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
-    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
-        if let Some(loc) = self.config.wallet_dir.clone() {
-            Ok(loc)
-        } else {
-            Err(ZingoLibError::NoWalletLocation)
         }
     }
 }

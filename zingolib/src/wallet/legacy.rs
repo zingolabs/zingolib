@@ -24,37 +24,7 @@ use zcash_primitives::{
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{
-    keys::legacy::WalletCapability,
-    traits::{ReadableWriteable, ToBytes},
-};
-
-/// This type is motivated by the IPC architecture where (currently) channels traffic in
-/// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
-/// type to handle nullifiers from different domains.
-/// <https://github.com/zingolabs/zingolib/issues/64>
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PoolNullifier {
-    /// TODO: Add Doc Comment Here!
-    Sapling(sapling_crypto::Nullifier),
-    /// TODO: Add Doc Comment Here!
-    Orchard(orchard::note::Nullifier),
-}
-
-impl std::hash::Hash for PoolNullifier {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            PoolNullifier::Sapling(n) => {
-                state.write_u8(0);
-                n.0.hash(state);
-            }
-            PoolNullifier::Orchard(n) => {
-                state.write_u8(1);
-                n.to_bytes().hash(state);
-            }
-        }
-    }
-}
+use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, PartialEq)]

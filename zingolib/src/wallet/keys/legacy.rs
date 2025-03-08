@@ -607,3 +607,46 @@ pub(crate) fn generate_transparent_address_from_legacy_key(
         child_key.public_key(),
     ))
 }
+
+impl ReadableWriteable for sapling_crypto::zip32::ExtendedSpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
+        Self::read(reader)
+    }
+
+    fn write<W: Write>(&self, writer: W, _input: ()) -> io::Result<()> {
+        self.write(writer)
+    }
+}
+
+impl ReadableWriteable for sapling_crypto::zip32::DiversifiableFullViewingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let mut fvk_bytes = [0u8; 128];
+        reader.read_exact(&mut fvk_bytes)?;
+        sapling_crypto::zip32::DiversifiableFullViewingKey::from_bytes(&fvk_bytes).ok_or(
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Couldn't read a Sapling Diversifiable Full Viewing Key",
+            ),
+        )
+    }
+
+    fn write<W: Write>(&self, mut writer: W, _input: ()) -> io::Result<()> {
+        writer.write_all(&self.to_bytes())
+    }
+}
+
+impl ReadableWriteable for orchard::keys::FullViewingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(reader: R, _input: ()) -> io::Result<Self> {
+        Self::read(reader)
+    }
+
+    fn write<W: Write>(&self, writer: W, _input: ()) -> io::Result<()> {
+        self.write(writer)
+    }
+}

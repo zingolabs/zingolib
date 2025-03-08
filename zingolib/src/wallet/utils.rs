@@ -50,6 +50,7 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
 }
 
 /// TODO: Add Doc Comment Here!
+// TODO: remove?
 pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
     match price.zec_price {
         None => None,

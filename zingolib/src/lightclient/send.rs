@@ -1,6 +1,6 @@
 //! TODO: Add Mod Description Here!
 
-use crate::wallet::SendProgress;
+use crate::wallet::send::SendProgress;
 
 use super::LightClient;
 

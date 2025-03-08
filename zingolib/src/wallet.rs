@@ -5,6 +5,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::WalletError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
+use send::SendProgress;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
@@ -51,9 +52,8 @@ pub mod sync;
 pub mod transaction;
 mod zcb_traits;
 
-pub(crate) use send::SendProgress;
-
 /// TODO: Add Doc Comment Here!
+// TODO: move to utils
 pub fn now() -> u32 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

@@ -14,26 +14,30 @@ use crate::{
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
+// TODO: move to LightClientError
 pub enum ValueTransferRecordingError {
     #[error("Fee was not calculable because of error:  {0}")]
     FeeCalculationError(String), // TODO: revisit passed type
 }
+
 fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }
+
 pub enum UAReceivers {
     Orchard,
     Shielded,
     All,
 }
+
 impl LightClient {
     /// Wrapper for [crate::wallet::LightWallet::do_addresses].
     pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
         self.wallet.lock().await.do_addresses(subset).await
     }
 
-    /// TODO: Redefine the wallet balance functions as non-generics that take a
-    /// PoolType variant as an argument, and iterate over a `Vec<Output>`
+    /// Returns wallet balances.
+    // TODO: move to wallet
     pub async fn do_balance(&self) -> PoolBalances {
         let wallet = self.wallet.lock().await;
 
@@ -64,7 +68,7 @@ impl LightClient {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Returns server information.
     pub async fn do_info(&self) -> String {
         match crate::grpc_connector::get_info(self.get_server_uri()).await {
             Ok(i) => {
@@ -86,6 +90,7 @@ impl LightClient {
     }
 
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.
+    // TODO: move to wallet
     pub async fn messages_containing(&self, filter: Option<&str>) -> ValueTransfers {
         let mut value_transfers = self.sorted_value_transfers(true).await;
         value_transfers.reverse();
@@ -152,6 +157,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: move to wallet
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
         let wallet = self.wallet.lock().await;
         match wallet.mnemonic() {
@@ -165,6 +171,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: remove, consumers should handle their own runtimes
     pub fn do_seed_phrase_sync(&self) -> Result<AccountBackupInfo, &str> {
         Runtime::new()
             .unwrap()
@@ -172,6 +179,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: move to wallet
     pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
         let value_transfers = self.sorted_value_transfers(true).await;
         let mut memobytes_by_address = HashMap::new();
@@ -195,6 +203,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: move to wallet
     pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_number_sends = HashMap::new();
@@ -206,6 +215,7 @@ impl LightClient {
     }
 
     /// TODO: Add Doc Comment Here!
+    // TODO: move to wallet
     pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_total = HashMap::new();
@@ -216,16 +226,12 @@ impl LightClient {
         finsight::TotalValueToAddress(by_address_total)
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
-        self.config.lightwalletd_uri.read().unwrap()
-    }
-
-    /// TODO: Add Doc Comment Here!
+    /// Returns URI of the server the lightclient is connected to.
     pub fn get_server_uri(&self) -> http::Uri {
         self.config.get_lightwalletd_uri()
     }
 
+    // TODO: move to wallet
     async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
         let value_transfers = self.wallet.lock().await.sorted_value_transfers(false).await;
         let mut amount_by_address = HashMap::new();
