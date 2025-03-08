@@ -25,9 +25,10 @@ pub struct TransparentOutput {
     pub script: Vec<u8>,
     /// TODO: Add Doc Comment Here!
     pub value: u64,
-
     /// whether, where, and when it was spent
     spend: Option<(TxId, ConfirmationStatus)>,
+    /// Output is from a coinbase transaction
+    pub is_coinbase: bool,
 }
 
 impl OutputInterface for TransparentOutput {
@@ -85,6 +86,7 @@ impl TransparentOutput {
         script: Vec<u8>,
         value: u64,
         spend: Option<(TxId, ConfirmationStatus)>,
+        is_coinbase: bool,
     ) -> Self {
         Self {
             address,
@@ -93,6 +95,7 @@ impl TransparentOutput {
             script,
             value,
             spend,
+            is_coinbase,
         }
     }
 
@@ -103,7 +106,7 @@ impl TransparentOutput {
 
     /// write + read
     pub fn serialized_version() -> u64 {
-        4
+        5
     }
 
     /// TODO: Add Doc Comment Here!
@@ -136,6 +139,8 @@ impl TransparentOutput {
         zcash_encoding::Optional::write(&mut writer, spent_at_height, |w, s| {
             w.write_i32::<byteorder::LittleEndian>(s)
         })?;
+
+        writer.write_u8(self.is_coinbase as u8)?;
 
         Ok(())
     }
@@ -202,6 +207,12 @@ impl TransparentOutput {
         let spend =
             spent_tuple.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
 
+        let is_coinbase = if version >= 5 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(TransparentOutput {
             address,
             txid: transaction_id,
@@ -209,6 +220,7 @@ impl TransparentOutput {
             script,
             value,
             spend,
+            is_coinbase,
         })
     }
 }
@@ -261,6 +273,7 @@ pub mod mocks {
                 self.script.clone().unwrap(),
                 self.value.unwrap(),
                 self.spending_tx_status.unwrap(),
+                false,
             )
         }
     }

@@ -1225,6 +1225,7 @@ mod fast {
             .unwrap();
         faucet.quick_shield().await.unwrap();
     }
+    #[ignore = "requires 100 blocks to be generated to shield coinbase. wait for zebrad integration."]
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -1257,6 +1258,7 @@ mod fast {
             NonNegativeAmount::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         )
     }
+    #[ignore = "requires 100 blocks to be generated to shield coinbase. wait for zebrad integration."]
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding_with_div_addr() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
