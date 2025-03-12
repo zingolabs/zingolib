@@ -17,7 +17,7 @@ use zcash_client_backend::{
         compact_formats::CompactBlock,
         service::{
             compact_tx_streamer_client::CompactTxStreamerClient, BlockId, GetAddressUtxosReply,
-            RawTransaction, SubtreeRoot, TreeState,
+            RawTransaction, TreeState,
         },
     },
 };
@@ -27,6 +27,9 @@ use zcash_primitives::{
 };
 
 use crate::sync::error::MempoolError;
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_client_backend::proto::service::SubtreeRoot;
 
 pub(crate) mod fetch;
 
@@ -60,6 +63,7 @@ pub(crate) enum FetchRequest {
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
+    #[cfg(not(feature = "darkside_test"))]
     SubtreeRoots(
         oneshot::Sender<tonic::Streaming<SubtreeRoot>>,
         u32,
@@ -118,6 +122,7 @@ pub(crate) async fn get_compact_block_range(
 /// from the server.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) async fn get_subtree_roots(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     start_index: u32,

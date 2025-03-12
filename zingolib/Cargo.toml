@@ -8,7 +8,7 @@ edition = "2021"
 
 [features]
 ci = []
-darkside_tests = []
+darkside_tests = [ "pepper-sync/darkside_test" ]
 test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 zaino-test = ['test-elevation']
 

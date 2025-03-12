@@ -769,7 +769,6 @@ dependencies = [
  "hyper-util",
  "json",
  "orchard",
- "pepper-sync",
  "portpicker",
  "proptest",
  "prost",

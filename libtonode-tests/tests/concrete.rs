@@ -475,7 +475,7 @@ mod fast {
         let mut recipient = environment.create_client();
 
         environment.bump_chain().await;
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
@@ -498,7 +498,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         let no_messages = &recipient.messages_containing(None).await;
 
@@ -523,7 +523,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         let single_message = &recipient.messages_containing(None).await;
 
@@ -702,7 +702,7 @@ mod fast {
         let mut recipient = environment.create_client();
 
         environment.bump_chain().await;
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
 
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
@@ -735,7 +735,7 @@ mod fast {
         .unwrap();
 
         environment.bump_chain().await;
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         let value_transfers = &recipient.sorted_value_transfers(true).await;
         let value_transfers1 = &recipient.sorted_value_transfers(true).await;
@@ -830,7 +830,7 @@ mod fast {
         .await
         .unwrap();
 
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         let transactions = &recipient.transaction_summaries().await.0;
         transactions.iter().for_each(|tx| {
@@ -1626,7 +1626,7 @@ mod slow {
         assert_eq!(sent_o_value, 3000u64);
 
         // check that do_rescan works
-        original_recipient.rescan_and_await().await.unwrap();
+        original_recipient.rescan_and_await(true).await.unwrap();
         check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
         // Extract viewing keys
@@ -1652,7 +1652,7 @@ mod slow {
             // assert empty wallet before rescan
             let balance = watch_client.do_balance().await;
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
-            watch_client.rescan_and_await().await.unwrap();
+            watch_client.rescan_and_await(true).await.unwrap();
             let balance = watch_client.do_balance().await;
             {
                 let watch_wallet = watch_client.wallet.lock().await;
@@ -1676,7 +1676,7 @@ mod slow {
                 );
             }
 
-            watch_client.rescan_and_await().await.unwrap();
+            watch_client.rescan_and_await(true).await.unwrap();
             assert!(matches!(
                 from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
@@ -1708,7 +1708,7 @@ mod slow {
         )
         .await
         .unwrap();
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         // 3. Test the list
         let transaction = recipient
@@ -1785,7 +1785,7 @@ mod slow {
             "{}",
             JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
         );
-        recipient.rescan_and_await().await.unwrap();
+        recipient.rescan_and_await(true).await.unwrap();
         println!(
             "{}",
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
@@ -1823,7 +1823,7 @@ mod slow {
                     note.recipient_unified_address == Some(recipient_unified_address.clone())
                 })
         }));
-        faucet.rescan_and_await().await.unwrap();
+        faucet.rescan_and_await(true).await.unwrap();
         let rescanned_transactions = faucet.transaction_summaries().await.0;
         assert!(rescanned_transactions.iter().any(|transaction| {
             transaction
@@ -2236,7 +2236,7 @@ mod slow {
         let faucet_to_recipient_amount = 20_000u64;
         let recipient_to_faucet_amount = 5_000u64;
         // check start state
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
         let wallet_fully_scanned_height = faucet
             .wallet
             .lock()
@@ -2270,7 +2270,7 @@ mod slow {
         )
         .await
         .unwrap();
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
         let faucet_orch = three_blocks_reward + orch_change + u64::from(MINIMUM_FEE);
 
         println!(
@@ -2299,7 +2299,7 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         let faucet_final_orch = faucet_orch
             + recipient_to_faucet_amount
@@ -2479,7 +2479,7 @@ mod slow {
         )
         .await
         .unwrap();
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
         from_inputs::quick_send(
             &faucet,
             vec![
@@ -2980,7 +2980,7 @@ mod slow {
             }
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.rescan_and_await().await.unwrap();
+            faucet.rescan_and_await(true).await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
@@ -3021,7 +3021,7 @@ mod slow {
             .unwrap();
 
             let pre_rescan_summaries = faucet.transaction_summaries().await;
-            faucet.rescan_and_await().await.unwrap();
+            faucet.rescan_and_await(true).await.unwrap();
             let post_rescan_summaries = faucet.transaction_summaries().await;
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
@@ -3045,7 +3045,7 @@ mod slow {
             .unwrap();
             let pre_rescan_transactions = recipient.transaction_summaries().await;
             let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
-            recipient.rescan_and_await().await.unwrap();
+            recipient.rescan_and_await(true).await.unwrap();
             let post_rescan_transactions = recipient.transaction_summaries().await;
             let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
@@ -3723,7 +3723,7 @@ mod slow {
         )
         .await
         .unwrap();
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
         {
             let recipient_wallet = recipient.wallet.lock().await;
             let sapling_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
@@ -3812,8 +3812,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
 
         for _ in 0..2 {
             from_inputs::quick_send(&faucet, vec![(recipient_addr_ua.as_str(), 40_000, None)])
@@ -3825,8 +3825,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
 
         from_inputs::quick_send(&recipient, vec![(faucet_addr_ua.as_str(), 50_000, None)])
             .await
@@ -3836,8 +3836,8 @@ mod basic_transactions {
             .await
             .unwrap();
 
-        recipient.sync_and_await().await.unwrap();
-        faucet.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
     }
 
     // FIXME: zingo2 rewrite action / inputs / outputs counting using new interface
@@ -4292,7 +4292,7 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         recipient
             .propose_send_all(
@@ -4309,7 +4309,7 @@ mod send_all {
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
-        faucet.sync_and_await().await.unwrap();
+        faucet.sync_and_await(true).await.unwrap();
 
         assert_eq!(
             recipient

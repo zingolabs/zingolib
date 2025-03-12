@@ -7,6 +7,8 @@ edition = "2021"
 default = [ "wallet_essentials" ]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
 wallet_essentials = [ "dep:byteorder", "dep:zcash_encoding" ]
+# removes failing calls to `GetSubTreeRoots` in darkside testing
+darkside_test = []
 
 [dependencies]
 # Zingo

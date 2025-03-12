@@ -8,8 +8,8 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
         compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction, SubtreeRoot,
-        TransparentAddressBlockFilter, TreeState, TxFilter,
+        GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction, TransparentAddressBlockFilter,
+        TreeState, TxFilter,
     },
 };
 use zcash_primitives::{
@@ -18,6 +18,9 @@ use zcash_primitives::{
 };
 
 use crate::client::FetchRequest;
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.
@@ -117,6 +120,7 @@ async fn fetch_from_server(
             let block_stream = get_block_range(client, block_range).await.unwrap();
             sender.send(block_stream).unwrap();
         }
+        #[cfg(not(feature = "darkside_test"))]
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
             tracing::debug!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
@@ -205,6 +209,7 @@ async fn get_block_range(
     Ok(client.get_block_range(request).await.unwrap().into_inner())
 }
 
+#[cfg(not(feature = "darkside_test"))]
 async fn get_subtree_roots(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     start_index: u32,

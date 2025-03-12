@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
-    proto::service::SubtreeRoot,
     ShieldedProtocol,
 };
 use zcash_primitives::{
@@ -27,6 +26,9 @@ use crate::{
 };
 
 use super::VERIFY_BLOCK_RANGE_SIZE;
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_client_backend::proto::service::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -828,6 +830,7 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
+#[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedProtocol,

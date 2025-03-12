@@ -208,7 +208,7 @@ async fn loaded_wallet_assert(
         )
         .await
         .unwrap();
-        lightclient.sync_and_await().await.unwrap();
+        lightclient.sync_and_await(true).await.unwrap();
         crate::testutils::lightclient::from_inputs::quick_send(
             &lightclient,
             vec![(

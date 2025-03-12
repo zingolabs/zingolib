@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use error::MempoolError;
 use tokio::sync::{mpsc, Mutex};
 
-use shardtree::store::ShardStore;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
@@ -33,7 +32,9 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncResult, SyncState, SyncStatus};
-use crate::witness;
+
+#[cfg(not(feature = "darkside_test"))]
+use {crate::witness, shardtree::store::ShardStore};
 
 pub mod error;
 pub(crate) mod spend;
@@ -50,12 +51,19 @@ pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 /// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
 /// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
 /// scanning when the wallet guard is next available.
+///
+/// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
+/// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
+/// above the in-use address with the highest address index for each scope and account is determined by
+/// [`crate::sync::transparent::ADDRESS_GAP_LIMIT`]. If `transparent_address_discovery` is disabled, only transactions
+/// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
 // TODO: setting sync_mode to `NotRunning` should kill the sync task immediately.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
     sync_mode: Arc<AtomicU8>,
+    transparent_address_discovery: bool,
 ) -> Result<SyncResult, SyncError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -121,16 +129,19 @@ where
 
     let ufvks = wallet_guard.get_unified_full_viewing_keys().unwrap();
 
-    transparent::update_addresses_and_locators(
-        consensus_parameters,
-        &mut *wallet_guard,
-        fetch_request_sender.clone(),
-        &ufvks,
-        wallet_height,
-        chain_height,
-    )
-    .await;
+    if transparent_address_discovery {
+        transparent::update_addresses_and_locators(
+            consensus_parameters,
+            &mut *wallet_guard,
+            fetch_request_sender.clone(),
+            &ufvks,
+            wallet_height,
+            chain_height,
+        )
+        .await;
+    }
 
+    #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -690,6 +701,7 @@ where
     Ok(())
 }
 
+#[cfg(not(feature = "darkside_test"))]
 async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,

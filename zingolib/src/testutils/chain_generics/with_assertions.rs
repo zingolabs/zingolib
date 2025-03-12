@@ -51,7 +51,7 @@ pub async fn propose_send_bump_sync_all_recipients<CC>(
 where
     CC: ConductChain,
 {
-    sender.sync_and_await().await.unwrap();
+    sender.sync_and_await(true).await.unwrap();
     let proposal = from_inputs::propose(sender, payments).await.unwrap();
     let txids = sender
         .complete_and_broadcast_stored_proposal()
@@ -147,7 +147,7 @@ where
 
     let option_recipient_mempool_outputs = if test_mempool {
         // mempool scan shows the same
-        sender.sync_and_await().await.unwrap();
+        sender.sync_and_await(true).await.unwrap();
 
         // let the mempool monitor get a chance
         // to listen
@@ -186,7 +186,7 @@ where
 
         let mut recipients_mempool_outputs: Vec<Vec<u64>> = vec![];
         for recipient in recipients.iter_mut() {
-            recipient.sync_and_await().await.unwrap();
+            recipient.sync_and_await(true).await.unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
@@ -223,7 +223,7 @@ where
 
     environment.bump_chain().await;
     // chain scan shows the same
-    sender.sync_and_await().await.unwrap();
+    sender.sync_and_await(true).await.unwrap();
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
@@ -258,7 +258,7 @@ where
 
     let mut recipients_confirmed_outputs = vec![];
     for recipient in recipients.iter_mut() {
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (

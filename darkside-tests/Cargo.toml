@@ -9,7 +9,6 @@ chain_generic_tests = []
 
 [dependencies]
 zingolib = { path = "../zingolib", features = ["darkside_tests"] }
-pepper-sync = { path = "../pepper-sync" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-status = { path = "../zingo-status" }
 testvectors = { path = "../testvectors" }
