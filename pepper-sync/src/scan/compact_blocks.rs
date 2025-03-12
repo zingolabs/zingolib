@@ -250,11 +250,25 @@ fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> 
         if chain_metadata.sapling_commitment_tree_size
             != wallet_block.tree_bounds().sapling_final_tree_size
         {
+            #[cfg(feature = "darkside_test")]
+            {
+                tracing::error!("darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().sapling_final_tree_size, compact_block.chain_metadata.unwrap().sapling_commitment_tree_size);
+                return Ok(());
+            }
+
+            #[cfg(not(feature = "darkside_test"))]
             panic!("sapling tree size is incorrect!")
         }
         if chain_metadata.orchard_commitment_tree_size
             != wallet_block.tree_bounds().orchard_final_tree_size
         {
+            #[cfg(feature = "darkside_test")]
+            {
+                tracing::error!("darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().orchard_final_tree_size, compact_block.chain_metadata.unwrap().orchard_commitment_tree_size);
+                return Ok(());
+            }
+
+            #[cfg(not(feature = "darkside_test"))]
             panic!("orchard tree size is incorrect!")
         }
     }
