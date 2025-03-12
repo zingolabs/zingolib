@@ -91,6 +91,14 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
                 .unwrap();
 
         if transaction.txid() != txid {
+            #[cfg(feature = "darkside_test")]
+            tracing::error!(
+                "server returned incorrect txid.\ntxid: {}\nserver reported: {}",
+                txid,
+                transaction.txid()
+            );
+
+            #[cfg(not(feature = "darkside_test"))]
             panic!("transaction txid does not match txid requested!")
         }
 
@@ -111,6 +119,7 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
         let wallet_transaction = scan_transaction(
             consensus_parameters,
             ufvks,
+            txid,
             transaction,
             confirmation_status,
             Some(&decrypted_note_data),
@@ -134,10 +143,13 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
 ///
 /// All inputs in `transaction` are inserted into the `nullifier_map` and `outpoint_map` to be used for spend detection.
 /// For pending transactions, new maps are used instead of the wallet's maps as to keep confirmed spends isolated.
+///
+/// `txid` is used instead of transaction.txid() due to darkside testing bug.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scan_transaction(
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    txid: TxId,
     transaction: Transaction,
     status: ConfirmationStatus,
     decrypted_note_data: Option<&DecryptedNoteData>,
@@ -193,12 +205,12 @@ pub(crate) fn scan_transaction(
         scan_incoming_coins(
             consensus_parameters,
             &mut transparent_coins,
-            transaction.txid(),
+            txid,
             transparent_addresses,
             transparent_outputs,
         );
 
-        collect_outpoints(outpoint_map, transaction.txid(), block_height, bundle);
+        collect_outpoints(outpoint_map, txid, block_height, bundle);
     }
 
     if let Some(bundle) = transaction.sapling_bundle() {
@@ -215,7 +227,7 @@ pub(crate) fn scan_transaction(
             sapling_crypto::Nullifier,
         >(
             &mut sapling_notes,
-            transaction.txid(),
+            txid,
             sapling_ivks,
             &sapling_outputs,
             decrypted_note_data.map(|d| &d.sapling_nullifiers_and_positions),
@@ -224,7 +236,7 @@ pub(crate) fn scan_transaction(
 
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
-            transaction.txid(),
+            txid,
             sapling_ovks,
             &sapling_outputs,
         )
@@ -247,7 +259,7 @@ pub(crate) fn scan_transaction(
             orchard::note::Nullifier,
         >(
             &mut orchard_notes,
-            transaction.txid(),
+            txid,
             orchard_ivks,
             &orchard_actions,
             decrypted_note_data.map(|d| &d.orchard_nullifiers_and_positions),
@@ -256,7 +268,7 @@ pub(crate) fn scan_transaction(
 
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
-            transaction.txid(),
+            txid,
             orchard_ovks,
             &orchard_actions,
         )
@@ -268,7 +280,7 @@ pub(crate) fn scan_transaction(
     // collect nullifiers for pending transactions
     // nullifiers for confirmed transactions are collected during compact block scanning
     if !status.is_confirmed() {
-        collect_nullifiers(nullifier_map, block_height, &transaction);
+        collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 
     for encoded_memo in encoded_memos {
@@ -309,7 +321,7 @@ pub(crate) fn scan_transaction(
     }
 
     Ok(WalletTransaction {
-        txid: transaction.txid(),
+        txid,
         transaction,
         status,
         datetime,
@@ -489,10 +501,13 @@ fn add_recipient_unified_address<P, Nz>(
     }
 }
 
-/// Converts and adds the nullifiers from a transaction to the nullifier map
+/// Converts and adds the nullifiers from a transaction to the nullifier map.
+///
+/// `txid` is used instead of transaction.txid() due to darkside testing bug.
 fn collect_nullifiers(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
+    txid: TxId,
     transaction: &Transaction,
 ) {
     if let Some(bundle) = transaction.sapling_bundle() {
@@ -503,7 +518,7 @@ fn collect_nullifiers(
             .for_each(|nullifier| {
                 nullifier_map
                     .sapling
-                    .insert(*nullifier, (block_height, transaction.txid()));
+                    .insert(*nullifier, (block_height, txid));
             });
     }
     if let Some(bundle) = transaction.orchard_bundle() {
@@ -514,7 +529,7 @@ fn collect_nullifiers(
             .for_each(|nullifier| {
                 nullifier_map
                     .orchard
-                    .insert(*nullifier, (block_height, transaction.txid()));
+                    .insert(*nullifier, (block_height, txid));
             });
     }
 }

@@ -158,6 +158,8 @@ where
     .await
     .unwrap();
 
+    dbg!(wallet_guard.get_sync_state().unwrap().scan_ranges());
+
     state::set_initial_state(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -363,6 +365,7 @@ pub fn scan_pending_transaction<W>(
     let pending_transaction = scan_transaction(
         consensus_parameters,
         ufvks,
+        transaction.txid(),
         transaction,
         status,
         None,

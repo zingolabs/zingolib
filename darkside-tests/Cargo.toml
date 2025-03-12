@@ -35,5 +35,8 @@ serde_json = { workspace = true }
 sapling-crypto.workspace = true
 proptest = { workspace = true }
 
+# Logging
+tracing-subscriber.workspace = true
+
 [build-dependencies]
 tonic-build = { workspace = true }

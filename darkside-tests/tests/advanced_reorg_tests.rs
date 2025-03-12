@@ -924,6 +924,8 @@ async fn reorg_expires_outgoing_tx_height() {
 /// 12. applyStaged(sentTx + 10)
 /// 13. verify that there's no more pending transaction
 async fn reorg_changes_outgoing_tx_index() {
+    tracing_subscriber::fmt().init();
+
     let darkside_handler = DarksideHandler::new(None);
 
     let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
@@ -1054,6 +1056,7 @@ async fn reorg_changes_outgoing_tx_index() {
             .to_vec(),
         )
         .await;
+    _ = connector.add_tree_state
 
     _ = connector.apply_staged(312).await;
 

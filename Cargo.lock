@@ -780,6 +780,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower 0.5.2",
+ "tracing-subscriber",
  "zcash_client_backend",
  "zcash_primitives",
  "zingo-netutils",
