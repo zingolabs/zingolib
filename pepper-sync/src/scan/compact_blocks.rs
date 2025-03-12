@@ -37,7 +37,7 @@ mod runners;
 
 const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
-pub(crate) fn scan_compact_blocks<P>(
+pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -417,14 +417,11 @@ fn collect_nullifiers(
     Ok(())
 }
 
-pub(super) async fn calculate_block_tree_bounds<P>(
-    consensus_parameters: &P,
+pub(crate) async fn calculate_block_tree_bounds(
+    consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
-) -> TreeBounds
-where
-    P: consensus::Parameters + Sync + Send + 'static,
-{
+) -> TreeBounds {
     let (sapling_final_tree_size, orchard_final_tree_size) =
         if let Some(chain_metadata) = compact_block.chain_metadata {
             (

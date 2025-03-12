@@ -1179,7 +1179,7 @@ mod fast {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
-        increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 100)
             .await
             .unwrap();
         let proposal = faucet.propose_shield().await.unwrap();
@@ -1211,7 +1211,7 @@ mod fast {
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let (regtest_manager, _cph, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
-        increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 100)
             .await
             .unwrap();
         faucet.do_new_address("zto").await.unwrap();
