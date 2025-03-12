@@ -377,7 +377,6 @@ impl LightWallet {
     ///
     /// Intended to be called from a save task which calls `save` in a loop, awaiting the wallet lock and checking
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
-    // FIXME: zingo-cli needs a save task
     pub async fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
             let network = self.network;

@@ -455,7 +455,7 @@ where
 {
     match scan_results {
         Ok(results) => {
-            update_wallet_data(consensus_parameters, wallet, results).unwrap();
+            update_wallet_data(consensus_parameters, wallet, &scan_range, results).unwrap();
             spend::update_transparent_spends(wallet).unwrap();
             spend::update_shielded_spends(
                 consensus_parameters,
@@ -578,6 +578,7 @@ where
 fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    scan_range: &ScanRange,
     scan_results: ScanResults,
 ) -> Result<(), ()>
 where
@@ -593,6 +594,9 @@ where
     } = scan_results;
 
     let sync_state = wallet.get_sync_state_mut().unwrap();
+    let wallet_height = sync_state
+        .wallet_height()
+        .expect("scan ranges should not be empty in this scope");
     for transaction in wallet_transactions.values() {
         state::update_found_note_shard_priority(
             consensus_parameters,
@@ -615,7 +619,12 @@ where
     wallet.append_nullifiers(nullifiers).unwrap();
     wallet.append_outpoints(&mut outpoints).unwrap();
     wallet
-        .update_shard_trees(sapling_located_trees, orchard_located_trees)
+        .update_shard_trees(
+            scan_range,
+            wallet_height,
+            sapling_located_trees,
+            orchard_located_trees,
+        )
         .unwrap();
 
     Ok(())
