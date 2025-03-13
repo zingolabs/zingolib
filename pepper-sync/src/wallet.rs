@@ -148,10 +148,8 @@ impl SyncState {
             .iter()
             .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
         {
-            dbg!(scan_range);
             Some(scan_range.block_range().start - 1)
         } else {
-            dbg!("ALL SCANNED???");
             self.scan_ranges
                 .last()
                 .map(|range| range.block_range().end - 1)

@@ -353,7 +353,6 @@ pub trait SyncShardTrees: SyncWallet {
 
     /// Removes all shard tree data above the given `block_height`.
     fn truncate_shard_trees(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
-        // TODO: investigate resetting the shard completely when truncate height is 0
         if !self
             .get_shard_trees_mut()?
             .sapling

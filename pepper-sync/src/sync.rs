@@ -492,6 +492,9 @@ where
             if height == scan_range.block_range().start {
                 // error handling in case of re-org where first block prev_hash in scan range does not match previous wallet block hash
                 let sync_state = wallet.get_sync_state_mut().unwrap();
+                let wallet_height = sync_state
+                    .wallet_height()
+                    .expect("scan ranges should be non-empty in this scope");
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
@@ -513,6 +516,14 @@ where
                         MAX_VERIFICATION_WINDOW
                     );
                 }
+
+                state::set_initial_state(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    wallet,
+                    wallet_height,
+                )
+                .await;
             } else {
                 scan_results?;
             }
@@ -576,14 +587,28 @@ async fn process_mempool_transaction<W>(
 /// Removes all wallet data above the given `truncate_height`.
 fn truncate_wallet_data<W>(wallet: &mut W, truncate_height: BlockHeight) -> Result<(), ()>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
-    wallet.truncate_wallet_blocks(truncate_height).unwrap();
+    let birthday = wallet
+        .get_sync_state()
+        .unwrap()
+        .wallet_birthday()
+        .expect("should be non-empty in this scope");
+    let checked_truncate_height = match truncate_height.cmp(&birthday) {
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
+        std::cmp::Ordering::Less => birthday,
+    };
+
     wallet
-        .truncate_wallet_transactions(truncate_height)
+        .truncate_wallet_blocks(checked_truncate_height)
         .unwrap();
-    wallet.truncate_nullifiers(truncate_height).unwrap();
-    wallet.truncate_shard_trees(truncate_height).unwrap();
+    wallet
+        .truncate_wallet_transactions(checked_truncate_height)
+        .unwrap();
+    wallet.truncate_nullifiers(checked_truncate_height).unwrap();
+    wallet
+        .truncate_shard_trees(checked_truncate_height)
+        .unwrap();
 
     Ok(())
 }

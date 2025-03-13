@@ -662,7 +662,6 @@ pub(super) async fn set_initial_state<W>(
         .unwrap()
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
-    dbg!(fully_scanned_height);
     let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -782,8 +781,6 @@ where
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
-                dbg!("INIT");
-                dbg!(block_height);
                 let frontiers = client::get_frontiers(fetch_request_sender.clone(), block_height)
                     .await
                     .unwrap();
