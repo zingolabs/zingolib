@@ -25,7 +25,7 @@ use crate::{
     wallet::{Locator, SyncState, TreeBounds, WalletTransaction},
 };
 
-use super::VERIFY_BLOCK_RANGE_SIZE;
+use super::{checked_birthday, VERIFY_BLOCK_RANGE_SIZE};
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
@@ -39,27 +39,18 @@ pub(super) enum VerifyEnd {
 /// Returns the last known chain height stored in the wallet.
 ///
 /// If no chain height is yet known, returns the highest value of the wallet birthday or sapling activation height.
-pub(super) fn get_wallet_height<P, W>(
-    consensus_parameters: &P,
+pub(super) fn get_wallet_height<W>(
+    consensus_parameters: &impl consensus::Parameters,
     wallet: &W,
 ) -> Result<BlockHeight, ()>
 where
-    P: consensus::Parameters,
     W: SyncWallet,
 {
     let wallet_height = if let Some(height) = wallet.get_sync_state().unwrap().wallet_height() {
         height
     } else {
-        let wallet_birthday = wallet.get_birthday().unwrap();
-        let sapling_activation_height = consensus_parameters
-            .activation_height(consensus::NetworkUpgrade::Sapling)
-            .expect("sapling activation height should always return Some");
-
-        let highest = match wallet_birthday.cmp(&sapling_activation_height) {
-            cmp::Ordering::Greater | cmp::Ordering::Equal => wallet_birthday,
-            cmp::Ordering::Less => sapling_activation_height,
-        };
-        highest - 1
+        let birthday = checked_birthday(consensus_parameters, wallet);
+        birthday - 1
     };
 
     Ok(wallet_height)

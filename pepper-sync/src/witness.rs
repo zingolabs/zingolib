@@ -16,6 +16,7 @@ pub(crate) const SHARD_HEIGHT: u8 = 16;
 const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
 /// Required data for updating [`shardtree::ShardTree`]
+#[derive(Debug)]
 pub(crate) struct WitnessData {
     pub(crate) sapling_initial_position: Position,
     pub(crate) orchard_initial_position: Position,
@@ -39,6 +40,7 @@ impl WitnessData {
 }
 
 /// Located prunable tree data built from nodes and retentions during scanning for insertion into the shard store.
+#[derive(Debug)]
 pub struct LocatedTreeData<H> {
     /// Located prunable tree
     pub(crate) subtree: LocatedPrunableTree<H>,

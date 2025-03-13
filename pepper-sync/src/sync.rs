@@ -1,11 +1,13 @@
 //! Entrypoint for sync engine
 
+use std::cmp;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use error::MempoolError;
+use incrementalmerkletree::{Marking, Retention};
 use tokio::sync::{mpsc, Mutex};
 
 use zcash_client_backend::proto::service::RawTransaction;
@@ -143,6 +145,13 @@ where
 
     #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
+        consensus_parameters,
+        fetch_request_sender.clone(),
+        &mut *wallet_guard,
+    )
+    .await;
+
+    add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
         &mut *wallet_guard,
@@ -783,6 +792,74 @@ async fn update_subtree_roots<W>(
     let shard_trees = wallet.get_shard_trees_mut().unwrap();
     witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling);
     witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard);
+}
+
+async fn add_initial_frontier<W>(
+    consensus_parameters: &impl consensus::Parameters,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    wallet: &mut W,
+) where
+    W: SyncWallet + SyncShardTrees,
+{
+    let birthday = checked_birthday(consensus_parameters, wallet);
+    if birthday
+        == consensus_parameters
+            .activation_height(consensus::NetworkUpgrade::Sapling)
+            .expect("sapling activation height should always return Some")
+    {
+        return;
+    }
+
+    // if the shard store only contains the first checkpoint added on initialisation, add frontiers to complete the
+    // shard trees.
+    let shard_trees = wallet.get_shard_trees_mut().unwrap();
+    if shard_trees
+        .sapling
+        .store()
+        .checkpoint_count()
+        .expect("infalliable")
+        == 1
+    {
+        let frontiers = client::get_frontiers(fetch_request_sender, birthday)
+            .await
+            .unwrap();
+        shard_trees
+            .sapling
+            .insert_frontier(
+                frontiers.final_sapling_tree().clone(),
+                Retention::Checkpoint {
+                    id: birthday,
+                    marking: Marking::None,
+                },
+            )
+            .unwrap();
+        shard_trees
+            .orchard
+            .insert_frontier(
+                frontiers.final_orchard_tree().clone(),
+                Retention::Checkpoint {
+                    id: birthday,
+                    marking: Marking::None,
+                },
+            )
+            .unwrap();
+    }
+}
+
+/// Compares the wallet birthday to sapling activation height and returns the highest block height.
+fn checked_birthday<W: SyncWallet>(
+    consensus_parameters: &impl consensus::Parameters,
+    wallet: &W,
+) -> BlockHeight {
+    let wallet_birthday = wallet.get_birthday().unwrap();
+    let sapling_activation_height = consensus_parameters
+        .activation_height(consensus::NetworkUpgrade::Sapling)
+        .expect("sapling activation height should always return Some");
+
+    match wallet_birthday.cmp(&sapling_activation_height) {
+        cmp::Ordering::Greater | cmp::Ordering::Equal => wallet_birthday,
+        cmp::Ordering::Less => sapling_activation_height,
+    }
 }
 
 /// Sets up mempool stream.
