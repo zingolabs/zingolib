@@ -333,9 +333,9 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                     last_outputs_in_block && output_index == last_output_index;
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
                 let retention = match (decrypted, last_output_in_block) {
-                    (is_marked, true) => Retention::Checkpoint {
+                    (decrypted, true) => Retention::Checkpoint {
                         id: block_height,
-                        marking: if is_marked {
+                        marking: if decrypted {
                             Marking::Marked
                         } else {
                             Marking::None

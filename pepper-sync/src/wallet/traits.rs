@@ -359,7 +359,7 @@ pub trait SyncShardTrees: SyncWallet {
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
-            panic!("max checkpoints should always be higher than verification window!");
+            panic!("max checkpoints should always be higher or equal to max verification window!");
         }
         if !self
             .get_shard_trees_mut()?
@@ -367,7 +367,7 @@ pub trait SyncShardTrees: SyncWallet {
             .truncate_to_checkpoint(&truncate_height)
             .unwrap()
         {
-            panic!("max checkpoints should always be higher than verification window!");
+            panic!("max checkpoints should always be higher or equal to max verification window!");
         }
 
         Ok(())

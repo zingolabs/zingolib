@@ -65,6 +65,7 @@ pub struct PoolBalances {
     pub transparent_balance: Option<u64>,
 }
 
+// TODO: underscore every 3 digits instead of 4
 fn format_option_zatoshis(ioz: &Option<u64>) -> String {
     ioz.map(|ioz_num| {
         if ioz_num == 0 {
