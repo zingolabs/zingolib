@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use error::MempoolError;
 use incrementalmerkletree::{Marking, Retention};
+use shardtree::store::ShardStore as _;
 use tokio::sync::{mpsc, Mutex};
 
 use zcash_client_backend::proto::service::RawTransaction;
@@ -57,7 +58,7 @@ pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 /// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
 /// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
 /// above the in-use address with the highest address index for each scope and account is determined by
-/// [`crate::sync::transparent::ADDRESS_GAP_LIMIT`]. If `transparent_address_discovery` is disabled, only transactions
+/// the address gap limit. If `transparent_address_discovery` is disabled, only transactions
 /// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
 // TODO: setting sync_mode to `NotRunning` should kill the sync task immediately.
 pub async fn sync<P, W>(

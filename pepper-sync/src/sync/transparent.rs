@@ -15,7 +15,7 @@ use crate::wallet::Locator;
 
 use super::MAX_VERIFICATION_WINDOW;
 
-pub(crate) const ADDRESS_GAP_LIMIT: usize = 20;
+const ADDRESS_GAP_LIMIT: usize = 20;
 
 /// Discovers all addresses in use by the wallet and returns locators for any new relevant transactions to scan transparent
 /// bundles.
