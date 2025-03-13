@@ -85,35 +85,28 @@ async fn sync_test() {
 
     let (regtest_manager, _cph, faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
+
+    {
+        let wallet = recipient.wallet.lock().await;
+        dbg!(&wallet.shard_trees);
+    }
+
     from_inputs::quick_send(
-        &faucet,
+        &recipient,
         vec![(
-            &get_base_address_macro!(&recipient, "transparent"),
+            &get_base_address_macro!(&recipient, "unified"),
             100_000,
-            None,
+            Some("send to self test"),
         )],
     )
     .await
     .unwrap();
-    // from_inputs::quick_send(
-    //     &recipient,
-    //     vec![(
-    //         &get_base_address_macro!(&faucet, "unified"),
-    //         100_000,
-    //         Some("Outgoing decrypt test"),
-    //     )],
-    // )
-    // .await
-    // .unwrap();
 
     increase_server_height(&regtest_manager, 1).await;
-    recipient.sync_and_await(true).await.unwrap();
-    recipient.quick_shield().await.unwrap();
-    increase_server_height(&regtest_manager, 1).await;
-    recipient.sync_and_await(true).await.unwrap();
+    recipient.sync_and_await(false).await.unwrap();
 
-    // let wallet = recipient.wallet.lock().await;
-    // dbg!(&wallet.wallet_transactions);
+    let wallet = recipient.wallet.lock().await;
+    dbg!(&wallet.wallet_transactions);
     // dbg!(&wallet.wallet_blocks);
     // dbg!(&wallet.nullifier_map);
     // dbg!(&wallet.outpoint_map);
