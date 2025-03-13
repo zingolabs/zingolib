@@ -5,7 +5,7 @@ use zingolib::{
     get_base_address_macro,
     lightclient::LightClient,
     testutils::{
-        increase_height_and_wait_for_client, increase_server_height,
+        increase_server_height,
         lightclient::from_inputs::{self, quick_send},
         scenarios,
     },
@@ -127,7 +127,7 @@ async fn sync_test() {
 #[ignore = "sync and zingo 2.0 dev temp test"]
 #[tokio::test]
 async fn initial_frontier_test() {
-    let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
     // increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 3)
