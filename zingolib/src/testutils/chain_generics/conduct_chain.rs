@@ -52,7 +52,7 @@ pub trait ConductChain {
         let mut recipient = self.create_client();
 
         self.bump_chain().await;
-        faucet.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await(false).await.unwrap();
 
         from_inputs::quick_send(
             &faucet,
@@ -67,7 +67,7 @@ pub trait ConductChain {
 
         self.bump_chain().await;
 
-        recipient.sync_and_await(true).await.unwrap();
+        recipient.sync_and_await(false).await.unwrap();
 
         recipient
     }

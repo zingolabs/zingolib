@@ -15,6 +15,7 @@ use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
 
+#[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
     let darkside_handler = DarksideHandler::new(None);
