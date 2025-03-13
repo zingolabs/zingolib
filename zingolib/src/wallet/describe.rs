@@ -308,8 +308,8 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     transparent_coins,
-                    outgoing_sapling_notes,
                     outgoing_orchard_notes,
+                    outgoing_sapling_notes,
                 ) = self.basic_transaction_summary_parts(transaction);
 
                 TransactionSummaryBuilder::new()

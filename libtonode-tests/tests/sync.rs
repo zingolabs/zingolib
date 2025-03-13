@@ -5,8 +5,8 @@ use zingolib::{
     get_base_address_macro,
     lightclient::LightClient,
     testutils::{
-        increase_height_and_wait_for_client, increase_server_height,
-        lightclient::from_inputs::{self, quick_send},
+        increase_height_and_wait_for_client,
+        lightclient::from_inputs::{self},
         scenarios,
     },
     wallet::{LightWallet, WalletBase},
@@ -90,63 +90,28 @@ async fn sync_test() {
     let (regtest_manager, _cph, faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-    {
-        let wallet = recipient.wallet.lock().await;
-        dbg!(&wallet.shard_trees);
-    }
-
     from_inputs::quick_send(
         &recipient,
         vec![(
-            &get_base_address_macro!(&recipient, "unified"),
+            &get_base_address_macro!(&faucet, "unified"),
             100_000,
-            Some("send to self test"),
+            None,
+            // Some("send to self test"),
         )],
     )
     .await
     .unwrap();
 
-    increase_server_height(&regtest_manager, 1).await;
-    recipient.sync_and_await(false).await.unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+        .await
+        .unwrap();
 
-    let wallet = recipient.wallet.lock().await;
-    dbg!(&wallet.wallet_transactions);
+    println!("{}", recipient.transaction_summaries().await);
+    println!("{}", recipient.value_transfers().await);
+    // let wallet = recipient.wallet.lock().await;
+    // dbg!(&wallet.wallet_transactions);
     // dbg!(&wallet.wallet_blocks);
     // dbg!(&wallet.nullifier_map);
     // dbg!(&wallet.outpoint_map);
     // dbg!(&wallet.sync_state);
-}
-
-#[ignore = "sync and zingo 2.0 dev temp test"]
-#[tokio::test]
-async fn initial_frontier_test() {
-    let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
-        scenarios::faucet_funded_recipient_default(100_000).await;
-
-    // increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 3)
-    //     .await
-    //     .unwrap();
-    // println!("{}", recipient.do_balance().await);
-    // println!("{}", recipient.transaction_summaries().await);
-    // println!("{:#?}", recipient.wallet.lock().await.shard_trees.sapling);
-    // println!("{:#?}", recipient.wallet.lock().await.shard_trees.orchard);
-    quick_send(
-        &recipient,
-        vec![(&get_base_address_macro!(&faucet, "sapling"), 50_000, None)],
-    )
-    .await
-    .unwrap();
-    // increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 3)
-    //     .await
-    //     .unwrap();
-    // quick_send(
-    //     &faucet,
-    //     vec![(
-    //         &get_base_address_macro!(&recipient, "sapling"),
-    //         100_000,
-    //         None,
-    //     )],
-    // )
-    // .await
-    // .unwrap();
 }
