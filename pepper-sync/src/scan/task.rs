@@ -334,14 +334,14 @@ where
                         if scan_task.start_seam_block.is_none()
                             && scan_task.scan_range.block_range().start == block.block_height() + 1
                         {
-                            // scan_task.start_seam_block = previous_task_last_block.clone();
+                            scan_task.start_seam_block = previous_task_last_block.clone();
                         }
                     }
                     if let Some(block) = previous_task_first_block.as_ref() {
                         if scan_task.end_seam_block.is_none()
                             && scan_task.scan_range.block_range().end == block.block_height()
                         {
-                            // scan_task.end_seam_block = previous_task_first_block.clone();
+                            scan_task.end_seam_block = previous_task_first_block.clone();
                         }
                     }
 
@@ -395,10 +395,6 @@ where
                         sapling_output_count = 0;
                         orchard_output_count = 0;
                     }
-
-                    dbg!(compact_block.height);
-                    dbg!(compact_block.hash());
-                    dbg!(compact_block.prev_hash());
 
                     scan_task.compact_blocks.push(compact_block);
                 }

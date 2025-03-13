@@ -449,7 +449,6 @@ pub(crate) async fn calculate_block_tree_bounds(
 
             match compact_block.height().cmp(&sapling_activation_height) {
                 cmp::Ordering::Greater => {
-                    dbg!("CALC");
                     let frontiers =
                         client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
                             .await
@@ -487,10 +486,11 @@ pub(crate) async fn calculate_block_tree_bounds(
         .try_into()
         .expect("Sapling output count cannot exceed a u32");
 
+    // TODO: handle error if final tree size < output count?
     TreeBounds {
-        sapling_initial_tree_size: sapling_final_tree_size - sapling_output_count,
+        sapling_initial_tree_size: sapling_final_tree_size.saturating_sub(sapling_output_count),
         sapling_final_tree_size,
-        orchard_initial_tree_size: orchard_final_tree_size - orchard_output_count,
+        orchard_initial_tree_size: orchard_final_tree_size.saturating_sub(orchard_output_count),
         orchard_final_tree_size,
     }
 }

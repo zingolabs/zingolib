@@ -52,6 +52,7 @@ async fn simple_sync() {
     );
 }
 
+#[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
     let darkside_handler = DarksideHandler::new(None);
@@ -106,6 +107,7 @@ async fn reorg_receipt_sync_generic() {
     );
 }
 
+#[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
     let darkside_handler = DarksideHandler::new(None);

@@ -158,8 +158,6 @@ where
     .await
     .unwrap();
 
-    dbg!(wallet_guard.get_sync_state().unwrap().scan_ranges());
-
     state::set_initial_state(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -488,24 +486,31 @@ where
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
-            tracing::info!("Re-org detected.");
-            if height == scan_range.block_range().start {
-                // error handling in case of re-org where first block prev_hash in scan range does not match previous wallet block hash
+            if height == scan_range.block_range().start
+                && scan_range.priority() == ScanPriority::Verify
+            {
+                tracing::info!("Re-org detected.");
                 let sync_state = wallet.get_sync_state_mut().unwrap();
                 let wallet_height = sync_state
                     .wallet_height()
                     .expect("scan ranges should be non-empty in this scope");
+
+                // reset scan range from `Ignored` to `Verify`
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
-                    scan_range.priority(),
+                    ScanPriority::Verify,
                 )
-                .unwrap(); // reset scan range to initial priority in wallet sync state
+                .unwrap();
+
+                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verifaction range
                 let scan_range_to_verify = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
                 );
+                state::merge_verification_ranges(sync_state);
+
                 truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1).unwrap();
 
                 if initial_verification_height - scan_range_to_verify.block_range().start
