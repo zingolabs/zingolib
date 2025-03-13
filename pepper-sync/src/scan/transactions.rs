@@ -100,7 +100,7 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             WalletBlock::from_compact_block(
                 consensus_parameters,
                 fetch_request_sender.clone(),
-                &client::get_compact_block(fetch_request_sender.clone(), block_height.clone())
+                &client::get_compact_block(fetch_request_sender.clone(), block_height)
                     .await
                     .unwrap(),
             )
