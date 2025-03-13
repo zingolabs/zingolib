@@ -483,7 +483,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 
 // OUTGOING TX TESTS
 
-#[ignore]
+#[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 /// A Re Org occurs and changes the height of an outbound transaction
 ///
@@ -633,6 +633,9 @@ async fn reorg_changes_outgoing_tx_height() {
         .await;
 
     _ = connector.apply_staged(211).await;
+
+    // temp hack as pepper sync needs tree state of latest block for sync status
+    connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 211, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
 
     let reorg_sync_result = light_client.sync_and_await(false).await;
 
