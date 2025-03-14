@@ -204,43 +204,40 @@ pub(crate) fn encode_orchard_receiver(
 }
 
 /// Decode string to unified address.
-// TODO: surely there is a more straightforward way to decode unified address from string
 // TODO: return custom error type
 pub fn decode_unified_address(
     consensus_parameters: &impl consensus::Parameters,
     encoded_address: &str,
 ) -> std::io::Result<UnifiedAddress> {
-    struct UnifiedAddressConverter(zcash_address::unified::Address);
-
-    impl zcash_address::TryFromRawAddress for UnifiedAddressConverter {
-        type Error = std::convert::Infallible;
-
-        fn try_from_raw_unified(
-            ua: zcash_address::unified::Address,
-        ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
-            Ok(UnifiedAddressConverter(ua))
-        }
-    }
-
-    let unified_address = ZcashAddress::try_from_encoded(encoded_address)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
-            )
-        })?
-        .convert_if_network::<UnifiedAddressConverter>(consensus_parameters.network_type())
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
-            )
-        })?
-        .0;
-    zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
-        std::io::Error::new(
+    if let zcash_keys::address::Address::Unified(unified_address) =
+        decode_address(consensus_parameters, encoded_address)?
+    {
+        Ok(unified_address)
+    } else {
+        Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("failed to decode unified address. {e}"),
-        )
-    })
+            format!("failed to decode unified address. incorrect address type."),
+        ))
+    }
+}
+
+/// Decode string to [`zcash_keys::address::Address`] enum.
+pub fn decode_address(
+    consensus_parameters: &impl consensus::Parameters,
+    encoded_address: &str,
+) -> std::io::Result<zcash_keys::address::Address> {
+    ZcashAddress::try_from_encoded(encoded_address)
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to decode unified address. {e}"),
+            )
+        })?
+        .convert_if_network::<zcash_keys::address::Address>(consensus_parameters.network_type())
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to decode unified address. {e}"),
+            )
+        })
 }

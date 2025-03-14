@@ -1,6 +1,6 @@
 //! Wallet-State reporters as LightWallet methods.
 use json::JsonValue;
-use pepper_sync::keys::decode_unified_address;
+use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_address::ZcashAddress;
@@ -830,17 +830,28 @@ impl LightWallet {
                 note.recipient.clone()
             };
 
-            let address = decode_unified_address(&self.network, &encoded_address).unwrap();
+            let send_to_external_recipient =
+                match decode_address(&self.network, &encoded_address).unwrap() {
+                    zcash_keys::address::Address::Sapling(address) => {
+                        !self.is_sapling_send_to_self(&address)
+                    }
+                    zcash_keys::address::Address::Transparent(address) => {
+                        self.is_transparent_send_to_self(&address).is_none()
+                    }
+                    zcash_keys::address::Address::Unified(address) => {
+                        address.transparent().map_or(true, |addr| {
+                            self.is_transparent_send_to_self(addr).is_none()
+                        }) && address
+                            .sapling()
+                            .map_or(true, |addr| !self.is_sapling_send_to_self(addr))
+                            && address
+                                .orchard()
+                                .map_or(true, |addr| !self.is_orchard_send_to_self(addr))
+                    }
+                    zcash_keys::address::Address::Tex(_) => true,
+                };
 
-            if address.transparent().map_or(true, |addr| {
-                self.is_transparent_send_to_self(addr).is_none()
-            }) && address
-                .sapling()
-                .map_or(true, |addr| !self.is_sapling_send_to_self(addr))
-                && address
-                    .orchard()
-                    .map_or(true, |addr| !self.is_orchard_send_to_self(addr))
-            {
+            if send_to_external_recipient {
                 // hash map is used to create unique list of addresses as duplicates are not inserted twice
                 addresses.insert(encoded_address, note.output_index);
             }
