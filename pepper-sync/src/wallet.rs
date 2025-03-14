@@ -600,8 +600,7 @@ impl WalletTransaction {
 
 #[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
-    /// Returns the total value sent to receivers, including value explicitly sent to the wallet own addresses but
-    /// excluding change.
+    /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
     pub fn total_value_sent(&self) -> u64 {
         let transparent_value_sent = self.transaction.transparent_bundle().map_or(0, |bundle| {
             bundle
@@ -611,9 +610,12 @@ impl WalletTransaction {
                 .sum()
         }) - self.total_output_value::<TransparentCoin>();
 
-        transparent_value_sent
-            + self.total_outgoing_note_value::<OutgoingSaplingNote>()
-            + self.total_outgoing_note_value::<OutgoingOrchardNote>()
+        let sapling_value_sent = self.total_outgoing_note_value::<OutgoingSaplingNote>()
+            - self.total_output_value::<SaplingNote>();
+        let orchard_value_sent = self.total_outgoing_note_value::<OutgoingOrchardNote>()
+            - self.total_output_value::<OrchardNote>();
+
+        transparent_value_sent + sapling_value_sent + orchard_value_sent
     }
 
     /// Returns total sum of all output values.
@@ -948,13 +950,16 @@ pub trait OutgoingNoteInterface: Sized {
     /// Memo.
     fn memo(&self) -> &Memo;
 
+    /// Recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
+    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress>;
+
     /// Encoded recipient address recorded in note on chain (single receiver).
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
         P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Encoded recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
-    fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
+    fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
         P: consensus::Parameters + consensus::NetworkConstants;
 
@@ -974,7 +979,7 @@ pub struct OutgoingNote<N> {
     /// Memo.
     pub(crate) memo: Memo,
     /// Recipient's full unified address from encoded memo.
-    pub(crate) recipient_unified_address: Option<UnifiedAddress>,
+    pub(crate) recipient_full_unified_address: Option<UnifiedAddress>,
 }
 
 /// Outgoing sapling note.
@@ -1005,6 +1010,10 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         &self.memo
     }
 
+    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {
+        self.recipient_full_unified_address.as_ref()
+    }
+
     fn encoded_recipient<P>(&self, consensus_parameters: &P) -> String
     where
         P: consensus::Parameters + consensus::NetworkConstants,
@@ -1015,11 +1024,11 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         )
     }
 
-    fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
+    fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        self.recipient_unified_address
+        self.recipient_full_unified_address
             .as_ref()
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
@@ -1057,6 +1066,10 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
         &self.memo
     }
 
+    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {
+        self.recipient_full_unified_address.as_ref()
+    }
+
     fn encoded_recipient<P>(&self, parameters: &P) -> String
     where
         P: consensus::Parameters + consensus::NetworkConstants,
@@ -1064,11 +1077,11 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
         keys::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
     }
 
-    fn encoded_recipient_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
+    fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        self.recipient_unified_address
+        self.recipient_full_unified_address
             .as_ref()
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }

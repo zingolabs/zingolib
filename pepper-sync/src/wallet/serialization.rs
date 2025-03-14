@@ -12,7 +12,6 @@ use shardtree::{
     store::{memory::MemoryShardStore, Checkpoint, ShardStore, TreeState},
     LocatedPrunableTree, ShardTree,
 };
-use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     serialization::shardtree::{read_shard, write_shard},
@@ -31,6 +30,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     keys::{
+        decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
         KeyId,
     },
@@ -55,18 +55,6 @@ fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
 fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
     writer.write_u64::<LittleEndian>(str.len() as u64)?;
     writer.write_all(str.as_bytes())
-}
-
-struct UnifiedAddressConverter(zcash_address::unified::Address);
-
-impl zcash_address::TryFromRawAddress for UnifiedAddressConverter {
-    type Error = std::convert::Infallible;
-
-    fn try_from_raw_unified(
-        ua: zcash_address::unified::Address,
-    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
-        Ok(UnifiedAddressConverter(ua))
-    }
 }
 
 impl SyncState {
@@ -714,24 +702,7 @@ impl OutgoingSaplingNote {
         let recipient_unified_address = Optional::read(&mut reader, |r| {
             let encoded_address = read_string(r)?;
 
-            // TODO: surely there is a more straightforward way to decode unified address from string
-            let unified_address = ZcashAddress::try_from_encoded(&encoded_address)
-                .unwrap()
-                .convert_if_network::<UnifiedAddressConverter>(consensus_parameters.network_type())
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("failed to convert recipient unified address. {e}"),
-                    )
-                })?
-                .0;
-
-            zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("failed to convert recipient unified address. {e}"),
-                )
-            })
+            decode_unified_address(consensus_parameters, &encoded_address)
         })?;
 
         Ok(Self {
@@ -739,7 +710,7 @@ impl OutgoingSaplingNote {
             key_id: KeyId::from_parts(account_id, scope),
             note: sapling_crypto::Note::from_parts(recipient, value, rseed),
             memo,
-            recipient_unified_address,
+            recipient_full_unified_address: recipient_unified_address,
         })
     }
 
@@ -773,7 +744,7 @@ impl OutgoingSaplingNote {
         writer.write_all(self.memo.encode().as_array())?;
         Optional::write(
             &mut writer,
-            self.recipient_unified_address.as_ref(),
+            self.recipient_full_unified_address.as_ref(),
             |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
         )?;
 
@@ -833,24 +804,7 @@ impl OutgoingOrchardNote {
         let recipient_unified_address = Optional::read(&mut reader, |r| {
             let encoded_address = read_string(r)?;
 
-            // TODO: surely there is a more straightforward way to decode unified address from string
-            let unified_address = ZcashAddress::try_from_encoded(&encoded_address)
-                .unwrap()
-                .convert_if_network::<UnifiedAddressConverter>(consensus_parameters.network_type())
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("failed to convert recipient unified address. {e}"),
-                    )
-                })?
-                .0;
-
-            zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("failed to convert recipient unified address. {e}"),
-                )
-            })
+            decode_unified_address(consensus_parameters, &encoded_address)
         })?;
 
         Ok(Self {
@@ -859,7 +813,7 @@ impl OutgoingOrchardNote {
             note: orchard::note::Note::from_parts(recipient, value, rho, rseed)
                 .expect("should be a valid orchard note"),
             memo,
-            recipient_unified_address,
+            recipient_full_unified_address: recipient_unified_address,
         })
     }
 
@@ -885,7 +839,7 @@ impl OutgoingOrchardNote {
         writer.write_all(self.memo.encode().as_array())?;
         Optional::write(
             &mut writer,
-            self.recipient_unified_address.as_ref(),
+            self.recipient_full_unified_address.as_ref(),
             |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
         )?;
 

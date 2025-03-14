@@ -237,7 +237,7 @@ pub async fn send_value_between_clients_and_sync(
     .await
     .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
-    recipient.sync_and_await(true).await?;
+    recipient.sync_and_await(false).await?;
     Ok(txid.first().to_string())
 }
 
@@ -279,7 +279,7 @@ pub async fn sync_to_target_height(
     target_block_height: u32,
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
-    client.sync_and_await(true).await?;
+    client.sync_and_await(false).await?;
     while u32::from(
         client
             .wallet
@@ -291,7 +291,7 @@ pub async fn sync_to_target_height(
     ) < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        client.sync_and_await(true).await?;
+        client.sync_and_await(false).await?;
     }
     Ok(())
 }

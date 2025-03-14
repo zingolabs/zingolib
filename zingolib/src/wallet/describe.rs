@@ -252,42 +252,62 @@ impl LightWallet {
             && transaction.outgoing_sapling_notes().is_empty()
             && transaction.outgoing_orchard_notes().is_empty()
         {
-            // no spends and no outgoing notes
             TransactionKind::Received
         } else if !transparent_spends.is_empty()
             && sapling_spends.is_empty()
             && orchard_spends.is_empty()
             && transaction.outgoing_sapling_notes().is_empty()
             && transaction.outgoing_orchard_notes().is_empty()
-            && (!transaction.orchard_notes().is_empty() | !transaction.sapling_notes().is_empty())
+            && (!transaction.orchard_notes().is_empty() || !transaction.sapling_notes().is_empty())
         {
-            // only transparent spends, no outgoing notes and notes received
-            // TODO: this could be improved by checking outputs recipient addr against the wallet addrs
             TransactionKind::Sent(SendType::Shield)
-        } else if transaction.outgoing_sapling_notes().is_empty()
-            && transaction.outgoing_orchard_notes().is_empty()
-            || (transaction.outgoing_sapling_notes().len() == 1
-                && transaction
-                    .outgoing_sapling_notes()
-                    .iter()
-                    .any(|outgoing_note| {
-                        outgoing_note.encoded_recipient(&self.network) == *zfz_address
-                            || outgoing_note.encoded_recipient_unified_address(&self.network)
-                                == Some(zfz_address.to_string())
-                    }))
-            || (transaction.outgoing_orchard_notes().len() == 1
-                && transaction
-                    .outgoing_orchard_notes()
-                    .iter()
-                    .any(|outgoing_note| {
-                        outgoing_note.encoded_recipient(&self.network) == *zfz_address
-                            || outgoing_note.encoded_recipient_unified_address(&self.network)
-                                == Some(zfz_address.to_string())
-                    }))
+        } else if transaction
+            .transaction()
+            .transparent_bundle()
+            .map_or(true, |bundle| {
+                bundle.vout.len() == transaction.transparent_coins().len()
+            })
+            && transaction
+                .outgoing_sapling_notes()
+                .iter()
+                .all(|outgoing_note| {
+                    if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
+                        self.unified_addresses
+                            .values()
+                            .any(|address| full_address.sapling() == address.sapling())
+                            || outgoing_note
+                                .encoded_recipient_full_unified_address(&self.network)
+                                .expect("should exist in this scope")
+                                == zfz_address.to_string()
+                    } else {
+                        self.unified_addresses.values().any(|address| {
+                            address.sapling().map_or(true, |address| {
+                                outgoing_note.note().recipient() == *address
+                            })
+                        })
+                    }
+                })
+            && transaction
+                .outgoing_orchard_notes()
+                .iter()
+                .all(|outgoing_note| {
+                    if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
+                        self.unified_addresses
+                            .values()
+                            .any(|address| full_address.orchard() == address.orchard())
+                            || outgoing_note
+                                .encoded_recipient_full_unified_address(&self.network)
+                                .expect("should exist in this scope")
+                                == zfz_address.to_string()
+                    } else {
+                        self.unified_addresses.values().any(|address| {
+                            address.orchard().map_or(true, |address| {
+                                outgoing_note.note().recipient() == *address
+                            })
+                        })
+                    }
+                })
         {
-            // not Received, this capability created this transaction
-            // not Shield, notes were spent
-            // no outgoing notes, with the exception of ONLY a Zennies For Zingo! donation
             TransactionKind::Sent(SendType::SendToSelf)
         } else {
             TransactionKind::Sent(SendType::Send)
@@ -378,10 +398,12 @@ impl LightWallet {
     ) {
         let kind = self.transaction_kind(transaction);
         let value = match kind {
-            TransactionKind::Received
-            | TransactionKind::Sent(SendType::Shield)
-            | TransactionKind::Sent(SendType::SendToSelf) => transaction.total_value_received(),
-            TransactionKind::Sent(SendType::Send) => transaction.total_value_sent(),
+            TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
+                transaction.total_value_received()
+            }
+            TransactionKind::Sent(SendType::Send) | TransactionKind::Sent(SendType::SendToSelf) => {
+                transaction.total_value_sent()
+            }
         };
         let fee = self.calculate_transaction_fee(transaction).ok();
         let orchard_notes = transaction
@@ -455,7 +477,7 @@ impl LightWallet {
                     value: note.value(),
                     recipient: note.encoded_recipient(&self.network),
                     recipient_unified_address: note
-                        .encoded_recipient_unified_address(&self.network),
+                        .encoded_recipient_full_unified_address(&self.network),
                 }
             })
             .collect::<Vec<_>>();
@@ -476,7 +498,7 @@ impl LightWallet {
                     value: note.value(),
                     recipient: note.encoded_recipient(&self.network),
                     recipient_unified_address: note
-                        .encoded_recipient_unified_address(&self.network),
+                        .encoded_recipient_full_unified_address(&self.network),
                 }
             })
             .collect::<Vec<_>>();

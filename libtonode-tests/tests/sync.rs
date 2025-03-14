@@ -41,7 +41,7 @@ async fn sync_mainnet_test() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(true).await.unwrap();
+    lightclient.sync_and_await(false).await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -78,7 +78,7 @@ async fn sync_status() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(true).await.unwrap();
+    lightclient.sync_and_await(false).await.unwrap();
 }
 
 // temporary test for sync development
@@ -93,7 +93,7 @@ async fn sync_test() {
     from_inputs::quick_send(
         &recipient,
         vec![(
-            &get_base_address_macro!(&faucet, "unified"),
+            &get_base_address_macro!(&recipient, "unified"),
             100_000,
             None,
             // Some("send to self test"),

@@ -10,10 +10,13 @@ use orchard::{
 use sapling_crypto::{
     self as sapling, note_encryption::SaplingDomain, NullifierDerivingKey, SaplingIvk,
 };
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_address::ZcashAddress;
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus;
 use zip32::Scope;
+
+pub mod transparent;
 
 /// Child index for the `address_index` path level in the BIP44 hierarchy.
 pub type AddressIndex = u32;
@@ -26,8 +29,6 @@ pub struct KeyId {
     /// Scope
     pub scope: Scope,
 }
-
-pub mod transparent;
 
 impl KeyId {
     pub(crate) fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
@@ -200,4 +201,46 @@ pub(crate) fn encode_orchard_receiver(
         .unwrap(),
         &parameters.network_type(),
     ))
+}
+
+/// Decode string to unified address.
+// TODO: surely there is a more straightforward way to decode unified address from string
+// TODO: return custom error type
+pub fn decode_unified_address(
+    consensus_parameters: &impl consensus::Parameters,
+    encoded_address: &str,
+) -> std::io::Result<UnifiedAddress> {
+    struct UnifiedAddressConverter(zcash_address::unified::Address);
+
+    impl zcash_address::TryFromRawAddress for UnifiedAddressConverter {
+        type Error = std::convert::Infallible;
+
+        fn try_from_raw_unified(
+            ua: zcash_address::unified::Address,
+        ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+            Ok(UnifiedAddressConverter(ua))
+        }
+    }
+
+    let unified_address = ZcashAddress::try_from_encoded(encoded_address)
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to decode unified address. {e}"),
+            )
+        })?
+        .convert_if_network::<UnifiedAddressConverter>(consensus_parameters.network_type())
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to decode unified address. {e}"),
+            )
+        })?
+        .0;
+    zcash_keys::address::UnifiedAddress::try_from(unified_address).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("failed to decode unified address. {e}"),
+        )
+    })
 }
