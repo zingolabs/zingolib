@@ -1,5 +1,8 @@
 //! Wallet-State reporters as LightWallet methods.
 use json::JsonValue;
+use pepper_sync::keys::decode_unified_address;
+use pepper_sync::keys::transparent;
+use pepper_sync::keys::transparent::TransparentScope;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
@@ -20,6 +23,7 @@ use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use bip0039::Mnemonic;
 
@@ -272,19 +276,15 @@ impl LightWallet {
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        self.unified_addresses
-                            .values()
-                            .any(|address| full_address.sapling() == address.sapling())
+                        full_address
+                            .sapling()
+                            .map_or(true, |address| self.is_sapling_send_to_self(address))
                             || outgoing_note
                                 .encoded_recipient_full_unified_address(&self.network)
                                 .expect("should exist in this scope")
                                 == zfz_address.to_string()
                     } else {
-                        self.unified_addresses.values().any(|address| {
-                            address.sapling().map_or(true, |address| {
-                                outgoing_note.note().recipient() == *address
-                            })
-                        })
+                        self.is_sapling_send_to_self(&outgoing_note.note().recipient())
                     }
                 })
             && transaction
@@ -292,19 +292,15 @@ impl LightWallet {
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        self.unified_addresses
-                            .values()
-                            .any(|address| full_address.orchard() == address.orchard())
+                        full_address
+                            .orchard()
+                            .map_or(true, |address| self.is_orchard_send_to_self(address))
                             || outgoing_note
                                 .encoded_recipient_full_unified_address(&self.network)
                                 .expect("should exist in this scope")
                                 == zfz_address.to_string()
                     } else {
-                        self.unified_addresses.values().any(|address| {
-                            address.orchard().map_or(true, |address| {
-                                outgoing_note.note().recipient() == *address
-                            })
-                        })
+                        self.is_orchard_send_to_self(&outgoing_note.note().recipient())
                     }
                 })
         {
@@ -316,6 +312,7 @@ impl LightWallet {
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     // TODO: move to summary
+    // TODO: should have outgoing coins
     pub async fn transaction_summaries(&self) -> TransactionSummaries {
         let mut transaction_summaries = self
             .wallet_transactions
@@ -519,39 +516,44 @@ impl LightWallet {
     // TODO: move to summary
     pub async fn value_transfers(&self) -> ValueTransfers {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let summaries = self.transaction_summaries().await;
+        let transaction_summaries = self.transaction_summaries().await.0;
 
-        let transaction_summaries = summaries.iter();
-
-        for tx in transaction_summaries {
-            match tx.kind() {
+        for transaction in transaction_summaries.iter() {
+            match transaction.kind() {
                 TransactionKind::Sent(SendType::Send) => {
                     // create 1 sent value transfer for each non-self recipient address
                     // if recipient_ua is available it overrides recipient_address
-                    value_transfers.append(&mut ValueTransfers::create_send_value_transfers(tx));
+                    value_transfers.append(&mut self.create_send_value_transfers(transaction));
 
                     // create 1 memo-to-self if a sending transaction receives any number of memos
-                    if tx.orchard_notes().iter().any(|note| note.memo().is_some())
-                        || tx.sapling_notes().iter().any(|note| note.memo().is_some())
+                    if transaction
+                        .orchard_notes()
+                        .iter()
+                        .any(|note| note.memo().is_some())
+                        || transaction
+                            .sapling_notes()
+                            .iter()
+                            .any(|note| note.memo().is_some())
                     {
-                        let memos: Vec<String> = tx
+                        let memos: Vec<String> = transaction
                             .orchard_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .chain(
-                                tx.sapling_notes()
+                                transaction
+                                    .sapling_notes()
                                     .iter()
                                     .filter_map(|note| note.memo().map(|memo| memo.to_string())),
                             )
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                     SelfSendValueTransfer::MemoToSelf,
                                 )))
@@ -566,22 +568,25 @@ impl LightWallet {
                 }
                 TransactionKind::Sent(SendType::Shield) => {
                     // create 1 shielding value transfer for each pool shielded to
-                    if !tx.orchard_notes().is_empty() {
-                        let value: u64 =
-                            tx.orchard_notes().iter().map(|output| output.value()).sum();
-                        let memos: Vec<String> = tx
+                    if !transaction.orchard_notes().is_empty() {
+                        let value: u64 = transaction
+                            .orchard_notes()
+                            .iter()
+                            .map(|output| output.value())
+                            .sum();
+                        let memos: Vec<String> = transaction
                             .orchard_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                     SelfSendValueTransfer::Shield,
                                 )))
@@ -595,22 +600,25 @@ impl LightWallet {
                                 .expect("all fields should be populated"),
                         );
                     }
-                    if !tx.sapling_notes().is_empty() {
-                        let value: u64 =
-                            tx.sapling_notes().iter().map(|output| output.value()).sum();
-                        let memos: Vec<String> = tx
+                    if !transaction.sapling_notes().is_empty() {
+                        let value: u64 = transaction
+                            .sapling_notes()
+                            .iter()
+                            .map(|output| output.value())
+                            .sum();
+                        let memos: Vec<String> = transaction
                             .sapling_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                     SelfSendValueTransfer::Shield,
                                 )))
@@ -629,27 +637,34 @@ impl LightWallet {
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     // otherwise, create 1 send-to-self value transfer so every transaction creates at least 1 value transfer
                     // eventually we may replace send-to-self with a range of kinds such as deshield and migrate etc.
-                    if tx.orchard_notes().iter().any(|note| note.memo().is_some())
-                        || tx.sapling_notes().iter().any(|note| note.memo().is_some())
+                    if transaction
+                        .orchard_notes()
+                        .iter()
+                        .any(|note| note.memo().is_some())
+                        || transaction
+                            .sapling_notes()
+                            .iter()
+                            .any(|note| note.memo().is_some())
                     {
-                        let memos: Vec<String> = tx
+                        let memos: Vec<String> = transaction
                             .orchard_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .chain(
-                                tx.sapling_notes()
+                                transaction
+                                    .sapling_notes()
                                     .iter()
                                     .filter_map(|note| note.memo().map(|memo| memo.to_string())),
                             )
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                     SelfSendValueTransfer::MemoToSelf,
                                 )))
@@ -663,12 +678,12 @@ impl LightWallet {
                     } else {
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                                     SelfSendValueTransfer::Basic,
                                 )))
@@ -682,26 +697,29 @@ impl LightWallet {
                     }
 
                     // in the case Zennies For Zingo! is active
-                    value_transfers.append(&mut ValueTransfers::create_send_value_transfers(tx));
+                    value_transfers.append(&mut self.create_send_value_transfers(transaction));
                 }
                 TransactionKind::Received => {
                     // create 1 received value transfer for each pool received to
-                    if !tx.orchard_notes().is_empty() {
-                        let value: u64 =
-                            tx.orchard_notes().iter().map(|output| output.value()).sum();
-                        let memos: Vec<String> = tx
+                    if !transaction.orchard_notes().is_empty() {
+                        let value: u64 = transaction
+                            .orchard_notes()
+                            .iter()
+                            .map(|output| output.value())
+                            .sum();
+                        let memos: Vec<String> = transaction
                             .orchard_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Received)
                                 .value(value)
                                 .recipient_address(None)
@@ -713,22 +731,25 @@ impl LightWallet {
                                 .expect("all fields should be populated"),
                         );
                     }
-                    if !tx.sapling_notes().is_empty() {
-                        let value: u64 =
-                            tx.sapling_notes().iter().map(|output| output.value()).sum();
-                        let memos: Vec<String> = tx
+                    if !transaction.sapling_notes().is_empty() {
+                        let value: u64 = transaction
+                            .sapling_notes()
+                            .iter()
+                            .map(|output| output.value())
+                            .sum();
+                        let memos: Vec<String> = transaction
                             .sapling_notes()
                             .iter()
                             .filter_map(|note| note.memo().map(|memo| memo.to_string()))
                             .collect();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Received)
                                 .value(value)
                                 .recipient_address(None)
@@ -740,20 +761,20 @@ impl LightWallet {
                                 .expect("all fields should be populated"),
                         );
                     }
-                    if !tx.transparent_coins().is_empty() {
-                        let value: u64 = tx
+                    if !transaction.transparent_coins().is_empty() {
+                        let value: u64 = transaction
                             .transparent_coins()
                             .iter()
                             .map(|output| output.value())
                             .sum();
                         value_transfers.push(
                             ValueTransferBuilder::new()
-                                .txid(tx.txid())
-                                .datetime(tx.datetime())
-                                .status(tx.status())
-                                .blockheight(tx.blockheight())
-                                .transaction_fee(tx.fee())
-                                .zec_price(tx.zec_price())
+                                .txid(transaction.txid())
+                                .datetime(transaction.datetime())
+                                .status(transaction.status())
+                                .blockheight(transaction.blockheight())
+                                .transaction_fee(transaction.fee())
+                                .zec_price(transaction.zec_price())
                                 .kind(ValueTransferKind::Received)
                                 .value(value)
                                 .recipient_address(None)
@@ -784,6 +805,115 @@ impl LightWallet {
     // TODO: remove
     pub async fn value_transfers_json_string(&self) -> String {
         json::JsonValue::from(self.sorted_value_transfers(true).await).pretty(2)
+    }
+
+    /// Creates value transfers for all notes in a transaction that are sent to another
+    /// recipient.  A value transfer is a group of all notes to a specific receiver in a transaction.
+    /// The value transfer list is sorted by the output index of the notes.
+    // FIXME: error handling
+    fn create_send_value_transfers(
+        &self,
+        transaction_summary: &TransactionSummary,
+    ) -> Vec<ValueTransfer> {
+        let mut value_transfers: Vec<ValueTransfer> = Vec::new();
+        let outgoing_notes = transaction_summary
+            .outgoing_orchard_notes()
+            .iter()
+            .chain(transaction_summary.outgoing_sapling_notes().iter())
+            .collect::<Vec<_>>();
+        let mut addresses = HashMap::with_capacity(outgoing_notes.len());
+
+        outgoing_notes.iter().for_each(|&note| {
+            let encoded_address = if let Some(ua) = note.recipient_unified_address.clone() {
+                ua
+            } else {
+                note.recipient.clone()
+            };
+
+            let address = decode_unified_address(&self.network, &encoded_address).unwrap();
+
+            if address.transparent().map_or(true, |addr| {
+                self.is_transparent_send_to_self(addr).is_none()
+            }) && address
+                .sapling()
+                .map_or(true, |addr| !self.is_sapling_send_to_self(addr))
+                && address
+                    .orchard()
+                    .map_or(true, |addr| !self.is_orchard_send_to_self(addr))
+            {
+                // hash map is used to create unique list of addresses as duplicates are not inserted twice
+                addresses.insert(encoded_address, note.output_index);
+            }
+        });
+        let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
+        addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
+        addresses_vec.iter().for_each(|(address, _output_index)| {
+            let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
+                .iter()
+                .filter(|&&note| {
+                    let query_address = if let Some(ua) = note.recipient_unified_address.clone() {
+                        ua
+                    } else {
+                        note.recipient.clone()
+                    };
+                    query_address == *address
+                })
+                .cloned()
+                .collect();
+            let value: u64 = outgoing_notes_to_address
+                .iter()
+                .map(|&note| note.value)
+                .sum();
+            let memos: Vec<String> = outgoing_notes_to_address
+                .iter()
+                .filter_map(|&note| note.memo.clone())
+                .collect();
+            value_transfers.push(
+                ValueTransferBuilder::new()
+                    .txid(transaction_summary.txid())
+                    .datetime(transaction_summary.datetime())
+                    .status(transaction_summary.status())
+                    .blockheight(transaction_summary.blockheight())
+                    .transaction_fee(transaction_summary.fee())
+                    .zec_price(transaction_summary.zec_price())
+                    .kind(ValueTransferKind::Sent(SentValueTransfer::Send))
+                    .value(value)
+                    .recipient_address(Some(address.clone()))
+                    .pool_received(None)
+                    .memos(memos)
+                    .build()
+                    .expect("all fields should be populated"),
+            );
+        });
+        value_transfers
+    }
+
+    fn is_transparent_send_to_self(
+        &self,
+        address: &TransparentAddress,
+    ) -> Option<TransparentScope> {
+        let encoded_address = transparent::encode_address(&self.network, *address);
+
+        self.transparent_addresses
+            .iter()
+            .find(|(_, wallet_address)| **wallet_address == encoded_address)
+            .map(|(address_id, _)| address_id.scope())
+    }
+
+    // FIXME: error handling
+    fn is_sapling_send_to_self(&self, address: &sapling_crypto::PaymentAddress) -> bool {
+        sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&self.unified_key_store)
+            .unwrap()
+            .decrypt_diversifier(address)
+            .is_some()
+    }
+
+    // FIXME: error handling
+    fn is_orchard_send_to_self(&self, address: &orchard::Address) -> bool {
+        orchard::keys::FullViewingKey::try_from(&self.unified_key_store)
+            .unwrap()
+            .scope_for_address(address)
+            .is_some()
     }
 }
 
