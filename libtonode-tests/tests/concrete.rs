@@ -1364,7 +1364,7 @@ mod slow {
         let recipient_wallet = recipient.wallet.lock().await;
         let transparent_coins = recipient_wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(transparent_coins.len(), 0);
-        let sapling_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
+        let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
         assert_eq!(sapling_notes.len(), 0);
         let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
         let unspent_orchard_notes = orchard_notes
@@ -1402,6 +1402,7 @@ mod slow {
                 .to_string(),
             sent_transaction_id
         );
+        drop(recipient_wallet);
 
         check_client_balances!(recipient, o: 0 s: 0 t: 0);
     }
@@ -1870,7 +1871,7 @@ mod slow {
             .value(recipient_initial_funds)
             .zec_price(None)
             .kind(TransactionKind::Received)
-            .fee(None)
+            .fee(Some(10_000))
             .orchard_notes(vec![BasicNoteSummary::from_parts(
                 recipient_initial_funds,
                 SpendStatus::Spent(
@@ -1930,12 +1931,22 @@ mod slow {
                      account_id: AccountId::ZERO,
                      scope: zip32::Scope::External,
                  },
+                 value: 99_960_000,
+                 memo: None,
+                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient_unified_address: None,
+             }])
+            .outgoing_sapling_notes(vec![OutgoingNoteSummary {
+                 output_index: 0,
+                 key_id: KeyId {
+                     account_id: AccountId::ZERO,
+                     scope: zip32::Scope::External,
+                 },
                  value: first_send_to_sapling,
                  memo: None,
                  recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  recipient_unified_address: None,
              }])
-            .outgoing_sapling_notes(vec![])
             .build()
             .unwrap();
 
@@ -1960,16 +1971,16 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
-                output_index: 0,
-                key_id: KeyId {
-                    account_id: AccountId::ZERO,
-                    scope: zip32::Scope::External,
-                },
-                value: first_send_to_transparent,
-                memo: None,
-                recipient: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                recipient_unified_address: None,
-            }])
+                 output_index: 0,
+                 key_id: KeyId {
+                     account_id: AccountId::ZERO,
+                     scope: zip32::Scope::External,
+                 },
+                 value: 99_925_000,
+                 memo: None,
+                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient_unified_address: None,
+             }])
             .outgoing_sapling_notes(vec![])
             .build()
             .unwrap();

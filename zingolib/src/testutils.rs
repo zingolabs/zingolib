@@ -9,7 +9,8 @@ use crate::lightclient::describe::UAReceivers;
 use crate::lightclient::error::LightClientError;
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
-    BasicCoinSummary, BasicNoteSummary, TransactionSummary, TransactionSummaryInterface as _,
+    BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
+    TransactionSummaryInterface as _,
 };
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
@@ -163,11 +164,16 @@ pub fn check_transaction_summary_equality(
             first.transparent_coins(),
             second.transparent_coins(),
         )
-        && first.outgoing_orchard_notes() == second.outgoing_orchard_notes()
-        && first.outgoing_sapling_notes() == second.outgoing_sapling_notes()
+        && check_outgoing_note_summary_equality(
+            first.outgoing_orchard_notes(),
+            second.outgoing_orchard_notes(),
+        )
+        && check_outgoing_note_summary_equality(
+            first.outgoing_sapling_notes(),
+            second.outgoing_sapling_notes(),
+        )
 }
 
-/// TODO: doc comment
 fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
@@ -177,6 +183,22 @@ fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSu
             && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
             && first[i].memo() == second[i].memo())
         {
+            return false;
+        }
+    }
+    true
+}
+
+// TODO: check more fields
+fn check_outgoing_note_summary_equality(
+    first: &[OutgoingNoteSummary],
+    second: &[OutgoingNoteSummary],
+) -> bool {
+    if first.len() != second.len() {
+        return false;
+    };
+    for i in 0..first.len() {
+        if !(first[i].value == second[i].value && first[i].memo == second[i].memo) {
             return false;
         }
     }
