@@ -973,6 +973,7 @@ mod fast {
         from_inputs::quick_send(&faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
+        dbg!("PRESYNC");
         zingolib::testutils::increase_height_and_wait_for_client(
             &regtest_manager,
             &mut recipient,
@@ -995,8 +996,6 @@ mod fast {
                 transparent_balance: Some(0)
             }
         );
-        // Unneeded, but more explicit than having _cph be an
-        // unused variable
     }
 
     #[tokio::test]
