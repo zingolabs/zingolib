@@ -882,16 +882,27 @@ mod fast {
             .await
             .unwrap();
         let wallet = recipient.wallet.lock().await;
-        let preshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
+        let preshield_utxos = wallet
+            .wallet_outputs::<TransparentCoin>()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(preshield_utxos.len(), 1);
         assert!(wallet
-            .output_spend_status(*preshield_utxos.first().unwrap())
+            .output_spend_status(preshield_utxos.first().unwrap())
             .is_unspent());
+        drop(wallet);
+
         recipient.quick_shield().await.unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+            .await
+            .unwrap();
+
+        let wallet = recipient.wallet.lock().await;
         let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(postshield_utxos.len(), 1);
         assert!(wallet
-            .output_spend_status(*preshield_utxos.first().unwrap())
+            .output_spend_status(*postshield_utxos.first().unwrap())
             .is_confirmed_spent());
         assert_eq!(
             preshield_utxos.first().unwrap().output_id(),
@@ -3728,7 +3739,7 @@ mod slow {
         recipient.sync_and_await(true).await.unwrap();
         {
             let recipient_wallet = recipient.wallet.lock().await;
-            let sapling_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
+            let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
             assert_eq!(orchard_notes.len(), 2);
@@ -3754,17 +3765,17 @@ mod slow {
                 .output_transaction(&orchard_change_note)
                 .status()
                 .is_confirmed());
-            let balance = recipient.do_balance().await;
-            assert_eq!(balance.orchard_balance, Some(880_000));
-            assert_eq!(balance.unverified_orchard_balance, Some(880_000));
-            assert_eq!(balance.verified_orchard_balance, Some(0));
         }
+        let balance = recipient.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(880_000));
+        assert_eq!(balance.unverified_orchard_balance, Some(880_000));
+        assert_eq!(balance.verified_orchard_balance, Some(0));
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
         {
             let recipient_wallet = recipient.wallet.lock().await;
-            let sapling_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
+            let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
             assert_eq!(orchard_notes.len(), 2);
@@ -3790,11 +3801,11 @@ mod slow {
                 .output_transaction(&orchard_change_note)
                 .status()
                 .is_confirmed());
-            let balance = recipient.do_balance().await;
-            assert_eq!(balance.orchard_balance, Some(880_000));
-            assert_eq!(balance.unverified_orchard_balance, Some(0));
-            assert_eq!(balance.verified_orchard_balance, Some(880_000));
         }
+        let balance = recipient.do_balance().await;
+        assert_eq!(balance.orchard_balance, Some(880_000));
+        assert_eq!(balance.unverified_orchard_balance, Some(0));
+        assert_eq!(balance.verified_orchard_balance, Some(880_000));
     }
 }
 
