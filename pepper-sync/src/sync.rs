@@ -393,7 +393,7 @@ where
     })
 }
 
-/// Obtains the mutex guard to the wallet and creates a [`crate::wallet::SyncStatus`] from the wallet's current
+/// Creates a [`self::SyncStatus`] from the wallet's current
 /// [`crate::wallet::SyncState`].
 ///
 /// Designed to be called during the sync process with minimal interruption.

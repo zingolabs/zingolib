@@ -86,7 +86,7 @@ impl LightClient {
     }
 
     /// Awaits until sync has completed
-    /// Returns [`pepper_sync::wallet::SyncResult`] if successful.
+    /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
         Ok(self
