@@ -133,7 +133,7 @@ pub mod test {
 
         let mut lc = wallet_case.load_example_wallet_with_client().await;
 
-        let sync_result = lc.sync_and_await(false).await.unwrap();
+        let sync_result = lc.sync_and_await(true).await.unwrap();
         println!("{}", sync_result);
         println!("{:?}", lc.do_balance().await);
         lc

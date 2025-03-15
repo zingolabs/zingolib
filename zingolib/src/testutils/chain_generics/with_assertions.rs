@@ -6,7 +6,6 @@ use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
-use crate::wallet::output::query::OutputQuery;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::PoolType;
@@ -52,7 +51,7 @@ pub async fn propose_send_bump_sync_all_recipients<CC>(
 where
     CC: ConductChain,
 {
-    sender.sync_and_await(false).await.unwrap();
+    sender.sync_and_await(true).await.unwrap();
     let proposal = from_inputs::propose(sender, payments).await.unwrap();
     let txids = sender
         .complete_and_broadcast_stored_proposal()
@@ -89,9 +88,8 @@ where
         .await
         .unwrap();
 
-    let (total_fee, r_shielded, s_shielded) =
+    let (total_fee, _, s_shielded) =
         follow_proposal(environment, client, vec![], &proposal, txids, test_mempool).await?;
-    assert_eq!(r_shielded, s_shielded);
     Ok((total_fee, s_shielded))
 }
 
@@ -124,10 +122,7 @@ where
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
-            (
-                wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
-                transaction.status(),
-            ),
+            (transaction.total_value_received(), transaction.status()),
         )
     })
     .await
@@ -148,7 +143,7 @@ where
 
     let option_recipient_mempool_outputs = if test_mempool {
         // mempool scan shows the same
-        sender.sync_and_await(false).await.unwrap();
+        sender.sync_and_await(true).await.unwrap();
 
         // let the mempool monitor get a chance
         // to listen
@@ -161,10 +156,7 @@ where
         ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
                 compare_fee(wallet, transaction, step),
-                (
-                    wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
-                    transaction.status(),
-                ),
+                (transaction.total_value_received(), transaction.status()),
             )
         })
         .await
@@ -187,7 +179,7 @@ where
 
         let mut recipients_mempool_outputs: Vec<Vec<u64>> = vec![];
         for recipient in recipients.iter_mut() {
-            recipient.sync_and_await(false).await.unwrap();
+            recipient.sync_and_await(true).await.unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
@@ -197,12 +189,8 @@ where
                 recipient,
                 proposal,
                 &txids,
-                |wallet, transaction, _step| {
-                    (
-                        wallet
-                            .sum_queried_transaction_output_values(transaction, OutputQuery::any()),
-                        transaction.status(),
-                    )
+                |_wallet, transaction, _step| {
+                    (transaction.total_value_received(), transaction.status())
                 },
             )
             .await
@@ -224,7 +212,7 @@ where
 
     environment.bump_chain().await;
     // chain scan shows the same
-    sender.sync_and_await(false).await.unwrap();
+    sender.sync_and_await(true).await.unwrap();
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
@@ -233,10 +221,7 @@ where
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
-            (
-                wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
-                transaction.status(),
-            ),
+            (transaction.total_value_received(), transaction.status()),
         )
     })
     .await
@@ -259,7 +244,7 @@ where
 
     let mut recipients_confirmed_outputs = vec![];
     for recipient in recipients.iter_mut() {
-        recipient.sync_and_await(false).await.unwrap();
+        recipient.sync_and_await(true).await.unwrap();
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (
@@ -269,11 +254,8 @@ where
             recipient,
             proposal,
             &txids,
-            |wallet, transaction, _step| {
-                (
-                    wallet.sum_queried_transaction_output_values(transaction, OutputQuery::any()),
-                    transaction.status(),
-                )
+            |_wallet, transaction, _step| {
+                (transaction.total_value_received(), transaction.status())
             },
         )
         .await

@@ -181,6 +181,8 @@ where
 
     let mut primary = environment.fund_client_orchard(120_000).await;
     let mut secondary = environment.create_client();
+    let secondary_sapling_addr =
+        get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
     let secondary_orchard_addr =
         get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
@@ -195,11 +197,11 @@ where
                 (&secondary_orchard_addr, 1_000, None),
                 (&secondary_orchard_addr, 1_000, None),
                 (&secondary_orchard_addr, 15_000, None),
-                (&secondary_orchard_addr, 1_000, None),
-                (&secondary_orchard_addr, 1_000, None),
-                (&secondary_orchard_addr, 1_000, None),
-                (&secondary_orchard_addr, 1_000, None),
-                (&secondary_orchard_addr, 15_000, None),
+                (&secondary_sapling_addr, 1_000, None),
+                (&secondary_sapling_addr, 1_000, None),
+                (&secondary_sapling_addr, 1_000, None),
+                (&secondary_sapling_addr, 1_000, None),
+                (&secondary_sapling_addr, 15_000, None),
             ],
             vec![&mut secondary],
             false,
@@ -427,7 +429,7 @@ where
     let mut secondary = environment.create_client();
     let tertiary = environment.create_client();
 
-    secondary.sync_and_await(false).await.unwrap();
+    secondary.sync_and_await(true).await.unwrap();
 
     let expected_fee = fee_tables::one_to_one(None, pool, true);
 
