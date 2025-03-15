@@ -20,10 +20,7 @@ use tokio::{
 
 use zcash_primitives::consensus::BlockHeight;
 
-use pepper_sync::{
-    error::SyncError,
-    wallet::{SyncMode, SyncResult},
-};
+use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 
 use crate::{
     config::ZingoConfig,
