@@ -973,7 +973,6 @@ mod fast {
         from_inputs::quick_send(&faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
-        dbg!("PRESYNC");
         zingolib::testutils::increase_height_and_wait_for_client(
             &regtest_manager,
             &mut recipient,
