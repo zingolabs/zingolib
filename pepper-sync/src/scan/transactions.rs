@@ -240,7 +240,6 @@ pub(crate) fn scan_transaction(
         .unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
-        dbg!(&encoded_memos);
     }
 
     if let Some(bundle) = transaction.orchard_bundle() {
@@ -273,7 +272,6 @@ pub(crate) fn scan_transaction(
         .unwrap();
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
-        dbg!(&encoded_memos);
     }
 
     // collect nullifiers for pending transactions
@@ -300,8 +298,6 @@ pub(crate) fn scan_transaction(
                 uas,
                 rejection_address_indexes: _,
             } => {
-                dbg!(&outgoing_sapling_notes);
-                dbg!(&outgoing_orchard_notes);
                 add_recipient_unified_address(
                     consensus_parameters,
                     uas.clone(),
