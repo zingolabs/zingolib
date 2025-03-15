@@ -216,7 +216,7 @@ pub fn decode_unified_address(
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("failed to decode unified address. incorrect address type."),
+            "failed to decode unified address. incorrect address type.".to_string(),
         ))
     }
 }

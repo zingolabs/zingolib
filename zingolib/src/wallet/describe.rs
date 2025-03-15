@@ -282,7 +282,7 @@ impl LightWallet {
                             || outgoing_note
                                 .encoded_recipient_full_unified_address(&self.network)
                                 .expect("should exist in this scope")
-                                == zfz_address.to_string()
+                                == *zfz_address
                     } else {
                         self.is_sapling_send_to_self(&outgoing_note.note().recipient())
                     }
@@ -298,7 +298,7 @@ impl LightWallet {
                             || outgoing_note
                                 .encoded_recipient_full_unified_address(&self.network)
                                 .expect("should exist in this scope")
-                                == zfz_address.to_string()
+                                == *zfz_address
                     } else {
                         self.is_orchard_send_to_self(&outgoing_note.note().recipient())
                     }

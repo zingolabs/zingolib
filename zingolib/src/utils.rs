@@ -1,5 +1,12 @@
 //! General library utilities such as parsing and conversions.
 
+use std::path::Path;
+
+use tokio::io::AsyncWriteExt as _;
+
+#[cfg(feature = "test-elevation")]
+use zcash_primitives::consensus::NetworkConstants;
+
 pub mod conversion;
 pub mod error;
 
@@ -32,16 +39,12 @@ macro_rules! build_push_list {
     };
 }
 
-use std::path::Path;
-
 pub(crate) use build_method;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;
 #[allow(unused_imports)]
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_push_list;
-use tokio::io::AsyncWriteExt as _;
-use zcash_primitives::consensus::NetworkConstants;
 
 /// Take a P2PKH taddr and interpret it as a tex addr
 #[cfg(feature = "test-elevation")]
