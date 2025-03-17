@@ -196,6 +196,11 @@ fn start_interactive(
             _ => (),
         }
 
+        match send_command("save".to_string(), vec!["check".to_string()]) {
+            check if check.starts_with("Error:") => eprintln!("{check}"),
+            _ => (),
+        }
+
         let readline = rl.readline(&format!(
             "({}) Block:{} (type 'help') >> ",
             chain_name, height
@@ -484,6 +489,9 @@ pub fn startup(
         println!("{}", update);
     }
 
+    let update = commands::do_user_command("save", &["run"], &mut lightclient);
+    println!("{}", update);
+
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);
 
@@ -533,6 +541,16 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 );
                 eprintln!("{}", e);
                 error!("{}", e);
+            }
+        }
+
+        command_transmitter
+            .send(("quit".to_string(), vec![]))
+            .unwrap();
+        match resp_receiver.recv() {
+            Ok(s) => println!("{}", s),
+            Err(e) => {
+                eprintln!("{}", e);
             }
         }
     }

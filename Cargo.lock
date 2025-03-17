@@ -2286,10 +2286,12 @@ name = "pepper-sync"
 version = "0.1.0"
 dependencies = [
  "base58",
+ "byteorder",
  "crossbeam-channel",
  "futures",
  "incrementalmerkletree",
  "json",
+ "jubjub",
  "memuse",
  "orchard",
  "rayon",
@@ -2302,6 +2304,7 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_client_backend",
+ "zcash_encoding",
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
@@ -4602,6 +4605,7 @@ dependencies = [
 name = "zingo-status"
 version = "0.1.0"
 dependencies = [
+ "byteorder",
  "zcash_primitives",
 ]
 

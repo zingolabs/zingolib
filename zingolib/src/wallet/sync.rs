@@ -52,6 +52,11 @@ impl SyncWallet for LightWallet {
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error> {
         Ok(&mut self.transparent_addresses)
     }
+
+    fn set_save_flag(&mut self) -> Result<(), Self::Error> {
+        self.save_required = true;
+        Ok(())
+    }
 }
 
 impl SyncBlocks for LightWallet {

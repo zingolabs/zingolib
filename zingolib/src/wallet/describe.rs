@@ -48,14 +48,14 @@ use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
 use super::data::summaries::ValueTransfers;
 use super::keys::unified::UnifiedKeyStore;
-use super::transaction_record::SendType;
-use super::transaction_record::TransactionKind;
+use super::summary::SendType;
+use super::summary::TransactionKind;
 
 impl LightWallet {
     /// Returns wallet addresses in a JSON array
     pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.unified_addresses.iter() {
+        for address in self.unified_addresses.values() {
             let local_address = match subset {
                 UAReceivers::Orchard => zcash_keys::address::UnifiedAddress::from_receivers(
                     address.orchard().copied(),
@@ -776,7 +776,7 @@ mod test {
         /// zingolib includes derivations of further addresses.
         /// ZingoMobile uses one address.
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            Ok(self.unified_addresses.iter().next().ok_or(())?.clone())
+            Ok(self.unified_addresses.values().next().ok_or(())?.clone())
         }
 
         #[allow(clippy::result_unit_err)]

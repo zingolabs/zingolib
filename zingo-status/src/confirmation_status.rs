@@ -1,6 +1,10 @@
 //! If a note is confirmed, it is:
 //!  Confirmed === on-record on-chain at BlockHeight
 
+use std::io::{Read, Write};
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
 use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
@@ -211,6 +215,40 @@ impl ConfirmationStatus {
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
         }
+    }
+
+    fn serialized_version() -> u8 {
+        0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+        let status = reader.read_u8()?;
+        let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+
+        match status {
+            0 => Ok(Self::Calculated(block_height)),
+            1 => Ok(Self::Transmitted(block_height)),
+            2 => Ok(Self::Mempool(block_height)),
+            3 => Ok(Self::Confirmed(block_height)),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "failed to read status",
+            )),
+        }
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u8(match self {
+            Self::Calculated(_) => 0,
+            Self::Transmitted(_) => 1,
+            Self::Mempool(_) => 2,
+            Self::Confirmed(_) => 3,
+        })?;
+        writer.write_u32::<LittleEndian>(self.get_height().into())
     }
 }
 

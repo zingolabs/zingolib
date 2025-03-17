@@ -191,10 +191,16 @@ mod load_wallet {
 
         // Without sync push server forward 2 blocks
         zingolib::testutils::increase_server_height(&regtest_manager, 2).await;
-        let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
+        let client_fully_scanned_height = faucet
+            .wallet
+            .lock()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap();
 
         // Verify that wallet is still back at 6.
-        assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
+        assert_eq!(client_fully_scanned_height, 8.into());
 
         // Interrupt generating send
         from_inputs::quick_send(

@@ -201,7 +201,7 @@ async fn sent_transaction_reorged_into_mempool() {
         serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
     let mut loaded_client =
-        zingolib::testutils::lightclient::new_client_from_save_buffer(&light_client)
+        zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
             .await
             .unwrap();
     loaded_client.sync_and_await().await.unwrap();

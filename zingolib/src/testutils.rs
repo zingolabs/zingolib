@@ -277,8 +277,15 @@ pub async fn sync_to_target_height(
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
     client.sync_and_await().await?;
-    while u32::from(client.wallet.lock().await.sync_state.fully_scanned_height())
-        < target_block_height
+    while u32::from(
+        client
+            .wallet
+            .lock()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap(),
+    ) < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
         client.sync_and_await().await?;

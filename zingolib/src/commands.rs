@@ -2,9 +2,9 @@
 //! upgrade-or-replace
 
 use crate::data::proposal;
-use crate::lightclient::sync::SyncPollReport;
+use crate::lightclient::LightClient;
+use crate::utils::PollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
-use crate::{lightclient::LightClient, wallet};
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
@@ -17,13 +17,12 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 mod error;
 mod utils;
 
 lazy_static! {
-    static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
+    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
 /// This command interface is used both by cli and also consumers.
@@ -375,7 +374,7 @@ impl Command for SyncCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         if args.len() != 1 {
-            return "Error: sync command expects 1 argument. Type \"sync help\" for usage."
+            return "Error: sync command expects 1 argument. Type \"help sync\" for usage."
                 .to_string();
         }
 
@@ -403,14 +402,14 @@ impl Command for SyncCommand {
                 })
                 .pretty(2),
             "poll" => match lightclient.poll_sync() {
-                SyncPollReport::NoHandle => "Sync task has not been launched.".to_string(),
-                SyncPollReport::NotReady => "Sync task is not complete.".to_string(),
-                SyncPollReport::Ready(result) => match result {
+                PollReport::NoHandle => "Sync task has not been launched.".to_string(),
+                PollReport::NotReady => "Sync task is not complete.".to_string(),
+                PollReport::Ready(result) => match result {
                     Ok(sync_result) => sync_result.to_string(),
                     Err(e) => format!("Error: {e}"),
                 },
             },
-            _ => "Error: invalid sub-command. Type \"sync help\" for usage.".to_string(),
+            _ => "Error: invalid sub-command. Type \"help sync\" for usage.".to_string(),
         }
     }
 }
@@ -772,112 +771,6 @@ impl Command for ExportUfvkCommand {
                 "birthday" => u32::from(wallet.birthday)
             }
             .pretty(2)
-        })
-    }
-}
-
-struct EncryptMessageCommand {}
-impl Command for EncryptMessageCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Encrypt a memo to be sent to a z-address offline
-            Usage:
-            encryptmessage <address> "memo"
-            OR
-            encryptmessage "{'address': <address>, 'memo': <memo>}"
-
-            NOTE: This command only returns the encrypted payload. It does not broadcast it. You are expected to send the encrypted payload to the recipient offline
-            Example:
-            encryptmessage ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Hello from the command line"
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Encrypt a memo to be sent to a z-address offline"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.is_empty() || args.len() > 3 {
-            return self.help().to_string();
-        }
-
-        // Check for a single argument that can be parsed as JSON
-        let (to, memo) = if args.len() == 1 {
-            let arg_list = args[0];
-            let j = match json::parse(arg_list) {
-                Ok(j) => j,
-                Err(e) => {
-                    let es = format!("Couldn't understand JSON: {}", e);
-                    return format!("{}\n{}", es, self.help());
-                }
-            };
-
-            if !j.has_key("address") || !j.has_key("memo") {
-                let es = "Need 'address' and 'memo'\n".to_string();
-                return format!("{}\n{}", es, self.help());
-            }
-
-            let memo =
-                wallet::utils::interpret_memo_string(j["memo"].as_str().unwrap().to_string());
-            if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
-            }
-            let to = j["address"].as_str().unwrap().to_string();
-
-            (to, memo.unwrap())
-        } else if args.len() == 2 {
-            let to = args[0].to_string();
-
-            let memo = wallet::utils::interpret_memo_string(args[1].to_string());
-            if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
-            }
-
-            (to, memo.unwrap())
-        } else {
-            return format!(
-                "Wrong number of arguments. Was expecting 1 or 2\n{}",
-                self.help()
-            );
-        };
-
-        if let Ok(m) = memo.try_into() {
-            lightclient.do_encrypt_message(to, m).pretty(2)
-        } else {
-            "Couldn't encode memo".to_string()
-        }
-    }
-}
-
-struct DecryptMessageCommand {}
-impl Command for DecryptMessageCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Attempt to decrypt a message with all the view keys in the wallet.
-            Usage:
-            decryptmessage "encrypted_message_base64"
-
-            Example:
-            decryptmessage RW5jb2RlIGFyYml0cmFyeSBvY3RldHMgYXMgYmFzZTY0LiBSZXR1cm5zIGEgU3RyaW5nLg==
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Attempt to decrypt a message with all the view keys in the wallet."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return self.help().to_string();
-        }
-
-        RT.block_on(async move {
-            lightclient
-                .do_decrypt_message(args[0].to_string())
-                .await
-                .pretty(2)
         })
     }
 }
@@ -1586,51 +1479,21 @@ struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the latest block height that the wallet is at.
+            Returns the blockchain height at the time the wallet last requested the latest block height from the server.
+
             Usage:
             height
-
-            Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the latest block height that the wallet is at"
+        "Returns the blockchain height at the time the wallet last requested the latest block height from the server."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
-        })
-    }
-}
-
-struct DefaultFeeCommand {}
-impl Command for DefaultFeeCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Returns the default fee in zats for outgoing transactions
-            Usage:
-            defaultfee <optional_block_height>
-
-            Example:
-            defaultfee
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Returns the default fee in zats for outgoing transactions"
-    }
-
-    fn exec(&self, args: &[&str], _lightclient: &mut LightClient) -> String {
-        if args.len() > 1 {
-            return format!("Was expecting at most 1 argument\n{}", self.help());
-        }
-
-        RT.block_on(async move {
-            let j = object! { "defaultfee" => u64::from(MINIMUM_FEE)};
-            j.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     }
 }
@@ -1761,6 +1624,55 @@ impl Command for CoinsCommand {
     }
 }
 
+struct SaveCommand {}
+impl Command for SaveCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Launches a save task which saves the wallet to persistance when the wallet state changes.
+            Not intended to be called manually.
+
+            usage:
+            save run
+            save check
+            save shutdown
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Launches a save task. Not intended to be called manually."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: save command expects 1 argument. Type \"help save\" for usage."
+                .to_string();
+        }
+
+        match args[0] {
+            "run" => {
+                RT.block_on(async move { lightclient.save_task().await });
+                "Launching save task...".to_string()
+            }
+            "check" => match RT.block_on(async move { lightclient.check_save_error().await }) {
+                Ok(_) => "".to_string(),
+                Err(e) => {
+                    format!("Error: save failed. {}\nRestarting save task...", e)
+                }
+            },
+            "shutdown" => {
+                match RT.block_on(async move { lightclient.shutdown_save_task().await }) {
+                    Ok(_) => "Save task shutdown successfully.".to_string(),
+                    Err(e) => {
+                        format!("Error: save failed. {}", e)
+                    }
+                }
+            }
+            _ => "Error: invalid sub-command. Type \"help save\" for usage.".to_string(),
+        }
+    }
+}
+
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
@@ -1777,6 +1689,8 @@ impl Command for QuitCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        let save_shutdown = do_user_command("save", &["shutdown"], lightclient);
+
         // before shutting down, shut down all child processes..
         // ...but only if the network being used is regtest.
         let o = RT.block_on(async move { lightclient.do_info().await });
@@ -1813,27 +1727,7 @@ impl Command for QuitCommand {
                     .expect("error while killing regtest-spawned processes!");
             }
         }
-        "quit".to_string()
-    }
-}
-
-struct DeprecatedNoCommand {}
-impl Command for DeprecatedNoCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            This command has been deprecated.
-            Usage:
-            dont
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Deprecated command."
-    }
-
-    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        ".deprecated.".to_string()
+        format!("{}\nZingo CLI quit successfully.", save_shutdown)
     }
 }
 
@@ -1842,8 +1736,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
-        ("encryptmessage", Box::new(EncryptMessageCommand {})),
-        ("decryptmessage", Box::new(DecryptMessageCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
@@ -1869,12 +1761,11 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
-        ("save", Box::new(DeprecatedNoCommand {})),
+        ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),
         ("new", Box::new(NewAddressCommand {})),
-        ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),

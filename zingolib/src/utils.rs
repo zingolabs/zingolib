@@ -22,6 +22,7 @@ macro_rules! build_method_push {
         }
     };
 }
+#[allow(unused_macros)]
 #[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_push_list {
     ($name:ident, $builder:ident, $struct:ident) => {
@@ -31,11 +32,15 @@ macro_rules! build_push_list {
     };
 }
 
+use std::path::Path;
+
 pub(crate) use build_method;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;
+#[allow(unused_imports)]
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_push_list;
+use tokio::io::AsyncWriteExt as _;
 use zcash_primitives::consensus::NetworkConstants;
 
 /// Take a P2PKH taddr and interpret it as a tex addr
@@ -48,4 +53,20 @@ pub fn interpret_taddr_as_tex_addr(
         &taddr_bytes,
     )
     .unwrap()
+}
+
+/// Writes `bytes` to file at `path`.
+pub(crate) async fn write_to_path(path: &Path, bytes: Vec<u8>) -> std::io::Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    file.write_all(&bytes).await
+}
+
+/// Return type for fns that poll the status of task handles.
+pub enum PollReport<T, E> {
+    /// Task has not been launched.
+    NoHandle,
+    /// Task is not complete.
+    NotReady,
+    /// Task has completed successfully or failed.
+    Ready(Result<T, E>),
 }

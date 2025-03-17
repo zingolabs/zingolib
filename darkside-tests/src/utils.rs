@@ -1,6 +1,5 @@
 use http::Uri;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
-use sapling_crypto::note_encryption::SaplingDomain;
+use orchard::tree::MerkleHashOrchard;
 use std::{
     fs,
     fs::File,
@@ -19,7 +18,6 @@ use zingolib::testutils::{
     regtest::launch_lightwalletd,
     scenarios::setup::TestEnvironmentGenerator,
 };
-use zingolib::wallet::traits::DomainWalletExt;
 
 use crate::{
     constants::BRANCH_ID,
@@ -166,18 +164,10 @@ pub async fn update_tree_states_for_transaction(
     let trees = zingolib::grpc_connector::get_trees(server_id.clone(), height - 1)
         .await
         .unwrap();
-    let mut sapling_tree: sapling_crypto::CommitmentTree = read_commitment_tree(
-        hex::decode(SaplingDomain::get_tree(&trees))
-            .unwrap()
-            .as_slice(),
-    )
-    .unwrap();
-    let mut orchard_tree: CommitmentTree<MerkleHashOrchard, 32> = read_commitment_tree(
-        hex::decode(OrchardDomain::get_tree(&trees))
-            .unwrap()
-            .as_slice(),
-    )
-    .unwrap();
+    let mut sapling_tree: sapling_crypto::CommitmentTree =
+        read_commitment_tree(hex::decode(trees.sapling_tree).unwrap().as_slice()).unwrap();
+    let mut orchard_tree: CommitmentTree<MerkleHashOrchard, 32> =
+        read_commitment_tree(hex::decode(trees.orchard_tree).unwrap().as_slice()).unwrap();
     let transaction = zcash_primitives::transaction::Transaction::read(
         raw_tx.data.as_slice(),
         zcash_primitives::consensus::BranchId::Nu5,

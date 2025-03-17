@@ -21,7 +21,7 @@ use zingolib::{config::RegtestNetwork, lightclient::PoolBalances};
 use zingolib::{get_base_address_macro, wallet::data::summaries::TransactionSummaryInterface as _};
 use zingolib::{
     testutils::{scenarios::setup::ClientBuilder, start_proxy_and_connect_lightclient},
-    wallet::transaction_record::{SendType, TransactionKind},
+    wallet::summary::{SendType, TransactionKind},
 };
 
 #[ignore]

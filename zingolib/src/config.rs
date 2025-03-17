@@ -23,8 +23,7 @@ use log4rs::{
     Config,
 };
 use zcash_primitives::consensus::{
-    BlockHeight, NetworkConstants, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK,
-    TEST_NETWORK,
+    BlockHeight, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK,
 };
 
 /// TODO: Add Doc Comment Here!
@@ -479,54 +478,6 @@ impl ZingoConfig {
 
         log_path.into_boxed_path()
     }
-
-    /// Coin Types are specified in public registries to disambiguate coin variants
-    /// so that HD wallets can manage multiple currencies.
-    ///  <https://github.com/satoshilabs/slips/blob/master/slip-0044.md>
-    ///  ZEC is registered as 133 (0x80000085) for MainNet and 1 (0x80000001) for TestNet (all coins)
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn get_coin_type(&self) -> u32 {
-        self.chain.coin_type()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn hrp_sapling_address(&self) -> &str {
-        self.chain.hrp_sapling_payment_address()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn hrp_sapling_private_key(&self) -> &str {
-        self.chain.hrp_sapling_extended_spending_key()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn hrp_sapling_viewing_key(&self) -> &str {
-        self.chain.hrp_sapling_extended_full_viewing_key()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn base58_pubkey_address(&self) -> [u8; 2] {
-        self.chain.b58_pubkey_address_prefix()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "obsolete due to `Parameter` trait methods")]
-    pub fn base58_script_address(&self) -> [u8; 2] {
-        self.chain.b58_script_address_prefix()
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
-    pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
-        match self.chain {
-            ChainType::Testnet | ChainType::Regtest(_) => [0xEF],
-            ChainType::Mainnet => [0x80],
-        }
-    }
 }
 
 /// TODO: Add Doc Comment Here!
@@ -538,28 +489,6 @@ pub enum ChainType {
     Regtest(RegtestNetwork),
     /// Mainnet
     Mainnet,
-}
-
-impl ChainType {
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
-    pub fn hrp_orchard_spending_key(&self) -> &str {
-        match self {
-            ChainType::Testnet => "secret-orchard-sk-test",
-            ChainType::Regtest(_) => "secret-orchard-sk-regtest",
-            ChainType::Mainnet => "secret-orchard-sk-main",
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    #[deprecated(since = "0.1.0", note = "prefix not known to be used")]
-    pub fn hrp_unified_full_viewing_key(&self) -> &str {
-        match self {
-            ChainType::Testnet => "uviewtest",
-            ChainType::Regtest(_) => "uviewregtest",
-            ChainType::Mainnet => "uview",
-        }
-    }
 }
 
 impl std::fmt::Display for ChainType {
@@ -594,6 +523,7 @@ impl Parameters for ChainType {
 }
 
 /// TODO: Add Doc Comment Here!
+// TODO: replace with infrastucture types
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
@@ -681,6 +611,7 @@ impl RegtestNetwork {
 }
 
 /// TODO: Add Doc Comment Here!
+// TODO: replace with infrastucture types
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActivationHeights {
     overwinter: BlockHeight,
@@ -729,7 +660,6 @@ impl ActivationHeights {
 }
 
 mod tests {
-
     /// Validate that the load_clientconfig function creates a valid config from an empty uri
     #[tokio::test]
     async fn test_load_clientconfig() {

@@ -4,23 +4,18 @@ use json::{array, object, JsonValue};
 use log::error;
 use pepper_sync::{error::SyncError, wallet::SyncResult};
 use serde::Serialize;
-use std::sync::{atomic::AtomicU8, Arc};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU8},
+    Arc,
+};
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
 };
 
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
-use zcash_primitives::{
-    consensus::NetworkConstants,
-    memo::{Memo, MemoBytes},
-};
-
 use crate::{config::ZingoConfig, data::proposal::ZingoProposal};
 
-use crate::wallet::{
-    keys::unified::ReceiverSelection, message::Message, LightWallet, SendProgress,
-};
+use crate::wallet::{keys::unified::ReceiverSelection, LightWallet, SendProgress};
 
 pub mod error;
 
@@ -156,19 +151,6 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
-#[derive(Default)]
-struct ZingoSaveBuffer {
-    pub buffer: Arc<RwLock<Vec<u8>>>,
-}
-
-impl ZingoSaveBuffer {
-    fn new(buffer: Vec<u8>) -> Self {
-        ZingoSaveBuffer {
-            buffer: Arc::new(RwLock::new(buffer)),
-        }
-    }
-}
-
 /// Balances that may be presented to a user in a wallet app.
 /// The goal is to present a user-friendly and useful view of what the user has or can soon expect
 /// *without* requiring the user to understand the details of the Zcash protocol.
@@ -243,8 +225,9 @@ pub struct LightClient {
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
+    save_active: Arc<AtomicBool>,
+    save_handle: Option<JoinHandle<std::io::Result<()>>>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
-    save_buffer: ZingoSaveBuffer,                        // TODO: move save buffer to wallet itself?
 }
 
 /// all the wonderfully intertwined ways to conjure a LightClient
@@ -253,7 +236,10 @@ pub mod instantiation {
     use pepper_sync::wallet::SyncMode;
     use std::{
         io::{self, Error, ErrorKind},
-        sync::{atomic::AtomicU8, Arc},
+        sync::{
+            atomic::{AtomicBool, AtomicU8},
+            Arc,
+        },
     };
     use tokio::{
         runtime::Runtime,
@@ -263,7 +249,7 @@ pub mod instantiation {
 
     use crate::config::ZingoConfig;
 
-    use super::{LightClient, ZingoSaveBuffer};
+    use super::LightClient;
     use crate::wallet::{LightWallet, WalletBase};
 
     impl LightClient {
@@ -272,17 +258,18 @@ pub mod instantiation {
         /// This is the fundamental invocation of a LightClient. It lives in an asynchronous runtime.
         pub async fn create_from_wallet_async(
             config: ZingoConfig,
-            wallet: LightWallet,
+            mut wallet: LightWallet,
         ) -> io::Result<Self> {
             let mut buffer: Vec<u8> = vec![];
-            wallet.write(&mut buffer).await?;
+            wallet.write(&mut buffer, &config.chain).await?;
             Ok(LightClient {
                 config,
                 wallet: Arc::new(Mutex::new(wallet)),
                 sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
                 sync_handle: None,
+                save_active: Arc::new(AtomicBool::new(false)),
+                save_handle: None,
                 latest_proposal: Arc::new(RwLock::new(None)),
-                save_buffer: ZingoSaveBuffer::new(buffer),
             })
         }
 
@@ -334,11 +321,6 @@ pub mod instantiation {
             )
             .await?;
 
-            lightclient
-                .save_internal_rust()
-                .await
-                .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
             debug!("Created new wallet!");
 
             Ok(lightclient)
@@ -367,18 +349,14 @@ pub mod instantiation {
 
         fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
             Runtime::new().unwrap().block_on(async move {
-                let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
-                    .await?;
+                let lightclient =
+                    LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)
+                        .await?;
 
                 debug!("Created new wallet with a new seed!");
                 debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
-                // Save
-                l.save_internal_rust()
-                    .await
-                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
-
-                Ok(l)
+                Ok(lightclient)
             })
         }
 
@@ -419,52 +397,8 @@ impl LightClient {
         &self.config
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
-            Ok(v) => v,
-            Err(e) => {
-                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
-            }
-        };
-
-        match self.wallet.lock().await.decrypt_message(data).await {
-            Ok(m) => {
-                let memo_bytes: MemoBytes = m.memo.clone().into();
-                object! {
-                    "to" => encode_payment_address(self.config.chain.hrp_sapling_payment_address(), &m.to),
-                    "memo" => LightWallet::memo_str(Some(m.memo)),
-                    "memohex" => hex::encode(memo_bytes.as_slice())
-                }
-            }
-            Err(_) => object! { "error" => "Couldn't decrypt with any of the wallet's keys"},
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn do_encrypt_message(&self, recipient_address_str: String, memo: Memo) -> JsonValue {
-        let to = match decode_payment_address(
-            self.config.chain.hrp_sapling_payment_address(),
-            &recipient_address_str,
-        ) {
-            Ok(to) => to,
-            _ => {
-                return object! {"error" => format!("Couldn't parse {} as a z-address", recipient_address_str) };
-            }
-        };
-
-        match Message::new(to, memo).encrypt() {
-            Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
-            }
-            Err(e) => {
-                object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
-            }
-        }
-    }
-
     /// Generates a new unified address from the given `addr_type`.
-    pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
+    pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
@@ -472,14 +406,11 @@ impl LightClient {
             transparent: addr_type.contains('t'),
         };
 
-        let new_address = self
-            .wallet
-            .lock()
-            .await
+        let mut wallet = self.wallet.lock().await;
+        let new_address = wallet
             .generate_unified_address(desired_receivers)
             .map_err(|e| e.to_string())?;
-
-        // self.save_internal_rust().await?;
+        wallet.save_required = true;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
