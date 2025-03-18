@@ -240,7 +240,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     )
 }
 
-/// Send from sender to recipient and then sync the recipient
+/// Send from sender to recipient and then bump chain and sync both lightclients
 pub async fn send_value_between_clients_and_sync(
     manager: &RegtestManager,
     sender: &mut LightClient,
@@ -248,10 +248,6 @@ pub async fn send_value_between_clients_and_sync(
     value: u64,
     address_pool: PoolType,
 ) -> Result<String, LightClientError> {
-    log::debug!(
-        "recipient address is: {}",
-        recipient.do_addresses(UAReceivers::All).await[0]["address"]
-    );
     let txid = lightclient::from_inputs::quick_send(
         sender,
         vec![(

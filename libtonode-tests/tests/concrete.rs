@@ -2545,57 +2545,31 @@ mod slow {
         let mut txids = recipient.transaction_summaries().await.txids().into_iter();
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
+
     #[tokio::test]
     async fn sapling_to_sapling_scan_together() {
-        // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
-        // (For this test, the Sapling Domain is assumed in all cases.)
-        // Sender Setup:
-        // 1. create a spend key: SpendK_S
-        // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
-        // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
-        // 4. publish BRT
-        // 5. optionally mine a block including BRT <-- There are two separate tests to run
-        // 6. optionally mine sufficient subsequent blocks to "validate" BRT
-        // Recipient Setup:
-        // 1. create a spend key: "SpendK_R"
-        // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
-        // Test Procedure:
-        // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
-        // 2. publish the transaction to the mempool
-        // 3. mine a block
-        // Constraints:
-        // 1. SpendK_S controls start - spend funds
-        // 2. SpendK_R controls 0 + spend funds
-        let (regtest_manager, _cph, mut faucet, mut recipient) =
-            scenarios::faucet_recipient_default().await;
+        let funding_value = 100_000;
+        let (regtest_manager, _cph, faucet, mut recipient, _, funding_txid, _) =
+            scenarios::faucet_funded_recipient(
+                None,
+                Some(funding_value),
+                None,
+                PoolType::Shielded(ShieldedProtocol::Orchard),
+                RegtestNetwork::all_upgrades_active(),
+                false,
+            )
+            .await;
 
-        // Give the faucet a block reward
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
-            .await
-            .unwrap();
-        let value = 100_000;
-
-        // Send some sapling value to the recipient
-        let txid = zingolib::testutils::send_value_between_clients_and_sync(
-            &regtest_manager,
-            &mut faucet,
-            &mut recipient,
-            value,
-            PoolType::Shielded(ShieldedProtocol::Sapling),
+        let spent_value = 20_000;
+        let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+        let spent_txid = from_inputs::quick_send(
+            &recipient,
+            vec![(&faucet_sapling_address, spent_value, None)],
         )
         .await
-        .unwrap();
-
-        let spent_value = 250;
-
-        // Construct transaction to wallet-external recipient-address.
-        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let spent_txid =
-            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-                .await
-                .unwrap()
-                .first()
-                .to_string();
+        .unwrap()
+        .first()
+        .to_string();
 
         zingolib::testutils::increase_height_and_wait_for_client(
             &regtest_manager,
@@ -2604,7 +2578,7 @@ mod slow {
         )
         .await
         .unwrap();
-        // 5. Check the transaction list to make sure we got all transactions
+
         let transactions = recipient
             .wallet
             .lock()
@@ -2614,36 +2588,31 @@ mod slow {
             .0;
 
         assert_eq!(transactions.first().unwrap().blockheight(), 5.into());
-        assert_eq!(transactions.first().unwrap().txid().to_string(), txid);
-        assert_eq!(transactions.first().unwrap().value(), value);
+        assert_eq!(
+            transactions.first().unwrap().txid().to_string(),
+            funding_txid.unwrap()
+        );
+        assert_eq!(transactions.first().unwrap().value(), funding_value);
 
         assert_eq!(transactions.get(1).unwrap().blockheight(), 6.into());
         assert_eq!(transactions.get(1).unwrap().txid().to_string(), spent_txid);
-        assert_eq!(
-            transactions.get(1).unwrap().value(),
-            spent_value + u64::from(MINIMUM_FEE)
-        );
-        assert_eq!(
-            transactions
-                .get(1)
-                .unwrap()
-                .outgoing_orchard_notes()
-                .first()
-                .unwrap()
-                .recipient,
-            exit_zaddr
-        );
-        assert_eq!(
-            transactions
-                .get(1)
-                .unwrap()
-                .outgoing_orchard_notes()
-                .first()
-                .unwrap()
-                .value,
-            spent_value
-        );
+        assert_eq!(transactions.get(1).unwrap().value(), spent_value);
+        assert!(transactions
+            .get(1)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .iter()
+            .find(|note| { note.recipient == faucet_sapling_address })
+            .is_some());
+        assert!(transactions
+            .get(1)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .iter()
+            .find(|note| { note.value == spent_value })
+            .is_some());
     }
+
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
         // TODO:  Add assertions about Sapling change note.

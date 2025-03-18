@@ -929,7 +929,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -964,7 +964,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1793,7 +1793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4039,7 +4039,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4289,7 +4289,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.6.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "bech32 0.9.1",
  "bs58",
@@ -4302,7 +4302,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.14.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "base64 0.22.1",
  "bech32 0.9.1",
@@ -4347,7 +4347,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4356,7 +4356,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "bech32 0.9.1",
  "bip32",
@@ -4397,7 +4397,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.19.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "aes",
  "bip32",
@@ -4435,7 +4435,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.19.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4457,7 +4457,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "document-features",
  "memuse",
@@ -4696,7 +4696,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?tag=zcash_client_sqlite-0.12.1_plus_zingolabs_changes-test_2#db6efd6a2fdac955c7eb6929a043d19d9e451429"
+source = "git+https://github.com/zingolabs/librustzcash.git?branch=zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2#1c7f17b0b08950f9b8f2a2a2847aa71f11a2fa02"
 dependencies = [
  "base64 0.22.1",
  "nom",
