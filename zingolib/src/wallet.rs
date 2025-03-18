@@ -183,6 +183,7 @@ impl WalletBase {
 /// automatically. Calling [`crate::wallet::LightWallet::save`] will serialize the wallet and reset `save_required`
 /// to false, returning the bytes to be persisted. Also see [`crate::lightclient::LightClient::save_task`] and related
 /// methods for a save task implementation.
+#[derive(Debug)]
 pub struct LightWallet {
     /// Network type
     pub network: ChainType,

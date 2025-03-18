@@ -180,7 +180,7 @@ mod shielding {
             )
             .unwrap(),
             config,
-            false,
+            true,
         )
         .unwrap()
     }
