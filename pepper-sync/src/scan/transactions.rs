@@ -239,7 +239,7 @@ pub(crate) fn scan_transaction(
         )
         .unwrap();
 
-        encoded_memos.append(&mut parse_encoded_memos(&sapling_notes).unwrap());
+        encoded_memos.append(&mut parse_encoded_memos(&sapling_notes));
     }
 
     if let Some(bundle) = transaction.orchard_bundle() {
@@ -271,7 +271,7 @@ pub(crate) fn scan_transaction(
         )
         .unwrap();
 
-        encoded_memos.append(&mut parse_encoded_memos(&orchard_notes).unwrap());
+        encoded_memos.append(&mut parse_encoded_memos(&orchard_notes));
     }
 
     // collect nullifiers for pending transactions
@@ -453,21 +453,23 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
     None
 }
 
-fn parse_encoded_memos<N, Nf: Copy>(
-    wallet_notes: &[WalletNote<N, Nf>],
-) -> Result<Vec<ParsedMemo>, ()> {
-    let encoded_memos = wallet_notes
+fn parse_encoded_memos<N, Nf: Copy>(wallet_notes: &[WalletNote<N, Nf>]) -> Vec<ParsedMemo> {
+    wallet_notes
         .iter()
         .flat_map(|note| {
             if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo {
-                Some(zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()).unwrap())
+                match zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()) {
+                    Ok(encoded_memo) => Some(encoded_memo),
+                    Err(e) => {
+                        tracing::error!("Failed to decode memo data. {e}");
+                        None
+                    }
+                }
             } else {
                 None
             }
         })
-        .collect();
-
-    Ok(encoded_memos)
+        .collect()
 }
 
 fn add_recipient_unified_address<P, Nz>(
