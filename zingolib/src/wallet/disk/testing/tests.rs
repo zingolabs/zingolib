@@ -247,7 +247,7 @@ async fn reload_wallet_from_buffer() {
     let client = LightClient::create_from_wallet(
         LightWallet::read(&mid_buffer[..], config.chain).unwrap(),
         config,
-        false,
+        true,
     )
     .unwrap();
     let wallet = client.wallet.lock().await;
@@ -282,7 +282,9 @@ async fn reload_wallet_from_buffer() {
         expected_usk.transparent().to_bytes()
     );
 
-    assert_eq!(wallet.unified_addresses.len(), 3);
+    // FIXME: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
+    // should thoroughly test UA discovery when syncing which should find these UAs again
+    assert_eq!(wallet.unified_addresses.len(), 1);
     for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
@@ -304,6 +306,5 @@ async fn reload_wallet_from_buffer() {
     let v_ufvk_string = v_ufvk.encode(&view_wallet.network);
     assert_eq!(ufvk_string, v_ufvk_string);
 
-    let balance = client.do_balance().await;
-    assert_eq!(balance.orchard_balance, Some(10342837));
+    // NOTE: removed balance check as need to sync to restore transaction data.
 }

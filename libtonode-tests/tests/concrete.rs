@@ -3433,41 +3433,24 @@ mod slow {
             test_dev_total_expected_fee
         );
 
-        println!(
-            "{}",
-            client
-                .wallet
-                .lock()
-                .await
-                .note_summaries::<SaplingNote>(false)
-        );
-        println!(
-            "{}",
-            client
-                .wallet
-                .lock()
-                .await
-                .note_summaries::<OrchardNote>(false)
-        );
-
         // 10 Orchard and Sapling demote all to transparent self-send
         //  oz -> t
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
-        from_inputs::quick_send(&client, vec![(&pmc_taddr, 475_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_taddr, 470_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 0 t: 475_000);
-        test_dev_total_expected_fee += 25_000;
+        bump_and_check!(o: 0 s: 0 t: 470_000);
+        test_dev_total_expected_fee += 30_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
         // 10 transparent to transparent
-        // Very explicit catch of reject sending from transparent to other than Self Orchard
-        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 1, None)]).await {
+        // Very explicit catch of reject sending from transparent
+        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
@@ -3475,8 +3458,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(25_001).unwrap());
+                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(25_000).unwrap());
                     }
                     _ => panic!(),
                 },
@@ -3486,7 +3469,7 @@ mod slow {
             },
             _ => panic!(),
         }
-        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        bump_and_check!(o: 0 s: 0 t: 470_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3495,7 +3478,7 @@ mod slow {
         // 11 transparent to sapling
         //  t -> z
         // 10 transparent to transparent
-        // Very explicit catch of reject sending from transparent to other than Self Orchard
+        // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
@@ -3504,8 +3487,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(70_000).unwrap());
+                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(60_000).unwrap());
                     }
                     _ => {
                         panic!()
@@ -3515,27 +3498,26 @@ mod slow {
             },
             _ => panic!(),
         }
-        // End of 11 no change
-        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        bump_and_check!(o: 0 s: 0 t: 470_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 12 Orchard and Sapling demote all to transparent self-send
+        // 12 Shield
         //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 1t and 2o
         client.quick_shield().await.unwrap();
-        bump_and_check!(o: 460_000 s: 10_000 t: 0);
+        bump_and_check!(o: 455_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 13 Orchard and Sapling demote all to transparent self-send
+        // 13 Orchard to Sapling
         //  o -> z
         //  # Expected Fees:
         //    - legacy: 10_000
@@ -3543,60 +3525,58 @@ mod slow {
         from_inputs::quick_send(&client, vec![(&pmc_sapling, 10_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 430_000 s: 20_000 t: 0);
+        bump_and_check!(o: 425_000 s: 10_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard and Sapling demote all to transparent self-send
+        // 14 Orchard self-send
         //  o -> o
+        // TODO: already tested!?
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
         from_inputs::quick_send(&client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 420_000 s: 20_000 t: 0);
+        bump_and_check!(o: 415_000 s: 10_000 t: 0);
         test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard and Sapling demote all to transparent self-send
-        //  zo -> o
+        // 14 Orchard and Sapling to Sapling
+        //  zo -> z
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        from_inputs::quick_send(&client, vec![(&pmc_sapling, 400_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_sapling, 405_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 410_000 t: 0);
+        bump_and_check!(o: 0 s: 405_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 15 Orchard and Sapling demote all to transparent self-send
+        // 15 Sapling self-send
         //  z -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000  sapling->sapling change to sapling, with 2 or fewer inputs
+        //    - 317:    10_000
         from_inputs::quick_send(&client, vec![(&pmc_sapling, 380_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 400_000 t: 0);
+        bump_and_check!(o: 0 s: 395_000 t: 0);
         test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
-
-        let total_fee = get_fees_paid_by_client(&client).await;
-        assert_eq!(total_fee, test_dev_total_expected_fee);
     }
 
     #[tokio::test]

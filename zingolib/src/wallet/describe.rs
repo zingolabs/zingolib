@@ -983,6 +983,7 @@ mod test {
         /// gets a string address for the wallet, based on pooltype
         pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
             let ua = self.get_first_ua()?;
+            dbg!(&ua);
             self.encode_ua_as_pool(&ua, pool)
         }
     }

@@ -301,6 +301,19 @@ impl LightWallet {
                 .collect::<Vec<_>>(),
         );
 
+        let first_address_index = 0;
+        let first_unified_address = unified_key_store
+            .generate_unified_address(first_address_index, unified_key_store.can_view(), false)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let mut unified_addresses = BTreeMap::new();
+        unified_addresses.insert(
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: first_address_index,
+            },
+            first_unified_address.clone(),
+        );
+
         let lw = Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
@@ -315,7 +328,7 @@ impl LightWallet {
             shard_trees: ShardTrees::new(),
             sync_state,
             transparent_addresses: BTreeMap::new(),
-            unified_addresses: BTreeMap::new(),
+            unified_addresses,
             network,
             save_required: false,
         };

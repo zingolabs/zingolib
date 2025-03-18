@@ -671,7 +671,9 @@ pub mod summaries {
         pub fn paid_fees(&self) -> u64 {
             self.iter()
                 .filter_map(|summary| {
-                    if matches!(summary.kind, TransactionKind::Sent(_)) {
+                    if matches!(summary.kind, TransactionKind::Sent(_))
+                        && summary.status.is_confirmed()
+                    {
                         summary.fee()
                     } else {
                         None
