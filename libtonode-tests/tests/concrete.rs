@@ -1929,7 +1929,7 @@ mod slow {
                  output_index: 0,
                  key_id: KeyId {
                      account_id: AccountId::ZERO,
-                     scope: zip32::Scope::External,
+                     scope: zip32::Scope::Internal,
                  },
                  value: 99_960_000,
                  memo: None,
@@ -1974,7 +1974,7 @@ mod slow {
                  output_index: 0,
                  key_id: KeyId {
                      account_id: AccountId::ZERO,
-                     scope: zip32::Scope::External,
+                     scope: zip32::Scope::Internal,
                  },
                  value: 99_925_000,
                  memo: None,
@@ -2044,7 +2044,7 @@ mod slow {
             .value(recipient_second_funding)
             .zec_price(None)
             .kind(TransactionKind::Received)
-            .fee(None)
+            .fee(Some(10_000))
             .orchard_notes(vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
                 SpendStatus::Spent(
@@ -2099,16 +2099,16 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
-                output_index: 0,
-                key_id: KeyId {
-                    account_id: AccountId::ZERO,
-                    scope: zip32::Scope::External,
-                },
-                value: second_send_to_transparent,
-                memo: None,
-                recipient: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                recipient_unified_address: None,
-            }])
+                 output_index: 0,
+                 key_id: KeyId {
+                     account_id: AccountId::ZERO,
+                     scope: zip32::Scope::Internal,
+                 },
+                 value: 965_000,
+                 memo: None,
+                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient_unified_address: None,
+             }])
             .outgoing_sapling_notes(vec![])
             .build()
             .unwrap();
@@ -2143,6 +2143,17 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+                 output_index: 0,
+                 key_id: KeyId {
+                     account_id: AccountId::ZERO,
+                     scope: zip32::Scope::Internal,
+                 },
+                 value: 99_885_000,
+                 memo: None,
+                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient_unified_address: None,
+             }])
+            .outgoing_sapling_notes(vec![OutgoingNoteSummary {
                 output_index: 0,
                 key_id: KeyId {
                     account_id: AccountId::ZERO,
@@ -2153,7 +2164,6 @@ mod slow {
                 recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                 recipient_unified_address: None,
             }])
-            .outgoing_sapling_notes(vec![])
             .build()
             .unwrap();
         from_inputs::quick_send(
@@ -2194,16 +2204,16 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
-                output_index: 0,
-                key_id: KeyId {
-                    account_id: AccountId::ZERO,
-                    scope: zip32::Scope::External,
-                },
-                value: external_transparent_3,
-                memo: None,
-                recipient: "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd".to_string(),
-                recipient_unified_address: None,
-            }])
+                 output_index: 0,
+                 key_id: KeyId {
+                     account_id: AccountId::ZERO,
+                     scope: zip32::Scope::Internal,
+                 },
+                 value: 930_000,
+                 memo: None,
+                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient_unified_address: None,
+             }])
             .outgoing_sapling_notes(vec![])
             .build()
             .unwrap();

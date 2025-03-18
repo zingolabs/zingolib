@@ -68,7 +68,7 @@ pub mod summaries {
         utils::build_method,
         wallet::{
             output::SpendStatus,
-            summary::{SendType, TransactionKind},
+            summary::{self, SendType, TransactionKind},
         },
     };
 
@@ -1000,6 +1000,7 @@ pub mod summaries {
                 "\t{{
             output index: {}
             account id: {}
+            key scope: {}
             value: {}
             memo: {}
             recipient: {}
@@ -1007,6 +1008,7 @@ pub mod summaries {
         }}",
                 self.output_index,
                 u32::from(self.key_id.account_id),
+                summary::Scope::from(self.key_id.scope),
                 self.value,
                 memo,
                 self.recipient,

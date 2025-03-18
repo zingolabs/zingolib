@@ -189,7 +189,6 @@ fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSu
     true
 }
 
-// TODO: check more fields
 fn check_outgoing_note_summary_equality(
     first: &[OutgoingNoteSummary],
     second: &[OutgoingNoteSummary],
@@ -198,7 +197,12 @@ fn check_outgoing_note_summary_equality(
         return false;
     };
     for i in 0..first.len() {
-        if !(first[i].value == second[i].value && first[i].memo == second[i].memo) {
+        if !(first[i].key_id == second[i].key_id
+            && first[i].value == second[i].value
+            && first[i].memo == second[i].memo
+            && first[i].recipient == second[i].recipient
+            && first[i].recipient_unified_address == second[i].recipient_unified_address)
+        {
             return false;
         }
     }
