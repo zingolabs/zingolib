@@ -5,7 +5,6 @@
 
 pub mod scenarios;
 
-use crate::lightclient::describe::UAReceivers;
 use crate::lightclient::error::LightClientError;
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
@@ -197,11 +196,12 @@ fn check_outgoing_note_summary_equality(
         return false;
     };
     for i in 0..first.len() {
-        if !(first[i].key_id == second[i].key_id
-            && first[i].value == second[i].value
+        if !(first[i].value == second[i].value
             && first[i].memo == second[i].memo
             && first[i].recipient == second[i].recipient
             && first[i].recipient_unified_address == second[i].recipient_unified_address)
+            && first[i].account_id == second[i].account_id
+            && first[i].scope == second[i].scope
         {
             return false;
         }

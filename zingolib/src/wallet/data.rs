@@ -59,7 +59,6 @@ pub mod finsight {
 pub mod summaries {
     use chrono::DateTime;
     use json::JsonValue;
-    use pepper_sync::keys::KeyId;
     use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
     use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -668,9 +667,17 @@ pub mod summaries {
         pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
             self.0.iter()
         }
-        /// Total fees captured by these summaries
+        /// Sum total of all fees paid in sending transactions
         pub fn paid_fees(&self) -> u64 {
-            self.iter().filter_map(|summary| summary.fee()).sum()
+            self.iter()
+                .filter_map(|summary| {
+                    if matches!(summary.kind, TransactionKind::Sent(_)) {
+                        summary.fee()
+                    } else {
+                        None
+                    }
+                })
+                .sum()
         }
         /// A Vec of the txids
         pub fn txids(&self) -> Vec<TxId> {
@@ -979,12 +986,13 @@ pub mod summaries {
     /// Not to be used for internal logic in the system.
     #[derive(Clone, PartialEq, Debug)]
     pub struct OutgoingNoteSummary {
-        pub output_index: u16,
-        pub key_id: KeyId,
         pub value: u64,
         pub memo: Option<String>,
         pub recipient: String,
         pub recipient_unified_address: Option<String>,
+        pub output_index: u16,
+        pub account_id: zip32::AccountId,
+        pub scope: summary::Scope,
     }
 
     impl std::fmt::Display for OutgoingNoteSummary {
@@ -998,21 +1006,21 @@ pub mod summaries {
             write!(
                 f,
                 "\t{{
-            output index: {}
-            account id: {}
-            key scope: {}
             value: {}
             memo: {}
             recipient: {}
             recipient unified address: {}
+            output index: {}
+            account id: {}
+            scope: {}
         }}",
-                self.output_index,
-                u32::from(self.key_id.account_id),
-                summary::Scope::from(self.key_id.scope),
                 self.value,
                 memo,
                 self.recipient,
                 recipient_unified_address,
+                self.output_index,
+                u32::from(self.account_id),
+                self.scope,
             )
         }
     }
@@ -1020,12 +1028,13 @@ pub mod summaries {
     impl From<OutgoingNoteSummary> for JsonValue {
         fn from(note: OutgoingNoteSummary) -> Self {
             json::object! {
-                "account_id" => u32::from(note.key_id.account_id),
-                "output_index" => note.output_index,
                 "value" => note.value,
                 "memo" => note.memo,
                 "recipient" => note.recipient,
-                "recipient_unified_address" => note.recipient_unified_address
+                "recipient_unified_address" => note.recipient_unified_address,
+                "output_index" => note.output_index,
+                "account_id" => u32::from(note.account_id),
+                "scope" => note.scope.to_string(),
             }
         }
     }
