@@ -1833,6 +1833,7 @@ dependencies = [
  "tempfile",
  "testvectors",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "zcash_address",
  "zcash_client_backend",

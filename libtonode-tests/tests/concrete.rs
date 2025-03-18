@@ -1269,7 +1269,9 @@ mod slow {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
     use zingolib::lightclient::describe::UAReceivers;
-    use zingolib::lightclient::send::send_with_proposal::QuickSendError;
+    use zingolib::lightclient::send::send_with_proposal::{
+        CompleteAndBroadcastError, QuickSendError,
+    };
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1280,8 +1282,8 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
         TransactionSummaryInterface,
     };
-    use zingolib::wallet::error::{KeyError, WalletError};
     use zingolib::wallet::output::SpendStatus;
+    use zingolib::wallet::send::BuildTransactionError;
     use zingolib::wallet::summary::{SendType, TransactionKind};
 
     use super::*;
@@ -1590,6 +1592,7 @@ mod slow {
         //     4.3. rescan
         //     4.4. check that notes and utxos were detected by the wallet
 
+        tracing_subscriber::fmt().init();
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let mut faucet = client_builder.build_faucet(false, regtest_network);
@@ -1612,9 +1615,9 @@ mod slow {
             get_base_address_macro!(original_recipient, "unified"),
         );
         let addr_amount_memos = vec![
-            (recipient_taddr.as_str(), 1_000u64, None),
-            (recipient_sapling.as_str(), 2_000u64, None),
-            (recipient_unified.as_str(), 3_000u64, None),
+            (recipient_taddr.as_str(), 10_000u64, None),
+            (recipient_sapling.as_str(), 20_000u64, None),
+            (recipient_unified.as_str(), 30_000u64, None),
         ];
         // 1. fill wallet with a coinbase transaction by syncing faucet with 1-block increase
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
@@ -1635,9 +1638,9 @@ mod slow {
         let sent_t_value = original_recipient_balance.transparent_balance.unwrap();
         let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
         let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
-        assert_eq!(sent_t_value, 1000u64);
-        assert_eq!(sent_s_value, 2000u64);
-        assert_eq!(sent_o_value, 3000u64);
+        assert_eq!(sent_t_value, 10_000u64);
+        assert_eq!(sent_s_value, 20_000u64);
+        assert_eq!(sent_o_value, 30_000u64);
 
         // check that do_rescan works
         original_recipient.rescan_and_await(true).await.unwrap();
@@ -1657,10 +1660,10 @@ mod slow {
             vec![&o_fvk, &s_fvk, &t_fvk],
         ];
         for fvks in fvks_sets.iter() {
-            log::info!("testing UFVK containing:");
-            log::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
-            log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
-            log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
+            tracing::info!("testing UFVK containing:");
+            tracing::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
+            tracing::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
+            tracing::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
             let mut watch_client = build_fvk_client(fvks, zingo_config.clone());
             // assert empty wallet before rescan
@@ -1694,11 +1697,11 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
-                Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::DataSource(
-                        WalletError::KeyError(KeyError::NoSpendCapability)
+                Err(QuickSendError::CompleteAndBroadcast(
+                    CompleteAndBroadcastError::BuildTransaction(
+                        BuildTransactionError::NoSpendCapability
                     )
-                )))
+                ))
             ));
         }
     }
