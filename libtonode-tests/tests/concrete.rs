@@ -2767,11 +2767,12 @@ mod slow {
             assert!(!sent_transaction.status().is_confirmed());
             assert_eq!(sent_transaction.status().get_height(), 5.into());
 
-            let outgoing_sapling_note = sent_transaction.outgoing_sapling_notes().first().unwrap();
-            assert_eq!(
-                outgoing_sapling_note.encoded_recipient(&network),
-                get_base_address_macro!(faucet, "sapling")
-            );
+            let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+            let outgoing_sapling_note = sent_transaction
+                .outgoing_sapling_notes()
+                .iter()
+                .find(|note| note.encoded_recipient(&network) == faucet_sapling_address)
+                .unwrap();
             if let Memo::Text(memo) = outgoing_sapling_note.memo() {
                 assert_eq!(&String::from(memo.clone()), outgoing_memo);
             } else {
@@ -2845,6 +2846,7 @@ mod slow {
             panic!("note not spent!")
         }
     }
+
     #[tokio::test]
     async fn sapling_dust_fee_collection() {
         let (regtest_manager, __cph, faucet, mut recipient) =
