@@ -152,7 +152,7 @@ pub(crate) async fn get_subtree_roots(
         .expect("receiver should never be dropped");
     let mut subtree_root_stream = reply_receiver
         .await
-        .expect("sender should never be dropped");
+        .expect("sender should never be dropped")?;
     let mut subtree_roots = Vec::new();
     while let Some(subtree_root) = subtree_root_stream.message().await? {
         subtree_roots.push(subtree_root);
