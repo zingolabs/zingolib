@@ -99,7 +99,10 @@ pub(crate) async fn scan_transactions(
             );
 
             #[cfg(not(feature = "darkside_test"))]
-            panic!("transaction txid does not match txid requested!")
+            return Err(ScanError::IncorrectTxid {
+                txid_requested: txid,
+                txid_returned: transaction.txid(),
+            });
         }
 
         let wallet_block = if let Some(wallet_block) = wallet_blocks.get(&block_height) {
@@ -125,8 +128,7 @@ pub(crate) async fn scan_transactions(
             outpoint_map,
             &transparent_addresses,
             wallet_block.time(),
-        )
-        .unwrap();
+        )?;
         wallet_transactions.insert(txid, wallet_transaction);
     }
 
@@ -155,7 +157,7 @@ pub(crate) fn scan_transaction(
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
-) -> Result<WalletTransaction, ()> {
+) -> Result<WalletTransaction, ScanError> {
     let block_height = status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,

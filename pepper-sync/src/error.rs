@@ -3,7 +3,7 @@
 use std::array::TryFromSliceError;
 
 use zcash_client_backend::PoolType;
-use zcash_primitives::{block::BlockHash, consensus::BlockHeight};
+use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
@@ -68,6 +68,14 @@ pub enum ScanError {
         block_metadata_size: u32,
         /// Calculated size
         calculated_size: u32,
+    },
+    /// Txid of transaction returned by the server does not match requested txid.
+    #[error("Txid of transaction returned by the server does not match requested txid.\nTxid requested: {txid_requested}\nTxid returned: {txid_returned}")]
+    IncorrectTxid {
+        /// Txid requested
+        txid_requested: TxId,
+        /// Txid returned
+        txid_returned: TxId,
     },
 }
 
