@@ -213,9 +213,7 @@ where
     let mut wallet_guard = wallet.lock().await;
 
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard).unwrap();
-    let chain_height = client::get_chain_height(fetch_request_sender.clone())
-        .await
-        .unwrap();
+    let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if wallet_height > chain_height {
         if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
             panic!(
@@ -341,7 +339,7 @@ where
             }
 
             _update_scanner = interval.tick() => {
-                scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await;
+                scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions

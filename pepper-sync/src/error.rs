@@ -5,12 +5,15 @@ use zcash_primitives::{block::BlockHash, consensus::BlockHeight};
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
-    /// Scan error.
-    #[error("Scan error. {0}")]
-    ScanError(#[from] ScanError),
     /// Mempool error.
     #[error("Mempool error. {0}")]
     MempoolError(#[from] MempoolError),
+    /// Scan error.
+    #[error("Scan error. {0}")]
+    ScanError(#[from] ScanError),
+    /// Server error.
+    #[error("Server error. {0}")]
+    ServerError(#[from] ClientError),
 }
 
 /// Mempool errors.
@@ -27,6 +30,9 @@ pub enum MempoolError {
 /// Scan errors.
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
+    /// Client error.
+    #[error("Client error. {0}")]
+    ClientError(#[from] ClientError),
     /// Continuity error.
     #[error("Continuity error. {0}")]
     ContinuityError(#[from] ContinuityError),

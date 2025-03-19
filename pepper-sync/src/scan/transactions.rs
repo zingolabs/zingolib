@@ -27,9 +27,10 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
+    error::ScanError,
     keys::{self, transparent::TransparentAddressId, KeyId},
-    wallet::traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
     wallet::{
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
         WalletBlock, WalletNote, WalletTransaction,
@@ -74,7 +75,7 @@ pub(crate) async fn scan_transactions(
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
-) -> Result<HashMap<TxId, WalletTransaction>, ()> {
+) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
     let mut wallet_transactions = HashMap::with_capacity(locators.len());
 
     for (_, txid) in locators {
@@ -108,9 +109,7 @@ pub(crate) async fn scan_transactions(
             WalletBlock::from_compact_block(
                 consensus_parameters,
                 fetch_request_sender.clone(),
-                &client::get_compact_block(fetch_request_sender.clone(), block_height)
-                    .await
-                    .unwrap(),
+                &client::get_compact_block(fetch_request_sender.clone(), block_height).await?,
             )
             .await
         };
