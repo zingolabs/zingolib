@@ -15,16 +15,14 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
+    error::ScanError,
     wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
-use self::{
-    compact_blocks::scan_compact_blocks, error::ScanError, transactions::scan_transactions,
-};
+use self::{compact_blocks::scan_compact_blocks, transactions::scan_transactions};
 
 pub(crate) mod compact_blocks;
-pub mod error;
 pub(crate) mod task;
 pub(crate) mod transactions;
 

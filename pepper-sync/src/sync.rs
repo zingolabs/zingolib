@@ -24,9 +24,8 @@ use zcash_primitives::zip32::AccountId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::error::SyncError;
+use crate::error::{ContinuityError, MempoolError, ScanError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::scan::error::{ContinuityError, ScanError};
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
 use crate::scan::ScanResults;
@@ -34,12 +33,10 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncState};
-use error::MempoolError;
 
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
 
-pub mod error;
 pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;

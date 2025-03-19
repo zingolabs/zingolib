@@ -24,14 +24,17 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
+    error::ScanError,
     keys::transparent::TransparentAddressId,
     sync,
-    wallet::traits::{SyncBlocks, SyncWallet},
-    wallet::{Locator, WalletBlock},
+    wallet::{
+        traits::{SyncBlocks, SyncWallet},
+        Locator, WalletBlock,
+    },
     MAX_BATCH_OUTPUTS,
 };
 
-use super::{error::ScanError, scan, ScanResults};
+use super::{scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 

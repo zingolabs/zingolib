@@ -26,10 +26,10 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
-use crate::sync::error::MempoolError;
-
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
+
+use crate::error::MempoolError;
 
 pub(crate) mod fetch;
 

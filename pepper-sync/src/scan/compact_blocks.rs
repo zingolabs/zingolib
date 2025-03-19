@@ -20,6 +20,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
+    error::{ContinuityError, ScanError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -28,10 +29,7 @@ use crate::{
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
-use super::{
-    error::{ContinuityError, ScanError},
-    DecryptedNoteData, InitialScanData, ScanData,
-};
+use super::{DecryptedNoteData, InitialScanData, ScanData};
 
 mod runners;
 
