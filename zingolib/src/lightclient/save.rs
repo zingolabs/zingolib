@@ -34,6 +34,17 @@ impl LightClient {
         self.save_handle = Some(save_handle);
     }
 
+    pub async fn wait_for_save(&self) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            if !self.wallet.lock().await.save_required {
+                return;
+            }
+        }
+    }
+
     /// Polls the save task, returning [`self::PollReport`].
     fn poll_save_task(&mut self) -> PollReport<(), std::io::Error> {
         if let Some(mut save_handle) = self.save_handle.take() {
