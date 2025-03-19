@@ -187,15 +187,10 @@ where
     // create channel for sending fetch requests and launch fetcher task
     let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
     let client_clone = client.clone();
-    let consensus_parameters_clone = consensus_parameters.clone();
-    let fetcher_handle = tokio::spawn(async move {
-        client::fetch::fetch(
-            fetch_request_receiver,
-            client_clone,
-            consensus_parameters_clone,
-        )
-        .await
-    });
+    let fetcher_handle =
+        tokio::spawn(
+            async move { client::fetch::fetch(fetch_request_receiver, client_clone).await },
+        );
 
     // create channel for receiving mempool transactions and launch mempool monitor
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
@@ -372,7 +367,7 @@ where
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
         Err(e) => return Err(e.into()),
     }
-    fetcher_handle.await.unwrap().unwrap();
+    fetcher_handle.await.unwrap();
     sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
 
     Ok(SyncResult {
@@ -1011,7 +1006,7 @@ async fn mempool_monitor(
                 }
             }
             Err(e @ MempoolError::ShutdownWithoutStream) => return Err(e),
-            Err(MempoolError::RequestFailed(e)) => {
+            Err(MempoolError::ClientError(e)) => {
                 tracing::warn!("Mempool stream request failed! Status: {e}.\nRetrying...");
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }

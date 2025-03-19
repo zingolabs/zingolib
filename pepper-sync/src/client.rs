@@ -22,14 +22,14 @@ use zcash_client_backend::{
     },
 };
 use zcash_primitives::{
-    consensus::BlockHeight,
+    consensus::{self, BlockHeight},
     transaction::{Transaction, TxId},
 };
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
 
-use crate::error::MempoolError;
+use crate::error::{ClientError, MempoolError};
 
 pub(crate) mod fetch;
 
@@ -39,33 +39,39 @@ pub(crate) mod fetch;
 #[derive(Debug)]
 pub(crate) enum FetchRequest {
     /// Gets the height of the blockchain from the server.
-    ChainTip(oneshot::Sender<BlockId>),
+    ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
     /// Gets  a compact block of the given block height.
-    CompactBlock(oneshot::Sender<CompactBlock>, BlockHeight),
+    CompactBlock(
+        oneshot::Sender<Result<CompactBlock, tonic::Status>>,
+        BlockHeight,
+    ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
     CompactBlockRange(
-        oneshot::Sender<tonic::Streaming<CompactBlock>>,
+        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
         Range<BlockHeight>,
     ),
     /// Gets the tree states for a specified block height.
-    TreeState(oneshot::Sender<TreeState>, BlockHeight),
+    TreeState(
+        oneshot::Sender<Result<TreeState, tonic::Status>>,
+        BlockHeight,
+    ),
     /// Get a full transaction by txid.
-    Transaction(oneshot::Sender<(Transaction, BlockHeight)>, TxId),
+    Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
-        oneshot::Sender<Vec<GetAddressUtxosReply>>,
+        oneshot::Sender<Result<Vec<GetAddressUtxosReply>, tonic::Status>>,
         (Vec<String>, BlockHeight),
     ),
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
-        oneshot::Sender<Vec<(BlockHeight, Transaction)>>,
+        oneshot::Sender<Result<tonic::Streaming<RawTransaction>, tonic::Status>>,
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
     #[cfg(not(feature = "darkside_test"))]
     SubtreeRoots(
-        oneshot::Sender<tonic::Streaming<SubtreeRoot>>,
+        oneshot::Sender<Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>,
         u32,
         i32,
         u32,
@@ -77,12 +83,14 @@ pub(crate) enum FetchRequest {
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-) -> Result<BlockHeight, ()> {
+) -> Result<BlockHeight, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::ChainTip(reply_sender))
-        .unwrap();
-    let chain_tip = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let chain_tip = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
 }
@@ -93,13 +101,15 @@ pub(crate) async fn get_chain_height(
 pub(crate) async fn get_compact_block(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<CompactBlock, ()> {
+) -> Result<CompactBlock, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
-        .unwrap();
+        .expect("receiver should never be dropped");
 
-    Ok(reply_receiver.await.unwrap())
+    Ok(reply_receiver
+        .await
+        .expect("sender should never be dropped")?)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -108,12 +118,14 @@ pub(crate) async fn get_compact_block(
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ()> {
+) -> Result<tonic::Streaming<CompactBlock>, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
-        .unwrap();
-    let block_stream = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let block_stream = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
 
     Ok(block_stream)
 }
@@ -128,7 +140,7 @@ pub(crate) async fn get_subtree_roots(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<Vec<SubtreeRoot>, ()> {
+) -> Result<Vec<SubtreeRoot>, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::SubtreeRoots(
@@ -137,10 +149,12 @@ pub(crate) async fn get_subtree_roots(
             shielded_protocol,
             max_entries,
         ))
-        .unwrap();
-    let mut subtree_root_stream = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let mut subtree_root_stream = reply_receiver
+        .await
+        .expect("sender should never be dropped");
     let mut subtree_roots = Vec::new();
-    while let Some(subtree_root) = subtree_root_stream.message().await.unwrap() {
+    while let Some(subtree_root) = subtree_root_stream.message().await? {
         subtree_roots.push(subtree_root);
     }
 
@@ -153,15 +167,18 @@ pub(crate) async fn get_subtree_roots(
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<ChainState, ()> {
+) -> Result<ChainState, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
-        .unwrap();
-    let tree_state = reply_receiver.await.unwrap();
-    let frontiers = tree_state.to_chain_state().unwrap();
+        .expect("receiver should never be dropped");
+    let tree_state = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
 
-    Ok(frontiers)
+    tree_state
+        .to_chain_state()
+        .map_err(ClientError::FrontierReadError)
 }
 
 /// Gets a full transaction for a specified txid.
@@ -169,15 +186,25 @@ pub(crate) async fn get_frontiers(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
-) -> Result<(Transaction, BlockHeight), ()> {
+) -> Result<(Transaction, BlockHeight), ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::Transaction(reply_sender, txid))
-        .unwrap();
-    let transaction_and_block_height = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let raw_transaction = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
+    let block_height =
+        BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
+    let transaction = Transaction::read(
+        &raw_transaction.data[..],
+        consensus::BranchId::for_height(consensus_parameters, block_height),
+    )
+    .map_err(ClientError::TransactionReadError)?;
 
-    Ok(transaction_and_block_height)
+    Ok((transaction, block_height))
 }
 
 /// Gets unspent transparent output metadata for a list of `transparent addresses` from the specified `start_height`.
@@ -188,7 +215,7 @@ pub(crate) async fn get_utxo_metadata(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     transparent_addresses: Vec<String>,
     start_height: BlockHeight,
-) -> Result<Vec<GetAddressUtxosReply>, ()> {
+) -> Result<Vec<GetAddressUtxosReply>, ClientError> {
     if transparent_addresses.is_empty() {
         panic!("addresses must be non-empty!");
     }
@@ -199,8 +226,10 @@ pub(crate) async fn get_utxo_metadata(
             reply_sender,
             (transparent_addresses, start_height),
         ))
-        .unwrap();
-    let transparent_output_metadata = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let transparent_output_metadata = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
 
     Ok(transparent_output_metadata)
 }
@@ -210,17 +239,42 @@ pub(crate) async fn get_utxo_metadata(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_transparent_address_transactions(
     fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
     transparent_address: String,
     block_range: Range<BlockHeight>,
-) -> Result<Vec<(BlockHeight, Transaction)>, ()> {
+) -> Result<Vec<(BlockHeight, Transaction)>, ClientError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TransparentAddressTxs(
             reply_sender,
             (transparent_address, block_range),
         ))
-        .unwrap();
-    let transactions = reply_receiver.await.unwrap();
+        .expect("receiver should never be dropped");
+    let mut raw_transaction_stream = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
+
+    let mut raw_transactions: Vec<RawTransaction> = Vec::new();
+    while let Some(raw_tx) = raw_transaction_stream.message().await? {
+        raw_transactions.push(raw_tx);
+    }
+
+    let transactions = raw_transactions
+        .into_iter()
+        .map(|raw_transaction| {
+            let block_height = BlockHeight::from_u32(
+                u32::try_from(raw_transaction.height).expect("should be valid u32"),
+            );
+
+            let transaction = Transaction::read(
+                &raw_transaction.data[..],
+                consensus::BranchId::for_height(consensus_parameters, block_height),
+            )
+            .map_err(ClientError::TransactionReadError)?;
+
+            Ok((block_height, transaction))
+        })
+        .collect::<Result<Vec<(BlockHeight, Transaction)>, ClientError>>()?;
 
     Ok(transactions)
 }
@@ -239,7 +293,7 @@ pub(crate) async fn get_mempool_transaction_stream(
     loop {
         tokio::select! {
             mempool_stream_response = fetch::get_mempool_stream(client) => {
-                return mempool_stream_response.map_err(MempoolError::RequestFailed);
+                return mempool_stream_response.map_err(|e| MempoolError::ClientError(ClientError::RequestFailed(e)));
             }
 
             _ = interval.tick() => {

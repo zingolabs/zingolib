@@ -1,4 +1,4 @@
-//! Top level error module for the crate
+//! Pepper sync error module
 
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight};
 
@@ -16,9 +16,9 @@ pub enum SyncError {
 /// Mempool errors.
 #[derive(Debug, thiserror::Error)]
 pub enum MempoolError {
-    /// gRPC request failed to fetch mempool stream.
-    #[error("gRPC request failed to fetch mempool stream.")]
-    RequestFailed(tonic::Status),
+    /// Client error.
+    #[error("Client error. {0}")]
+    ClientError(#[from] ClientError),
     /// Timed out fetching mempool stream during shutdown.
     #[error("Timed out fetching mempool stream during shutdown.\nNON-CRITICAL: Sync completed successfully but may not have scanned transactions in the mempool.")]
     ShutdownWithoutStream,
@@ -53,4 +53,20 @@ pub enum ContinuityError {
         /// Actual previous block hash
         previous_block_hash: BlockHash,
     },
+}
+
+/// Client errors.
+///
+/// Errors associated with connecting to the server and parsing or converting retrieved data.
+#[derive(Debug, thiserror::Error)]
+pub enum ClientError {
+    /// Failed to read raw transaction
+    #[error("Failed to read frontiers. {0}")]
+    FrontierReadError(std::io::Error),
+    /// Failed to read raw transaction
+    #[error("Failed to read raw transaction. {0}")]
+    TransactionReadError(std::io::Error),
+    /// Request from server failed
+    #[error("Server error. {0}")]
+    RequestFailed(#[from] tonic::Status),
 }

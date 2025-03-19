@@ -39,6 +39,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     for address in wallet_addresses.values() {
         let transactions = client::get_transparent_address_transactions(
             fetch_request_sender.clone(),
+            consensus_parameters,
             address.clone(),
             block_range.clone(),
         )
@@ -100,6 +101,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
 
                     let transactions = client::get_transparent_address_transactions(
                         fetch_request_sender.clone(),
+                        consensus_parameters,
                         address,
                         block_range.clone(),
                     )

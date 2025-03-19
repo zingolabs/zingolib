@@ -12,10 +12,7 @@ use zcash_client_backend::proto::{
         TreeState, TxFilter,
     },
 };
-use zcash_primitives::{
-    consensus::{self, BlockHeight, BranchId},
-    transaction::{Transaction, TxId},
-};
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::client::FetchRequest;
 
@@ -31,23 +28,20 @@ use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
 pub(crate) async fn fetch(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
     mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-    consensus_parameters: impl consensus::Parameters,
-) -> Result<(), ()> {
+) {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
     loop {
         // `fetcher` returns `Ok` here when all requests have successfully been fetched and the
         // fetch_request channel is closed on sync completion.
         if receive_fetch_requests(&mut fetch_request_receiver, &mut fetch_request_queue).await {
-            return Ok(());
+            return;
         }
 
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, &consensus_parameters, request)
-                .await
-                .unwrap();
+            fetch_from_server(&mut client, request).await;
         }
     }
 }
@@ -101,24 +95,27 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 //
 async fn fetch_from_server(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-    consensus_parameters: &impl consensus::Parameters,
     fetch_request: FetchRequest,
-) -> Result<(), ()> {
+) {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
             tracing::debug!("Fetching chain tip.");
-            let block_id = get_latest_block(client).await.unwrap();
-            sender.send(block_id).unwrap();
+            let block_id = get_latest_block(client).await;
+            sender
+                .send(block_id)
+                .expect("receiver should never be dropped");
         }
         FetchRequest::CompactBlock(sender, block_height) => {
             tracing::debug!("Fetching compact block. {:?}", &block_height);
-            let block = get_block(client, block_height).await.unwrap();
-            sender.send(block).unwrap();
+            let block = get_block(client, block_height).await;
+            sender.send(block).expect("sender should never be dropped");
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
             tracing::debug!("Fetching compact blocks. {:?}", &block_range);
-            let block_stream = get_block_range(client, block_range).await.unwrap();
-            sender.send(block_stream).unwrap();
+            let block_stream = get_block_range(client, block_range).await;
+            sender
+                .send(block_stream)
+                .expect("receiver should never be dropped");
         }
         #[cfg(not(feature = "darkside_test"))]
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
@@ -127,22 +124,23 @@ async fn fetch_from_server(
                 start_index,
                 shielded_protocol
             );
-            let shards = get_subtree_roots(client, start_index, shielded_protocol, max_entries)
-                .await
-                .unwrap();
-            sender.send(shards).unwrap();
+            let shards =
+                get_subtree_roots(client, start_index, shielded_protocol, max_entries).await;
+            sender.send(shards).expect("sender should never be dropped");
         }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::debug!("Fetching tree state. {:?}", &block_height);
-            let tree_state = get_tree_state(client, block_height).await.unwrap();
-            sender.send(tree_state).unwrap();
+            let tree_state = get_tree_state(client, block_height).await;
+            sender
+                .send(tree_state)
+                .expect("receiver should never be dropped");
         }
         FetchRequest::Transaction(sender, txid) => {
             tracing::debug!("Fetching transaction. {:?}", txid);
-            let transaction = get_transaction(client, consensus_parameters, txid)
-                .await
-                .unwrap();
-            sender.send(transaction).unwrap();
+            let transaction = get_transaction(client, txid).await;
+            sender
+                .send(transaction)
+                .expect("receiver should never be dropped");
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
             tracing::debug!(
@@ -150,10 +148,10 @@ async fn fetch_from_server(
                 &start_height,
                 &addresses
             );
-            let utxo_metadata = get_address_utxos(client, addresses, start_height, 0)
-                .await
-                .unwrap();
-            sender.send(utxo_metadata).unwrap();
+            let utxo_metadata = get_address_utxos(client, addresses, start_height, 0).await;
+            sender
+                .send(utxo_metadata)
+                .expect("receiver should never be dropped");
         }
         FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
             tracing::debug!(
@@ -161,40 +159,38 @@ async fn fetch_from_server(
                 &block_range,
                 &address
             );
-            let transactions = get_taddress_txs(client, consensus_parameters, address, block_range)
-                .await
-                .unwrap();
-            sender.send(transactions).unwrap();
+            let raw_transaction_stream = get_taddress_txs(client, address, block_range).await;
+            sender
+                .send(raw_transaction_stream)
+                .expect("receiver should never be dropped");
         }
     }
-
-    Ok(())
 }
 
 async fn get_latest_block(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-) -> Result<BlockId, ()> {
+) -> Result<BlockId, tonic::Status> {
     let request = tonic::Request::new(ChainSpec {});
 
-    Ok(client.get_latest_block(request).await.unwrap().into_inner())
+    Ok(client.get_latest_block(request).await?.into_inner())
 }
 
 async fn get_block(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_height: BlockHeight,
-) -> Result<CompactBlock, ()> {
+) -> Result<CompactBlock, tonic::Status> {
     let request = tonic::Request::new(BlockId {
         height: u64::from(block_height),
         hash: vec![],
     });
 
-    Ok(client.get_block(request).await.unwrap().into_inner())
+    Ok(client.get_block(request).await?.into_inner())
 }
 
 async fn get_block_range(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ()> {
+) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
             height: u64::from(block_range.start),
@@ -206,7 +202,7 @@ async fn get_block_range(
         }),
     });
 
-    Ok(client.get_block_range(request).await.unwrap().into_inner())
+    Ok(client.get_block_range(request).await?.into_inner())
 }
 
 #[cfg(not(feature = "darkside_test"))]
@@ -215,53 +211,39 @@ async fn get_subtree_roots(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<tonic::Streaming<SubtreeRoot>, ()> {
+) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
     let request = GetSubtreeRootsArg {
         start_index,
         shielded_protocol,
         max_entries,
     };
 
-    Ok(client
-        .get_subtree_roots(request)
-        .await
-        .unwrap()
-        .into_inner())
+    Ok(client.get_subtree_roots(request).await?.into_inner())
 }
 
 async fn get_tree_state(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     block_height: BlockHeight,
-) -> Result<TreeState, ()> {
+) -> Result<TreeState, tonic::Status> {
     let request = tonic::Request::new(BlockId {
         height: block_height.into(),
         hash: vec![],
     });
 
-    Ok(client.get_tree_state(request).await.unwrap().into_inner())
+    Ok(client.get_tree_state(request).await?.into_inner())
 }
 
 async fn get_transaction(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-    consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
-) -> Result<(Transaction, BlockHeight), ()> {
+) -> Result<RawTransaction, tonic::Status> {
     let request = tonic::Request::new(TxFilter {
         block: None,
         index: 0,
         hash: txid.as_ref().to_vec(),
     });
 
-    let raw_transaction = client.get_transaction(request).await.unwrap().into_inner();
-    let block_height = BlockHeight::from_u32(u32::try_from(raw_transaction.height).unwrap());
-
-    let transaction = Transaction::read(
-        &raw_transaction.data[..],
-        BranchId::for_height(consensus_parameters, block_height),
-    )
-    .unwrap();
-
-    Ok((transaction, block_height))
+    Ok(client.get_transaction(request).await?.into_inner())
 }
 
 async fn get_address_utxos(
@@ -269,7 +251,7 @@ async fn get_address_utxos(
     addresses: Vec<String>,
     start_height: BlockHeight,
     max_entries: u32,
-) -> Result<Vec<GetAddressUtxosReply>, ()> {
+) -> Result<Vec<GetAddressUtxosReply>, tonic::Status> {
     let start_height: u64 = start_height.into();
     let request = tonic::Request::new(GetAddressUtxosArg {
         addresses,
@@ -279,20 +261,16 @@ async fn get_address_utxos(
 
     Ok(client
         .get_address_utxos(request)
-        .await
-        .unwrap()
+        .await?
         .into_inner()
         .address_utxos)
 }
 
 async fn get_taddress_txs(
     client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
-    consensus_parameters: &impl consensus::Parameters,
     address: String,
     block_range: Range<BlockHeight>,
-) -> Result<Vec<(BlockHeight, Transaction)>, ()> {
-    let mut raw_transactions: Vec<RawTransaction> = Vec::new();
-
+) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
     let range = Some(BlockRange {
         start: Some(BlockId {
             height: block_range.start.into(),
@@ -303,36 +281,9 @@ async fn get_taddress_txs(
             hash: vec![],
         }),
     });
-
     let request = tonic::Request::new(TransparentAddressBlockFilter { address, range });
 
-    let mut raw_tx_stream = client
-        .get_taddress_txids(request)
-        .await
-        .unwrap()
-        .into_inner();
-
-    while let Some(raw_tx) = raw_tx_stream.message().await.unwrap() {
-        raw_transactions.push(raw_tx);
-    }
-
-    let transactions: Vec<(BlockHeight, Transaction)> = raw_transactions
-        .into_iter()
-        .map(|raw_transaction| {
-            let block_height =
-                BlockHeight::from_u32(u32::try_from(raw_transaction.height).unwrap());
-
-            let transaction = Transaction::read(
-                &raw_transaction.data[..],
-                BranchId::for_height(consensus_parameters, block_height),
-            )
-            .unwrap();
-
-            (block_height, transaction)
-        })
-        .collect();
-
-    Ok(transactions)
+    Ok(client.get_taddress_txids(request).await?.into_inner())
 }
 
 /// Call `GetMempoolStream` client gPRC.

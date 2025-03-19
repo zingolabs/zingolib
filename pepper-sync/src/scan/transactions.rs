@@ -65,9 +65,9 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn scan_transactions<P: consensus::Parameters>(
+pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    consensus_parameters: &P,
+    consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     locators: BTreeSet<Locator>,
     decrypted_note_data: DecryptedNoteData,
@@ -82,10 +82,13 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             continue;
         }
 
-        let (transaction, block_height) =
-            client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
-                .await
-                .unwrap();
+        let (transaction, block_height) = client::get_transaction_and_block_height(
+            fetch_request_sender.clone(),
+            consensus_parameters,
+            txid,
+        )
+        .await
+        .unwrap();
 
         if transaction.txid() != txid {
             #[cfg(feature = "darkside_test")]
