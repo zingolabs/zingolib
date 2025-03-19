@@ -35,7 +35,7 @@ use crate::wallet::traits::{
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncState};
 
 #[cfg(not(feature = "darkside_test"))]
-use crate::{error::ClientError, witness};
+use crate::witness;
 
 pub(crate) mod spend;
 pub(crate) mod state;
