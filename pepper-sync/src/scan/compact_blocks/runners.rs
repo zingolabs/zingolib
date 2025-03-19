@@ -13,7 +13,6 @@ use sapling_crypto::note_encryption::CompactOutputDescription;
 use sapling_crypto::note_encryption::SaplingDomain;
 
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::scanning::ScanError;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::consensus;
@@ -85,7 +84,11 @@ where
     }
 
     #[tracing::instrument(skip_all, fields(height = block.height))]
-    pub(crate) fn add_block<P>(&mut self, params: &P, block: CompactBlock) -> Result<(), ScanError>
+    pub(crate) fn add_block<P>(
+        &mut self,
+        params: &P,
+        block: CompactBlock,
+    ) -> Result<(), zcash_client_backend::scanning::ScanError>
     where
         P: consensus::Parameters + Send + 'static,
     {
@@ -105,7 +108,7 @@ where
                     .enumerate()
                     .map(|(i, output)| {
                         CompactOutputDescription::try_from(output).map_err(|_| {
-                            ScanError::EncodingInvalid {
+                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
                                 pool_type: ShieldedProtocol::Sapling,
@@ -124,11 +127,13 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|_| ScanError::EncodingInvalid {
-                            at_height: block_height,
-                            txid,
-                            pool_type: ShieldedProtocol::Orchard,
-                            index: i,
+                        CompactAction::try_from(action).map_err(|_| {
+                            zcash_client_backend::scanning::ScanError::EncodingInvalid {
+                                at_height: block_height,
+                                txid,
+                                pool_type: ShieldedProtocol::Orchard,
+                                index: i,
+                            }
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?,

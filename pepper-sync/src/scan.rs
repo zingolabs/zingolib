@@ -165,7 +165,7 @@ where
         )
     })
     .await
-    .unwrap()?;
+    .expect("task panicked")?;
 
     let ScanData {
         nullifiers,

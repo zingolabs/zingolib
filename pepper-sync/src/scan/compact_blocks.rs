@@ -1,4 +1,5 @@
 use std::{
+    array::TryFromSliceError,
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap},
 };
@@ -26,6 +27,9 @@ use crate::{
     witness::WitnessData,
     MAX_BATCH_OUTPUTS,
 };
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_client_backend::{PoolType, ShieldedProtocol};
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
@@ -91,7 +95,7 @@ where
                 decrypted_locators.insert((block_height, output_id.txid()));
             });
 
-            collect_nullifiers(&mut nullifiers, block.height(), transaction).unwrap();
+            collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
 
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
@@ -99,8 +103,7 @@ where
                     block.height(),
                     transactions.peek().is_none(),
                     &incoming_sapling_outputs,
-                )
-                .unwrap(),
+                )?,
             );
             witness_data.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
@@ -108,8 +111,7 @@ where
                     block.height(),
                     transactions.peek().is_none(),
                     &incoming_orchard_outputs,
-                )
-                .unwrap(),
+                )?,
             );
 
             calculate_nullifiers_and_positions(
@@ -149,7 +151,7 @@ where
             },
         };
 
-        check_tree_size(block, &wallet_block).unwrap();
+        check_tree_size(block, &wallet_block)?;
 
         wallet_blocks.insert(wallet_block.block_height(), wallet_block);
     }
@@ -167,13 +169,15 @@ fn trial_decrypt<P>(
     parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
-) -> Result<BatchRunners<(), ()>, ()>
+) -> Result<BatchRunners<(), ()>, ScanError>
 where
     P: Parameters + Send + 'static,
 {
     let mut runners = BatchRunners::<(), ()>::for_keys(TRIAL_DECRYPT_TASK_SIZE, scanning_keys);
     for block in compact_blocks {
-        runners.add_block(parameters, block.clone()).unwrap();
+        runners
+            .add_block(parameters, block.clone())
+            .map_err(ScanError::ZcbScanError)?;
     }
     runners.flush();
 
@@ -243,7 +247,10 @@ fn check_continuity(
     Ok(())
 }
 
-fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> Result<(), ()> {
+fn check_tree_size(
+    compact_block: &CompactBlock,
+    wallet_block: &WalletBlock,
+) -> Result<(), ScanError> {
     if let Some(chain_metadata) = &compact_block.chain_metadata {
         if chain_metadata.sapling_commitment_tree_size
             != wallet_block.tree_bounds().sapling_final_tree_size
@@ -255,7 +262,11 @@ fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> 
             }
 
             #[cfg(not(feature = "darkside_test"))]
-            panic!("sapling tree size is incorrect!")
+            return Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Sapling),
+                block_metadata_size: chain_metadata.sapling_commitment_tree_size,
+                calculated_size: wallet_block.tree_bounds().sapling_final_tree_size,
+            });
         }
         if chain_metadata.orchard_commitment_tree_size
             != wallet_block.tree_bounds().orchard_final_tree_size
@@ -267,16 +278,20 @@ fn check_tree_size(compact_block: &CompactBlock, wallet_block: &WalletBlock) -> 
             }
 
             #[cfg(not(feature = "darkside_test"))]
-            panic!("orchard tree size is incorrect!")
+            return Err(ScanError::IncorrectTreeSize {
+                shielded_protocol: PoolType::Shielded(ShieldedProtocol::Orchard),
+                block_metadata_size: chain_metadata.orchard_commitment_tree_size,
+                calculated_size: wallet_block.tree_bounds().orchard_final_tree_size,
+            });
         }
     }
 
     Ok(())
 }
 
-// calculates nullifiers and positions of incoming decrypted outputs for a given compact transaction and insert into hash map
-// `tree_size` is the tree size of the corresponding shielded pool up to - and not including - the compact transaction
-// being processed
+/// Calculates nullifiers and positions of incoming decrypted outputs for a given compact transaction and insert into hash map
+/// `tree_size` is the tree size of the corresponding shielded pool up to - and not including - the compact transaction
+/// being processed
 fn calculate_nullifiers_and_positions<D, K, Nf>(
     tree_size: u32,
     keys: &HashMap<KeyId, K>,
@@ -302,13 +317,13 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
 }
 
 // TODO: unify sapling and orchard leaf and retention fns
-// calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
+/// Calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_sapling_leaves_and_retentions<D: Domain>(
     outputs: &[CompactSaplingOutput],
     block_height: BlockHeight,
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
-) -> Result<Vec<(Node, Retention<BlockHeight>)>, ()> {
+) -> Result<Vec<(Node, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
@@ -324,7 +339,9 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactOutputDescription::try_from(output).unwrap().cmu;
+                let note_commitment = CompactOutputDescription::try_from(output)
+                    .map_err(|_| ScanError::InvalidSaplingOutput)?
+                    .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
 
                 let last_output_in_block: bool =
@@ -343,9 +360,9 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                     (false, false) => Retention::Ephemeral,
                 };
 
-                (leaf, retention)
+                Ok((leaf, retention))
             })
-            .collect();
+            .collect::<Result<_, ScanError>>()?;
 
         Ok(leaves_and_retentions)
     }
@@ -356,7 +373,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     block_height: BlockHeight,
     last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
-) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ()> {
+) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
         .keys()
         .copied()
@@ -372,7 +389,9 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .iter()
             .enumerate()
             .map(|(output_index, output)| {
-                let note_commitment = CompactAction::try_from(output).unwrap().cmx();
+                let note_commitment = CompactAction::try_from(output)
+                    .map_err(|_| ScanError::InvalidOrchardAction)?
+                    .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
 
                 let last_output_in_block: bool =
@@ -391,24 +410,26 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                     (false, false) => Retention::Ephemeral,
                 };
 
-                (leaf, retention)
+                Ok((leaf, retention))
             })
-            .collect();
+            .collect::<Result<_, ScanError>>()?;
 
         Ok(leaves_and_retentions)
     }
 }
 
-// converts and adds the nullifiers from a compact transaction to the nullifier map
+/// Converts the nullifiers from a compact transaction and adds them to the nullifier map
 fn collect_nullifiers(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
     transaction: &CompactTx,
-) -> Result<(), ()> {
+) -> Result<(), ScanError> {
     transaction
         .spends
         .iter()
-        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()).unwrap())
+        .map(|spend| Ok(sapling_crypto::Nullifier::from_slice(spend.nf.as_slice())?))
+        .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
+        .into_iter()
         .for_each(|nullifier| {
             nullifier_map
                 .sapling
@@ -418,9 +439,16 @@ fn collect_nullifiers(
         .actions
         .iter()
         .map(|action| {
-            orchard::note::Nullifier::from_bytes(action.nullifier.as_slice().try_into().unwrap())
-                .unwrap()
+            orchard::note::Nullifier::from_bytes(
+                action.nullifier.as_slice().try_into().map_err(|_| {
+                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
+                })?,
+            )
+            .into_option() // TODO: lose the benefits of constant time option here. is this safe? how to handle error otherwise?
+            .ok_or(ScanError::InvalidOrchardNullifier)
         })
+        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
+        .into_iter()
         .for_each(|nullifier| {
             nullifier_map
                 .orchard

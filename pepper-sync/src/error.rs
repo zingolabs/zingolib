@@ -1,5 +1,8 @@
 //! Pepper sync error module
 
+use std::array::TryFromSliceError;
+
+use zcash_client_backend::PoolType;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight};
 
 /// Top level error enumerating any error that may occur during sync
@@ -36,6 +39,36 @@ pub enum ScanError {
     /// Continuity error.
     #[error("Continuity error. {0}")]
     ContinuityError(#[from] ContinuityError),
+    /// Zcash client backend scan error
+    #[error("{0}")]
+    ZcbScanError(zcash_client_backend::scanning::ScanError),
+    /// Invalid sapling nullifier
+    #[error("Invalid sapling nullifier. {0}")]
+    InvalidSaplingNullifier(#[from] TryFromSliceError),
+    /// Invalid orchard nullifier length
+    #[error("Invalid orchard nullifier length. Should be 32 bytes, found {0}")]
+    InvalidOrchardNullifierLength(usize),
+    /// Invalid orchard nullifier
+    #[error("Invalid orchard nullifier.")]
+    InvalidOrchardNullifier,
+    /// Invalid sapling output
+    // TODO: add output data
+    #[error("Invalid sapling output.")]
+    InvalidSaplingOutput,
+    /// Invalid orchard action
+    // TODO: add output data
+    #[error("Invalid orchard action.")]
+    InvalidOrchardAction,
+    /// Incorrect tree size
+    #[error("Incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}")]
+    IncorrectTreeSize {
+        /// Shielded protocol
+        shielded_protocol: PoolType,
+        /// Block metadata size
+        block_metadata_size: u32,
+        /// Calculated size
+        calculated_size: u32,
+    },
 }
 
 /// Block continuity errors.
