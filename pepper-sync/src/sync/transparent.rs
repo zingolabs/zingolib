@@ -8,6 +8,7 @@ use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::zip32::AccountId;
 
 use crate::client::{self, FetchRequest};
+use crate::error::ClientError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
 use crate::wallet::traits::SyncWallet;
@@ -27,7 +28,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
-) {
+) -> Result<(), ClientError> {
     let wallet_addresses = wallet.get_transparent_addresses_mut().unwrap();
     let mut locators: BTreeSet<Locator> = BTreeSet::new();
     let block_range = Range {
@@ -43,8 +44,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
             address.clone(),
             block_range.clone(),
         )
-        .await
-        .unwrap();
+        .await?;
 
         // The transaction is not scanned here, instead the locator is stored to be later sent to a scan task for these reasons:
         // - We must search for all relevant transactions MAX_VERIFICATION_WINDOW blocks below wallet height in case of re-org.
@@ -105,8 +105,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                         address,
                         block_range.clone(),
                     )
-                    .await
-                    .unwrap();
+                    .await?;
 
                     if transactions.is_empty() {
                         unused_address_count += 1;
@@ -133,6 +132,8 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         .unwrap()
         .locators
         .append(&mut locators);
+
+    Ok(())
 }
 
 // TODO: process memo encoded address indexes.

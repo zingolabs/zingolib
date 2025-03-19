@@ -189,8 +189,7 @@ where
         &mut outpoints,
         transparent_addresses,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let WitnessData {
         sapling_initial_position,

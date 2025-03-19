@@ -88,8 +88,7 @@ pub(crate) async fn scan_transactions(
             consensus_parameters,
             txid,
         )
-        .await
-        .unwrap();
+        .await?;
 
         if transaction.txid() != txid {
             #[cfg(feature = "darkside_test")]
@@ -566,7 +565,7 @@ pub(crate) async fn scan_spending_transactions<L, P, W>(
     wallet: &mut W,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     locators: L,
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     L: Iterator<Item = Locator>,
     P: consensus::Parameters,
@@ -605,8 +604,7 @@ where
         &mut outpoint_map,
         HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
     )
-    .await
-    .unwrap();
+    .await?;
     wallet
         .extend_wallet_transactions(spending_transactions)
         .unwrap();

@@ -145,7 +145,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run().unwrap();
+        worker.run();
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -464,7 +464,7 @@ where
     fn check_error(&mut self) -> Result<(), ClientError> {
         if let Some(mut handle) = self.handle.take() {
             if let Some(result) = handle.borrow_mut().now_or_never() {
-                result.expect("task should not panic")?;
+                result.expect("task panicked")?;
             } else {
                 self.handle = Some(handle);
             }
@@ -486,7 +486,7 @@ where
             .take()
             .expect("batcher should always have a handle to take!");
 
-        handle.await.expect("task should not panic")
+        handle.await.expect("task panicked")
     }
 }
 
@@ -527,7 +527,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self) -> Result<(), ()> {
+    fn run(&mut self) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -557,8 +557,6 @@ where
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
-
-        Ok(())
     }
 
     fn is_scanning(&self) -> bool {

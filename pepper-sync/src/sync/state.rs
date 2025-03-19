@@ -19,10 +19,13 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
+    error::ClientError,
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
-    wallet::traits::{SyncBlocks, SyncWallet},
-    wallet::{Locator, SyncState, TreeBounds, WalletTransaction},
+    wallet::{
+        traits::{SyncBlocks, SyncWallet},
+        Locator, SyncState, TreeBounds, WalletTransaction,
+    },
 };
 
 use super::{checked_birthday, VERIFY_BLOCK_RANGE_SIZE};
@@ -694,7 +697,8 @@ pub(super) async fn set_initial_state<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     chain_height: BlockHeight,
-) where
+) -> Result<(), ClientError>
+where
     W: SyncWallet + SyncBlocks,
 {
     let fully_scanned_height = wallet
@@ -708,14 +712,14 @@ pub(super) async fn set_initial_state<W>(
         wallet,
         fully_scanned_height,
     )
-    .await;
+    .await?;
     let (chain_tip_sapling_tree_size, chain_tip_orchard_tree_size) = final_tree_sizes(
         consensus_parameters,
         fetch_request_sender.clone(),
         wallet,
         chain_height,
     )
-    .await;
+    .await?;
 
     let sync_state = wallet.get_sync_state_mut().unwrap();
     sync_state.initial_sync_state.sync_start_height = fully_scanned_height + 1;
@@ -742,6 +746,8 @@ pub(super) async fn set_initial_state<W>(
     sync_state.initial_sync_state.total_blocks_to_scan = total_blocks_to_scan;
     sync_state.initial_sync_state.total_sapling_outputs_to_scan = total_sapling_outputs_to_scan;
     sync_state.initial_sync_state.total_orchard_outputs_to_scan = total_orchard_outputs_to_scan;
+
+    Ok(())
 }
 
 pub(super) fn calculate_unscanned_outputs<W>(wallet: &W) -> (u32, u32)
@@ -804,15 +810,15 @@ async fn final_tree_sizes<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     block_height: BlockHeight,
-) -> (u32, u32)
+) -> Result<(u32, u32), ClientError>
 where
     W: SyncBlocks,
 {
     if let Ok(block) = wallet.get_wallet_block(block_height) {
-        (
+        Ok((
             block.tree_bounds().sapling_final_tree_size,
             block.tree_bounds().orchard_final_tree_size,
-        )
+        ))
     } else {
         // TODO: move this whole block into `client::get_frontiers`
         let sapling_activation_height = consensus_parameters
@@ -821,10 +827,9 @@ where
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
-                let frontiers = client::get_frontiers(fetch_request_sender.clone(), block_height)
-                    .await
-                    .unwrap();
-                (
+                let frontiers =
+                    client::get_frontiers(fetch_request_sender.clone(), block_height).await?;
+                Ok((
                     frontiers
                         .final_sapling_tree()
                         .tree_size()
@@ -835,9 +840,9 @@ where
                         .tree_size()
                         .try_into()
                         .expect("should not be more than 2^32 note commitments in the tree!"),
-                )
+                ))
             }
-            cmp::Ordering::Equal => (0, 0),
+            cmp::Ordering::Equal => Ok((0, 0)),
             cmp::Ordering::Less => panic!("pre-sapling not supported!"),
         }
     }

@@ -24,7 +24,7 @@ use zcash_primitives::zip32::AccountId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::error::{ContinuityError, MempoolError, ScanError, SyncError};
+use crate::error::{ClientError, ContinuityError, MempoolError, ScanError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
@@ -35,7 +35,7 @@ use crate::wallet::traits::{
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncState};
 
 #[cfg(not(feature = "darkside_test"))]
-use crate::witness;
+use crate::{error::ClientError, witness};
 
 pub(crate) mod spend;
 pub(crate) mod state;
@@ -236,7 +236,7 @@ where
             wallet_height,
             chain_height,
         )
-        .await;
+        .await?;
     }
 
     #[cfg(not(feature = "darkside_test"))]
@@ -245,14 +245,14 @@ where
         fetch_request_sender.clone(),
         &mut *wallet_guard,
     )
-    .await;
+    .await?;
 
     add_initial_frontier(
         consensus_parameters,
         fetch_request_sender.clone(),
         &mut *wallet_guard,
     )
-    .await;
+    .await?;
 
     state::update_scan_ranges(
         consensus_parameters,
@@ -269,7 +269,7 @@ where
         &mut *wallet_guard,
         chain_height,
     )
-    .await;
+    .await?;
 
     drop(wallet_guard);
 
@@ -306,8 +306,7 @@ where
                     scan_results,
                     initial_verification_height,
                 )
-                .await
-                .unwrap();
+                .await?;
                 wallet_guard.set_save_flag().unwrap();
 
                 // allow tasks outside the sync engine access to the wallet data
@@ -360,12 +359,12 @@ where
     drop(scanner);
     drop(fetch_request_sender);
 
-    match mempool_handle.await.unwrap() {
+    match mempool_handle.await.expect("task panicked") {
         Ok(_) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
         Err(e) => return Err(e.into()),
     }
-    fetcher_handle.await.unwrap();
+    fetcher_handle.await.expect("task panicked");
     sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
 
     Ok(SyncResult {
@@ -557,8 +556,8 @@ where
 }
 
 /// Scan post-processing
-async fn process_scan_results<P, W>(
-    consensus_parameters: &P,
+async fn process_scan_results<W>(
+    consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -567,7 +566,6 @@ async fn process_scan_results<P, W>(
     initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError>
 where
-    P: consensus::Parameters,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     match scan_results {
@@ -580,8 +578,7 @@ where
                 fetch_request_sender,
                 ufvks,
             )
-            .await
-            .unwrap();
+            .await?;
             state::set_scanned_scan_range(
                 wallet.get_sync_state_mut().unwrap(),
                 scan_range.block_range().clone(),
@@ -633,7 +630,7 @@ where
                     wallet,
                     wallet_height,
                 )
-                .await;
+                .await?;
             } else {
                 scan_results?;
             }
@@ -844,7 +841,8 @@ async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
-) where
+) -> Result<(), ClientError>
+where
     W: SyncWallet + SyncShardTrees,
 {
     let sapling_start_index = wallet
@@ -868,8 +866,8 @@ async fn update_subtree_roots<W>(
         client::get_subtree_roots(fetch_request_sender, orchard_start_index, 1, 0)
     );
 
-    let sapling_subtree_roots = sapling_subtree_roots.unwrap();
-    let orchard_subtree_roots = orchard_subtree_roots.unwrap();
+    let sapling_subtree_roots = sapling_subtree_roots?;
+    let orchard_subtree_roots = orchard_subtree_roots?;
 
     let sync_state = wallet.get_sync_state_mut().unwrap();
     state::add_shard_ranges(
@@ -888,13 +886,16 @@ async fn update_subtree_roots<W>(
     let shard_trees = wallet.get_shard_trees_mut().unwrap();
     witness::add_subtree_roots(sapling_subtree_roots, &mut shard_trees.sapling);
     witness::add_subtree_roots(orchard_subtree_roots, &mut shard_trees.orchard);
+
+    Ok(())
 }
 
 async fn add_initial_frontier<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
-) where
+) -> Result<(), ClientError>
+where
     W: SyncWallet + SyncShardTrees,
 {
     let birthday = checked_birthday(consensus_parameters, wallet);
@@ -903,7 +904,7 @@ async fn add_initial_frontier<W>(
             .activation_height(consensus::NetworkUpgrade::Sapling)
             .expect("sapling activation height should always return Some")
     {
-        return;
+        return Ok(());
     }
 
     // if the shard store only contains the first checkpoint added on initialisation, add frontiers to complete the
@@ -916,9 +917,7 @@ async fn add_initial_frontier<W>(
         .expect("infalliable")
         == 1
     {
-        let frontiers = client::get_frontiers(fetch_request_sender, birthday)
-            .await
-            .unwrap();
+        let frontiers = client::get_frontiers(fetch_request_sender, birthday).await?;
         shard_trees
             .sapling
             .insert_frontier(
@@ -940,6 +939,8 @@ async fn add_initial_frontier<W>(
             )
             .unwrap();
     }
+
+    Ok(())
 }
 
 /// Compares the wallet birthday to sapling activation height and returns the highest block height.

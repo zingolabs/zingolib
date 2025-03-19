@@ -13,9 +13,12 @@ use zip32::AccountId;
 
 use crate::{
     client::FetchRequest,
+    error::ScanError,
     scan::transactions::scan_spending_transactions,
-    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
-    wallet::{Locator, NullifierMap, OutputId, WalletTransaction},
+    wallet::{
+        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+        Locator, NullifierMap, OutputId, WalletTransaction,
+    },
 };
 
 use super::state;
@@ -32,7 +35,7 @@ pub(super) async fn update_shielded_spends<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     P: consensus::Parameters,
     W: SyncBlocks + SyncTransactions + SyncNullifiers,
@@ -73,8 +76,7 @@ where
             .chain(orchard_spend_locators.values())
             .cloned(),
     )
-    .await
-    .unwrap();
+    .await?;
 
     update_spent_notes(
         wallet.get_wallet_transactions_mut().unwrap(),

@@ -124,9 +124,11 @@ async fn fetch_from_server(
                 start_index,
                 shielded_protocol
             );
-            let shards =
+            let subtree_roots =
                 get_subtree_roots(client, start_index, shielded_protocol, max_entries).await;
-            sender.send(shards).expect("sender should never be dropped");
+            sender
+                .send(subtree_roots)
+                .expect("sender should never be dropped");
         }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::debug!("Fetching tree state. {:?}", &block_height);
