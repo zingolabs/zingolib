@@ -368,7 +368,6 @@ mod tests {
     };
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use tokio::runtime::Runtime;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
