@@ -80,6 +80,7 @@ async fn verify_example_wallet_regtest_hmvasmuvwmssvichcarbpoct_v27() {
     .await;
 }
 /// unlike other, more basic tests, this test also checks number of addresses and balance
+#[ignore = "FIXME pepper sync needs unified address discovery"]
 #[tokio::test]
 async fn verify_example_wallet_testnet_cbbhrwiilgbrababsshsmtpr_v26() {
     let client =

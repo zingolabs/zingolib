@@ -362,7 +362,7 @@ impl LightWallet {
                     match (starts_with_tex(summary_a), starts_with_tex(summary_b)) {
                         (true, false) => Ordering::Greater,
                         (false, true) => Ordering::Less,
-                        (false, false) | (true, true) => Ordering::Equal,
+                        (false, false) | (true, true) => summary_a.txid().cmp(&summary_b.txid()),
                     }
                 }
                 otherwise => otherwise,
