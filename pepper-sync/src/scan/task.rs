@@ -372,7 +372,7 @@ where
                                 fetch_request_sender.clone(),
                                 &compact_block,
                             )
-                            .await,
+                            .await?,
                         );
                         first_batch = false;
                     }
@@ -383,7 +383,7 @@ where
                                 fetch_request_sender.clone(),
                                 &compact_block,
                             )
-                            .await,
+                            .await?,
                         );
                     }
 
@@ -403,7 +403,7 @@ where
                                 fetch_request_sender.clone(),
                                 compact_block.height(),
                             )
-                            .await;
+                            .await?;
 
                         batch_sender
                             .send(full_batch)
@@ -626,7 +626,7 @@ impl ScanTask {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block_height: BlockHeight,
-    ) -> (Self, Self) {
+    ) -> Result<(Self, Self), ClientError> {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {
@@ -654,7 +654,7 @@ impl ScanTask {
                     fetch_request_sender.clone(),
                     block,
                 )
-                .await,
+                .await?,
             )
         } else {
             None
@@ -666,13 +666,13 @@ impl ScanTask {
                     fetch_request_sender.clone(),
                     block,
                 )
-                .await,
+                .await?,
             )
         } else {
             None
         };
 
-        (
+        Ok((
             ScanTask {
                 compact_blocks: lower_compact_blocks,
                 scan_range: self
@@ -695,6 +695,6 @@ impl ScanTask {
                 locators: upper_task_locators,
                 transparent_addresses: self.transparent_addresses,
             },
-        )
+        ))
     }
 }

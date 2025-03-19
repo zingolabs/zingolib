@@ -110,7 +110,7 @@ pub(crate) async fn scan_transactions(
                 fetch_request_sender.clone(),
                 &client::get_compact_block(fetch_request_sender.clone(), block_height).await?,
             )
-            .await
+            .await?
         };
 
         let confirmation_status = ConfirmationStatus::Confirmed(block_height);

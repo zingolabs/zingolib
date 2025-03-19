@@ -38,6 +38,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::FetchRequest,
+    error::ClientError,
     keys::{self, transparent::TransparentAddressId, KeyId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::MAX_VERIFICATION_WINDOW,
@@ -327,11 +328,11 @@ impl WalletBlock {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block: &CompactBlock,
-    ) -> Self {
+    ) -> Result<Self, ClientError> {
         let tree_bounds =
-            calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await;
+            calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
-        Self {
+        Ok(Self {
             block_height: block.height(),
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
@@ -342,7 +343,7 @@ impl WalletBlock {
                 .map(|transaction| transaction.txid())
                 .collect(),
             tree_bounds,
-        }
+        })
     }
 
     /// Block height.

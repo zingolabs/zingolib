@@ -15,7 +15,7 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
-    error::ScanError,
+    error::{ClientError, ScanError},
     wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -40,7 +40,7 @@ impl InitialScanData {
         first_block: &CompactBlock,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-    ) -> Result<Self, ()>
+    ) -> Result<Self, ClientError>
     where
         P: consensus::Parameters + Sync + Send + 'static,
     {
@@ -56,7 +56,7 @@ impl InitialScanData {
                     fetch_request_sender,
                     first_block,
                 )
-                .await;
+                .await?;
 
                 (
                     tree_bounds.sapling_initial_tree_size,
@@ -152,8 +152,7 @@ where
         start_seam_block,
         end_seam_block,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();

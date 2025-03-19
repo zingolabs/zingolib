@@ -20,7 +20,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ContinuityError, ScanError},
+    error::{ClientError, ContinuityError, ScanError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -433,7 +433,7 @@ pub(crate) async fn calculate_block_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
-) -> TreeBounds {
+) -> Result<TreeBounds, ClientError> {
     let (sapling_final_tree_size, orchard_final_tree_size) =
         if let Some(chain_metadata) = compact_block.chain_metadata {
             (
@@ -449,8 +449,7 @@ pub(crate) async fn calculate_block_tree_bounds(
                 cmp::Ordering::Greater => {
                     let frontiers =
                         client::get_frontiers(fetch_request_sender.clone(), compact_block.height())
-                            .await
-                            .unwrap();
+                            .await?;
                     (
                         frontiers
                             .final_sapling_tree()
@@ -484,11 +483,10 @@ pub(crate) async fn calculate_block_tree_bounds(
         .try_into()
         .expect("Sapling output count cannot exceed a u32");
 
-    // TODO: handle error if final tree size < output count?
-    TreeBounds {
+    Ok(TreeBounds {
         sapling_initial_tree_size: sapling_final_tree_size.saturating_sub(sapling_output_count),
         sapling_final_tree_size,
         orchard_initial_tree_size: orchard_final_tree_size.saturating_sub(orchard_output_count),
         orchard_final_tree_size,
-    }
+    })
 }
