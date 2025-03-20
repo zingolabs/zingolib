@@ -427,7 +427,7 @@ fn collect_nullifiers(
     transaction
         .spends
         .iter()
-        .map(|spend| Ok(sapling_crypto::Nullifier::from_slice(spend.nf.as_slice())?))
+        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
         .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
         .into_iter()
         .for_each(|nullifier| {

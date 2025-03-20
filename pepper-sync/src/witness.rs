@@ -84,13 +84,11 @@ where
     drop(sender);
 
     let mut located_tree_data = Vec::new();
-    for located_tree in receiver.iter() {
-        if let Some(tree) = located_tree {
-            located_tree_data.push(LocatedTreeData {
-                subtree: tree.subtree,
-                checkpoints: tree.checkpoints,
-            });
-        }
+    for tree in receiver.iter().flatten() {
+        located_tree_data.push(LocatedTreeData {
+            subtree: tree.subtree,
+            checkpoints: tree.checkpoints,
+        });
     }
 
     located_tree_data
