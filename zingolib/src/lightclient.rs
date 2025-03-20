@@ -146,7 +146,7 @@ pub struct LightClient {
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
-    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
+    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<LightWallet>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
     latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet

@@ -29,7 +29,7 @@ use zcash_primitives::{
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
 
-use crate::error::{ClientError, MempoolError};
+use crate::error::{MempoolError, ServerError};
 
 pub(crate) mod fetch;
 
@@ -83,7 +83,7 @@ pub(crate) enum FetchRequest {
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-) -> Result<BlockHeight, ClientError> {
+) -> Result<BlockHeight, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::ChainTip(reply_sender))
@@ -101,7 +101,7 @@ pub(crate) async fn get_chain_height(
 pub(crate) async fn get_compact_block(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<CompactBlock, ClientError> {
+) -> Result<CompactBlock, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
@@ -118,7 +118,7 @@ pub(crate) async fn get_compact_block(
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ClientError> {
+) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
@@ -140,7 +140,7 @@ pub(crate) async fn get_subtree_roots(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<Vec<SubtreeRoot>, ClientError> {
+) -> Result<Vec<SubtreeRoot>, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::SubtreeRoots(
@@ -167,7 +167,7 @@ pub(crate) async fn get_subtree_roots(
 pub(crate) async fn get_frontiers(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<ChainState, ClientError> {
+) -> Result<ChainState, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
@@ -178,7 +178,7 @@ pub(crate) async fn get_frontiers(
 
     tree_state
         .to_chain_state()
-        .map_err(ClientError::FrontierReadError)
+        .map_err(ServerError::InvalidFrontier)
 }
 
 /// Gets a full transaction for a specified txid.
@@ -188,7 +188,7 @@ pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
-) -> Result<(Transaction, BlockHeight), ClientError> {
+) -> Result<(Transaction, BlockHeight), ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::Transaction(reply_sender, txid))
@@ -202,7 +202,7 @@ pub(crate) async fn get_transaction_and_block_height(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
     )
-    .map_err(ClientError::TransactionReadError)?;
+    .map_err(ServerError::InvalidTransaction)?;
 
     Ok((transaction, block_height))
 }
@@ -215,7 +215,7 @@ pub(crate) async fn get_utxo_metadata(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     transparent_addresses: Vec<String>,
     start_height: BlockHeight,
-) -> Result<Vec<GetAddressUtxosReply>, ClientError> {
+) -> Result<Vec<GetAddressUtxosReply>, ServerError> {
     if transparent_addresses.is_empty() {
         panic!("addresses must be non-empty!");
     }
@@ -242,7 +242,7 @@ pub(crate) async fn get_transparent_address_transactions(
     consensus_parameters: &impl consensus::Parameters,
     transparent_address: String,
     block_range: Range<BlockHeight>,
-) -> Result<Vec<(BlockHeight, Transaction)>, ClientError> {
+) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TransparentAddressTxs(
@@ -270,11 +270,11 @@ pub(crate) async fn get_transparent_address_transactions(
                 &raw_transaction.data[..],
                 consensus::BranchId::for_height(consensus_parameters, block_height),
             )
-            .map_err(ClientError::TransactionReadError)?;
+            .map_err(ServerError::InvalidTransaction)?;
 
             Ok((block_height, transaction))
         })
-        .collect::<Result<Vec<(BlockHeight, Transaction)>, ClientError>>()?;
+        .collect::<Result<Vec<(BlockHeight, Transaction)>, ServerError>>()?;
 
     Ok(transactions)
 }
@@ -293,7 +293,7 @@ pub(crate) async fn get_mempool_transaction_stream(
     loop {
         tokio::select! {
             mempool_stream_response = fetch::get_mempool_stream(client) => {
-                return mempool_stream_response.map_err(|e| MempoolError::ClientError(ClientError::RequestFailed(e)));
+                return mempool_stream_response.map_err(|e| MempoolError::ServerError(ServerError::RequestFailed(e)));
             }
 
             _ = interval.tick() => {

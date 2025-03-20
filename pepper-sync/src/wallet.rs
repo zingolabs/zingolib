@@ -38,7 +38,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::FetchRequest,
-    error::ClientError,
+    error::{ServerError, SyncModeError},
     keys::{self, transparent::TransparentAddressId, KeyId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::MAX_VERIFICATION_WINDOW,
@@ -211,12 +211,12 @@ impl SyncMode {
     /// Constructor from u8.
     ///
     /// Returns `None` if `mode` is not a valid enum variant.
-    pub fn from_u8(mode: u8) -> Option<Self> {
+    pub fn from_u8(mode: u8) -> Result<Self, SyncModeError> {
         match mode {
-            0 => Some(Self::NotRunning),
-            1 => Some(Self::Paused),
-            2 => Some(Self::Running),
-            _ => None,
+            0 => Ok(Self::NotRunning),
+            1 => Ok(Self::Paused),
+            2 => Ok(Self::Running),
+            _ => Err(SyncModeError(mode)),
         }
     }
 
@@ -227,9 +227,8 @@ impl SyncMode {
     /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
     /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
     /// [`crate::wallet::SyncMode`].
-    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
+    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> Result<SyncMode, SyncModeError> {
         SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
-            .expect("this library does not allow setting of non-valid sync mode variants")
     }
 }
 
@@ -328,7 +327,7 @@ impl WalletBlock {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block: &CompactBlock,
-    ) -> Result<Self, ClientError> {
+    ) -> Result<Self, ServerError> {
         let tree_bounds =
             calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
@@ -1002,6 +1001,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     }
 }
 
+// TODO: allow consumer to define shard store
 /// Type alias for sapling memory shard store
 pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 

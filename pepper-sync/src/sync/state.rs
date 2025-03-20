@@ -19,7 +19,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::ClientError,
+    error::ServerError,
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
     wallet::{
@@ -45,14 +45,14 @@ pub(super) enum VerifyEnd {
 pub(super) fn get_wallet_height<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &W,
-) -> Result<BlockHeight, ()>
+) -> Result<BlockHeight, W::Error>
 where
     W: SyncWallet,
 {
-    let wallet_height = if let Some(height) = wallet.get_sync_state().unwrap().wallet_height() {
+    let wallet_height = if let Some(height) = wallet.get_sync_state()?.wallet_height() {
         height
     } else {
-        let birthday = checked_birthday(consensus_parameters, wallet);
+        let birthday = checked_birthday(consensus_parameters, wallet)?;
         birthday - 1
     };
 
@@ -697,7 +697,7 @@ pub(super) async fn set_initial_state<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     chain_height: BlockHeight,
-) -> Result<(), ClientError>
+) -> Result<(), ServerError>
 where
     W: SyncWallet + SyncBlocks,
 {
@@ -810,7 +810,7 @@ async fn final_tree_sizes<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     block_height: BlockHeight,
-) -> Result<(u32, u32), ClientError>
+) -> Result<(u32, u32), ServerError>
 where
     W: SyncBlocks,
 {

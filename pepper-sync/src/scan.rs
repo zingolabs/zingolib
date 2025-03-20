@@ -15,7 +15,7 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
-    error::{ClientError, ScanError},
+    error::{ServerError, ScanError},
     wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -40,7 +40,7 @@ impl InitialScanData {
         first_block: &CompactBlock,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-    ) -> Result<Self, ClientError>
+    ) -> Result<Self, ServerError>
     where
         P: consensus::Parameters + Sync + Send + 'static,
     {

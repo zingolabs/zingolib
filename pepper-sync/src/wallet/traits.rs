@@ -23,7 +23,7 @@ use crate::witness::LocatedTreeData;
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
-    type Error: Debug;
+    type Error: Debug + std::error::Error;
 
     /// Returns the block height wallet was created.
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error>;

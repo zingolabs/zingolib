@@ -21,7 +21,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ClientError, ContinuityError, ScanError},
+    error::{ServerError, ContinuityError, ScanError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -461,7 +461,7 @@ pub(crate) async fn calculate_block_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     compact_block: &CompactBlock,
-) -> Result<TreeBounds, ClientError> {
+) -> Result<TreeBounds, ServerError> {
     let (sapling_final_tree_size, orchard_final_tree_size) =
         if let Some(chain_metadata) = compact_block.chain_metadata {
             (

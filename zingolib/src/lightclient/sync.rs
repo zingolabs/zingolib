@@ -9,6 +9,7 @@ use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
 use crate::data::PollReport;
+use crate::wallet::LightWallet;
 
 use super::error::LightClientError;
 use super::LightClient;
@@ -55,6 +56,7 @@ impl LightClient {
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
     pub fn sync_mode(&self) -> SyncMode {
         SyncMode::from_atomic_u8(self.sync_mode.clone())
+            .expect("this library does not allow setting of non-valid sync mode variants")
     }
 
     /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
@@ -72,7 +74,7 @@ impl LightClient {
     }
 
     /// Polls the sync task, returning [`self::PollReport`].
-    pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError> {
+    pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<LightWallet>> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
                 PollReport::Ready(sync_result.expect("task panicked"))

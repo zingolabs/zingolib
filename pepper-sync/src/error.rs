@@ -5,64 +5,73 @@ use std::array::TryFromSliceError;
 use zcash_client_backend::PoolType;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::OutputId;
+use crate::wallet::{traits::SyncWallet, OutputId};
 
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
-pub enum SyncError {
+pub enum SyncError<W: SyncWallet> {
     /// Mempool error.
-    #[error("Mempool error. {0}")]
+    #[error("mempool error. {0}")]
     MempoolError(#[from] MempoolError),
     /// Scan error.
-    #[error("Scan error. {0}")]
+    #[error("scan error. {0}")]
     ScanError(#[from] ScanError),
     /// Server error.
-    #[error("Server error. {0}")]
-    ServerError(#[from] ClientError),
+    #[error("server error. {0}")]
+    ServerError(#[from] ServerError),
+    /// Invalid sync mode.
+    #[error(transparent)]
+    InvalidSyncMode(#[from] SyncModeError),
+    /// Chain error.
+    #[error("wallet height is more than {0} blocks ahead of best chain height")]
+    ChainError(u32),
+    /// Wallet error.
+    #[error("wallet error. {0}")]
+    WalletError(W::Error),
 }
 
 /// Mempool errors.
 #[derive(Debug, thiserror::Error)]
 pub enum MempoolError {
-    /// Client error.
-    #[error("Client error. {0}")]
-    ClientError(#[from] ClientError),
+    /// Server error.
+    #[error("server error. {0}")]
+    ServerError(#[from] ServerError),
     /// Timed out fetching mempool stream during shutdown.
-    #[error("Timed out fetching mempool stream during shutdown.\nNON-CRITICAL: Sync completed successfully but may not have scanned transactions in the mempool.")]
+    #[error("timed out fetching mempool stream during shutdown.\nNON-CRITICAL: sync completed successfully but may not have scanned transactions in the mempool.")]
     ShutdownWithoutStream,
 }
 
 /// Scan errors.
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
-    /// Client error.
-    #[error("Client error. {0}")]
-    ClientError(#[from] ClientError),
+    /// Server error.
+    #[error("server error. {0}")]
+    ServerError(#[from] ServerError),
     /// Continuity error.
-    #[error("Continuity error. {0}")]
+    #[error("continuity error. {0}")]
     ContinuityError(#[from] ContinuityError),
     /// Zcash client backend scan error
     #[error("{0}")]
     ZcbScanError(zcash_client_backend::scanning::ScanError),
     /// Invalid sapling nullifier
-    #[error("Invalid sapling nullifier. {0}")]
+    #[error("invalid sapling nullifier. {0}")]
     InvalidSaplingNullifier(#[from] TryFromSliceError),
     /// Invalid orchard nullifier length
-    #[error("Invalid orchard nullifier length. Should be 32 bytes, found {0}")]
+    #[error("invalid orchard nullifier length. should be 32 bytes, found {0}")]
     InvalidOrchardNullifierLength(usize),
     /// Invalid orchard nullifier
-    #[error("Invalid orchard nullifier.")]
+    #[error("invalid orchard nullifier")]
     InvalidOrchardNullifier,
     /// Invalid sapling output
     // TODO: add output data
-    #[error("Invalid sapling output.")]
+    #[error("invalid sapling output")]
     InvalidSaplingOutput,
     /// Invalid orchard action
     // TODO: add output data
-    #[error("Invalid orchard action.")]
+    #[error("invalid orchard action")]
     InvalidOrchardAction,
     /// Incorrect tree size
-    #[error("Incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}")]
+    #[error("incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}")]
     IncorrectTreeSize {
         /// Shielded protocol
         shielded_protocol: PoolType,
@@ -72,7 +81,7 @@ pub enum ScanError {
         calculated_size: u32,
     },
     /// Txid of transaction returned by the server does not match requested txid.
-    #[error("Txid of transaction returned by the server does not match requested txid.\nTxid requested: {txid_requested}\nTxid returned: {txid_returned}")]
+    #[error("txid of transaction returned by the server does not match requested txid.\ntxid requested: {txid_requested}\ntxid returned: {txid_returned}")]
     IncorrectTxid {
         /// Txid requested
         txid_requested: TxId,
@@ -80,13 +89,13 @@ pub enum ScanError {
         txid_returned: TxId,
     },
     /// Decrypted note nullifier and position data not found.
-    #[error("Decrypted note nullifier and position data not found. Output id: {0:?}")]
+    #[error("decrypted note nullifier and position data not found. output id: {0:?}")]
     DecryptedNoteDataNotFound(OutputId),
     /// Invalid memo bytes..
-    #[error("Invalid memo bytes. {0}")]
+    #[error("invalid memo bytes. {0}")]
     InvalidMemoBytes(#[from] zcash_primitives::memo::Error),
     /// Failed to parse encoded address.
-    #[error("Failed to parse encoded address. {0}")]
+    #[error("failed to parse encoded address. {0}")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
 }
 
@@ -94,7 +103,7 @@ pub enum ScanError {
 #[derive(Debug, thiserror::Error)]
 pub enum ContinuityError {
     /// Height discontinuity.
-    #[error("Height discontinuity. Block with height {height} is not continuous with previous block height {previous_block_height}")]
+    #[error("height discontinuity. block with height {height} is not continuous with previous block height {previous_block_height}")]
     HeightDiscontinuity {
         /// Block height
         height: BlockHeight,
@@ -102,7 +111,7 @@ pub enum ContinuityError {
         previous_block_height: BlockHeight,
     },
     /// Hash discontinuity.
-    #[error("Hash discontinuity. Block prev_hash {prev_hash} with height {height} does not match previous block hash {previous_block_hash}")]
+    #[error("hash discontinuity. block prev_hash {prev_hash} with height {height} does not match previous block hash {previous_block_hash}")]
     HashDiscontinuity {
         /// Block height
         height: BlockHeight,
@@ -113,18 +122,27 @@ pub enum ContinuityError {
     },
 }
 
-/// Client errors.
+/// Server errors.
 ///
-/// Errors associated with connecting to the server and parsing or converting retrieved data.
+/// Errors associated with connecting to the server and parsing retrieved data.
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
-    /// Failed to read raw transaction
-    #[error("Failed to read frontiers. {0}")]
-    FrontierReadError(std::io::Error),
-    /// Failed to read raw transaction
-    #[error("Failed to read raw transaction. {0}")]
-    TransactionReadError(std::io::Error),
-    /// Request from server failed
-    #[error("Server error. {0}")]
+pub enum ServerError {
+    /// Server request failed
+    #[error("server request failed. {0}")]
     RequestFailed(#[from] tonic::Status),
+    /// Server returned invalid frontier
+    #[error("server returned invalid frontier. {0}")]
+    InvalidFrontier(std::io::Error),
+    /// Server returned invalid transaction
+    #[error("server returned invalid transaction. {0}")]
+    InvalidTransaction(std::io::Error),
+    /// Server returned invalid subtree root
+    // TODO: add more info
+    #[error("server returned invalid subtree root")]
+    InvalidSubtreeRoot,
 }
+
+/// Invalid sync mode.
+#[derive(Debug, thiserror::Error)]
+#[error("invalid sync mode. {0}")]
+pub struct SyncModeError(pub u8);

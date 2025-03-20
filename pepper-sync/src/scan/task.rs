@@ -26,7 +26,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ClientError, ScanError},
+    error::{ServerError, ScanError},
     keys::transparent::TransparentAddressId,
     sync,
     wallet::{
@@ -114,7 +114,7 @@ where
         self.batcher = Some(batcher);
     }
 
-    fn check_batcher_error(&mut self) -> Result<(), ClientError> {
+    fn check_batcher_error(&mut self) -> Result<(), ServerError> {
         let batcher = self.batcher.take();
         if let Some(mut batcher) = batcher {
             batcher.check_error()?;
@@ -124,7 +124,7 @@ where
         Ok(())
     }
 
-    async fn shutdown_batcher(&mut self) -> Result<(), ClientError> {
+    async fn shutdown_batcher(&mut self) -> Result<(), ServerError> {
         let batcher = self.batcher.take();
         if let Some(mut batcher) = batcher {
             batcher.shutdown().await?;
@@ -197,7 +197,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
-    ) -> Result<(), ClientError>
+    ) -> Result<(), ServerError>
     where
         W: SyncWallet + SyncBlocks,
     {
@@ -293,7 +293,7 @@ where
 }
 
 struct Batcher<P> {
-    handle: Option<JoinHandle<Result<(), ClientError>>>,
+    handle: Option<JoinHandle<Result<(), ServerError>>>,
     is_batching: Arc<AtomicBool>,
     batch: Option<ScanTask>,
     consensus_parameters: P,
@@ -333,7 +333,7 @@ where
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
-        let handle: JoinHandle<Result<(), ClientError>> = tokio::spawn(async move {
+        let handle: JoinHandle<Result<(), ServerError>> = tokio::spawn(async move {
             // save seam blocks between scan tasks for linear scanning continuuity checks
             // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
             let mut previous_task_first_block: Option<WalletBlock> = None;
@@ -461,7 +461,7 @@ where
         }
     }
 
-    fn check_error(&mut self) -> Result<(), ClientError> {
+    fn check_error(&mut self) -> Result<(), ServerError> {
         if let Some(mut handle) = self.handle.take() {
             if let Some(result) = handle.borrow_mut().now_or_never() {
                 result.expect("task panicked")?;
@@ -476,7 +476,7 @@ where
     /// Shuts down batcher by dropping the sender to the batcher task and awaiting the handle.
     ///
     /// This should always be called in the context of the scanner as it must be also be taken from the Scanner struct.
-    async fn shutdown(&mut self) -> Result<(), ClientError> {
+    async fn shutdown(&mut self) -> Result<(), ServerError> {
         tracing::debug!("Shutting down batcher");
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
@@ -626,7 +626,7 @@ impl ScanTask {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block_height: BlockHeight,
-    ) -> Result<(Self, Self), ClientError> {
+    ) -> Result<(Self, Self), ServerError> {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {

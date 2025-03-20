@@ -8,7 +8,7 @@ use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::zip32::AccountId;
 
 use crate::client::{self, FetchRequest};
-use crate::error::ClientError;
+use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
 use crate::wallet::traits::SyncWallet;
@@ -28,8 +28,10 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
-) -> Result<(), ClientError> {
-    let wallet_addresses = wallet.get_transparent_addresses_mut().unwrap();
+) -> Result<(), SyncError<W>> {
+    let wallet_addresses = wallet
+        .get_transparent_addresses_mut()
+        .map_err(SyncError::WalletError)?;
     let mut locators: BTreeSet<Locator> = BTreeSet::new();
     let block_range = Range {
         start: wallet_height + 1 - MAX_VERIFICATION_WINDOW,
@@ -129,7 +131,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
 
     wallet
         .get_sync_state_mut()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .locators
         .append(&mut locators);
 

@@ -2299,6 +2299,7 @@ dependencies = [
  "sapling-crypto",
  "sha2",
  "shardtree",
+ "subtle",
  "thiserror",
  "tokio",
  "tonic",

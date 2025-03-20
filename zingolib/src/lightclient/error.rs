@@ -1,6 +1,6 @@
 //! Errors assoicated with [`crate::lightclient::LightClient`].
 
-use crate::wallet::error::WalletError;
+use crate::wallet::{error::WalletError, LightWallet};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LightClientError {
@@ -9,7 +9,7 @@ pub enum LightClientError {
     SyncNotRunning,
     /// Sync failed.
     #[error("Sync failed. {0}")]
-    SyncFailed(#[from] pepper_sync::error::SyncError),
+    SyncFailed(#[from] pepper_sync::error::SyncError<LightWallet>),
     /// gPRC client error
     #[error("gRPC client error. {0}")]
     ClientError(#[from] zingo_netutils::GetClientError),

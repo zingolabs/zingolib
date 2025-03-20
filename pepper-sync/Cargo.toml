@@ -30,6 +30,7 @@ zip32.workspace = true
 
 # Cryptography
 jubjub.workspace = true
+subtle.workspace = true
 
 # Async
 futures.workspace = true
@@ -54,7 +55,7 @@ thiserror.workspace = true
 # JSON
 json.workspace = true
 
-# Read write
+# Serialization
 byteorder = { workspace = true, optional = true }
 
 # temp
