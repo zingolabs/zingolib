@@ -124,7 +124,7 @@ pub enum ContinuityError {
 
 /// Server errors.
 ///
-/// Errors associated with connecting to the server and parsing retrieved data.
+/// Errors associated with connecting to the server and receiving invalid data.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
     /// Server request failed
@@ -140,6 +140,11 @@ pub enum ServerError {
     // TODO: add more info
     #[error("server returned invalid subtree root")]
     InvalidSubtreeRoot,
+    /// Server returned blocks that could not be verified against wallet block data. Exceeded max verification window.
+    #[error(
+        "server returned blocks that could not be verified against wallet block data. exceeded max verification window."
+    )]
+    ChainVerificationError,
 }
 
 /// Invalid sync mode.

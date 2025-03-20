@@ -393,13 +393,12 @@ impl Command for SyncCommand {
                 lightclient.pause_sync();
                 "Pausing sync task...".to_string()
             }
-            "status" => RT
-                .block_on(async move {
-                    json::JsonValue::from(
-                        pepper_sync::sync_status(&*lightclient.wallet.lock().await).await,
-                    )
-                })
-                .pretty(2),
+            "status" => RT.block_on(async move {
+                match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
+                    Ok(status) => json::JsonValue::from(status).pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
             "poll" => match lightclient.poll_sync() {
                 PollReport::NoHandle => "Sync task has not been launched.".to_string(),
                 PollReport::NotReady => "Sync task is not complete.".to_string(),

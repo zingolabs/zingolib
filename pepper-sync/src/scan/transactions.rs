@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use incrementalmerkletree::Position;
 use orchard::{
@@ -30,7 +30,6 @@ use crate::{
     error::ScanError,
     keys::{self, transparent::TransparentAddressId, KeyId},
     wallet::{
-        traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
         WalletBlock, WalletNote, WalletTransaction,
@@ -551,65 +550,4 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .for_each(|outpoint| {
             outpoint_map.insert(OutputId::from(outpoint), (block_height, txid));
         });
-}
-
-/// For each locator, fetch the spending transaction and then scan and append to the wallet transactions.
-///
-/// This is only intended to be used for transactions that do not contain any incoming notes and therefore evaded
-/// trial decryption.
-/// For targetted rescan of transactions by locator, locators should be added to the wallet using the `TODO` API and
-/// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
-/// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
-/// spending.
-pub(crate) async fn scan_spending_transactions<L, P, W>(
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    consensus_parameters: &P,
-    wallet: &mut W,
-    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    locators: L,
-) -> Result<(), ScanError>
-where
-    L: Iterator<Item = Locator>,
-    P: consensus::Parameters,
-    W: SyncBlocks + SyncTransactions + SyncNullifiers,
-{
-    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
-    let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
-    let mut spending_locators = BTreeSet::new();
-    let mut wallet_blocks = BTreeMap::new();
-    for locator in locators {
-        let block_height = locator.0;
-        let txid = locator.1;
-
-        // skip if transaction already exists in the wallet
-        if wallet_txids.contains(&txid) {
-            continue;
-        }
-
-        spending_locators.insert(locator);
-        wallet_blocks.insert(
-            block_height,
-            wallet.get_wallet_block(block_height).expect(
-                "wallet block should be in the wallet as nullifiers are mapped during scanning",
-            ),
-        );
-    }
-
-    let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
-    let spending_transactions = scan_transactions(
-        fetch_request_sender,
-        consensus_parameters,
-        ufvks,
-        spending_locators,
-        DecryptedNoteData::new(),
-        &wallet_blocks,
-        &mut outpoint_map,
-        HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
-    )
-    .await?;
-    wallet
-        .extend_wallet_transactions(spending_transactions)
-        .unwrap();
-
-    Ok(())
 }
