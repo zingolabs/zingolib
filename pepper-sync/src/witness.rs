@@ -51,7 +51,7 @@ pub struct LocatedTreeData<H> {
 pub(crate) fn build_located_trees<H>(
     initial_position: Position,
     leaves_and_retentions: Vec<(H, Retention<BlockHeight>)>,
-) -> Result<Vec<LocatedTreeData<H>>, ()>
+) -> Vec<LocatedTreeData<H>>
 where
     H: Copy + PartialEq + incrementalmerkletree::Hashable + Sync + Send,
 {
@@ -77,22 +77,23 @@ where
                     incrementalmerkletree::Level::from(SHARD_HEIGHT),
                     chunk.iter().copied(),
                 );
-                sender.send(tree).unwrap();
+                sender.send(tree).expect("receiver should not be dropped");
             })
         }
     });
     drop(sender);
 
     let mut located_tree_data = Vec::new();
-    for tree in receiver.iter() {
-        let tree = tree.unwrap();
-        located_tree_data.push(LocatedTreeData {
-            subtree: tree.subtree,
-            checkpoints: tree.checkpoints,
-        });
+    for located_tree in receiver.iter() {
+        if let Some(tree) = located_tree {
+            located_tree_data.push(LocatedTreeData {
+                subtree: tree.subtree,
+                checkpoints: tree.checkpoints,
+            });
+        }
     }
 
-    Ok(located_tree_data)
+    located_tree_data
 }
 
 #[cfg(not(feature = "darkside_test"))]

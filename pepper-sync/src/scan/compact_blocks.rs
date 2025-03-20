@@ -15,7 +15,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight, Parameters},
+    consensus::{self, BlockHeight},
     zip32::AccountId,
 };
 
@@ -41,12 +41,12 @@ const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
 
 pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
-    parameters: &P,
+    consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
 ) -> Result<ScanData, ScanError>
 where
-    P: Parameters + Sync + Send + 'static,
+    P: consensus::Parameters + Sync + Send + 'static,
 {
     check_continuity(
         &compact_blocks,
@@ -55,7 +55,7 @@ where
     )?;
 
     let scanning_keys = ScanningKeys::from_account_ufvks(ufvks.clone());
-    let mut runners = trial_decrypt(parameters, &scanning_keys, &compact_blocks).unwrap();
+    let mut runners = trial_decrypt(consensus_parameters, &scanning_keys, &compact_blocks)?;
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
@@ -166,17 +166,17 @@ where
 }
 
 fn trial_decrypt<P>(
-    parameters: &P,
+    consensus_parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
 ) -> Result<BatchRunners<(), ()>, ScanError>
 where
-    P: Parameters + Send + 'static,
+    P: consensus::Parameters + Send + 'static,
 {
     let mut runners = BatchRunners::<(), ()>::for_keys(TRIAL_DECRYPT_TASK_SIZE, scanning_keys);
     for block in compact_blocks {
         runners
-            .add_block(parameters, block.clone())
+            .add_block(consensus_parameters, block.clone())
             .map_err(ScanError::ZcbScanError)?;
     }
     runners.flush();

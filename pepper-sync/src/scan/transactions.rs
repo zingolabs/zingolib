@@ -231,16 +231,14 @@ pub(crate) fn scan_transaction(
             sapling_ivks,
             &sapling_outputs,
             decrypted_note_data.map(|d| &d.sapling_nullifiers_and_positions),
-        )
-        .unwrap();
+        )?;
 
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
             txid,
             sapling_ovks,
             &sapling_outputs,
-        )
-        .unwrap();
+        )?;
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes));
     }
@@ -263,16 +261,14 @@ pub(crate) fn scan_transaction(
             orchard_ivks,
             &orchard_actions,
             decrypted_note_data.map(|d| &d.orchard_nullifiers_and_positions),
-        )
-        .unwrap();
+        )?;
 
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
             txid,
             orchard_ovks,
             &orchard_actions,
-        )
-        .unwrap();
+        )?;
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes));
     }
@@ -290,12 +286,12 @@ pub(crate) fn scan_transaction(
                     consensus_parameters,
                     uas.clone(),
                     &mut outgoing_sapling_notes,
-                );
+                )?;
                 add_recipient_unified_address(
                     consensus_parameters,
                     uas,
                     &mut outgoing_orchard_notes,
-                );
+                )?;
             }
             ParsedMemo::Version1 {
                 uas,
@@ -305,12 +301,12 @@ pub(crate) fn scan_transaction(
                     consensus_parameters,
                     uas.clone(),
                     &mut outgoing_sapling_notes,
-                );
+                )?;
                 add_recipient_unified_address(
                     consensus_parameters,
                     uas,
                     &mut outgoing_orchard_notes,
-                );
+                )?;
 
                 // TODO: handle rejection addresses from encoded memos
             }
@@ -365,7 +361,7 @@ fn scan_incoming_notes<D, Op, N, Nf>(
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
     nullifiers_and_positions: Option<&HashMap<OutputId, (Nf, Position)>>,
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
@@ -380,18 +376,18 @@ where
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
             let output_id = OutputId::new(txid, output_index as u16);
-            let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
+            let (nullifier, position) = nullifiers_and_positions.map_or(Ok((None, None)), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
-                    .unwrap()
-            });
+                    .ok_or(ScanError::DecryptedNoteDataNotFound(output_id))
+            })?;
             wallet_notes.push(WalletNote {
                 output_id,
                 key_id: key_ids[key_index],
                 note,
                 nullifier,
                 position,
-                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 spending_transaction: None,
             });
         }
@@ -405,7 +401,7 @@ fn scan_outgoing_notes<D, Op, N>(
     txid: TxId,
     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     D: Domain<Note = N>,
     D::Memo: AsRef<[u8]>,
@@ -425,7 +421,7 @@ where
                 output_id: OutputId::new(txid, output_index as u16),
                 key_id: key_ids[key_index],
                 note,
-                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 recipient_full_unified_address: None,
             });
         }
@@ -479,22 +475,24 @@ fn add_recipient_unified_address<P, Nz>(
     consensus_parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
     outgoing_notes: &mut [OutgoingNote<Nz>],
-) where
+) -> Result<(), ScanError>
+where
     P: consensus::Parameters + NetworkConstants,
     OutgoingNote<Nz>: OutgoingNoteInterface,
 {
     for unified_address in unified_addresses {
         let encoded_address = match <OutgoingNote<Nz>>::SHIELDED_PROTOCOL {
             ShieldedProtocol::Sapling => unified_address.sapling().map(|address| {
-                zcash_keys::encoding::encode_payment_address(
+                Ok(zcash_keys::encoding::encode_payment_address(
                     consensus_parameters.hrp_sapling_payment_address(),
                     address,
-                )
+                ))
             }),
-            ShieldedProtocol::Orchard => unified_address.orchard().map(|address| {
-                keys::encode_orchard_receiver(consensus_parameters, address).unwrap()
-            }),
-        };
+            ShieldedProtocol::Orchard => unified_address
+                .orchard()
+                .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
+        }
+        .transpose()?;
         outgoing_notes
             .iter_mut()
             .filter(|note| encoded_address == Some(note.encoded_recipient(consensus_parameters)))
@@ -502,6 +500,8 @@ fn add_recipient_unified_address<P, Nz>(
                 note.recipient_full_unified_address = Some(unified_address.clone());
             });
     }
+
+    Ok(())
 }
 
 /// Converts and adds the nullifiers from a transaction to the nullifier map.

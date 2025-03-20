@@ -199,14 +199,12 @@ where
 
     let (sapling_located_trees, orchard_located_trees) = tokio::task::spawn_blocking(move || {
         (
-            witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions)
-                .unwrap(),
-            witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions)
-                .unwrap(),
+            witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions),
+            witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions),
         )
     })
     .await
-    .unwrap();
+    .expect("task panicked");
 
     Ok(ScanResults {
         nullifiers,

@@ -5,6 +5,8 @@ use std::array::TryFromSliceError;
 use zcash_client_backend::PoolType;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
+use crate::wallet::OutputId;
+
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -77,6 +79,15 @@ pub enum ScanError {
         /// Txid returned
         txid_returned: TxId,
     },
+    /// Decrypted note nullifier and position data not found.
+    #[error("Decrypted note nullifier and position data not found. Output id: {0:?}")]
+    DecryptedNoteDataNotFound(OutputId),
+    /// Invalid memo bytes..
+    #[error("Invalid memo bytes. {0}")]
+    InvalidMemoBytes(#[from] zcash_primitives::memo::Error),
+    /// Failed to parse encoded address.
+    #[error("Failed to parse encoded address. {0}")]
+    AddressParseError(#[from] zcash_address::unified::ParseError),
 }
 
 /// Block continuity errors.
