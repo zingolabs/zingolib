@@ -351,20 +351,23 @@ pub trait SyncShardTrees: SyncWallet {
     }
 
     /// Removes all shard tree data above the given `block_height`.
-    fn truncate_shard_trees(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
+    fn truncate_shard_trees(
+        &mut self,
+        truncate_height: BlockHeight,
+    ) -> Result<(), SyncError<Self::Error>> {
         if !self
-            .get_shard_trees_mut()?
+            .get_shard_trees_mut()
+            .map_err(SyncError::WalletError)?
             .sapling
-            .truncate_to_checkpoint(&truncate_height)
-            .unwrap()
+            .truncate_to_checkpoint(&truncate_height)?
         {
             panic!("max checkpoints should always be higher or equal to max verification window!");
         }
         if !self
-            .get_shard_trees_mut()?
+            .get_shard_trees_mut()
+            .map_err(SyncError::WalletError)?
             .orchard
-            .truncate_to_checkpoint(&truncate_height)
-            .unwrap()
+            .truncate_to_checkpoint(&truncate_height)?
         {
             panic!("max checkpoints should always be higher or equal to max verification window!");
         }

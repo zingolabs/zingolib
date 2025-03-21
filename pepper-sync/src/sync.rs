@@ -219,7 +219,7 @@ where
         if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
         }
-        truncate_wallet_data(&mut *wallet_guard, chain_height).map_err(SyncError::WalletError)?;
+        truncate_wallet_data(&mut *wallet_guard, chain_height)?;
         wallet_height = chain_height;
     }
 
@@ -630,8 +630,7 @@ where
                 );
                 state::merge_verification_ranges(sync_state);
 
-                truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)
-                    .map_err(SyncError::WalletError)?;
+                truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)?;
 
                 if initial_verification_height - scan_range_to_verify.block_range().start
                     > MAX_VERIFICATION_WINDOW
@@ -712,12 +711,16 @@ where
 }
 
 /// Removes all wallet data above the given `truncate_height`.
-fn truncate_wallet_data<W>(wallet: &mut W, truncate_height: BlockHeight) -> Result<(), W::Error>
+fn truncate_wallet_data<W>(
+    wallet: &mut W,
+    truncate_height: BlockHeight,
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     let birthday = wallet
-        .get_sync_state()?
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
         .wallet_birthday()
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&birthday) {
@@ -725,9 +728,15 @@ where
         std::cmp::Ordering::Less => birthday,
     };
 
-    wallet.truncate_wallet_blocks(checked_truncate_height)?;
-    wallet.truncate_wallet_transactions(checked_truncate_height)?;
-    wallet.truncate_nullifiers(checked_truncate_height)?;
+    wallet
+        .truncate_wallet_blocks(checked_truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_wallet_transactions(checked_truncate_height)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .truncate_nullifiers(checked_truncate_height)
+        .map_err(SyncError::WalletError)?;
     wallet.truncate_shard_trees(checked_truncate_height)?;
 
     Ok(())
