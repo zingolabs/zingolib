@@ -22,7 +22,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{keys::unified::ReceiverSelection, LightWallet, WalletBase},
+    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
 };
 use error::LightClientError;
 
@@ -143,7 +143,7 @@ pub struct LightClient {
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
-    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<LightWallet>>>>,
+    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
     latest_proposal: Option<ZingoProposal>, // TODO: move to wallet

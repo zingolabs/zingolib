@@ -1,7 +1,6 @@
 //! Traits for interfacing a wallet with the sync engine
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::Debug;
 
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::{Checkpoint, ShardStore};
@@ -11,6 +10,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 
+use crate::error::SyncError;
 use crate::keys::transparent::TransparentAddressId;
 use crate::sync::MAX_VERIFICATION_WINDOW;
 use crate::wallet::{
@@ -23,7 +23,7 @@ use crate::witness::LocatedTreeData;
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data
-    type Error: Debug + std::error::Error;
+    type Error: std::fmt::Debug + std::fmt::Display + std::error::Error;
 
     /// Returns the block height wallet was created.
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error>;
@@ -244,8 +244,8 @@ pub trait SyncShardTrees: SyncWallet {
         wallet_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
-    ) -> Result<(), Self::Error> {
-        let shard_trees = self.get_shard_trees_mut()?;
+    ) -> Result<(), SyncError<Self::Error>> {
+        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
         // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
         // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
@@ -339,14 +339,12 @@ pub trait SyncShardTrees: SyncWallet {
         for tree in sapling_located_trees.into_iter() {
             shard_trees
                 .sapling
-                .insert_tree(tree.subtree, tree.checkpoints)
-                .unwrap();
+                .insert_tree(tree.subtree, tree.checkpoints)?;
         }
         for tree in orchard_located_trees.into_iter() {
             shard_trees
                 .orchard
-                .insert_tree(tree.subtree, tree.checkpoints)
-                .unwrap();
+                .insert_tree(tree.subtree, tree.checkpoints)?;
         }
 
         Ok(())

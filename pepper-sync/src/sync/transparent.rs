@@ -28,7 +28,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
-) -> Result<(), SyncError<W>> {
+) -> Result<(), SyncError<W::Error>> {
     let wallet_addresses = wallet
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;

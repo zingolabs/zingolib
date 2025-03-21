@@ -196,7 +196,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
-    ) -> Result<(), SyncError<W>>
+    ) -> Result<(), SyncError<W::Error>>
     where
         W: SyncWallet + SyncBlocks,
     {

@@ -680,7 +680,7 @@ pub(super) async fn set_initial_state<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     chain_height: BlockHeight,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {

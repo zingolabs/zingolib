@@ -27,8 +27,8 @@ pub mod send_with_proposal {
 
     use crate::data::proposal::ZingoProposal;
     use crate::lightclient::LightClient;
+    use crate::wallet::error::WalletError;
     use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
-    use crate::wallet::LightWallet;
 
     // TODO: untangle errors and fix send result so clone is not needed so we can impl from on std::error
 
@@ -58,7 +58,7 @@ pub mod send_with_proposal {
         IncorrectTxidFromServer(TxId, TxId),
         /// Failed to scan transmitted transaction..
         #[error("Failed to scan transmitted transaction. {0}")]
-        SyncError(#[from] SyncError<LightWallet>),
+        SyncError(#[from] SyncError<WalletError>),
     }
 
     #[allow(missing_docs)] // error types document themselves

@@ -9,7 +9,7 @@ use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
 use crate::data::PollReport;
-use crate::wallet::LightWallet;
+use crate::wallet::error::WalletError;
 
 use super::error::LightClientError;
 use super::LightClient;
@@ -74,7 +74,7 @@ impl LightClient {
     }
 
     /// Polls the sync task, returning [`self::PollReport`].
-    pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<LightWallet>> {
+    pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<WalletError>> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
                 PollReport::Ready(sync_result.expect("task panicked"))

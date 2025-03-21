@@ -1,15 +1,19 @@
 //! Pepper sync error module
 
-use std::array::TryFromSliceError;
+use std::{array::TryFromSliceError, convert::Infallible};
 
+use shardtree::error::ShardTreeError;
 use zcash_client_backend::PoolType;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
 
-use crate::wallet::{traits::SyncWallet, OutputId};
+use crate::wallet::OutputId;
 
 /// Top level error enumerating any error that may occur during sync
 #[derive(Debug, thiserror::Error)]
-pub enum SyncError<W: SyncWallet> {
+pub enum SyncError<E>
+where
+    E: std::fmt::Debug + std::fmt::Display,
+{
     /// Mempool error.
     #[error("mempool error. {0}")]
     MempoolError(#[from] MempoolError),
@@ -25,9 +29,12 @@ pub enum SyncError<W: SyncWallet> {
     /// Chain error.
     #[error("wallet height is more than {0} blocks ahead of best chain height")]
     ChainError(u32),
+    /// Shard tree error.
+    #[error("shard tree error. {0}")]
+    ShardTreeError(#[from] ShardTreeError<Infallible>),
     /// Wallet error.
     #[error("wallet error. {0}")]
-    WalletError(W::Error),
+    WalletError(E),
 }
 
 /// Mempool errors.

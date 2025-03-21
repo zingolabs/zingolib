@@ -35,7 +35,7 @@ pub(super) async fn update_shielded_spends<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     P: consensus::Parameters,
     W: SyncBlocks + SyncTransactions + SyncNullifiers,
@@ -108,7 +108,7 @@ async fn scan_spending_transactions<L, P, W>(
     wallet: &mut W,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     locators: L,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     L: Iterator<Item = Locator>,
     P: consensus::Parameters,

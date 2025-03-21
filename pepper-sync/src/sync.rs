@@ -169,7 +169,7 @@ pub async fn sync<P, W>(
     wallet: Arc<Mutex<W>>,
     sync_mode: Arc<AtomicU8>,
     transparent_address_discovery: bool,
-) -> Result<SyncResult, SyncError<W>>
+) -> Result<SyncResult, SyncError<W::Error>>
 where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
@@ -456,7 +456,7 @@ pub fn scan_pending_transaction<W>(
     transaction: Transaction,
     status: ConfirmationStatus,
     datetime: u32,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
@@ -579,14 +579,13 @@ async fn process_scan_results<W>(
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
     initial_verification_height: BlockHeight,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     match scan_results {
         Ok(results) => {
-            update_wallet_data(consensus_parameters, wallet, &scan_range, results)
-                .map_err(SyncError::WalletError)?;
+            update_wallet_data(consensus_parameters, wallet, &scan_range, results)?;
             spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
             spend::update_shielded_spends(
                 consensus_parameters,
@@ -665,7 +664,7 @@ async fn process_mempool_transaction<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet: &mut W,
     raw_transaction: RawTransaction,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
@@ -740,7 +739,7 @@ fn update_wallet_data<W>(
     wallet: &mut W,
     scan_range: &ScanRange,
     scan_results: ScanResults,
-) -> Result<(), W::Error>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
@@ -753,7 +752,9 @@ where
         orchard_located_trees,
     } = scan_results;
 
-    let sync_state = wallet.get_sync_state_mut()?;
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     let wallet_height = sync_state
         .wallet_height()
         .expect("scan ranges should not be empty in this scope");
@@ -772,10 +773,18 @@ where
         );
     }
 
-    wallet.append_wallet_blocks(wallet_blocks)?;
-    wallet.extend_wallet_transactions(wallet_transactions)?;
-    wallet.append_nullifiers(nullifiers)?;
-    wallet.append_outpoints(&mut outpoints)?;
+    wallet
+        .append_wallet_blocks(wallet_blocks)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .extend_wallet_transactions(wallet_transactions)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .append_nullifiers(nullifiers)
+        .map_err(SyncError::WalletError)?;
+    wallet
+        .append_outpoints(&mut outpoints)
+        .map_err(SyncError::WalletError)?;
     wallet.update_shard_trees(
         scan_range,
         wallet_height,
@@ -847,7 +856,7 @@ async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncShardTrees,
 {
@@ -904,7 +913,7 @@ async fn add_initial_frontier<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
-) -> Result<(), SyncError<W>>
+) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncShardTrees,
 {
