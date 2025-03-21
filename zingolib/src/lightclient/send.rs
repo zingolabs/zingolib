@@ -124,7 +124,10 @@ pub mod send_with_proposal {
                     );
                     Ok(NonEmpty::from_vec(txids).ok_or(CompleteAndBroadcastError::EmptyList)?)
                 }
-                Err(e) => Err(e.into()),
+                Err(e) => {
+                    wallet.set_send_result(format!("error: {}", e));
+                    Err(e.into())
+                }
             }
         }
 
