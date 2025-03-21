@@ -3,7 +3,6 @@ use json::JsonValue;
 use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
 use pepper_sync::keys::transparent::TransparentScope;
-use zcash_address::unified::ParseError;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
@@ -52,6 +51,8 @@ use super::data::summaries::ValueTransfer;
 use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
 use super::data::summaries::ValueTransfers;
+use super::error::KeyError;
+use super::error::SummaryError;
 use super::keys::unified::UnifiedKeyStore;
 use super::summary;
 use super::summary::SendType;
@@ -219,14 +220,15 @@ impl LightWallet {
     /// lists the transparent addresses known by the wallet.
     // TODO: consider splitting refund addresses, taking scope as paramter or returning address id data
     // TODO: error handling
-    pub fn get_transparent_addresses(&self) -> Vec<TransparentAddress> {
+    pub fn get_transparent_addresses(
+        &self,
+    ) -> Result<Vec<TransparentAddress>, zcash_address::ParseError> {
         self.transparent_addresses
             .values()
             .map(|address| {
-                ZcashAddress::try_from_encoded(address)
-                    .unwrap()
+                Ok(ZcashAddress::try_from_encoded(address)?
                     .convert_if_network::<TransparentAddress>(self.network.network_type())
-                    .expect("incorrect network should be checked on wallet load")
+                    .expect("incorrect network should be checked on wallet load"))
             })
             .collect()
     }
@@ -278,15 +280,16 @@ impl LightWallet {
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address
-                            .sapling()
-                            .map_or(true, |address| self.is_sapling_send_to_self(address))
-                            || outgoing_note
-                                .encoded_recipient_full_unified_address(&self.network)
-                                .expect("should exist in this scope")
-                                == *zfz_address
+                        full_address.sapling().map_or(true, |address| {
+                            self.is_sapling_send_to_self(address)
+                                .expect("must have sapling view capability in this scope")
+                        }) || outgoing_note
+                            .encoded_recipient_full_unified_address(&self.network)
+                            .expect("should exist in this scope")
+                            == *zfz_address
                     } else {
                         self.is_sapling_send_to_self(&outgoing_note.note().recipient())
+                            .expect("must have sapling view capability in this scope")
                     }
                 })
             && transaction
@@ -294,15 +297,16 @@ impl LightWallet {
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address
-                            .orchard()
-                            .map_or(true, |address| self.is_orchard_send_to_self(address))
-                            || outgoing_note
-                                .encoded_recipient_full_unified_address(&self.network)
-                                .expect("should exist in this scope")
-                                == *zfz_address
+                        full_address.orchard().map_or(true, |address| {
+                            self.is_orchard_send_to_self(address)
+                                .expect("must have orchard view capability in this scope")
+                        }) || outgoing_note
+                            .encoded_recipient_full_unified_address(&self.network)
+                            .expect("should exist in this scope")
+                            == *zfz_address
                     } else {
                         self.is_orchard_send_to_self(&outgoing_note.note().recipient())
+                            .expect("must have orchard view capability in this scope")
                     }
                 })
         {
@@ -315,7 +319,9 @@ impl LightWallet {
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     // TODO: move to summary
     // TODO: should have outgoing coins
-    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, ParseError> {
+    pub async fn transaction_summaries(
+        &self,
+    ) -> Result<TransactionSummaries, zcash_address::unified::ParseError> {
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -348,7 +354,7 @@ impl LightWallet {
                     .build()
                     .expect("all fields should be populated"))
             })
-            .collect::<Result<Vec<_>, ParseError>>()?;
+            .collect::<Result<Vec<_>, zcash_address::unified::ParseError>>()?;
 
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
@@ -399,7 +405,7 @@ impl LightWallet {
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingNoteSummary>,
         ),
-        ParseError,
+        zcash_address::unified::ParseError,
     > {
         let kind = self.transaction_kind(transaction);
         let value = match kind {
@@ -486,7 +492,7 @@ impl LightWallet {
                     scope: summary::Scope::from(note.key_id().scope),
                 })
             })
-            .collect::<Result<Vec<_>, ParseError>>()?;
+            .collect::<Result<Vec<_>, zcash_address::unified::ParseError>>()?;
         let outgoing_sapling_notes = transaction
             .outgoing_sapling_notes()
             .iter()
@@ -524,16 +530,20 @@ impl LightWallet {
     /// Provides a list of value transfers related to this capability
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     // TODO: move to summary
-    pub async fn value_transfers(&self) -> Result<ValueTransfers, ParseError> {
+    pub async fn value_transfers(&self) -> Result<ValueTransfers, SummaryError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let transaction_summaries = self.transaction_summaries().await?.0;
+        let transaction_summaries = self
+            .transaction_summaries()
+            .await
+            .map_err(|e| SummaryError::ParseError(zcash_address::ParseError::Unified(e)))?
+            .0;
 
         for transaction in transaction_summaries.iter() {
             match transaction.kind() {
                 TransactionKind::Sent(SendType::Send) => {
                     // create 1 sent value transfer for each non-self recipient address
                     // if recipient_ua is available it overrides recipient_address
-                    value_transfers.append(&mut self.create_send_value_transfers(transaction));
+                    value_transfers.append(&mut self.create_send_value_transfers(transaction)?);
 
                     // create 1 memo-to-self if a sending transaction receives any number of memos
                     if transaction
@@ -707,7 +717,7 @@ impl LightWallet {
                     }
 
                     // in the case Zennies For Zingo! is active
-                    value_transfers.append(&mut self.create_send_value_transfers(transaction));
+                    value_transfers.append(&mut self.create_send_value_transfers(transaction)?);
                 }
                 TransactionKind::Received => {
                     // create 1 received value transfer for each pool received to
@@ -807,7 +817,7 @@ impl LightWallet {
     pub async fn sorted_value_transfers(
         &self,
         newer_first: bool,
-    ) -> Result<ValueTransfers, ParseError> {
+    ) -> Result<ValueTransfers, SummaryError> {
         let mut value_transfers = self.value_transfers().await?;
         if newer_first {
             value_transfers.reverse();
@@ -827,11 +837,10 @@ impl LightWallet {
     /// Creates value transfers for all notes in a transaction that are sent to another
     /// recipient.  A value transfer is a group of all notes to a specific receiver in a transaction.
     /// The value transfer list is sorted by the output index of the notes.
-    // FIXME: error handling
     fn create_send_value_transfers(
         &self,
         transaction_summary: &TransactionSummary,
-    ) -> Vec<ValueTransfer> {
+    ) -> std::io::Result<Vec<ValueTransfer>> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let outgoing_notes = transaction_summary
             .outgoing_orchard_notes()
@@ -840,39 +849,44 @@ impl LightWallet {
             .collect::<Vec<_>>();
         let mut addresses = HashMap::with_capacity(outgoing_notes.len());
 
-        outgoing_notes.iter().for_each(|&note| {
+        outgoing_notes.iter().try_for_each(|&note| {
             let encoded_address = if let Some(ua) = note.recipient_unified_address.clone() {
                 ua
             } else {
                 note.recipient.clone()
             };
 
-            let send_to_external_recipient =
-                match decode_address(&self.network, &encoded_address).unwrap() {
-                    zcash_keys::address::Address::Sapling(address) => {
-                        !self.is_sapling_send_to_self(&address)
-                    }
-                    zcash_keys::address::Address::Transparent(address) => {
-                        self.is_transparent_send_to_self(&address).is_none()
-                    }
-                    zcash_keys::address::Address::Unified(address) => {
-                        address.transparent().map_or(true, |addr| {
-                            self.is_transparent_send_to_self(addr).is_none()
-                        }) && address
-                            .sapling()
-                            .map_or(true, |addr| !self.is_sapling_send_to_self(addr))
-                            && address
-                                .orchard()
-                                .map_or(true, |addr| !self.is_orchard_send_to_self(addr))
-                    }
-                    zcash_keys::address::Address::Tex(_) => true,
-                };
+            let send_to_external_recipient = match decode_address(&self.network, &encoded_address)?
+            {
+                zcash_keys::address::Address::Sapling(address) => !self
+                    .is_sapling_send_to_self(&address)
+                    .expect("should have sapling view capability in this scope"),
+                zcash_keys::address::Address::Transparent(address) => {
+                    self.is_transparent_send_to_self(&address).is_none()
+                }
+                zcash_keys::address::Address::Unified(address) => {
+                    address.transparent().map_or(true, |addr| {
+                        self.is_transparent_send_to_self(addr).is_none()
+                    }) && address.sapling().map_or(true, |addr| {
+                        !self
+                            .is_sapling_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                    }) && address.orchard().map_or(true, |addr| {
+                        !self
+                            .is_orchard_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                    })
+                }
+                zcash_keys::address::Address::Tex(_) => true,
+            };
 
             if send_to_external_recipient {
                 // hash map is used to create unique list of addresses as duplicates are not inserted twice
                 addresses.insert(encoded_address, note.output_index);
             }
-        });
+
+            Ok::<(), std::io::Error>(())
+        })?;
         let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
         addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
         addresses_vec.iter().for_each(|(address, _output_index)| {
@@ -913,7 +927,8 @@ impl LightWallet {
                     .expect("all fields should be populated"),
             );
         });
-        value_transfers
+
+        Ok(value_transfers)
     }
 
     fn is_transparent_send_to_self(
@@ -928,20 +943,24 @@ impl LightWallet {
             .map(|(address_id, _)| address_id.scope())
     }
 
-    // FIXME: error handling
-    fn is_sapling_send_to_self(&self, address: &sapling_crypto::PaymentAddress) -> bool {
-        sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&self.unified_key_store)
-            .unwrap()
-            .decrypt_diversifier(address)
-            .is_some()
+    fn is_sapling_send_to_self(
+        &self,
+        address: &sapling_crypto::PaymentAddress,
+    ) -> Result<bool, KeyError> {
+        Ok(
+            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&self.unified_key_store)?
+                .decrypt_diversifier(address)
+                .is_some(),
+        )
     }
 
     // FIXME: error handling
-    fn is_orchard_send_to_self(&self, address: &orchard::Address) -> bool {
-        orchard::keys::FullViewingKey::try_from(&self.unified_key_store)
-            .unwrap()
-            .scope_for_address(address)
-            .is_some()
+    fn is_orchard_send_to_self(&self, address: &orchard::Address) -> Result<bool, KeyError> {
+        Ok(
+            orchard::keys::FullViewingKey::try_from(&self.unified_key_store)?
+                .scope_for_address(address)
+                .is_some(),
+        )
     }
 }
 

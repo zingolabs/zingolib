@@ -28,6 +28,21 @@ pub enum WalletError {
     /// Failed to scan calculated transaction.
     #[error("Failed to scan calculated transaction.")]
     CalculatedTxScanError(#[from] ScanError),
+    /// Address parse error
+    #[error("address parse error. {0}")]
+    ParseError(#[from] zcash_address::ParseError),
+}
+
+/// Summary error
+// TODO: temp while we fix `decode_address` error handling in pepper sync
+#[derive(Debug, thiserror::Error)]
+pub enum SummaryError {
+    /// Address parse error
+    #[error("address parse error. {0}")]
+    ParseError(#[from] zcash_address::ParseError),
+    /// Std IO address parse or conversion error
+    #[error("address parse error. {0}")]
+    StdParseError(#[from] std::io::Error),
 }
 
 /// Errors associated with calculating transaction fee

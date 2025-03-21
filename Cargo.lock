@@ -2287,6 +2287,7 @@ name = "pepper-sync"
 version = "0.1.0"
 dependencies = [
  "base58",
+ "bip32",
  "byteorder",
  "crossbeam-channel",
  "futures",

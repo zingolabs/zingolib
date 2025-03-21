@@ -616,7 +616,7 @@ impl Command for BalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+            serde_json::to_string_pretty(&lightclient.do_balance().await).expect("infallible")
         })
     }
 }
@@ -1120,7 +1120,7 @@ impl Command for DeleteCommand {
             match lightclient.do_delete().await {
                 Ok(_) => {
                     let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                    "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
                     r.pretty(2)
                 }
                 Err(e) => {
@@ -1155,7 +1155,7 @@ impl Command for SeedCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_seed_phrase().await {
-                Ok(m) => serde_json::to_string_pretty(&m).unwrap(),
+                Ok(m) => serde_json::to_string_pretty(&m).expect("infallible"),
                 Err(e) => object! { "error" => e }.pretty(2),
             }
         })

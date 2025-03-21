@@ -32,6 +32,9 @@ where
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// Transparent address derivation error.
+    #[error("transparent address derivation error. {0}")]
+    TransparentAddressDerivationError(bip32::Error),
     /// Wallet error.
     #[error("wallet error. {0}")]
     WalletError(E),

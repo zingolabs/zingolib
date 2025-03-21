@@ -98,7 +98,8 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                         consensus_parameters,
                         account_pubkey,
                         address_id,
-                    );
+                    )
+                    .map_err(SyncError::TransparentAddressDerivationError)?;
                     addresses.push((address_id, address.clone()));
 
                     let transactions = client::get_transparent_address_transactions(

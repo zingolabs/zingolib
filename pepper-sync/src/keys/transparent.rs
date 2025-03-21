@@ -103,76 +103,63 @@ impl TryFrom<u8> for TransparentScope {
     }
 }
 
-pub(crate) fn derive_address<P>(
-    consensus_parameters: &P,
+pub(crate) fn derive_address(
+    consensus_parameters: &impl consensus::Parameters,
     account_pubkey: &AccountPubKey,
     address_id: TransparentAddressId,
-) -> String
-where
-    P: consensus::Parameters,
-{
+) -> Result<String, bip32::Error> {
     let address = match address_id.scope() {
         TransparentScope::External => {
-            derive_external_address(account_pubkey, address_id.address_index())
+            derive_external_address(account_pubkey, address_id.address_index())?
         }
         TransparentScope::Internal => {
-            derive_internal_address(account_pubkey, address_id.address_index())
+            derive_internal_address(account_pubkey, address_id.address_index())?
         }
         TransparentScope::Refund => {
-            derive_refund_address(account_pubkey, address_id.address_index())
+            derive_refund_address(account_pubkey, address_id.address_index())?
         }
     };
 
-    encode_address(consensus_parameters, address)
+    Ok(encode_address(consensus_parameters, address))
 }
 
 fn derive_external_address(
     account_pubkey: &AccountPubKey,
     address_index: AddressIndex,
-) -> TransparentAddress {
-    account_pubkey
-        .derive_external_ivk()
-        .unwrap()
-        .derive_address(
-            NonHardenedChildIndex::from_index(address_index)
-                .expect("all non-hardened address indexes in use!"),
-        )
-        .unwrap()
+) -> Result<TransparentAddress, bip32::Error> {
+    account_pubkey.derive_external_ivk()?.derive_address(
+        NonHardenedChildIndex::from_index(address_index)
+            .expect("all non-hardened address indexes in use!"),
+    )
 }
 
 fn derive_internal_address(
     account_pubkey: &AccountPubKey,
     address_index: AddressIndex,
-) -> TransparentAddress {
-    account_pubkey
-        .derive_internal_ivk()
-        .unwrap()
-        .derive_address(
-            NonHardenedChildIndex::from_index(address_index)
-                .expect("all non-hardened address indexes in use!"),
-        )
-        .unwrap()
+) -> Result<TransparentAddress, bip32::Error> {
+    account_pubkey.derive_internal_ivk()?.derive_address(
+        NonHardenedChildIndex::from_index(address_index)
+            .expect("all non-hardened address indexes in use!"),
+    )
 }
 
 fn derive_refund_address(
     account_pubkey: &AccountPubKey,
     address_index: AddressIndex,
-) -> TransparentAddress {
+) -> Result<TransparentAddress, bip32::Error> {
     account_pubkey
-        .derive_ephemeral_ivk()
-        .unwrap()
+        .derive_ephemeral_ivk()?
         .derive_ephemeral_address(
             NonHardenedChildIndex::from_index(address_index)
                 .expect("all non-hardened address indexes in use!"),
         )
-        .unwrap()
 }
 
 /// Encodes transparent address
-pub fn encode_address<P>(consensus_parameters: &P, address: TransparentAddress) -> String
-where
-    P: consensus::Parameters,
-{
+pub fn encode_address(
+    consensus_parameters: &impl consensus::Parameters,
+    address: TransparentAddress,
+) -> String {
     let zcash_address = match address {
         TransparentAddress::PublicKeyHash(data) => {
             ZcashAddress::from_transparent_p2pkh(consensus_parameters.network_type(), data)

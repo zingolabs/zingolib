@@ -82,8 +82,11 @@ pub enum ProposeShieldError {
             zcash_primitives::transaction::fees::zip317::FeeError,
         >,
     ),
-    #[error("Not enough transparent funds to shield.")]
+    #[error("not enough transparent funds to shield.")]
     Insufficient,
+    /// Address parse error.
+    #[error("address parse error. {0}")]
+    AddressParseError(#[from] zcash_address::ParseError),
 }
 
 impl LightWallet {
@@ -142,7 +145,7 @@ impl LightWallet {
             &network,
             &input_selector,
             NonNegativeAmount::const_from_u64(10_000),
-            &self.get_transparent_addresses(),
+            &self.get_transparent_addresses()?,
             1,
         )
         .map_err(ProposeShieldError::Component)?;
