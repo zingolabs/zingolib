@@ -319,7 +319,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
             unified_key_store,
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_progress: SendProgress::new(0),
             price: Arc::new(RwLock::new(price)),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
@@ -443,7 +443,7 @@ impl LightWallet {
             sync_state,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             price: Arc::new(RwLock::new(price)),
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_progress: SendProgress::new(0),
             save_required: false,
         })
     }

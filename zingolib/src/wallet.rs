@@ -216,7 +216,7 @@ pub struct LightWallet {
     /// The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
     /// Progress of an outgoing transaction
-    send_progress: Arc<RwLock<SendProgress>>,
+    pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
 }
@@ -333,7 +333,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_progress: SendProgress::new(0),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
@@ -364,12 +364,10 @@ impl LightWallet {
         info!("Set current ZEC Price to USD {}", price);
     }
 
-    // Set the previous send's status as an error or success
-    pub(super) async fn set_send_result(&self, result: Result<serde_json::Value, String>) {
-        let mut p = self.send_progress.write().await;
-
-        p.is_send_in_progress = false;
-        p.last_result = Some(result);
+    // Set the previous send's result as a JSON string.
+    pub(super) fn set_send_result(&mut self, result: String) {
+        self.send_progress.is_send_in_progress = false;
+        self.send_progress.last_result = Some(result);
     }
 
     /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.

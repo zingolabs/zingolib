@@ -1,5 +1,6 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
+use pepper_sync::error::ScanError;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
@@ -24,6 +25,9 @@ pub enum WalletError {
     /// Minimum confirmations must be non-zero.
     #[error("Minimum confirmations must be non-zero.")]
     MinimumConfirmationError,
+    /// Failed to scan calculated transaction.
+    #[error("Failed to scan calculated transaction.")]
+    CalculatedTxScanError(#[from] ScanError),
 }
 
 /// Errors associated with calculating transaction fee

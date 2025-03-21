@@ -35,14 +35,13 @@ impl LightClient {
 
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
-    async fn store_proposal(&self, proposal: ZingoProposal) {
-        let mut latest_proposal_guard = self.latest_proposal.write().await;
-        *latest_proposal_guard = Some(proposal);
+    async fn store_proposal(&mut self, proposal: ZingoProposal) {
+        self.latest_proposal = Some(proposal);
     }
 
     /// Creates and stores a proposal from a transaction request.
     pub async fn propose_send(
-        &self,
+        &mut self,
         request: TransactionRequest,
     ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
         let proposal = self
@@ -59,7 +58,7 @@ impl LightClient {
 
     /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
-        &self,
+        &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
@@ -152,7 +151,7 @@ impl LightClient {
 
     /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
-        &self,
+        &mut self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
         let proposal = self.wallet.lock().await.create_shield_proposal().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))

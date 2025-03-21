@@ -1,11 +1,11 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
 use pepper_sync::{
+    error::SyncError,
     keys::transparent::{self, TransparentScope},
-    wallet::traits::SyncWallet,
     wallet::{
-        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
-        SaplingShardStore,
+        traits::SyncWallet, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
+        OutputInterface, SaplingNote, SaplingShardStore,
     },
 };
 use shardtree::{error::ShardTreeError, ShardTree};
@@ -364,14 +364,21 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            pepper_sync::scan_pending_transaction(
+            match pepper_sync::scan_pending_transaction(
                 &network,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
                 ConfirmationStatus::Calculated(sent_transaction.target_height()),
                 sent_transaction.created().unix_timestamp() as u32,
-            );
+            ) {
+                Ok(_) => (),
+                Err(SyncError::ScanError(e)) => return Err(e.into()),
+                Err(SyncError::WalletError(e)) => return Err(e),
+                Err(_) => {
+                    panic!("`scan_pending_transactions` should only return scan or wallet errors")
+                }
+            }
         }
 
         Ok(())

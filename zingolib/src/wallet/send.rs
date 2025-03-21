@@ -39,7 +39,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<serde_json::Value, String>>,
+    pub last_result: Option<String>,
 }
 
 impl SendProgress {
@@ -57,47 +57,21 @@ impl SendProgress {
 
 impl From<SendProgress> for json::JsonValue {
     fn from(value: SendProgress) -> Self {
-        let last_result = value.last_result.clone();
-        let tx_ids: Vec<String> = match &last_result {
-            Some(r) => {
-                let mut binding = r.clone().unwrap();
-                let binding = binding.as_array_mut();
-                let tx_json_values: Vec<String> = binding
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.as_str().unwrap().to_string())
-                    .collect();
-                tx_json_values
-            }
-            None => vec![],
-        };
-
-        let error: Option<String> = last_result.and_then(|result| result.err());
-
         json::object! {
             "id" => value.id,
             "sending" => value.is_send_in_progress,
             "progress" => value.progress,
             "total" => value.total,
-            "txids" => tx_ids,
-            "error" => error,
+            "last_result" => value.last_result,
         }
     }
 }
 
 impl LightWallet {
     // Reset the send progress status to blank
-    pub(crate) async fn reset_send_progress(&self) {
-        let mut g = self.send_progress.write().await;
-        let next_id = g.id + 1;
-
-        // Discard the old value, since we are replacing it
-        let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
-    }
-
-    /// Get the current sending status.
-    pub async fn send_progress(&self) -> SendProgress {
-        self.send_progress.read().await.clone()
+    pub(crate) async fn reset_send_progress(&mut self) {
+        let next_id = self.send_progress.id + 1;
+        self.send_progress = SendProgress::new(next_id);
     }
 }
 
@@ -275,7 +249,7 @@ impl LightWallet {
                     sent_transaction.transaction,
                     ConfirmationStatus::Transmitted(sent_transaction.height),
                     now(),
-                );
+                )?;
 
                 Ok(sent_transaction.txid)
             })

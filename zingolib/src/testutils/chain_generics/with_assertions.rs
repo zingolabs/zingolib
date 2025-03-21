@@ -15,7 +15,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// this function handles inputs and their lifetimes to create a proposal
 pub async fn to_clients_proposal(
-    sender: &LightClient,
+    sender: &mut LightClient,
     sends: &[(&LightClient, PoolType, u64, Option<&str>)],
 ) -> zcash_client_backend::proposal::Proposal<
     zcash_primitives::transaction::fees::zip317::FeeRule,

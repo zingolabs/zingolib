@@ -559,10 +559,12 @@ async fn reorg_changes_outgoing_tx_height() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id =
-        from_inputs::quick_send(&light_client, [(recipient_string, amount, None)].to_vec())
-            .await
-            .unwrap();
+    let sent_tx_id = from_inputs::quick_send(
+        &mut light_client,
+        [(recipient_string, amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 
@@ -801,10 +803,12 @@ async fn reorg_expires_outgoing_tx_height() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100000;
-    let sent_tx_id =
-        from_inputs::quick_send(&light_client, [(recipient_string, amount, None)].to_vec())
-            .await
-            .unwrap();
+    let sent_tx_id = from_inputs::quick_send(
+        &mut light_client,
+        [(recipient_string, amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 
@@ -984,10 +988,12 @@ async fn reorg_changes_outgoing_tx_index() {
 
     // Send 100000 zatoshi to some address
     let amount: u64 = 100_000;
-    let sent_tx_id =
-        from_inputs::quick_send(&light_client, [(recipient_string, amount, None)].to_vec())
-            .await
-            .unwrap();
+    let sent_tx_id = from_inputs::quick_send(
+        &mut light_client,
+        [(recipient_string, amount, None)].to_vec(),
+    )
+    .await
+    .unwrap();
 
     println!("SENT TX ID: {:?}", sent_tx_id);
 

@@ -395,7 +395,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     let tertiary_fund = 100_000;
     assert_eq!(
         from_inputs::propose(
-            &secondary,
+            &mut secondary,
             vec![(
                 tertiary
                     .wallet
@@ -435,7 +435,7 @@ where
 
     assert_eq!(
         from_inputs::propose(
-            &secondary,
+            &mut secondary,
             vec![(
                 tertiary
                     .wallet

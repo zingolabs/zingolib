@@ -438,7 +438,7 @@ mod fast {
 
     #[tokio::test]
     async fn create_send_to_self_with_zfz_active() {
-        let (_regtest_manager, _cph, _faucet, recipient, _txid) =
+        let (_regtest_manager, _cph, _faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(5_000_000).await;
 
         recipient
@@ -480,7 +480,7 @@ mod fast {
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![
                 (
                     get_base_address_macro!(recipient, "unified").as_str(),
@@ -505,7 +505,7 @@ mod fast {
         assert_eq!(no_messages.len(), 0);
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![
                 (
                     get_base_address_macro!(recipient, "unified").as_str(),
@@ -707,7 +707,7 @@ mod fast {
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![
                 (
                     get_base_address_macro!(recipient, "unified").as_str(),
@@ -819,11 +819,11 @@ mod fast {
     async fn received_tx_status_pending_to_confirmed_with_mempool_monitor() {
         tracing_subscriber::fmt().init();
 
-        let (regtest_manager, _cph, faucet, mut recipient, _txid) =
+        let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(&recipient, "unified"),
                 // &get_base_address_macro!(&recipient, "sapling"),
@@ -866,10 +866,10 @@ mod fast {
 
     #[tokio::test]
     async fn utxos_are_not_prematurely_confirmed() {
-        let (regtest_manager, _cph, faucet, mut recipient) =
+        let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 100_000,
@@ -975,7 +975,7 @@ mod fast {
 
     #[tokio::test]
     async fn diversified_addresses_receive_funds_in_best_pool() {
-        let (regtest_manager, _cph, faucet, mut recipient) =
+        let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         for code in ["o", "zo", "z"] {
             recipient.do_new_address(code).await.unwrap();
@@ -985,7 +985,7 @@ mod fast {
             .members()
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
-        from_inputs::quick_send(&faucet, address_5000_nonememo_tuples)
+        from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
         zingolib::testutils::increase_height_and_wait_for_client(
@@ -1289,12 +1289,12 @@ mod slow {
 
     #[tokio::test]
     async fn zero_value_receipts() {
-        let (regtest_manager, _cph, faucet, mut recipient, _txid) =
+        let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         let sent_value = 0;
         let _sent_transaction_id = from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 sent_value,
@@ -1312,7 +1312,7 @@ mod slow {
         .await
         .unwrap();
         let _sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(&get_base_address_macro!(faucet, "unified"), 1000, None)],
         )
         .await
@@ -1342,7 +1342,7 @@ mod slow {
 
         let sent_value = value - u64::from(MINIMUM_FEE);
         let sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 sent_value,
@@ -1623,7 +1623,7 @@ mod slow {
             .await
             .unwrap();
         // 2. send a transaction containing all types of outputs
-        from_inputs::quick_send(&faucet, addr_amount_memos)
+        from_inputs::quick_send(&mut faucet, addr_amount_memos)
             .await
             .unwrap();
         zingolib::testutils::increase_height_and_wait_for_client(
@@ -1694,8 +1694,11 @@ mod slow {
 
             watch_client.rescan_and_await(true).await.unwrap();
             assert!(matches!(
-                from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
-                    .await,
+                from_inputs::quick_send(
+                    &mut watch_client,
+                    vec![(testvectors::EXT_TADDR, 1000, None)]
+                )
+                .await,
                 Err(QuickSendError::CompleteAndBroadcast(
                     CompleteAndBroadcastError::BuildTransaction(
                         BuildTransactionError::NoSpendCapability
@@ -1706,14 +1709,14 @@ mod slow {
     }
     #[tokio::test]
     async fn t_incoming_t_outgoing_disallowed() {
-        let (regtest_manager, _cph, faucet, mut recipient) =
+        let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
 
         // 2. Get an incoming transaction to a t address
         let recipient_taddr = get_base_address_macro!(recipient, "transparent");
         let value = 100_000;
 
-        from_inputs::quick_send(&faucet, vec![(recipient_taddr.as_str(), value, None)])
+        from_inputs::quick_send(&mut faucet, vec![(recipient_taddr.as_str(), value, None)])
             .await
             .unwrap();
 
@@ -1747,10 +1750,12 @@ mod slow {
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
-        let sent_transaction_error =
-            from_inputs::quick_send(&recipient, vec![(testvectors::EXT_TADDR, sent_value, None)])
-                .await
-                .unwrap_err();
+        let sent_transaction_error = from_inputs::quick_send(
+            &mut recipient,
+            vec![(testvectors::EXT_TADDR, sent_value, None)],
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
             QuickSendError::ProposeSend(ProposeSendError::Proposal(
@@ -1765,10 +1770,10 @@ mod slow {
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
         let transparent_funding = 100_000;
-        let (ref regtest_manager, _cph, faucet, mut recipient) =
+        let (ref regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 transparent_funding,
@@ -1821,7 +1826,7 @@ mod slow {
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 50_000;
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(recipient_unified_address.as_str(), sent_value, None)],
         )
         .await
@@ -1892,7 +1897,7 @@ mod slow {
         // Send to faucet (external) sapling
         let first_send_to_sapling = 20_000;
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "sapling"),
                 first_send_to_sapling,
@@ -1982,7 +1987,7 @@ mod slow {
             .unwrap();
 
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "transparent"),
                 first_send_to_transparent,
@@ -2056,7 +2061,7 @@ mod slow {
             .build()
             .unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 recipient_second_funding,
@@ -2107,7 +2112,7 @@ mod slow {
             .build()
             .unwrap();
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "transparent"),
                 second_send_to_transparent,
@@ -2157,7 +2162,7 @@ mod slow {
             .build()
             .unwrap();
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "sapling"),
                 second_send_to_sapling,
@@ -2206,7 +2211,7 @@ mod slow {
             .build()
             .unwrap();
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "transparent"),
                 external_transparent_3,
@@ -2274,7 +2279,7 @@ mod slow {
 
         // post transfer to recipient, and verify
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 faucet_to_recipient_amount,
@@ -2309,7 +2314,7 @@ mod slow {
 
         // post half back to faucet, and verify
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 recipient_to_faucet_amount,
@@ -2377,13 +2382,10 @@ mod slow {
         }
 
         let amount_to_send = 5_000;
+        let faucet_ua = get_base_address_macro!(faucet, "unified");
         from_inputs::quick_send(
-            &faucet,
-            vec![(
-                get_base_address_macro!(faucet, "unified").as_str(),
-                amount_to_send,
-                Some("Scenario test: engage!"),
-            )],
+            &mut faucet,
+            vec![(&faucet_ua, amount_to_send, Some("Scenario test: engage!"))],
         )
         .await
         .unwrap();
@@ -2413,7 +2415,7 @@ mod slow {
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000u64 t: 0);
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 3_499_960_000u64,
@@ -2457,7 +2459,7 @@ mod slow {
         let recipient_unified_address = get_base_address_macro!(recipient, "unified");
         let sent_value = 80_000;
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(recipient_unified_address.as_str(), sent_value, None)],
         )
         .await
@@ -2475,7 +2477,7 @@ mod slow {
         let sent_to_zaddr_value = 11_000;
         let sent_to_self_orchard_value = 1_000;
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)],
         )
         .await
@@ -2488,7 +2490,7 @@ mod slow {
         .await
         .unwrap();
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![
                 (recipient_taddr.as_str(), sent_to_taddr_value, None),
                 (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo")),
@@ -2503,7 +2505,7 @@ mod slow {
         .unwrap();
         faucet.sync_and_await(true).await.unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![
                 (recipient_taddr.as_str(), sent_to_taddr_value, None),
                 (recipient_zaddr.as_str(), sent_to_zaddr_value, Some("foo2")),
@@ -2548,7 +2550,7 @@ mod slow {
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
         let spent_txid = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(&faucet_sapling_address, spent_value, None)],
         )
         .await
@@ -2601,13 +2603,13 @@ mod slow {
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
         // TODO:  Add assertions about Sapling change note.
-        let (regtest_manager, _cph, faucet, mut recipient) =
+        let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         let value = 100_000;
 
         // 2. Send an incoming transaction to fill the wallet
         let faucet_funding_txid = from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(&get_base_address_macro!(&recipient, "sapling"), value, None)],
         )
         .await
@@ -2681,7 +2683,7 @@ mod slow {
         let outgoing_memo = "Outgoing Memo";
 
         let sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "sapling"),
                 sent_value,
@@ -2834,7 +2836,7 @@ mod slow {
 
     #[tokio::test]
     async fn sapling_dust_fee_collection() {
-        let (regtest_manager, __cph, faucet, mut recipient) =
+        let (regtest_manager, __cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         let recipient_sapling = get_base_address_macro!(recipient, "sapling");
         let recipient_unified = get_base_address_macro!(recipient, "unified");
@@ -2843,7 +2845,7 @@ mod slow {
         let for_orchard = dbg!(fee * 10);
         let for_sapling = dbg!(fee / 10);
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![
                 (&recipient_unified, for_orchard, Some("Plenty for orchard.")),
                 (&recipient_sapling, for_sapling, Some("Dust for sapling.")),
@@ -2861,7 +2863,7 @@ mod slow {
         check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
 
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 fee * 5,
@@ -2956,7 +2958,7 @@ mod slow {
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
                     *from_inputs::quick_send(
-                        &faucet,
+                        &mut faucet,
                         vec![(faucet_sapling_addr.as_str(), 100_000, memo)],
                     )
                     .await
@@ -2982,7 +2984,7 @@ mod slow {
             let (regtest_manager, _cph, mut faucet, recipient) =
                 scenarios::faucet_recipient_default().await;
             let _external_send_txid_with_memo = *from_inputs::quick_send(
-                &faucet,
+                &mut faucet,
                 vec![(
                     get_base_address_macro!(recipient, "sapling").as_str(),
                     1_000,
@@ -2993,7 +2995,7 @@ mod slow {
             .unwrap()
             .first();
             let _external_send_txid_no_memo = *from_inputs::quick_send(
-                &faucet,
+                &mut faucet,
                 vec![(
                     get_base_address_macro!(recipient, "sapling").as_str(),
                     1_000,
@@ -3024,7 +3026,7 @@ mod slow {
             let (ref regtest_manager, _cph, faucet, mut recipient, _txid) =
                 scenarios::faucet_funded_recipient_default(inital_value).await;
             from_inputs::quick_send(
-                &recipient,
+                &mut recipient,
                 vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
             )
             .await
@@ -3064,7 +3066,7 @@ mod slow {
         // subsequently receive funding via it's orchard-packed UA.
         let memos = ["1", "2", "3"];
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             (1..=3)
                 .map(|n| {
                     (
@@ -3089,7 +3091,7 @@ mod slow {
         // 30_000 back to 1 it will have to collect funds from two notes to pay the full 30_000
         // plus the transaction fee.
         from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 30_000,
@@ -3200,7 +3202,7 @@ mod slow {
         let outgoing_memo = "Outgoing Memo";
 
         let _sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 sent_value,
@@ -3263,7 +3265,7 @@ mod slow {
         }
 
         // pmc receives 100_000 orchard
-        from_inputs::quick_send(&faucet, vec![(&pmc_unified, 100_000, None)])
+        from_inputs::quick_send(&mut faucet, vec![(&pmc_unified, 100_000, None)])
             .await
             .unwrap();
         bump_and_check_pmc!(o: 100_000 s: 0 t: 0);
@@ -3273,7 +3275,7 @@ mod slow {
         // Expected Fees:
         // 5_000 for transparent + 10_000 for orchard + 10_000 for sapling == 25_000
         from_inputs::quick_send(
-            &pool_migration_client,
+            &mut pool_migration_client,
             vec![(&pmc_taddr, 30_000, None), (&pmc_sapling, 30_000, None)],
         )
         .await
@@ -3314,7 +3316,7 @@ mod slow {
         //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::quick_send(&faucet, vec![(&pmc_taddr, 50_000, None)])
+        from_inputs::quick_send(&mut faucet, vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
@@ -3337,7 +3339,7 @@ mod slow {
         //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::quick_send(&faucet, vec![(&pmc_sapling, 50_000, None)])
+        from_inputs::quick_send(&mut faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
@@ -3351,7 +3353,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        from_inputs::quick_send(&client, vec![(&pmc_unified, 30_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 65_000 s: 0 t: 0);
@@ -3366,7 +3368,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&client, vec![(&pmc_unified, 55_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 55_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 55_000 s: 0 t: 0);
@@ -3382,7 +3384,7 @@ mod slow {
         //    - legacy: 10_000
         //    - 317:    5_000 for transparent out + 10_000 for orchard + 10_000 for sapling == 25_000
         from_inputs::quick_send(
-            &client,
+            &mut client,
             vec![(&pmc_taddr, 10_000, None), (&pmc_sapling, 10_000, None)],
         )
         .await
@@ -3395,7 +3397,7 @@ mod slow {
         );
 
         // 7 Receive 500_000 to transparent
-        from_inputs::quick_send(&faucet, vec![(&pmc_taddr, 500_000, None)])
+        from_inputs::quick_send(&mut faucet, vec![(&pmc_taddr, 500_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
@@ -3423,7 +3425,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&client, vec![(&pmc_unified, 30_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 490_000 s: 10_000 t: 0);
@@ -3438,7 +3440,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
-        from_inputs::quick_send(&client, vec![(&pmc_taddr, 470_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 470_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 470_000);
@@ -3450,7 +3452,7 @@ mod slow {
 
         // 10 transparent to transparent
         // Very explicit catch of reject sending from transparent
-        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 10_000, None)]).await {
+        match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
@@ -3479,7 +3481,7 @@ mod slow {
         //  t -> z
         // 10 transparent to transparent
         // Very explicit catch of reject sending from transparent
-        match from_inputs::quick_send(&client, vec![(&pmc_sapling, 50_000, None)]).await {
+        match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
@@ -3522,7 +3524,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000 2o and 2s
-        from_inputs::quick_send(&client, vec![(&pmc_sapling, 10_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 10_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 425_000 s: 10_000 t: 0);
@@ -3538,7 +3540,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&client, vec![(&pmc_unified, 20_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 415_000 s: 10_000 t: 0);
@@ -3553,7 +3555,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        from_inputs::quick_send(&client, vec![(&pmc_sapling, 405_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 405_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 405_000 t: 0);
@@ -3568,7 +3570,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
-        from_inputs::quick_send(&client, vec![(&pmc_sapling, 380_000, None)])
+        from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 380_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 395_000 t: 0);
@@ -3587,7 +3589,7 @@ mod slow {
             .await
             .unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "transparent"),
                 1_000u64,
@@ -3600,13 +3602,13 @@ mod slow {
 
     #[tokio::test]
     async fn dust_sends_change_correctly() {
-        let (_regtest_manager, _cph, faucet, recipient, _txid) =
+        let (_regtest_manager, _cph, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         // Send of less that transaction fee
         let sent_value = 1_000;
         let _sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "unified"),
                 sent_value,
@@ -3625,17 +3627,17 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 2)
             .await
             .unwrap();
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
+        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
             "2".to_string()
         );
-        from_inputs::quick_send(&faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
+        from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
         assert_eq!(
@@ -3661,7 +3663,7 @@ mod slow {
         let sent_zvalue = 80_000;
         let sent_zmemo = "Ext z";
         let sent_transaction_id = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(
                 &get_base_address_macro!(faucet, "sapling"),
                 sent_zvalue,
@@ -3701,7 +3703,7 @@ mod slow {
         let (regtest_manager, _cph, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         let sent_txids = from_inputs::quick_send(
-            &recipient,
+            &mut recipient,
             vec![(&get_base_address_macro!(faucet, "sapling"), 100_000, None)],
         )
         .await
@@ -3799,9 +3801,12 @@ mod basic_transactions {
         faucet.sync_and_await(true).await.unwrap();
 
         for _ in 0..2 {
-            from_inputs::quick_send(&faucet, vec![(recipient_addr_ua.as_str(), 40_000, None)])
-                .await
-                .unwrap();
+            from_inputs::quick_send(
+                &mut faucet,
+                vec![(recipient_addr_ua.as_str(), 40_000, None)],
+            )
+            .await
+            .unwrap();
         }
 
         zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
@@ -3811,9 +3816,12 @@ mod basic_transactions {
         recipient.sync_and_await(true).await.unwrap();
         faucet.sync_and_await(true).await.unwrap();
 
-        from_inputs::quick_send(&recipient, vec![(faucet_addr_ua.as_str(), 50_000, None)])
-            .await
-            .unwrap();
+        from_inputs::quick_send(
+            &mut recipient,
+            vec![(faucet_addr_ua.as_str(), 50_000, None)],
+        )
+        .await
+        .unwrap();
 
         zingolib::testutils::generate_n_blocks_return_new_height(&regtest_manager, 1)
             .await
@@ -4170,11 +4178,11 @@ async fn proxy_server_worky() {
 // FIXME: does not assert dust was included in the proposal
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
-    let (regtest_manager, _cph, faucet, mut recipient, _) =
+    let (regtest_manager, _cph, mut faucet, mut recipient, _) =
         scenarios::faucet_funded_recipient_default(100_000).await;
 
     from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
     )
     .await
@@ -4184,7 +4192,7 @@ async fn propose_orchard_dust_to_sapling() {
         .unwrap();
 
     from_inputs::propose(
-        &recipient,
+        &mut recipient,
         vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
     )
     .await
@@ -4198,14 +4206,14 @@ mod send_all {
     use super::*;
     #[tokio::test]
     async fn toggle_zennies_for_zingo() {
-        let (regtest_manager, _cph, faucet, mut recipient) =
+        let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
 
         let initial_funds = 2_000_000;
         let zennies_magnitude = 1_000_000;
         let expected_fee = 15_000; // 1 orchard note in, and 3 out
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(&recipient, "unified"),
                 initial_funds,
@@ -4236,7 +4244,7 @@ mod send_all {
             scenarios::faucet_funded_recipient_default(100_000).await;
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
         )
         .await
@@ -4245,7 +4253,7 @@ mod send_all {
             .await
             .unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(&recipient, "sapling"),
                 50_000,
@@ -4258,7 +4266,7 @@ mod send_all {
             .await
             .unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
         )
         .await
@@ -4267,7 +4275,7 @@ mod send_all {
             .await
             .unwrap();
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
         )
         .await
@@ -4316,7 +4324,7 @@ mod send_all {
 
     #[tokio::test]
     async fn ptfm_insufficient_funds() {
-        let (_regtest_manager, _cph, faucet, recipient, _) =
+        let (_regtest_manager, _cph, faucet, mut recipient, _) =
             scenarios::faucet_funded_recipient_default(10_000).await;
 
         let proposal_error = recipient
@@ -4343,7 +4351,7 @@ mod send_all {
 
     #[tokio::test]
     async fn ptfm_zero_value() {
-        let (_regtest_manager, _cph, faucet, recipient, _) =
+        let (_regtest_manager, _cph, faucet, mut recipient, _) =
             scenarios::faucet_funded_recipient_default(10_000).await;
 
         let proposal_error = recipient

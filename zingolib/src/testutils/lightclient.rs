@@ -60,7 +60,7 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
-        quick_sender: &crate::lightclient::LightClient,
+        quick_sender: &mut crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
@@ -102,7 +102,7 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose(
-        proposer: &LightClient,
+        proposer: &mut LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<
         crate::data::proposal::ProportionalFeeProposal,

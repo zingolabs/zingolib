@@ -13,10 +13,7 @@ use json::{array, JsonValue};
 use log::error;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-};
+use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 
@@ -149,7 +146,7 @@ pub struct LightClient {
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<LightWallet>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
-    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
+    latest_proposal: Option<ZingoProposal>, // TODO: move to wallet
 }
 
 impl LightClient {
@@ -194,7 +191,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            latest_proposal: Arc::new(RwLock::new(None)),
+            latest_proposal: None,
         })
     }
 
