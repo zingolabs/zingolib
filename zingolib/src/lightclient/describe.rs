@@ -3,6 +3,7 @@ use json::{object, JsonValue};
 use pepper_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
+use zcash_address::unified::ParseError;
 
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},
@@ -91,8 +92,11 @@ impl LightClient {
 
     /// Provides a list of ValueTransfers associated with the sender, or containing the string.
     // TODO: move to wallet
-    pub async fn messages_containing(&self, filter: Option<&str>) -> ValueTransfers {
-        let mut value_transfers = self.sorted_value_transfers(true).await;
+    pub async fn messages_containing(
+        &self,
+        filter: Option<&str>,
+    ) -> Result<ValueTransfers, ParseError> {
+        let mut value_transfers = self.sorted_value_transfers(true).await?;
         value_transfers.reverse();
 
         // Filter out VTs where all memos are empty.
@@ -120,11 +124,14 @@ impl LightClient {
             None => value_transfers.retain(|vt| !vt.memos().is_empty()),
         }
 
-        value_transfers
+        Ok(value_transfers)
     }
 
     /// Wrapper for [crate::wallet::LightWallet::sorted_value_transfers].
-    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
+    pub async fn sorted_value_transfers(
+        &self,
+        newer_first: bool,
+    ) -> Result<ValueTransfers, ParseError> {
         self.wallet
             .lock()
             .await
@@ -133,7 +140,7 @@ impl LightClient {
     }
 
     /// Wrapper for [crate::wallet::LightWallet::value_transfers].
-    pub async fn value_transfers(&self) -> ValueTransfers {
+    pub async fn value_transfers(&self) -> Result<ValueTransfers, ParseError> {
         self.wallet.lock().await.value_transfers().await
     }
 
@@ -143,7 +150,7 @@ impl LightClient {
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
-    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, ParseError> {
         self.wallet.lock().await.transaction_summaries().await
     }
 
@@ -180,8 +187,10 @@ impl LightClient {
 
     /// TODO: Add Doc Comment Here!
     // TODO: move to wallet
-    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let value_transfers = self.sorted_value_transfers(true).await;
+    pub async fn do_total_memobytes_to_address(
+        &self,
+    ) -> Result<finsight::TotalMemoBytesToAddress, ParseError> {
+        let value_transfers = self.sorted_value_transfers(true).await?;
         let mut memobytes_by_address = HashMap::new();
         for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
@@ -199,31 +208,37 @@ impl LightClient {
                     .or_insert(bytes);
             }
         }
-        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+        Ok(finsight::TotalMemoBytesToAddress(memobytes_by_address))
     }
 
     /// TODO: Add Doc Comment Here!
     // TODO: move to wallet
-    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+    pub async fn do_total_spends_to_address(
+        &self,
+    ) -> Result<finsight::TotalSendsToAddress, ParseError> {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await?;
         let mut by_address_number_sends = HashMap::new();
         for key in values_sent_to_addresses.0.keys() {
             let number_sends = values_sent_to_addresses.0[key].len() as u64;
             by_address_number_sends.insert(key.clone(), number_sends);
         }
-        finsight::TotalSendsToAddress(by_address_number_sends)
+
+        Ok(finsight::TotalSendsToAddress(by_address_number_sends))
     }
 
     /// TODO: Add Doc Comment Here!
     // TODO: move to wallet
-    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+    pub async fn do_total_value_to_address(
+        &self,
+    ) -> Result<finsight::TotalValueToAddress, ParseError> {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await?;
         let mut by_address_total = HashMap::new();
         for key in values_sent_to_addresses.0.keys() {
             let sum = values_sent_to_addresses.0[key].iter().sum();
             by_address_total.insert(key.clone(), sum);
         }
-        finsight::TotalValueToAddress(by_address_total)
+
+        Ok(finsight::TotalValueToAddress(by_address_total))
     }
 
     /// Returns URI of the server the lightclient is connected to.
@@ -232,8 +247,15 @@ impl LightClient {
     }
 
     // TODO: move to wallet
-    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let value_transfers = self.wallet.lock().await.sorted_value_transfers(false).await;
+    async fn value_transfer_by_to_address(
+        &self,
+    ) -> Result<finsight::ValuesSentToAddress, ParseError> {
+        let value_transfers = self
+            .wallet
+            .lock()
+            .await
+            .sorted_value_transfers(false)
+            .await?;
         let mut amount_by_address = HashMap::new();
         for value_transfer in &value_transfers {
             if let ValueTransferKind::Sent(SentValueTransfer::Send) = value_transfer.kind() {
@@ -247,6 +269,7 @@ impl LightClient {
                     .or_insert(vec![value_transfer.value()]);
             }
         }
-        finsight::ValuesSentToAddress(amount_by_address)
+
+        Ok(finsight::ValuesSentToAddress(amount_by_address))
     }
 }

@@ -494,7 +494,13 @@ where
         .transpose()?;
         outgoing_notes
             .iter_mut()
-            .filter(|note| encoded_address == Some(note.encoded_recipient(consensus_parameters)))
+            .filter(|note| {
+                if let Ok(note_encoded_recipient) = note.encoded_recipient(consensus_parameters) {
+                    encoded_address == Some(note_encoded_recipient)
+                } else {
+                    false
+                }
+            })
             .for_each(|note| {
                 note.recipient_full_unified_address = Some(unified_address.clone());
             });

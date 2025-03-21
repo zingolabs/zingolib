@@ -5,6 +5,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
     fmt::Debug,
     ops::Range,
     sync::{
@@ -17,6 +18,7 @@ use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use tokio::sync::mpsc;
+use zcash_address::unified::ParseError;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::compact_formats::CompactBlock,
@@ -828,6 +830,8 @@ pub trait OutgoingNoteInterface: Sized {
     type ZcashNote;
     /// Address type.
     type Address: Clone + Copy + Debug + PartialEq + Eq;
+    /// Encoding error
+    type Error: Debug + std::error::Error;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;
@@ -854,7 +858,7 @@ pub trait OutgoingNoteInterface: Sized {
     fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress>;
 
     /// Encoded recipient address recorded in note on chain (single receiver).
-    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    fn encoded_recipient<P>(&self, parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants;
 
@@ -888,6 +892,7 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 impl OutgoingNoteInterface for OutgoingSaplingNote {
     type ZcashNote = sapling_crypto::Note;
     type Address = sapling_crypto::PaymentAddress;
+    type Error = Infallible;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
@@ -919,14 +924,14 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         self.recipient_full_unified_address.as_ref()
     }
 
-    fn encoded_recipient<P>(&self, consensus_parameters: &P) -> String
+    fn encoded_recipient<P>(&self, consensus_parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        encode_payment_address(
+        Ok(encode_payment_address(
             consensus_parameters.hrp_sapling_payment_address(),
             &self.note().recipient(),
-        )
+        ))
     }
 
     fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
@@ -949,6 +954,7 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 impl OutgoingNoteInterface for OutgoingOrchardNote {
     type ZcashNote = orchard::Note;
     type Address = orchard::Address;
+    type Error = ParseError;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
@@ -980,11 +986,11 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
         self.recipient_full_unified_address.as_ref()
     }
 
-    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    fn encoded_recipient<P>(&self, parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        keys::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
+        keys::encode_orchard_receiver(parameters, &self.note().recipient())
     }
 
     fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>

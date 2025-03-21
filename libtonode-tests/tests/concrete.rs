@@ -455,7 +455,7 @@ mod fast {
             .await
             .unwrap();
 
-        let value_transfers = &recipient.sorted_value_transfers(true).await;
+        let value_transfers = &recipient.sorted_value_transfers(true).await.unwrap();
 
         assert!(value_transfers.iter().any(|vt| vt.kind()
             == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
@@ -500,7 +500,7 @@ mod fast {
         environment.bump_chain().await;
         recipient.sync_and_await(true).await.unwrap();
 
-        let no_messages = &recipient.messages_containing(None).await;
+        let no_messages = &recipient.messages_containing(None).await.unwrap();
 
         assert_eq!(no_messages.len(), 0);
 
@@ -525,7 +525,7 @@ mod fast {
         environment.bump_chain().await;
         recipient.sync_and_await(true).await.unwrap();
 
-        let single_message = &recipient.messages_containing(None).await;
+        let single_message = &recipient.messages_containing(None).await.unwrap();
 
         assert_eq!(single_message.len(), 1);
     }
@@ -670,12 +670,14 @@ mod fast {
         // Collect observations
         let value_transfers_bob = &recipient
             .messages_containing(Some(&bob.encode(&recipient.config().chain)))
-            .await;
+            .await
+            .unwrap();
         let value_transfers_charlie = &recipient
             .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
-            .await;
-        let all_vts = &recipient.sorted_value_transfers(true).await;
-        let all_messages = &recipient.messages_containing(None).await;
+            .await
+            .unwrap();
+        let all_vts = &recipient.sorted_value_transfers(true).await.unwrap();
+        let all_messages = &recipient.messages_containing(None).await.unwrap();
 
         // Make assertions
         assert_eq!(value_transfers_bob.len(), 3);
@@ -737,11 +739,11 @@ mod fast {
         environment.bump_chain().await;
         recipient.sync_and_await(true).await.unwrap();
 
-        let value_transfers = &recipient.sorted_value_transfers(true).await;
-        let value_transfers1 = &recipient.sorted_value_transfers(true).await;
-        let value_transfers2 = &recipient.sorted_value_transfers(true).await;
-        let mut value_transfers3 = recipient.sorted_value_transfers(false).await;
-        let mut value_transfers4 = recipient.sorted_value_transfers(false).await;
+        let value_transfers = &recipient.sorted_value_transfers(true).await.unwrap();
+        let value_transfers1 = &recipient.sorted_value_transfers(true).await.unwrap();
+        let value_transfers2 = &recipient.sorted_value_transfers(true).await.unwrap();
+        let mut value_transfers3 = recipient.sorted_value_transfers(false).await.unwrap();
+        let mut value_transfers4 = recipient.sorted_value_transfers(false).await.unwrap();
 
         assert_eq!(value_transfers[0].memos().len(), 4);
 
@@ -807,7 +809,7 @@ mod fast {
             assert_eq!(sender.wallet.lock().await.wallet_transactions.len(), 3usize);
 
             // FIXME: add tex addresses to encoded memos
-            // let val_tranfers = sender.sorted_value_transfers(true).await;
+            // let val_tranfers = sender.sorted_value_transfers(true).await.unwrap();
             // assert_eq!(
             //     val_tranfers[0].recipient_address().unwrap(),
             //     tex_addr_from_first.encode()
@@ -836,7 +838,7 @@ mod fast {
 
         recipient.sync_and_await(true).await.unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.0;
+        let transactions = &recipient.transaction_summaries().await.unwrap().0;
         transactions.iter().for_each(|tx| {
             dbg!(tx);
         });
@@ -853,7 +855,7 @@ mod fast {
             .await
             .unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.0;
+        let transactions = &recipient.transaction_summaries().await.unwrap().0;
         assert_eq!(
             transactions
                 .iter()
@@ -1331,7 +1333,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(4)
+            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(4)
         );
     }
     #[tokio::test]
@@ -1736,6 +1738,7 @@ mod slow {
             .await
             .transaction_summaries()
             .await
+            .unwrap()
             .0
             .first()
             .unwrap()
@@ -1801,20 +1804,20 @@ mod slow {
             "{}",
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await);
+        println!("{}", recipient.transaction_summaries().await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
+            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(2)
         );
         recipient.rescan_and_await(true).await.unwrap();
         println!(
             "{}",
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await);
+        println!("{}", recipient.transaction_summaries().await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await).pretty(2)
+            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(2)
         );
         // TODO: Add asserts!
     }
@@ -1834,7 +1837,7 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        let transactions = faucet.transaction_summaries().await.0;
+        let transactions = faucet.transaction_summaries().await.unwrap().0;
         assert!(transactions.iter().any(|transaction| {
             transaction
                 .outgoing_orchard_notes()
@@ -1845,7 +1848,7 @@ mod slow {
                 })
         }));
         faucet.rescan_and_await(true).await.unwrap();
-        let rescanned_transactions = faucet.transaction_summaries().await.0;
+        let rescanned_transactions = faucet.transaction_summaries().await.unwrap().0;
         assert!(rescanned_transactions.iter().any(|transaction| {
             transaction
                 .outgoing_orchard_notes()
@@ -1999,15 +2002,15 @@ mod slow {
 
         // Assert transactions are as expected
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.0[0],
+            &recipient.transaction_summaries().await.unwrap().0[0],
             &summary_orchard_receipt,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.0[1],
+            &recipient.transaction_summaries().await.unwrap().0[1],
             &summary_external_sapling,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.0[2],
+            &recipient.transaction_summaries().await.unwrap().0[2],
             &summary_external_transparent,
         );
 
@@ -2230,13 +2233,13 @@ mod slow {
 
         // Final check
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.0[3],
+            &recipient.transaction_summaries().await.unwrap().0[3],
             &summary_orchard_receipt_2,
         );
         assert_transaction_summary_exists(&recipient, &summary_exteranl_transparent_2).await; // due to summaries of the same blockheight changing order
         assert_transaction_summary_exists(&recipient, &summary_external_sapling_2).await; // we check all summaries for these expected transactions
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.0[6],
+            &recipient.transaction_summaries().await.unwrap().0[6],
             &summary_external_transparent_3,
         );
         let second_wave_expected_funds = expected_funds + recipient_second_funding
@@ -2302,7 +2305,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.sorted_value_transfers(true).await).pretty(4)
+            JsonValue::from(faucet.sorted_value_transfers(true).await.unwrap()).pretty(4)
         );
         println!(
             "{}",
@@ -2527,9 +2530,14 @@ mod slow {
         .unwrap();
         println!(
             "{}",
-            json::stringify_pretty(recipient.transaction_summaries().await, 4)
+            json::stringify_pretty(recipient.transaction_summaries().await.unwrap(), 4)
         );
-        let mut txids = recipient.transaction_summaries().await.txids().into_iter();
+        let mut txids = recipient
+            .transaction_summaries()
+            .await
+            .unwrap()
+            .txids()
+            .into_iter();
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
 
@@ -2572,6 +2580,7 @@ mod slow {
             .await
             .transaction_summaries()
             .await
+            .unwrap()
             .0;
 
         assert_eq!(transactions.first().unwrap().blockheight(), 5.into());
@@ -2758,7 +2767,7 @@ mod slow {
             let outgoing_sapling_note = sent_transaction
                 .outgoing_sapling_notes()
                 .iter()
-                .find(|note| note.encoded_recipient(&network) == faucet_sapling_address)
+                .find(|note| note.encoded_recipient(&network) == Ok(faucet_sapling_address.clone()))
                 .unwrap();
             if let Memo::Text(memo) = outgoing_sapling_note.memo() {
                 assert_eq!(&String::from(memo.clone()), outgoing_memo);
@@ -2974,9 +2983,9 @@ mod slow {
                 .unwrap();
             }
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await;
+            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
             faucet.rescan_and_await(true).await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await;
+            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3015,9 +3024,9 @@ mod slow {
             .await
             .unwrap();
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await;
+            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
             faucet.rescan_and_await(true).await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await;
+            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3038,11 +3047,11 @@ mod slow {
             )
             .await
             .unwrap();
-            let pre_rescan_transactions = recipient.transaction_summaries().await;
-            let pre_rescan_summaries = recipient.sorted_value_transfers(true).await;
+            let pre_rescan_transactions = recipient.transaction_summaries().await.unwrap();
+            let pre_rescan_summaries = recipient.sorted_value_transfers(true).await.unwrap();
             recipient.rescan_and_await(true).await.unwrap();
-            let post_rescan_transactions = recipient.transaction_summaries().await;
-            let post_rescan_summaries = recipient.sorted_value_transfers(true).await;
+            let post_rescan_transactions = recipient.transaction_summaries().await.unwrap();
+            let post_rescan_summaries = recipient.sorted_value_transfers(true).await.unwrap();
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
@@ -3634,14 +3643,16 @@ mod slow {
             .await
             .unwrap();
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
+                .pretty(4),
             "2".to_string()
         );
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
+                .pretty(4),
             "6".to_string()
         );
     }

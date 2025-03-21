@@ -3,6 +3,7 @@ use json::JsonValue;
 use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
 use pepper_sync::keys::transparent::TransparentScope;
+use zcash_address::unified::ParseError;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::PoolType;
 use zcash_client_backend::ShieldedProtocol;
@@ -314,7 +315,7 @@ impl LightWallet {
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     // TODO: move to summary
     // TODO: should have outgoing coins
-    pub async fn transaction_summaries(&self) -> TransactionSummaries {
+    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, ParseError> {
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -328,9 +329,9 @@ impl LightWallet {
                     transparent_coins,
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
-                ) = self.basic_transaction_summary_parts(transaction);
+                ) = self.basic_transaction_summary_parts(transaction)?;
 
-                TransactionSummaryBuilder::new()
+                Ok(TransactionSummaryBuilder::new()
                     .txid(transaction.txid())
                     .datetime(transaction.datetime())
                     .blockheight(transaction.status().get_height())
@@ -345,9 +346,9 @@ impl LightWallet {
                     .outgoing_sapling_notes(outgoing_sapling_notes)
                     .outgoing_orchard_notes(outgoing_orchard_notes)
                     .build()
-                    .expect("all fields should be populated")
+                    .expect("all fields should be populated"))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, ParseError>>()?;
 
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
@@ -369,13 +370,16 @@ impl LightWallet {
             }
         });
 
-        TransactionSummaries::new(transaction_summaries)
+        Ok(TransactionSummaries::new(transaction_summaries))
     }
 
     /// TODO: doc comment
     // TODO: remove
     pub async fn transaction_summaries_json_string(&self) -> String {
-        json::JsonValue::from(self.transaction_summaries().await).pretty(2)
+        match self.transaction_summaries().await {
+            Ok(transactions) => json::JsonValue::from(transactions).pretty(2),
+            Err(e) => format!("Error: {e}"),
+        }
     }
 
     // TODO: simplify type complexity
@@ -384,16 +388,19 @@ impl LightWallet {
     fn basic_transaction_summary_parts(
         &self,
         transaction: &WalletTransaction,
-    ) -> (
-        TransactionKind,
-        u64,
-        Option<u64>,
-        Vec<BasicNoteSummary>,
-        Vec<BasicNoteSummary>,
-        Vec<BasicCoinSummary>,
-        Vec<OutgoingNoteSummary>,
-        Vec<OutgoingNoteSummary>,
-    ) {
+    ) -> Result<
+        (
+            TransactionKind,
+            u64,
+            Option<u64>,
+            Vec<BasicNoteSummary>,
+            Vec<BasicNoteSummary>,
+            Vec<BasicCoinSummary>,
+            Vec<OutgoingNoteSummary>,
+            Vec<OutgoingNoteSummary>,
+        ),
+        ParseError,
+    > {
         let kind = self.transaction_kind(transaction);
         let value = match kind {
             TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
@@ -468,18 +475,18 @@ impl LightWallet {
                     None
                 };
 
-                OutgoingNoteSummary {
+                Ok(OutgoingNoteSummary {
                     memo,
                     value: note.value(),
-                    recipient: note.encoded_recipient(&self.network),
+                    recipient: note.encoded_recipient(&self.network)?,
                     recipient_unified_address: note
                         .encoded_recipient_full_unified_address(&self.network),
                     output_index: note.output_id().output_index(),
                     account_id: note.key_id().account_id,
                     scope: summary::Scope::from(note.key_id().scope),
-                }
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, ParseError>>()?;
         let outgoing_sapling_notes = transaction
             .outgoing_sapling_notes()
             .iter()
@@ -494,7 +501,7 @@ impl LightWallet {
                     output_index: note.output_id().output_index(),
                     memo,
                     value: note.value(),
-                    recipient: note.encoded_recipient(&self.network),
+                    recipient: note.encoded_recipient(&self.network).expect("infallible"),
                     recipient_unified_address: note
                         .encoded_recipient_full_unified_address(&self.network),
                     account_id: note.key_id().account_id,
@@ -502,7 +509,7 @@ impl LightWallet {
                 }
             })
             .collect::<Vec<_>>();
-        (
+        Ok((
             kind,
             value,
             fee,
@@ -511,15 +518,15 @@ impl LightWallet {
             transparent_coins,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
-        )
+        ))
     }
 
     /// Provides a list of value transfers related to this capability
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     // TODO: move to summary
-    pub async fn value_transfers(&self) -> ValueTransfers {
+    pub async fn value_transfers(&self) -> Result<ValueTransfers, ParseError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let transaction_summaries = self.transaction_summaries().await.0;
+        let transaction_summaries = self.transaction_summaries().await?.0;
 
         for transaction in transaction_summaries.iter() {
             match transaction.kind() {
@@ -790,24 +797,31 @@ impl LightWallet {
                 }
             };
         }
-        ValueTransfers::new(value_transfers)
+
+        Ok(ValueTransfers::new(value_transfers))
     }
 
     /// Provides a list of value transfers sorted
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     // TODO: move to summary
-    pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
-        let mut value_transfers = self.value_transfers().await;
+    pub async fn sorted_value_transfers(
+        &self,
+        newer_first: bool,
+    ) -> Result<ValueTransfers, ParseError> {
+        let mut value_transfers = self.value_transfers().await?;
         if newer_first {
             value_transfers.reverse();
         }
-        value_transfers
+        Ok(value_transfers)
     }
 
     /// TODO: doc comment
     // TODO: remove
     pub async fn value_transfers_json_string(&self) -> String {
-        json::JsonValue::from(self.sorted_value_transfers(true).await).pretty(2)
+        match self.sorted_value_transfers(true).await {
+            Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+            Err(e) => format!("Error: {e}"),
+        }
     }
 
     /// Creates value transfers for all notes in a transaction that are sent to another

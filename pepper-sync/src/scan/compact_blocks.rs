@@ -21,7 +21,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ServerError, ContinuityError, ScanError},
+    error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
@@ -257,7 +257,7 @@ fn check_tree_size(
         {
             #[cfg(feature = "darkside_test")]
             {
-                tracing::error!("darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().sapling_final_tree_size, compact_block.chain_metadata.unwrap().sapling_commitment_tree_size);
+                tracing::error!("darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().sapling_final_tree_size, compact_block.chain_metadata.expect("should exist in this scope").sapling_commitment_tree_size);
                 return Ok(());
             }
 
@@ -273,7 +273,7 @@ fn check_tree_size(
         {
             #[cfg(feature = "darkside_test")]
             {
-                tracing::error!("darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().orchard_final_tree_size, compact_block.chain_metadata.unwrap().orchard_commitment_tree_size);
+                tracing::error!("darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().orchard_final_tree_size, compact_block.chain_metadata.expect("should exist in this scope").orchard_commitment_tree_size);
                 return Ok(());
             }
 

@@ -26,7 +26,7 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
-    error::{ServerError, ScanError},
+    error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     sync,
     wallet::{
@@ -127,10 +127,10 @@ where
     async fn shutdown_batcher(&mut self) -> Result<(), ServerError> {
         let batcher = self.batcher.take();
         if let Some(mut batcher) = batcher {
-            batcher.shutdown().await?;
+            batcher.shutdown().await
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Spawns a worker.
@@ -167,22 +167,21 @@ where
         }
     }
 
-    async fn shutdown_worker(&mut self, worker_id: usize) -> Result<(), ()> {
-        if let Some(worker_index) = self
+    /// Shutdown worker by `worker_id`.
+    ///
+    /// Panics if worker with given `worker_id` is not found.
+    async fn shutdown_worker(&mut self, worker_id: usize) {
+        let worker_index = self
             .workers
             .iter()
             .position(|worker| worker.id == worker_id)
-        {
-            let mut worker = self.workers.swap_remove(worker_index);
-            worker
-                .shutdown()
-                .await
-                .expect("worker should not be able to panic");
-        } else {
-            panic!("id not found in worker pool");
-        }
+            .expect("worker should exist");
 
-        Ok(())
+        let mut worker = self.workers.swap_remove(worker_index);
+        worker
+            .shutdown()
+            .await
+            .expect("worker should not be able to panic");
     }
 
     /// Updates the scanner.
@@ -197,7 +196,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
-    ) -> Result<(), ServerError>
+    ) -> Result<(), SyncError<W>>
     where
         W: SyncWallet + SyncBlocks,
     {
@@ -211,7 +210,7 @@ where
                     .update_batch_store();
                 self.update_workers();
 
-                let sync_state = wallet.get_sync_state().unwrap();
+                let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
                 if !sync_state
                     .scan_ranges()
                     .iter()
@@ -232,7 +231,8 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet);
+                self.update_batcher(wallet)
+                    .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
                 self.batcher
@@ -240,18 +240,24 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet);
+                self.update_batcher(wallet)
+                    .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
                 shutdown_mempool.store(true, atomic::Ordering::Release);
                 while let Some(worker) = self.idle_worker() {
-                    self.shutdown_worker(worker.id).await.unwrap();
+                    self.shutdown_worker(worker.id).await;
                 }
-                self.shutdown_batcher().await.unwrap();
+                self.shutdown_batcher().await?;
             }
         }
 
-        if !wallet.get_sync_state().unwrap().scan_complete() && self.worker_poolsize() == 0 {
+        if !wallet
+            .get_sync_state()
+            .map_err(SyncError::WalletError)?
+            .scan_complete()
+            && self.worker_poolsize() == 0
+        {
             panic!("worker pool should not be empty with unscanned ranges!")
         }
 
@@ -275,20 +281,22 @@ where
         }
     }
 
-    fn update_batcher<W>(&mut self, wallet: &mut W)
+    fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
     where
         W: SyncWallet + SyncBlocks,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
             if let Some(scan_task) =
-                sync::state::create_scan_task(&self.consensus_parameters, wallet).unwrap()
+                sync::state::create_scan_task(&self.consensus_parameters, wallet)?
             {
                 batcher.add_scan_task(scan_task);
-            } else if wallet.get_sync_state().unwrap().scan_complete() {
+            } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.scan_completed();
             }
         }
+
+        Ok(())
     }
 }
 

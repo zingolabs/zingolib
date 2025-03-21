@@ -60,6 +60,7 @@ pub trait SyncWallet {
 /// Trait for interfacing [`crate::wallet::WalletBlock`]s with wallet data
 pub trait SyncBlocks: SyncWallet {
     /// Get a stored wallet compact block from wallet data by block height
+    ///
     /// Must return error if block is not found
     fn get_wallet_block(&self, block_height: BlockHeight) -> Result<WalletBlock, Self::Error>;
 

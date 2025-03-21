@@ -1190,9 +1190,12 @@ impl Command for ValueTransfersCommand {
             .unwrap_or(Ok(false))
             .unwrap_or(false);
 
-        RT.block_on(
-            async move { format!("{}", lightclient.sorted_value_transfers(newer_first).await) },
-        )
+        RT.block_on(async move {
+            match lightclient.sorted_value_transfers(newer_first).await {
+                Ok(value_transfers) => value_transfers.to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
@@ -1222,9 +1225,10 @@ impl Command for MessagesFilterCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.messages_containing(args.first().copied()).await)
-                .pretty(2)
-                .to_string()
+            match lightclient.messages_containing(args.first().copied()).await {
+                Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1249,7 +1253,12 @@ impl Command for TransactionsCommand {
             return "Error: invalid arguments\nTry 'help transactions' for correct usage and examples"
                 .to_string();
         }
-        RT.block_on(async move { format!("{}", lightclient.transaction_summaries().await) })
+        RT.block_on(async move {
+            match lightclient.transaction_summaries().await {
+                Ok(transactions) => transactions.to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
@@ -1273,7 +1282,10 @@ impl Command for MemoBytesToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
+            match lightclient.do_total_memobytes_to_address().await {
+                Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1298,7 +1310,10 @@ impl Command for ValueToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+            match lightclient.do_total_value_to_address().await {
+                Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1323,7 +1338,10 @@ impl Command for SendsToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_spends_to_address().await).pretty(2)
+            match lightclient.do_total_spends_to_address().await {
+                Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }

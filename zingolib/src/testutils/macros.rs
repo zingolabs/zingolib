@@ -56,7 +56,7 @@ macro_rules! check_client_balances {
             balance.transparent_balance.unwrap(),
             $transparent
         );
-        let summaries = $client.transaction_summaries().await;
+        let summaries = $client.transaction_summaries().await.unwrap();
         let summaries_balance = summaries
             .iter()
             .map(|summary| {

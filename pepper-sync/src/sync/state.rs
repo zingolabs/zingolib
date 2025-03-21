@@ -634,7 +634,6 @@ fn select_scan_range(
         selected_scan_range.block_range().clone()
     };
 
-    // TODO: when this library has its own version of ScanRange this can be simplified and more readable
     Some(ScanRange::from_parts(
         selected_block_range,
         selected_priority,
@@ -645,22 +644,20 @@ fn select_scan_range(
 pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
-) -> Result<Option<ScanTask>, ()>
+) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    if let Some(scan_range) =
-        select_scan_range(consensus_parameters, wallet.get_sync_state_mut().unwrap())
+    if let Some(scan_range) = select_scan_range(consensus_parameters, wallet.get_sync_state_mut()?)
     {
         let start_seam_block = wallet
             .get_wallet_block(scan_range.block_range().start - 1)
             .ok();
         let end_seam_block = wallet.get_wallet_block(scan_range.block_range().end).ok();
 
-        let locators = find_locators(wallet.get_sync_state().unwrap(), scan_range.block_range());
+        let locators = find_locators(wallet.get_sync_state()?, scan_range.block_range());
         let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
-            .get_transparent_addresses()
-            .unwrap()
+            .get_transparent_addresses()?
             .iter()
             .map(|(id, address)| (address.clone(), *id))
             .collect();
@@ -689,7 +686,7 @@ where
 {
     let fully_scanned_height = wallet
         .get_sync_state()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
     let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(

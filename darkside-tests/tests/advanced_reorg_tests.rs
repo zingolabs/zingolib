@@ -58,7 +58,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -93,7 +93,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -213,7 +213,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -248,7 +248,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -368,7 +368,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -403,7 +403,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -545,7 +545,7 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -603,6 +603,7 @@ async fn reorg_changes_outgoing_tx_height() {
         light_client
             .sorted_value_transfers(true)
             .await
+            .unwrap()
             .iter()
             .find_map(|v| match v.kind() {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
@@ -664,7 +665,7 @@ async fn reorg_changes_outgoing_tx_height() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
@@ -789,7 +790,7 @@ async fn reorg_expires_outgoing_tx_height() {
     light_client.sync_and_await(false).await.unwrap();
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -834,11 +835,15 @@ async fn reorg_expires_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!(
+        "{:?}",
+        light_client.sorted_value_transfers(true).await.unwrap()
+    );
 
     let send_height = light_client
         .sorted_value_transfers(true)
         .await
+        .unwrap()
         .iter()
         .find_map(|v| match v.kind() {
             ValueTransferKind::Sent(SentValueTransfer::Send) => {
@@ -880,7 +885,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // sent transaction was never mined and has expired.
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
@@ -974,7 +979,7 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -1030,6 +1035,7 @@ async fn reorg_changes_outgoing_tx_index() {
         light_client
             .sorted_value_transfers(true)
             .await
+            .unwrap()
             .iter()
             .find_map(|v| match v.kind() {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
@@ -1051,9 +1057,12 @@ async fn reorg_changes_outgoing_tx_index() {
     );
 
     println!("pre re-org value transfers:");
-    println!("{}", light_client.sorted_value_transfers(true).await);
+    println!(
+        "{}",
+        light_client.sorted_value_transfers(true).await.unwrap()
+    );
     println!("pre re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await);
+    println!("{}", light_client.transaction_summaries().await.unwrap());
 
     //
     // Create reorg
@@ -1097,12 +1106,12 @@ async fn reorg_changes_outgoing_tx_index() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await;
+    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
 
     println!("post re-org value transfers:");
     println!("{}", after_reorg_transactions);
     println!("post re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await);
+    println!("{}", light_client.transaction_summaries().await.unwrap());
 
     // FIXME: assertion is wrong as re-org transaction has lost its outgoing tx data. darkside bug?
     // assert_eq!(after_reorg_transactions.0.len(), 3);

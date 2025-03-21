@@ -54,7 +54,9 @@ where
         orchard_derived_nullifiers,
     );
 
-    let sync_state = wallet.get_sync_state_mut().unwrap();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
@@ -82,7 +84,9 @@ where
     .await?;
 
     update_spent_notes(
-        wallet.get_wallet_transactions_mut().unwrap(),
+        wallet
+            .get_wallet_transactions_mut()
+            .map_err(SyncError::WalletError)?,
         sapling_spend_locators,
         orchard_spend_locators,
     );

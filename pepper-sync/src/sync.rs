@@ -258,7 +258,9 @@ where
         consensus_parameters,
         wallet_height,
         chain_height,
-        wallet_guard.get_sync_state_mut().unwrap(),
+        wallet_guard
+            .get_sync_state_mut()
+            .map_err(SyncError::WalletError)?,
     )
     .await;
 
@@ -342,7 +344,9 @@ where
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sync_complete(&scanner, unprocessed_mempool_transactions_count.clone(), &*wallet_guard) {
+                    if sync_complete(&scanner, unprocessed_mempool_transactions_count.clone(), &*wallet_guard)
+                        .map_err(SyncError::WalletError)?
+                    {
                         tracing::info!("Sync complete.");
                         break;
                     }
@@ -354,7 +358,9 @@ where
     let sync_status = sync_status(&*wallet_guard)
         .await
         .map_err(SyncError::WalletError)?;
-    wallet_guard.set_save_flag().unwrap();
+    wallet_guard
+        .set_save_flag()
+        .map_err(SyncError::WalletError)?;
 
     drop(wallet_guard);
     drop(scanner);
@@ -391,7 +397,7 @@ pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet.get_sync_state().unwrap().clone();
+    let sync_state = wallet.get_sync_state()?.clone();
 
     let unscanned_blocks = sync_state
         .scan_ranges()
@@ -462,7 +468,7 @@ where
     let mut pending_transaction_outpoints = BTreeMap::new();
     let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
         .get_transparent_addresses()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .iter()
         .map(|(id, address)| (address.clone(), *id))
         .collect();
@@ -554,14 +560,14 @@ fn sync_complete<P, W>(
     scanner: &Scanner<P>,
     mempool_unprocessed_transactions_count: Arc<AtomicU8>,
     wallet: &W,
-) -> bool
+) -> Result<bool, W::Error>
 where
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet,
 {
-    scanner.worker_poolsize() == 0
+    Ok(scanner.worker_poolsize() == 0
         && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
-        && wallet.get_sync_state().unwrap().scan_complete()
+        && wallet.get_sync_state()?.scan_complete())
 }
 
 /// Scan post-processing
@@ -680,7 +686,7 @@ where
 
     if let Some(tx) = wallet
         .get_wallet_transactions()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
     {
         if tx.status().is_confirmed() {
@@ -696,7 +702,7 @@ where
         ConfirmationStatus::Mempool(block_height),
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .expect("infalliable for such long time periods")
             .as_secs() as u32,
     )?;
 
