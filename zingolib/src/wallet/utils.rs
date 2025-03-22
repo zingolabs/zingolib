@@ -3,8 +3,6 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Read, Write};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
-use super::data::WalletZecPriceInfo;
-
 /// TODO: Add Doc Comment Here!
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     // Strings are written as <littleendian> len + bytes
