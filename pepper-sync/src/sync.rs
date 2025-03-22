@@ -25,7 +25,9 @@ use zcash_primitives::zip32::AccountId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::error::{ContinuityError, MempoolError, ScanError, ServerError, SyncError};
+use crate::error::{
+    ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
+};
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
@@ -166,7 +168,7 @@ impl From<SyncResult> for json::JsonValue {
 /// above the in-use address with the highest address index for each scope and account is determined by
 /// the address gap limit. If `transparent_address_discovery` is disabled, only transactions
 /// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
-// TODO: setting sync_mode to `NotRunning` should kill the sync task immediately.
+// TODO: setting sync_mode to `NotRunning` should stop the sync task.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
@@ -183,7 +185,7 @@ where
         sync_mode_enum = SyncMode::Running;
         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
     } else {
-        return Err(SyncError::SyncAlreadyRunning);
+        return Err(SyncModeError::SyncAlreadyRunning.into());
     }
 
     tracing::info!("Starting sync...");
@@ -729,9 +731,6 @@ where
             .expect("infalliable for such long time periods")
             .as_secs() as u32,
     )?;
-
-    // TODO: consider logic for pending spent being set back to None when txs are evicted / never make it on chain
-    // similar logic to truncate
 
     Ok(())
 }

@@ -116,7 +116,7 @@ where
                 .try_into()
                 .map_err(|_| ServerError::InvalidSubtreeRoot)?,
         )
-        .into_option() // TODO: how to handle this error without losing benefits of CT?
+        .into_option()
         .ok_or(ServerError::InvalidSubtreeRoot)?;
         let shard = LocatedPrunableTree::with_root_value(
             incrementalmerkletree::Address::from_parts(

@@ -17,14 +17,6 @@ use crate::{
     },
 };
 
-#[allow(missing_docs)]
-#[derive(Debug, thiserror::Error)]
-// TODO: move to LightClientError
-pub enum ValueTransferRecordingError {
-    #[error("Fee was not calculable because of error:  {0}")]
-    FeeCalculationError(String), // TODO: revisit passed type
-}
-
 fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
 }

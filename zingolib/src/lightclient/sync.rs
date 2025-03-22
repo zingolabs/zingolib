@@ -5,6 +5,7 @@ use std::sync::atomic;
 
 use futures::FutureExt;
 use pepper_sync::error::SyncError;
+use pepper_sync::error::SyncModeError;
 use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
@@ -60,17 +61,25 @@ impl LightClient {
     }
 
     /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
-    // FIXME: zingo2, error if not running
-    pub fn pause_sync(&self) {
+    pub fn pause_sync(&self) -> Result<(), SyncModeError> {
+        if self.sync_mode() != SyncMode::Running {
+            return Err(SyncModeError::SyncNotRunning);
+        }
         self.sync_mode
             .store(SyncMode::Paused as u8, atomic::Ordering::Release);
+
+        Ok(())
     }
 
     /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
-    // FIXME: zingo2, error if not running
-    pub fn resume_sync(&self) {
+    pub fn resume_sync(&self) -> Result<(), SyncModeError> {
+        if self.sync_mode() != SyncMode::Paused {
+            return Err(SyncModeError::SyncNotPaused);
+        }
         self.sync_mode
             .store(SyncMode::Running as u8, atomic::Ordering::Release);
+
+        Ok(())
     }
 
     /// Polls the sync task, returning [`self::PollReport`].

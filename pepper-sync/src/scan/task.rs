@@ -67,7 +67,6 @@ pub(crate) struct Scanner<P> {
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
-// TODO: add fn for checking and handling worker errors
 impl<P> Scanner<P>
 where
     P: consensus::Parameters + Sync + Send + 'static,

@@ -444,7 +444,7 @@ fn collect_nullifiers(
                     ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
                 })?,
             )
-            .into_option() // TODO: lose the benefits of constant time option here. is this safe? how to handle error otherwise?
+            .into_option()
             .ok_or(ScanError::InvalidOrchardNullifier)
         })
         .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?

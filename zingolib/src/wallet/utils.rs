@@ -49,24 +49,6 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
-/// TODO: Add Doc Comment Here!
-// TODO: remove?
-pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
-    match price.zec_price {
-        None => None,
-        Some((t, p)) => {
-            // If the price was fetched within 24 hours of this Tx, we use the "current" price
-            // else, we mark it as None, for the historical price fetcher to get
-            // TODO:  Investigate the state of "the historical price fetcher".
-            if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
-                Some(p)
-            } else {
-                None
-            }
-        }
-    }
-}
-
 pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
     use crate::SaplingParams;
     let mut sapling_output = vec![];

@@ -14,9 +14,6 @@ pub enum SyncError<E>
 where
     E: std::fmt::Debug + std::fmt::Display,
 {
-    /// Sync is already running.
-    #[error("sync is already running")]
-    SyncAlreadyRunning,
     /// Mempool error.
     #[error("mempool error. {0}")]
     MempoolError(#[from] MempoolError),
@@ -26,9 +23,9 @@ where
     /// Server error.
     #[error("server error. {0}")]
     ServerError(#[from] ServerError),
-    /// Invalid sync mode.
-    #[error(transparent)]
-    InvalidSyncMode(#[from] SyncModeError),
+    /// Sync mode error.
+    #[error("sync mode error. {0}")]
+    SyncModeError(#[from] SyncModeError),
     /// Chain error.
     #[error("wallet height is more than {0} blocks ahead of best chain height")]
     ChainError(u32),
@@ -160,7 +157,19 @@ pub enum ServerError {
     ChainVerificationError,
 }
 
-/// Invalid sync mode.
+/// Sync mode error.
 #[derive(Debug, thiserror::Error)]
-#[error("invalid sync mode. {0}")]
-pub struct SyncModeError(pub u8);
+pub enum SyncModeError {
+    /// Invalid sync mode.
+    #[error("invalid sync mode. {0}")]
+    InvalidSyncMode(u8),
+    /// Sync is already running.
+    #[error("sync is already running")]
+    SyncAlreadyRunning,
+    /// Sync is not running.
+    #[error("sync is not running")]
+    SyncNotRunning,
+    /// Sync is not paused.
+    #[error("sync is not paused")]
+    SyncNotPaused,
+}

@@ -83,7 +83,7 @@ impl LightClient {
     }
 
     /// Calls [`crate::wallet::LightWallet::save`] in a runtime and returns an empty buffer in the case save was not required.
-    // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
+    // TODO: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
     pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
         crate::commands::RT.block_on(async move {
             match self.wallet.lock().await.save().await {

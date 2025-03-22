@@ -18,8 +18,6 @@ use crate::wallet::{
 };
 use crate::witness::LocatedTreeData;
 
-// TODO: clean up interface and move many default impls out of traits. consider merging to a simplified SyncWallet interface.
-
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
     /// Errors associated with interfacing the sync engine with wallet data

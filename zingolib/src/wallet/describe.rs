@@ -218,9 +218,7 @@ impl LightWallet {
         self.mnemonic.as_ref()
     }
 
-    /// lists the transparent addresses known by the wallet.
-    // TODO: consider splitting refund addresses, taking scope as paramter or returning address id data
-    // TODO: error handling
+    /// Lists the transparent addresses known by the wallet.
     pub fn get_transparent_addresses(
         &self,
     ) -> Result<Vec<TransparentAddress>, zcash_address::ParseError> {
@@ -945,7 +943,6 @@ impl LightWallet {
         )
     }
 
-    // FIXME: error handling
     fn is_orchard_send_to_self(&self, address: &orchard::Address) -> Result<bool, KeyError> {
         Ok(
             orchard::keys::FullViewingKey::try_from(&self.unified_key_store)?

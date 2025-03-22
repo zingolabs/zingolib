@@ -218,7 +218,7 @@ impl SyncMode {
             0 => Ok(Self::NotRunning),
             1 => Ok(Self::Paused),
             2 => Ok(Self::Running),
-            _ => Err(SyncModeError(mode)),
+            _ => Err(SyncModeError::InvalidSyncMode(mode)),
         }
     }
 
@@ -1076,8 +1076,6 @@ impl ShardTrees {
 
         Self { sapling, orchard }
     }
-
-    // TODO: clear fn the creates news shard trees and replaces with current, add logic for truncating to height 0
 }
 
 impl Default for ShardTrees {

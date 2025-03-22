@@ -3233,7 +3233,7 @@ mod slow {
         assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
     }
 
-    // FIXME: add unified address regeneration to pepper sync and add a test here
+    // FIXME: add unified address discovery to pepper sync and add a test here
 
     #[tokio::test]
     async fn list_value_transfers_check_fees() {

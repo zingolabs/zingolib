@@ -381,19 +381,21 @@ impl Command for SyncCommand {
         match args[0] {
             "run" => {
                 if lightclient.sync_mode() == SyncMode::Paused {
-                    lightclient.resume_sync();
+                    lightclient.resume_sync().expect("sync should be paused");
                     "Resuming sync task...".to_string()
                 } else {
-                    if let Err(e) = RT.block_on(async move { lightclient.sync(true).await }) {
-                        return format!("Error: {e}");
-                    }
-                    "Launching sync task...".to_string()
+                    RT.block_on(async move {
+                        match lightclient.sync(true).await {
+                            Ok(_) => "Launching sync task...".to_string(),
+                            Err(e) => format!("Error: {e}"),
+                        }
+                    })
                 }
             }
-            "pause" => {
-                lightclient.pause_sync();
-                "Pausing sync task...".to_string()
-            }
+            "pause" => match lightclient.pause_sync() {
+                Ok(_) => "Pausing sync task...".to_string(),
+                Err(e) => format!("Error: {e}"),
+            },
             "status" => RT.block_on(async move {
                 match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
                     Ok(status) => json::JsonValue::from(status).pretty(2),

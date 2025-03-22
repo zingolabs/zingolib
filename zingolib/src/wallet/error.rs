@@ -129,11 +129,9 @@ pub enum KeyError {
     #[error("Account ID should be at most 31 bits")]
     InvalidAccountId(#[from] zip32::TryFromIntError),
     /// Key derivation failed
-    // TODO: add std::Error to zcash_keys::keys::DerivationError in LRZ fork and add thiserror #[from] macro
     #[error("Key derivation failed")]
     KeyDerivationError(#[from] DerivationError),
     /// Key decoding failed
-    // TODO: add std::Error to zcash_keys::keys::DecodingError in LRZ fork and add thiserror #[from] macro
     #[error("Key decoding failed")]
     KeyDecodingError,
     /// Key parsing failed
