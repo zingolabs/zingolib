@@ -12,12 +12,12 @@ use zcash_primitives::{
 use zip32::AccountId;
 
 use crate::{
-    client::FetchRequest,
+    client::{self, FetchRequest},
     error::SyncError,
     scan::{transactions::scan_transactions, DecryptedNoteData},
     wallet::{
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
-        Locator, NullifierMap, OutputId, WalletTransaction,
+        Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction,
     },
 };
 
@@ -35,6 +35,7 @@ pub(super) async fn update_shielded_spends<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
 ) -> Result<(), SyncError<W::Error>>
 where
     P: consensus::Parameters,
@@ -80,6 +81,7 @@ where
             .values()
             .chain(orchard_spend_locators.values())
             .cloned(),
+        scanned_blocks,
     )
     .await?;
 
@@ -108,6 +110,7 @@ async fn scan_spending_transactions<L, P, W>(
     wallet: &mut W,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     locators: L,
+    scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
 ) -> Result<(), SyncError<W::Error>>
 where
     L: Iterator<Item = Locator>,
@@ -130,12 +133,24 @@ where
         }
 
         spending_locators.insert(locator);
-        wallet_blocks.insert(
-            block_height,
-            wallet.get_wallet_block(block_height).expect(
-                "wallet block should be in the wallet as nullifiers are mapped during scanning",
-            ),
-        );
+
+        let wallet_block = match wallet.get_wallet_block(block_height) {
+            Ok(block) => block,
+            Err(_) => match scanned_blocks.get(&block_height) {
+                Some(block) => block.clone(),
+                None => {
+                    WalletBlock::from_compact_block(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        &client::get_compact_block(fetch_request_sender.clone(), block_height)
+                            .await?,
+                    )
+                    .await?
+                }
+            },
+        };
+
+        wallet_blocks.insert(block_height, wallet_block);
     }
 
     let mut outpoint_map = BTreeMap::new(); // dummy outpoint map

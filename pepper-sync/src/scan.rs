@@ -84,7 +84,7 @@ struct ScanData {
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) outpoints: BTreeMap<OutputId, Locator>,
-    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) scanned_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -209,7 +209,7 @@ where
     Ok(ScanResults {
         nullifiers,
         outpoints,
-        wallet_blocks,
+        scanned_blocks: wallet_blocks,
         wallet_transactions,
         sapling_located_trees,
         orchard_located_trees,

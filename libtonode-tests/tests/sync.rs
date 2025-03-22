@@ -107,12 +107,8 @@ async fn sync_test() {
         .await
         .unwrap();
 
-    println!("{}", recipient.transaction_summaries().await.unwrap());
-    println!("{}", recipient.value_transfers().await.unwrap());
-    // let wallet = recipient.wallet.lock().await;
-    // dbg!(&wallet.wallet_transactions);
-    // dbg!(&wallet.wallet_blocks);
-    // dbg!(&wallet.nullifier_map);
-    // dbg!(&wallet.outpoint_map);
-    // dbg!(&wallet.sync_state);
+    // println!("{}", recipient.transaction_summaries().await.unwrap());
+    // println!("{}", recipient.value_transfers().await.unwrap());
+    let wallet = recipient.wallet.lock().await;
+    dbg!(wallet.wallet_blocks.len());
 }
