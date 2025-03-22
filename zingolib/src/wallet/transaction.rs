@@ -1,8 +1,8 @@
 use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
-use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::transaction::{components::Amount, TxId};
 
 use super::{
-    error::{FeeError, SpendError},
+    error::{FeeError, RemovalError, SpendError},
     LightWallet,
 };
 
@@ -88,6 +88,50 @@ impl LightWallet {
             })?
             .try_into()
             .expect("fee should not be negative"))
+    }
+
+    /// Removes transaction with the given `txid` from the wallet.
+    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` allowing these
+    /// outputs to be re-selected for spending in future sends.
+    ///
+    /// # Error
+    ///
+    /// Returns error if transaction is confirmed or does not exist in the wallet.
+    pub fn remove_unconfirmed_transaction(&mut self, txid: TxId) -> Result<(), RemovalError> {
+        if let Some(transaction) = self.wallet_transactions.get(&txid) {
+            if transaction.status().is_confirmed() {
+                return Err(RemovalError::TransactionAlreadyConfirmed);
+            }
+        } else {
+            return Err(RemovalError::TransactionNotFound);
+        };
+
+        // TODO: could be added as an API to pepper-sync
+        self.wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.sapling_notes_mut())
+            .filter(|note| {
+                note.spending_transaction()
+                    .map_or(false, |spending_txid| spending_txid == txid)
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+        self.wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.orchard_notes_mut())
+            .filter(|note| {
+                note.spending_transaction()
+                    .map_or(false, |spending_txid| spending_txid == txid)
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+        self.wallet_transactions
+            .remove(&txid)
+            .expect("transaction checked to exist");
+
+        Ok(())
     }
 }
 

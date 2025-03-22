@@ -36,6 +36,17 @@ pub enum WalletError {
     ParseError(#[from] zcash_address::ParseError),
 }
 
+/// Removal error
+#[derive(Debug, thiserror::Error)]
+pub enum RemovalError {
+    /// Transaction is already confirmed.
+    #[error("transaction is already confirmed.")]
+    TransactionAlreadyConfirmed,
+    /// Transaction is already confirmed.
+    #[error("transaction not found in wallet.")]
+    TransactionNotFound,
+}
+
 /// Summary error
 #[derive(Debug, thiserror::Error)]
 pub enum SummaryError {

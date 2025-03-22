@@ -441,7 +441,7 @@ impl WalletTransaction {
     }
 
     /// Sapling notes mutable
-    pub(crate) fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
+    pub fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
         self.sapling_notes.iter_mut().collect()
     }
 
@@ -451,7 +451,7 @@ impl WalletTransaction {
     }
 
     /// Orchard notes mutable
-    pub(crate) fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
+    pub fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
         self.orchard_notes.iter_mut().collect()
     }
 
@@ -587,6 +587,9 @@ pub trait OutputInterface: Sized {
     /// If `None`, output is not spent.
     fn spending_transaction(&self) -> Option<TxId>;
 
+    /// Sets spending transaction.
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>);
+
     /// Note value..
     fn value(&self) -> u64;
 
@@ -678,6 +681,10 @@ impl OutputInterface for TransparentCoin {
         self.spending_transaction
     }
 
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
+    }
+
     fn value(&self) -> u64 {
         self.value.into_u64()
     }
@@ -734,6 +741,10 @@ impl OutputInterface for SaplingNote {
 
     fn spending_transaction(&self) -> Option<TxId> {
         self.spending_transaction
+    }
+
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
     }
 
     fn value(&self) -> u64 {
@@ -795,6 +806,10 @@ impl OutputInterface for OrchardNote {
 
     fn spending_transaction(&self) -> Option<TxId> {
         self.spending_transaction
+    }
+
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
     }
 
     fn value(&self) -> u64 {
