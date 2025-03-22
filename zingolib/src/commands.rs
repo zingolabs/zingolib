@@ -3,6 +3,7 @@
 
 use crate::data::{proposal, PollReport};
 use crate::lightclient::LightClient;
+use crate::utils::conversion::txid_from_hex_encoded_str;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use indoc::indoc;
 use json::object;
@@ -1096,6 +1097,44 @@ impl Command for ConfirmCommand {
     }
 }
 
+struct ResendCommand {}
+impl Command for ResendCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Re-transmits a calculated transaction from the wallet with the given txid.
+            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
+            to remove the calculated transaction in the case of send failure.
+
+            usage:
+            resend <txid>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Re-transmits a calculated transaction from the wallet with the given txid."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
+                .to_string();
+        }
+
+        let txid = match txid_from_hex_encoded_str(args[0]) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        RT.block_on(async move {
+            match lightclient.resend(txid).await {
+                Ok(_) => "Successfully resent transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
 // TODO: add a decline command which deletes latest proposal?
 
 struct DeleteCommand {}
@@ -1637,6 +1676,51 @@ impl Command for CoinsCommand {
     }
 }
 
+struct RemoveTransactionCommand {}
+impl Command for RemoveTransactionCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Removes an unconfirmed transaction from the wallet with the given txid.
+            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
+            the "resend" command to attempt to re-transmit.
+            This is a manual operation so important information such as memos are retained in the case of send failure
+            until the user decides to remove them or resend. 
+
+            usage:
+            remove_transaction <txid>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Removes an unconfirmed transaction from the wallet with the given txid."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: remove command expects 1 argument. Type \"help remove\" for usage."
+                .to_string();
+        }
+
+        let txid = match txid_from_hex_encoded_str(args[0]) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        RT.block_on(async move {
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .remove_unconfirmed_transaction(txid)
+            {
+                Ok(_) => "Successfully removed transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> &'static str {
@@ -1773,6 +1857,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
+        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
@@ -1783,6 +1868,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
+        ("remove_transaction", Box::new(RemoveTransactionCommand {})),
     ];
     {
         entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));

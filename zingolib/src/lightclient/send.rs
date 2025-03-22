@@ -42,7 +42,7 @@ pub mod send_with_proposal {
                 .await?)
         }
 
-        /// Attempts to re-transmit a previously calculated transaction that failed to send.
+        /// Re-transmits a previously calculated transaction that failed to send.
         pub async fn resend(&self, txid: TxId) -> Result<(), SendError> {
             self.wallet
                 .lock()
