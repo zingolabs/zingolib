@@ -769,6 +769,7 @@ where
 }
 
 /// Updates the wallet with data from `scan_results`
+#[allow(clippy::too_many_arguments)]
 fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
