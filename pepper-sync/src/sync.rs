@@ -179,7 +179,7 @@ where
         sync_mode_enum = SyncMode::Running;
         sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
     } else {
-        panic!("Sync is already running!");
+        return Err(SyncError::SyncAlreadyRunning);
     }
 
     tracing::info!("Starting sync...");

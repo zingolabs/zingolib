@@ -3,7 +3,6 @@ use json::{object, JsonValue};
 use pepper_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
-use zcash_address::unified::ParseError;
 
 use crate::{
     lightclient::{AccountBackupInfo, LightClient, PoolBalances},
@@ -155,7 +154,7 @@ impl LightClient {
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
-    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, ParseError> {
+    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
         self.wallet.lock().await.transaction_summaries().await
     }
 

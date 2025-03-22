@@ -2,7 +2,7 @@ use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTran
 use zcash_primitives::transaction::components::Amount;
 
 use super::{
-    error::{FeeError, KindError},
+    error::{FeeError, SpendError},
     LightWallet,
 };
 
@@ -12,34 +12,36 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
         fail_on_miss: bool,
-    ) -> Result<Vec<&Op>, KindError> {
-        let spends = self.wallet_outputs::<Op>()
+    ) -> Result<Vec<&Op>, SpendError> {
+        let spends = self
+            .wallet_outputs::<Op>()
             .into_iter()
             .filter_map(|output| {
                 output.spending_transaction().and_then(|txid| {
                     if txid == transaction.txid() {
-                        let spend = Op::transaction_inputs(transaction)
-                            .into_iter()
-                            .find(|&input| {
-                                output.spend_link().map_or(false, |spend_link|
-                                {
-                                    *input
-                                    == spend_link
-                                })
-                            });
+                        let spend =
+                            Op::transaction_inputs(transaction)
+                                .into_iter()
+                                .find(|&input| {
+                                    output
+                                        .spend_link()
+                                        .map_or(false, |spend_link| *input == spend_link)
+                                });
 
                         if spend.is_none() {
-                            // TODO: error handling
-                            panic!("output's spending transaction field incorrectly points to transaction which did not spend output!");
+                            return Some(Err(SpendError::IncorrectSpendingTransaction {
+                                output_id: output.output_id(),
+                                txid,
+                            }));
                         }
 
-                        Some(output)
+                        Some(Ok(output))
                     } else {
                         None
                     }
                 })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, SpendError>>()?;
 
         if fail_on_miss {
             let spend_links = spends
@@ -49,7 +51,8 @@ impl LightWallet {
 
             for input in Op::transaction_inputs(transaction) {
                 if !spend_links.contains(input) {
-                    return Err(KindError::SpendNotFound {
+                    return Err(SpendError::SpendNotFound {
+                        pool: Op::POOL_TYPE,
                         txid: transaction.txid(),
                         spend: format!("{:?}", input),
                     });

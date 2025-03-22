@@ -270,6 +270,19 @@ impl OutputId {
     }
 }
 
+impl std::fmt::Display for OutputId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                txid: {}
+                output index: {}
+            }}",
+            self.txid, self.output_index
+        )
+    }
+}
+
 impl From<&OutPoint> for OutputId {
     fn from(value: &OutPoint) -> Self {
         OutputId::new(*value.txid(), value.n() as u16)

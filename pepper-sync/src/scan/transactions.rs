@@ -309,9 +309,6 @@ pub(crate) fn scan_transaction(
 
                 // TODO: handle rejection addresses from encoded memos
             }
-            _ => panic!(
-                "memo version not supported. please ensure that your software is up-to-date."
-            ),
         }
     }
 

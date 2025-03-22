@@ -52,6 +52,7 @@ use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
 use super::data::summaries::ValueTransfers;
 use super::error::KeyError;
+use super::error::SpendError;
 use super::error::SummaryError;
 use super::keys::unified::UnifiedKeyStore;
 use super::summary;
@@ -233,26 +234,20 @@ impl LightWallet {
             .collect()
     }
 
-    /// Note this method is INCORRECT in the case of a 0-value, 0-fee transaction from the
-    /// Creating Capability.  Such a transaction would violate ZIP317, but could exist in
-    /// the Zcash protocol
-    ///  TODO:   Test and handle 0-value, 0-fee transaction
-    pub(crate) fn transaction_kind(&self, transaction: &WalletTransaction) -> TransactionKind {
+    /// Determine the kind of transaction from the wallet data.
+    pub(crate) fn transaction_kind(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> Result<TransactionKind, SpendError> {
         let zfz_address = match self.network {
             ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
             ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
             ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         };
 
-        let transparent_spends = self
-            .find_spends::<TransparentCoin>(transaction, false)
-            .expect("fail_on_miss is set false");
-        let sapling_spends = self
-            .find_spends::<SaplingNote>(transaction, false)
-            .expect("fail_on_miss is set false");
-        let orchard_spends = self
-            .find_spends::<OrchardNote>(transaction, false)
-            .expect("fail_on_miss is set false");
+        let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
+        let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
+        let orchard_spends = self.find_spends::<OrchardNote>(transaction, false)?;
 
         if transparent_spends.is_empty()
             && sapling_spends.is_empty()
@@ -260,7 +255,7 @@ impl LightWallet {
             && transaction.outgoing_sapling_notes().is_empty()
             && transaction.outgoing_orchard_notes().is_empty()
         {
-            TransactionKind::Received
+            Ok(TransactionKind::Received)
         } else if !transparent_spends.is_empty()
             && sapling_spends.is_empty()
             && orchard_spends.is_empty()
@@ -268,7 +263,7 @@ impl LightWallet {
             && transaction.outgoing_orchard_notes().is_empty()
             && (!transaction.orchard_notes().is_empty() || !transaction.sapling_notes().is_empty())
         {
-            TransactionKind::Sent(SendType::Shield)
+            Ok(TransactionKind::Sent(SendType::Shield))
         } else if transaction
             .transaction()
             .transparent_bundle()
@@ -310,18 +305,16 @@ impl LightWallet {
                     }
                 })
         {
-            TransactionKind::Sent(SendType::SendToSelf)
+            Ok(TransactionKind::Sent(SendType::SendToSelf))
         } else {
-            TransactionKind::Sent(SendType::Send)
+            Ok(TransactionKind::Sent(SendType::Send))
         }
     }
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     // TODO: move to summary
     // TODO: should have outgoing coins
-    pub async fn transaction_summaries(
-        &self,
-    ) -> Result<TransactionSummaries, zcash_address::unified::ParseError> {
+    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -354,7 +347,7 @@ impl LightWallet {
                     .build()
                     .expect("all fields should be populated"))
             })
-            .collect::<Result<Vec<_>, zcash_address::unified::ParseError>>()?;
+            .collect::<Result<Vec<_>, SummaryError>>()?;
 
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
@@ -405,9 +398,9 @@ impl LightWallet {
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingNoteSummary>,
         ),
-        zcash_address::unified::ParseError,
+        SummaryError,
     > {
-        let kind = self.transaction_kind(transaction);
+        let kind = self.transaction_kind(transaction)?;
         let value = match kind {
             TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
                 transaction.total_value_received()
@@ -484,7 +477,9 @@ impl LightWallet {
                 Ok(OutgoingNoteSummary {
                     memo,
                     value: note.value(),
-                    recipient: note.encoded_recipient(&self.network)?,
+                    recipient: note
+                        .encoded_recipient(&self.network)
+                        .map_err(zcash_address::ParseError::Unified)?,
                     recipient_unified_address: note
                         .encoded_recipient_full_unified_address(&self.network),
                     output_index: note.output_id().output_index(),
@@ -492,7 +487,7 @@ impl LightWallet {
                     scope: summary::Scope::from(note.key_id().scope),
                 })
             })
-            .collect::<Result<Vec<_>, zcash_address::unified::ParseError>>()?;
+            .collect::<Result<Vec<_>, SummaryError>>()?;
         let outgoing_sapling_notes = transaction
             .outgoing_sapling_notes()
             .iter()
@@ -532,11 +527,7 @@ impl LightWallet {
     // TODO: move to summary
     pub async fn value_transfers(&self) -> Result<ValueTransfers, SummaryError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let transaction_summaries = self
-            .transaction_summaries()
-            .await
-            .map_err(|e| SummaryError::ParseError(zcash_address::ParseError::Unified(e)))?
-            .0;
+        let transaction_summaries = self.transaction_summaries().await?.0;
 
         for transaction in transaction_summaries.iter() {
             match transaction.kind() {

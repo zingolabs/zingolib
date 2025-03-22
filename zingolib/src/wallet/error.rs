@@ -1,6 +1,7 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
-use pepper_sync::error::ScanError;
+use pepper_sync::{error::ScanError, wallet::OutputId};
+use zcash_client_backend::PoolType;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
@@ -34,15 +35,18 @@ pub enum WalletError {
 }
 
 /// Summary error
-// TODO: temp while we fix `decode_address` error handling in pepper sync
 #[derive(Debug, thiserror::Error)]
 pub enum SummaryError {
     /// Address parse error
     #[error("address parse error. {0}")]
     ParseError(#[from] zcash_address::ParseError),
     /// Std IO address parse or conversion error
+    // TODO: temp while we fix `decode_address` error handling in pepper sync
     #[error("address parse error. {0}")]
     StdParseError(#[from] std::io::Error),
+    /// Spend error
+    #[error("spend error. {0}")]
+    SpendError(#[from] SpendError),
 }
 
 /// Errors associated with calculating transaction fee
@@ -76,29 +80,19 @@ impl From<zcash_primitives::transaction::components::amount::BalanceError> for F
     }
 }
 
-/// Errors associated with determining transaction kind
+/// Errors associated with spends
 #[derive(Debug, thiserror::Error)]
-pub enum KindError {
-    // TODO: add pool info to missing spend
+pub enum SpendError {
     /// Transaction spends not found in wallet
-    #[error("Spend not found for transaction id {txid}. Is the wallet fully synced? \nMissing spend: {spend}")]
-    SpendNotFound { txid: TxId, spend: String },
-    /// Attempted to calculate a fee for a transaction received and not created by the wallet's spend capability
-    #[error("No inputs or outgoing transaction data found, indicating this transaction was received and not sent by this capability. Is the wallet fully synced?")]
-    ReceivedTransaction,
-    /// Outgoing notes, but no spends found!
-    #[error("This transaction has outgoing notes but not all spends were found! Is the wallet fully synced?")]
-    OutgoingWithoutSpends,
-    /// Total explicit receiver value is larger than input value causing the unsigned integer to underflow
-    #[error(
-        "Output value {explicit_output_value} is larger than total input value {input_value}. Is the wallet fully synced?"
-    )]
-    FeeUnderflow {
-        /// total value of all shielded notes and transparent outputs spent in a transaction
-        input_value: u64,
-        /// total value of all outputs to receivers including change
-        explicit_output_value: u64,
+    #[error("spend not found for transaction id {txid}. is the wallet fully synced?\nmissing spend: {spend}")]
+    SpendNotFound {
+        pool: PoolType,
+        txid: TxId,
+        spend: String,
     },
+    /// Output has incorrect spending transaction id
+    #[error("output has incorrect spending transaction id: {txid}.\noutput id: {output_id}")]
+    IncorrectSpendingTransaction { output_id: OutputId, txid: TxId },
 }
 
 /// Errors associated with balance calculation

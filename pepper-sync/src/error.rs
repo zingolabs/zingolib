@@ -14,6 +14,9 @@ pub enum SyncError<E>
 where
     E: std::fmt::Debug + std::fmt::Display,
 {
+    /// Sync is already running.
+    #[error("sync is already running")]
+    SyncAlreadyRunning,
     /// Mempool error.
     #[error("mempool error. {0}")]
     MempoolError(#[from] MempoolError),
