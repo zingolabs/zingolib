@@ -1,18 +1,21 @@
 //! creating proposals from wallet data
 
-use std::{convert::Infallible, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector,
-    zip321::{TransactionRequest, Zip321Error},
+    data_api::wallet::input_selection::GreedyInputSelector, zip321::TransactionRequest,
     ShieldedProtocol,
 };
 use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
 
 use crate::config::ChainType;
 
-use super::{error::WalletError, send::change_memo_from_transaction_request, LightWallet};
+use super::{
+    error::{ProposeSendError, ProposeShieldError, WalletError},
+    send::change_memo_from_transaction_request,
+    LightWallet,
+};
 
 type GISKit = GreedyInputSelector<
     LightWallet,
@@ -33,60 +36,6 @@ fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
             None,
         ),
     )
-}
-
-/// Errors that can result from do_propose
-#[derive(Debug, thiserror::Error)]
-pub enum ProposeSendError {
-    /// error in using trait to create spend proposal
-    #[error("{0}")]
-    Proposal(
-        zcash_client_backend::data_api::error::Error<
-            WalletError,
-            WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                zcash_client_backend::wallet::NoteId,
-            >,
-            zcash_primitives::transaction::fees::zip317::FeeError,
-        >,
-    ),
-    /// failed to construct a transaction request
-    #[error("{0}")]
-    TransactionRequestFailed(#[from] Zip321Error),
-    /// send all is transferring no value
-    #[error("send all is transferring no value. only enough funds to pay the fees!")]
-    ZeroValueSendAll,
-    /// failed to calculate balance.
-    #[error("failed to calculated balance. {0}")]
-    BalanceError(#[from] crate::wallet::error::BalanceError),
-}
-
-/// Errors that can result from do_propose
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
-pub enum ProposeShieldError {
-    /// error in parsed addresses
-    #[error("{0}")]
-    Receiver(zcash_client_backend::zip321::Zip321Error),
-    /// error in using trait to create shielding proposal
-    #[error("{0}")]
-    Component(
-        zcash_client_backend::data_api::error::Error<
-            WalletError,
-            WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                Infallible,
-            >,
-            zcash_primitives::transaction::fees::zip317::FeeError,
-        >,
-    ),
-    #[error("not enough transparent funds to shield.")]
-    Insufficient,
-    /// Address parse error.
-    #[error("address parse error. {0}")]
-    AddressParseError(#[from] zcash_address::ParseError),
 }
 
 impl LightWallet {

@@ -9,7 +9,6 @@ use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
@@ -17,6 +16,8 @@ use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::wallet::error::ProposeSendError;
+use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
     fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
@@ -43,7 +44,7 @@ impl LightClient {
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
-    ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let proposal = self
             .wallet
             .lock()
@@ -166,7 +167,7 @@ mod shielding {
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::LightClient,
-        wallet::{propose::ProposeShieldError, LightWallet, WalletBase},
+        wallet::{error::ProposeShieldError, LightWallet, WalletBase},
     };
 
     fn create_basic_client() -> LightClient {

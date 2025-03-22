@@ -11,7 +11,6 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::propose::ProposeSendError;
 use zingolib::wallet::summary::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 
@@ -450,10 +449,7 @@ mod fast {
             .await
             .unwrap();
 
-        recipient
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
+        recipient.send_stored_proposal().await.unwrap();
 
         let value_transfers = &recipient.sorted_value_transfers(true).await.unwrap();
 
@@ -552,10 +548,7 @@ mod fast {
                 // Propose sending the message
                 $client.propose_send($message.clone()).await.unwrap();
                 // Complete and broadcast the stored proposal
-                $client
-                    .complete_and_broadcast_stored_proposal()
-                    .await
-                    .unwrap();
+                $client.send_stored_proposal().await.unwrap();
                 // Increase the height and wait for the client
                 increase_height_and_wait_for_client(&regtest_manager, &mut $client, 1)
                     .await
@@ -791,10 +784,7 @@ mod fast {
 
             let proposal = sender.propose_send(transaction_request).await.unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
-            let _sent_txids_according_to_broadcast = sender
-                .complete_and_broadcast_stored_proposal()
-                .await
-                .unwrap();
+            let _sent_txids_according_to_broadcast = sender.send_stored_proposal().await.unwrap();
             let _txids = sender
                 .wallet
                 .lock()
@@ -1270,9 +1260,7 @@ mod slow {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
     use zingolib::lightclient::describe::UAReceivers;
-    use zingolib::lightclient::send::send_with_proposal::{
-        CompleteAndBroadcastError, QuickSendError,
-    };
+    use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1283,8 +1271,8 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
         TransactionSummaryInterface,
     };
+    use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::send::BuildTransactionError;
     use zingolib::wallet::summary::{self, SendType, TransactionKind};
 
     use super::*;
@@ -1701,9 +1689,9 @@ mod slow {
                     vec![(testvectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
-                Err(QuickSendError::CompleteAndBroadcast(
-                    CompleteAndBroadcastError::BuildTransaction(
-                        BuildTransactionError::NoSpendCapability
+                Err(QuickSendError::SendError(
+                    SendError::CalculateTransactionError(
+                        CalculateTransactionError::NoSpendCapability
                     )
                 ))
             ));
@@ -1761,7 +1749,7 @@ mod slow {
         .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
-            QuickSendError::ProposeSend(ProposeSendError::Proposal(
+            QuickSendError::ProposalError(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
                     available: _,
                     required: _
@@ -3463,7 +3451,7 @@ mod slow {
         // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
+            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
                     zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
@@ -3492,7 +3480,7 @@ mod slow {
         // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
+            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
                     zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
@@ -4213,6 +4201,7 @@ async fn propose_orchard_dust_to_sapling() {
 mod send_all {
 
     use pepper_sync::wallet::{OrchardNote, SaplingNote};
+    use zingolib::wallet::error::ProposeSendError;
 
     use super::*;
     #[tokio::test]
@@ -4304,10 +4293,7 @@ mod send_all {
             )
             .await
             .unwrap();
-        recipient
-            .complete_and_broadcast_stored_proposal()
-            .await
-            .unwrap();
+        recipient.send_stored_proposal().await.unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();

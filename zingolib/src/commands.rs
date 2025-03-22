@@ -1082,7 +1082,7 @@ impl Command for ConfirmCommand {
 
         RT.block_on(async move {
             match lightclient
-                .complete_and_broadcast_stored_proposal()
+                .send_stored_proposal()
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }

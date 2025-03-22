@@ -17,7 +17,6 @@ pub mod send_with_proposal {
 
     use nonempty::NonEmpty;
 
-    use pepper_sync::error::SyncError;
     use zcash_client_backend::proposal::Proposal;
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
@@ -26,133 +25,51 @@ pub mod send_with_proposal {
     use zcash_primitives::transaction::TxId;
 
     use crate::data::proposal::ZingoProposal;
+    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
     use crate::lightclient::LightClient;
-    use crate::wallet::error::WalletError;
-    use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
-
-    // TODO: untangle errors and fix send result so clone is not needed so we can impl from on std::error
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum BroadcastTransactionsError {
-        #[error("Broadcast failed: {0:?}")]
-        Broadcast(String),
-        #[error("Transaction not found in the wallet: {0}")]
-        TransactionNotFound(TxId),
-        #[error("Transaction associated with given txid to broadcast does not have `Calculated` status: {0}")]
-        IncorrectTransactionStatus(TxId),
-        /// Failed to read transaction.
-        #[error("Failed to read transaction.")]
-        TransactionRead,
-        /// Failed to write transaction.
-        #[error("Failed to write transaction.")]
-        TransactionWrite,
-        /// Conversion failed
-        #[error("Conversion failed. {0}")]
-        ConversionFailed(#[from] crate::utils::error::ConversionError),
-        /// No view capability
-        #[error("No view capability")]
-        NoViewCapability,
-        /// Txid reported by server does not match calculated txid.
-        #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
-        IncorrectTxidFromServer(TxId, TxId),
-        /// Failed to scan transmitted transaction..
-        #[error("Failed to scan transmitted transaction. {0}")]
-        SyncError(#[from] SyncError<WalletError>),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum CompleteAndBroadcastError {
-        #[error("The transaction could not be calculated: {0:?}")]
-        BuildTransaction(#[from] crate::wallet::send::BuildTransactionError),
-        #[error("Broadcast failed: {0:?}")]
-        Broadcast(#[from] BroadcastTransactionsError),
-        #[error("TxIds did not work through?")]
-        EmptyList,
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum CompleteAndBroadcastStoredProposalError {
-        #[error("No proposal. Call do_propose first.")]
-        NoStoredProposal,
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum QuickSendError {
-        #[error("propose send {0:?}")]
-        ProposeSend(#[from] ProposeSendError),
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
-    }
-
-    #[allow(missing_docs)] // error types document themselves
-    #[derive(Debug, thiserror::Error)]
-    pub enum QuickShieldError {
-        #[error("propose shield {0:?}")]
-        Propose(#[from] ProposeShieldError),
-        #[error("send {0:?}")]
-        CompleteAndBroadcast(#[from] CompleteAndBroadcastError),
-    }
 
     impl LightClient {
-        async fn complete_and_broadcast<NoteRef>(
+        async fn send<NoteRef>(
             &mut self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastError> {
+        ) -> Result<NonEmpty<TxId>, SendError> {
             let mut wallet = self.wallet.lock().await;
-            let calculated_txids = wallet.create_transactions(proposal).await?;
-            wallet.save_required = true;
+            let calculated_txids = wallet.calculate_transactions(proposal).await?;
+            self.latest_proposal = None;
 
-            match wallet
-                .broadcast_calculated_transactions(self.get_server_uri(), calculated_txids)
+            Ok(wallet
+                .transmit_transactions(self.get_server_uri(), calculated_txids)
+                .await?)
+        }
+
+        /// Attempts to re-transmit a previously calculated transaction that failed to send.
+        pub async fn resend(&self, txid: TxId) -> Result<(), SendError> {
+            self.wallet
+                .lock()
                 .await
-            {
-                Ok(txids) => {
-                    wallet.set_send_result(
-                        serde_json::Value::Array(
-                            txids
-                                .iter()
-                                .map(|txid| serde_json::Value::String(txid.to_string()))
-                                .collect(),
-                        )
-                        .to_string(),
-                    );
-                    Ok(NonEmpty::from_vec(txids).ok_or(CompleteAndBroadcastError::EmptyList)?)
-                }
-                Err(e) => {
-                    wallet.set_send_result(format!("error: {}", e));
-                    Err(e.into())
-                }
-            }
+                .transmit_transactions(self.get_server_uri(), NonEmpty::singleton(txid))
+                .await?;
+
+            Ok(())
         }
 
         /// Calculates, signs and broadcasts transactions from a stored proposal.
-        pub async fn complete_and_broadcast_stored_proposal(
-            &mut self,
-        ) -> Result<NonEmpty<TxId>, CompleteAndBroadcastStoredProposalError> {
+        pub async fn send_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, SendError> {
             if let Some(proposal) = self.latest_proposal.clone() {
                 match proposal {
                     ZingoProposal::Transfer(transfer_proposal) => {
-                        self.complete_and_broadcast::<NoteId>(&transfer_proposal)
-                            .await
+                        self.send::<NoteId>(&transfer_proposal).await
                     }
                     ZingoProposal::Shield(shield_proposal) => {
-                        self.complete_and_broadcast::<Infallible>(&shield_proposal)
-                            .await
+                        self.send::<Infallible>(&shield_proposal).await
                     }
                 }
-                .map_err(CompleteAndBroadcastStoredProposalError::CompleteAndBroadcast)
             } else {
-                Err(CompleteAndBroadcastStoredProposalError::NoStoredProposal)
+                Err(SendError::NoStoredProposal)
             }
         }
 
-        /// Creates, signs and broadcasts transactions from a transaction request without confirmation.
+        /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
         pub async fn quick_send(
             &mut self,
             request: TransactionRequest,
@@ -164,14 +81,14 @@ pub mod send_with_proposal {
                 .create_send_proposal(request)
                 .await?;
 
-            Ok(self.complete_and_broadcast::<NoteId>(&proposal).await?)
+            Ok(self.send::<NoteId>(&proposal).await?)
         }
 
-        /// Shields all transparent funds without confirmation.
+        /// Shields all transparent funds skipping proposal confirmation.
         pub async fn quick_shield(&mut self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.lock().await.create_shield_proposal().await?;
 
-            Ok(self.complete_and_broadcast::<Infallible>(&proposal).await?)
+            Ok(self.send::<Infallible>(&proposal).await?)
         }
     }
 
@@ -210,7 +127,7 @@ pub mod send_with_proposal {
             )
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            lc.complete_and_broadcast(&proposal).await.unwrap_err();
+            lc.send(&proposal).await.unwrap_err();
             // TODO: match on specific error
         }
 

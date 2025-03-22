@@ -1,5 +1,7 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
+use std::convert::Infallible;
+
 use pepper_sync::{error::ScanError, wallet::OutputId};
 use zcash_client_backend::PoolType;
 use zcash_keys::keys::DerivationError;
@@ -150,4 +152,112 @@ impl From<bip32::Error> for KeyError {
     fn from(value: bip32::Error) -> Self {
         Self::KeyDerivationError(DerivationError::Transparent(value))
     }
+}
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+pub enum TransmissionError {
+    #[error("Transmission failed. {0}")]
+    TransmissionFailed(String),
+    #[error("Transaction not found in the wallet: {0}")]
+    TransactionNotFound(TxId),
+    #[error(
+        "Transaction associated with given txid to transmit does not have `Calculated` status: {0}"
+    )]
+    IncorrectTransactionStatus(TxId),
+    /// Failed to read transaction.
+    #[error("Failed to read transaction.")]
+    TransactionRead,
+    /// Failed to write transaction.
+    #[error("Failed to write transaction.")]
+    TransactionWrite,
+    /// Conversion failed
+    #[error("Conversion failed. {0}")]
+    ConversionFailed(#[from] crate::utils::error::ConversionError),
+    /// No view capability
+    #[error("No view capability")]
+    NoViewCapability,
+    /// Txid reported by server does not match calculated txid.
+    #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
+    IncorrectTxidFromServer(TxId, TxId),
+    /// Failed to scan transmitted transaction..
+    #[error("Failed to scan transmitted transaction. {0}")]
+    SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
+}
+
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+pub enum CalculateTransactionError {
+    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
+    NoSpendCapability,
+    #[error("Could not load sapling_params: {0}")]
+    SaplingParams(String),
+    #[error("Could not find UnifiedSpendKey: {0}")]
+    UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
+    #[error("Failed to calculate transaction. {0}")]
+    Calculation(
+        #[from]
+        zcash_client_backend::data_api::error::Error<
+            WalletError,
+            std::convert::Infallible,
+            std::convert::Infallible,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
+    #[error("Only tex multistep transactions are supported!")]
+    NonTexMultiStep,
+}
+
+/// Errors that can result from do_propose
+#[derive(Debug, thiserror::Error)]
+pub enum ProposeSendError {
+    /// error in using trait to create spend proposal
+    #[error("{0}")]
+    Proposal(
+        zcash_client_backend::data_api::error::Error<
+            WalletError,
+            WalletError,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
+                zcash_primitives::transaction::fees::zip317::FeeError,
+                zcash_client_backend::wallet::NoteId,
+            >,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
+    /// failed to construct a transaction request
+    #[error("{0}")]
+    TransactionRequestFailed(#[from] zcash_client_backend::zip321::Zip321Error),
+    /// send all is transferring no value
+    #[error("send all is transferring no value. only enough funds to pay the fees!")]
+    ZeroValueSendAll,
+    /// failed to calculate balance.
+    #[error("failed to calculated balance. {0}")]
+    BalanceError(#[from] crate::wallet::error::BalanceError),
+}
+
+/// Errors that can result from do_propose
+#[allow(missing_docs)] // error types document themselves
+#[derive(Debug, thiserror::Error)]
+pub enum ProposeShieldError {
+    /// error in parsed addresses
+    #[error("{0}")]
+    Receiver(zcash_client_backend::zip321::Zip321Error),
+    /// error in using trait to create shielding proposal
+    #[error("{0}")]
+    Component(
+        zcash_client_backend::data_api::error::Error<
+            WalletError,
+            WalletError,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
+                zcash_primitives::transaction::fees::zip317::FeeError,
+                Infallible,
+            >,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+        >,
+    ),
+    #[error("not enough transparent funds to shield.")]
+    Insufficient,
+    /// Address parse error.
+    #[error("address parse error. {0}")]
+    AddressParseError(#[from] zcash_address::ParseError),
 }
