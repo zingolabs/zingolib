@@ -49,10 +49,7 @@ async fn shield_transparent() {
     println!("Initial proposal {:?}", proposal);
     println!("Shielding proposal {:?}", shielding_proposal);
 
-    recipient
-        .send_stored_proposal()
-        .await
-        .unwrap();
+    recipient.send_stored_proposal().await.unwrap();
     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
