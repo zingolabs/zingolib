@@ -1684,7 +1684,7 @@ impl Command for RemoveTransactionCommand {
             This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
             the "resend" command to attempt to re-transmit.
             This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them or resend. 
+            until the user decides to remove them or resend.
 
             usage:
             remove_transaction <txid>
