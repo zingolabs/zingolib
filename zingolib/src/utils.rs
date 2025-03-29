@@ -44,6 +44,7 @@ use tokio::io::AsyncWriteExt as _;
 use zcash_primitives::consensus::NetworkConstants;
 
 /// Take a P2PKH taddr and interpret it as a tex addr
+#[cfg(feature = "test-elevation")]
 pub fn interpret_taddr_as_tex_addr(
     taddr_bytes: [u8; 20],
     p: &impl zcash_primitives::consensus::Parameters,
@@ -59,14 +60,4 @@ pub fn interpret_taddr_as_tex_addr(
 pub(crate) async fn write_to_path(path: &Path, bytes: Vec<u8>) -> std::io::Result<()> {
     let mut file = tokio::fs::File::create(path).await?;
     file.write_all(&bytes).await
-}
-
-/// Return type for fns that poll the status of task handles.
-pub enum PollReport<T, E> {
-    /// Task has not been launched.
-    NoHandle,
-    /// Task is not complete.
-    NotReady,
-    /// Task has completed successfully or failed.
-    Ready(Result<T, E>),
 }

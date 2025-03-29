@@ -5,6 +5,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::WalletError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
+use send::SendProgress;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
@@ -51,9 +52,8 @@ pub mod sync;
 pub mod transaction;
 mod zcb_traits;
 
-pub(crate) use send::SendProgress;
-
 /// TODO: Add Doc Comment Here!
+// TODO: move to utils
 pub fn now() -> u32 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -230,11 +230,14 @@ impl LightWallet {
         self.sync_state = SyncState::new();
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Create a new in-memory wallet.
+    ///
+    /// For wallets from fresh entropy, it is worth considering setting `birthday` to 100 blocks below current height
+    /// of block chain to protect from re-orgs.
     pub fn new(
         network: ChainType,
         wallet_base: WalletBase,
-        height: BlockHeight,
+        birthday: BlockHeight,
     ) -> Result<Self, WalletError> {
         let (unified_key_store, mnemonic) = match wallet_base {
             WalletBase::FreshEntropy => {
@@ -242,13 +245,13 @@ impl LightWallet {
                 // Create a random seed.
                 let mut system_rng = OsRng;
                 system_rng.fill(&mut seed_bytes);
-                return Self::new(network, WalletBase::SeedBytes(seed_bytes), height);
+                return Self::new(network, WalletBase::SeedBytes(seed_bytes), birthday);
             }
             WalletBase::SeedBytes(seed_bytes) => {
                 return Self::new(
                     network,
                     WalletBase::SeedBytesAndAccount(seed_bytes, 0),
-                    height,
+                    birthday,
                 );
             }
             WalletBase::SeedBytesAndAccount(seed_bytes, account_index) => {
@@ -256,14 +259,14 @@ impl LightWallet {
                 return Self::new(
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
-                    height,
+                    birthday,
                 );
             }
             WalletBase::MnemonicPhrase(phrase) => {
                 return Self::new(
                     network,
                     WalletBase::MnemonicPhraseAndAccount(phrase, 0),
-                    height,
+                    birthday,
                 );
             }
             WalletBase::MnemonicPhraseAndAccount(phrase, account_index) => {
@@ -271,11 +274,15 @@ impl LightWallet {
                 return Self::new(
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
-                    height,
+                    birthday,
                 );
             }
             WalletBase::Mnemonic(mnemonic) => {
-                return Self::new(network, WalletBase::MnemonicAndAccount(mnemonic, 0), height);
+                return Self::new(
+                    network,
+                    WalletBase::MnemonicAndAccount(mnemonic, 0),
+                    birthday,
+                );
             }
             WalletBase::MnemonicAndAccount(mnemonic, account_index) => {
                 let unified_key_store =
@@ -323,7 +330,7 @@ impl LightWallet {
         Ok(Self {
             mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            birthday: BlockHeight::from_u32(height.into()),
+            birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),

@@ -164,22 +164,29 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
-    use crate::wallet::propose::ProposeShieldError;
+    use crate::{
+        config::ZingoConfigBuilder,
+        lightclient::LightClient,
+        wallet::{propose::ProposeShieldError, LightWallet, WalletBase},
+    };
 
-    async fn create_basic_client() -> crate::lightclient::LightClient {
-        crate::lightclient::LightClient::create_unconnected(
-            &crate::config::ZingoConfigBuilder::default().create(),
-            crate::wallet::WalletBase::MnemonicPhrase(
-                testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-            ),
-            0,
+    fn create_basic_client() -> LightClient {
+        let config = ZingoConfigBuilder::default().create();
+        LightClient::create_from_wallet(
+            LightWallet::new(
+                config.chain,
+                WalletBase::MnemonicPhrase(testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()),
+                0.into(),
+            )
+            .unwrap(),
+            config,
+            false,
         )
-        .await
         .unwrap()
     }
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
-        let basic_client = create_basic_client().await;
+        let basic_client = create_basic_client();
         let propose_shield_result = basic_client
             .wallet
             .lock()
@@ -195,7 +202,7 @@ mod shielding {
     }
     #[tokio::test]
     async fn get_transparent_addresses() {
-        let basic_client = create_basic_client().await;
+        let basic_client = create_basic_client();
         assert_eq!(
             basic_client.wallet.lock().await.get_transparent_addresses(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(

@@ -5,7 +5,7 @@ use zingolib::{
     get_base_address_macro,
     lightclient::LightClient,
     testutils::{increase_server_height, lightclient::from_inputs, scenarios},
-    wallet::WalletBase,
+    wallet::{LightWallet, WalletBase},
 };
 
 #[ignore = "temporary mainnet test for sync development"]
@@ -25,13 +25,16 @@ async fn sync_mainnet_test() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet_base_async(
-        WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
-        &config,
-        2_650_318,
+    let mut lightclient = LightClient::create_from_wallet(
+        LightWallet::new(
+            config.chain,
+            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
+            2_650_318.into(),
+        )
+        .unwrap(),
+        config,
         true,
     )
-    .await
     .unwrap();
 
     lightclient.sync_and_await().await.unwrap();
@@ -59,14 +62,16 @@ async fn sync_status() {
         zingolib::config::ChainType::Mainnet,
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet_base_async(
-        WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
-        &config,
-        // 2_750_000,
-        2_496_152,
+    let mut lightclient = LightClient::create_from_wallet(
+        LightWallet::new(
+            config.chain,
+            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
+            2_496_152.into(),
+        )
+        .unwrap(),
+        config,
         true,
     )
-    .await
     .unwrap();
 
     lightclient.sync_and_await().await.unwrap();

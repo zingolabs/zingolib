@@ -1,10 +1,7 @@
 #![allow(missing_docs)]
 #![forbid(unsafe_code)]
 //! ZingoLib
-//! Zingo backend code base
-//! Use this high level API to do things like submit transactions to the zcash blockchain
-
-pub use lightclient::describe::UAReceivers;
+//! Zingo backend library
 
 #[macro_use]
 extern crate rust_embed;
@@ -32,6 +29,7 @@ include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 pub struct SaplingParams;
 
 /// TODO: Add Doc Comment Here!
+// TODO:  use `get_latest_block` gRPC, also should be removed from zingolib, runtimes should be handled by consumers
 pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
     tokio::runtime::Runtime::new()
         .unwrap()

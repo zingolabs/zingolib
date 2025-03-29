@@ -27,12 +27,12 @@ use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
+use crate::lightclient::describe::UAReceivers;
 use crate::utils;
 
 use crate::wallet::error::BalanceError;
 
 use crate::wallet::LightWallet;
-use crate::UAReceivers;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
@@ -295,6 +295,7 @@ impl LightWallet {
     }
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
+    // TODO: move to summary
     pub async fn transaction_summaries(&self) -> TransactionSummaries {
         let mut transaction_summaries = self
             .wallet_transactions
@@ -354,11 +355,13 @@ impl LightWallet {
     }
 
     /// TODO: doc comment
+    // TODO: remove
     pub async fn transaction_summaries_json_string(&self) -> String {
         json::JsonValue::from(self.transaction_summaries().await).pretty(2)
     }
 
     // TODO: simplify type complexity
+    // TODO: move to summary
     #[allow(clippy::type_complexity)]
     fn basic_transaction_summary_parts(
         &self,
@@ -491,6 +494,7 @@ impl LightWallet {
 
     /// Provides a list of value transfers related to this capability
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
+    // TODO: move to summary
     pub async fn value_transfers(&self) -> ValueTransfers {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let summaries = self.transaction_summaries().await;
@@ -745,6 +749,7 @@ impl LightWallet {
 
     /// Provides a list of value transfers sorted
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
+    // TODO: move to summary
     pub async fn sorted_value_transfers(&self, newer_first: bool) -> ValueTransfers {
         let mut value_transfers = self.value_transfers().await;
         if newer_first {
@@ -754,6 +759,7 @@ impl LightWallet {
     }
 
     /// TODO: doc comment
+    // TODO: remove
     pub async fn value_transfers_json_string(&self) -> String {
         json::JsonValue::from(self.sorted_value_transfers(true).await).pretty(2)
     }

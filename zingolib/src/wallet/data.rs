@@ -55,6 +55,7 @@ pub mod finsight {
 /// A mod designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
 /// A "snapshot" of the state of the items in the wallet at the time the summary was constructed.
 /// Not to be used for internal logic in the system.
+// TODO: move to summary module and remove unecessary builders and bloat etc.
 pub mod summaries {
     use std::collections::HashMap;
 

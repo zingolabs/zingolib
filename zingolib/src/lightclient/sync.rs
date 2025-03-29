@@ -8,7 +8,7 @@ use pepper_sync::error::SyncError;
 use pepper_sync::wallet::SyncMode;
 use zingo_netutils::GetClientError;
 
-use crate::utils::PollReport;
+use crate::data::PollReport;
 
 use super::error::LightClientError;
 use super::LightClient;

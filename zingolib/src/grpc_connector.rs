@@ -29,6 +29,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 }
 
 /// TODO: Add Doc Comment Here!
+#[cfg(feature = "test-elevation")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
     let mut client = client
@@ -67,7 +68,7 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn send_transaction(
+pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,
 ) -> Result<String, String> {

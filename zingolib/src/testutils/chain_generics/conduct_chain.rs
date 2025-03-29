@@ -27,27 +27,18 @@ pub trait ConductChain {
     fn zingo_config(&mut self) -> crate::config::ZingoConfig;
 
     /// builds an empty client
-    async fn create_client(&mut self) -> LightClient {
-        let zingo_config = self.zingo_config();
-        LightClient::create_from_wallet_base_async(
-            crate::wallet::WalletBase::FreshEntropy,
-            &zingo_config,
-            0,
-            false,
-        )
-        .await
-        .unwrap()
+    fn create_client(&mut self) -> LightClient {
+        let config = self.zingo_config();
+        LightClient::new(config, 0.into(), false).unwrap()
     }
 
     /// loads a client from bytes
-    async fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        let network = config.chain;
-
-        LightClient::create_from_wallet_async(
+    fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
+        LightClient::create_from_wallet(
+            LightWallet::read(data, config.chain).unwrap(),
             config,
-            LightWallet::unsafe_from_buffer(network, data),
+            false,
         )
-        .await
         .unwrap()
     }
 
@@ -58,7 +49,7 @@ pub trait ConductChain {
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
         let mut faucet = self.create_faucet().await;
-        let mut recipient = self.create_client().await;
+        let mut recipient = self.create_client();
 
         self.bump_chain().await;
         faucet.sync_and_await().await.unwrap();

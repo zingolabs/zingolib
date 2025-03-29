@@ -28,8 +28,7 @@ async fn simple_sync() {
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -66,10 +65,11 @@ async fn reorg_receipt_sync_generic() {
         .unwrap();
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
-            .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-            .await;
+    let mut light_client = ClientBuilder::new(
+        server_id.clone(),
+        darkside_handler.darkside_dir.clone(),
+    )
+    .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -121,17 +121,14 @@ async fn sent_transaction_reorged_into_mempool() {
     let mut client_manager =
         ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client = client_manager
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
-        .await;
-    let mut recipient = client_manager
-        .build_client(
-            testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-            1,
-            true,
-            regtest_network,
-        )
-        .await;
+    let mut light_client =
+        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    let mut recipient = client_manager.build_client(
+        testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+        1,
+        true,
+        regtest_network,
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(

@@ -1,9 +1,8 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::data::proposal;
+use crate::data::{proposal, PollReport};
 use crate::lightclient::LightClient;
-use crate::utils::PollReport;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use indoc::indoc;
 use json::object;
@@ -429,12 +428,9 @@ impl Command for SendProgressCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move {
-            match lightclient.do_send_progress().await {
-                Ok(p) => p.to_json().pretty(2),
-                Err(e) => e,
-            }
-        })
+        RT.block_on(
+            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
+        )
     }
 }
 
