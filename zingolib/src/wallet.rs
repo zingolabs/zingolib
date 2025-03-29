@@ -232,7 +232,7 @@ impl LightWallet {
 
     /// Create a new in-memory wallet.
     ///
-    /// For wallets from fresh entropy, tt is worth considering setting `birthday` to 100 blocks below current height
+    /// For wallets from fresh entropy, it is worth considering setting `birthday` to 100 blocks below current height
     /// of block chain to protect from re-orgs.
     pub fn new(
         network: ChainType,
