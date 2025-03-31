@@ -14,6 +14,7 @@
 //! Wallet height - highest block height of blockchain known to the wallet. Commonly used to determine the chain height
 //!                 of the previous sync, before the server is contacted to update the wallet height to the new chain height.
 //! Fully scanned height - block height in which the wallet has completed scanning all blocks equal to and below this height.
+// TODO: detailed description
 
 pub(crate) mod client;
 pub mod error;
