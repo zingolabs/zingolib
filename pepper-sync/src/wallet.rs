@@ -826,6 +826,8 @@ impl NoteInterface for OrchardNote {
 pub trait OutgoingNoteInterface: Sized {
     /// Decrypted note type.
     type ZcashNote;
+    /// Address type.
+    type Address: Clone + Copy + Debug + PartialEq + Eq;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;
@@ -844,6 +846,9 @@ pub trait OutgoingNoteInterface: Sized {
 
     /// Memo.
     fn memo(&self) -> &Memo;
+
+    /// Recipient address.
+    fn recipient(&self) -> Self::Address;
 
     /// Recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
     fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress>;
@@ -882,6 +887,7 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 
 impl OutgoingNoteInterface for OutgoingSaplingNote {
     type ZcashNote = sapling_crypto::Note;
+    type Address = sapling_crypto::PaymentAddress;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
@@ -903,6 +909,10 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn recipient(&self) -> Self::Address {
+        self.note.recipient()
     }
 
     fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {
@@ -938,6 +948,7 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 
 impl OutgoingNoteInterface for OutgoingOrchardNote {
     type ZcashNote = orchard::Note;
+    type Address = orchard::Address;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
@@ -959,6 +970,10 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn recipient(&self) -> Self::Address {
+        self.note.recipient()
     }
 
     fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {

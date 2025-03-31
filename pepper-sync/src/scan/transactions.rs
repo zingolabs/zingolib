@@ -13,6 +13,7 @@ use sapling_crypto::{
 };
 use tokio::sync::mpsc;
 
+use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
@@ -26,11 +27,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
-    keys::{
-        self,
-        transparent::{self, TransparentAddressId},
-        KeyId,
-    },
+    keys::{self, transparent::TransparentAddressId, KeyId},
     wallet::traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
     wallet::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
@@ -473,30 +470,31 @@ fn parse_encoded_memos<N, Nf: Copy>(
     Ok(encoded_memos)
 }
 
-// TODO: consider comparing types instead of encoding to string
 fn add_recipient_unified_address<P, Nz>(
-    parameters: &P,
+    consensus_parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
     outgoing_notes: &mut [OutgoingNote<Nz>],
 ) where
     P: consensus::Parameters + NetworkConstants,
     OutgoingNote<Nz>: OutgoingNoteInterface,
 {
-    for ua in unified_addresses {
-        let ua_receivers = [
-            keys::encode_orchard_receiver(parameters, ua.orchard().unwrap()).unwrap(),
-            zcash_keys::encoding::encode_payment_address(
-                parameters.hrp_sapling_payment_address(),
-                ua.sapling().unwrap(),
-            ),
-            transparent::encode_address(parameters, *ua.transparent().unwrap()),
-            ua.encode(parameters),
-        ];
+    for unified_address in unified_addresses {
+        let encoded_address = match <OutgoingNote<Nz>>::SHIELDED_PROTOCOL {
+            ShieldedProtocol::Sapling => unified_address.sapling().map(|address| {
+                zcash_keys::encoding::encode_payment_address(
+                    consensus_parameters.hrp_sapling_payment_address(),
+                    address,
+                )
+            }),
+            ShieldedProtocol::Orchard => unified_address.orchard().map(|address| {
+                keys::encode_orchard_receiver(consensus_parameters, address).unwrap()
+            }),
+        };
         outgoing_notes
             .iter_mut()
-            .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
+            .filter(|note| encoded_address == Some(note.encoded_recipient(consensus_parameters)))
             .for_each(|note| {
-                note.recipient_full_unified_address = Some(ua.clone());
+                note.recipient_full_unified_address = Some(unified_address.clone());
             });
     }
 }
