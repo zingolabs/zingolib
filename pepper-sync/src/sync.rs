@@ -6,11 +6,10 @@ use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use error::MempoolError;
-use incrementalmerkletree::{Marking, Retention};
-use shardtree::store::ShardStore as _;
 use tokio::sync::{mpsc, Mutex};
 
+use incrementalmerkletree::{Marking, Retention};
+use shardtree::store::ShardStore;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
@@ -35,9 +34,10 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncResult, SyncState, SyncStatus};
+use error::MempoolError;
 
 #[cfg(not(feature = "darkside_test"))]
-use {crate::witness, shardtree::store::ShardStore};
+use crate::witness;
 
 pub mod error;
 pub(crate) mod spend;

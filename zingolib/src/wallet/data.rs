@@ -57,8 +57,6 @@ pub mod finsight {
 /// Not to be used for internal logic in the system.
 // TODO: move to summary module and remove unecessary builders and bloat etc.
 pub mod summaries {
-    use std::collections::HashMap;
-
     use chrono::DateTime;
     use json::JsonValue;
     use pepper_sync::keys::KeyId;
@@ -272,72 +270,6 @@ pub mod summaries {
         pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
             ValueTransfers(value_transfers)
         }
-
-        /// Creates value transfers for all notes in a transaction that are sent to another
-        /// recipient.  A value transfer is a group of all notes to a specific receiver in a transaction.
-        /// The value transfer list is sorted by the output index of the notes.
-        pub fn create_send_value_transfers(
-            transaction_summary: &TransactionSummary,
-        ) -> Vec<ValueTransfer> {
-            let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-            let outgoing_notes = transaction_summary
-                .outgoing_orchard_notes
-                .iter()
-                .chain(transaction_summary.outgoing_sapling_notes.iter())
-                .collect::<Vec<_>>();
-            let mut addresses = HashMap::with_capacity(outgoing_notes.len());
-            outgoing_notes.iter().for_each(|note| {
-                let address = if let Some(ua) = note.recipient_unified_address.clone() {
-                    ua
-                } else {
-                    note.recipient.clone()
-                };
-                // hash map is used to create unique list of addresses as duplicates are not inserted twice
-                addresses.insert(address, note.output_index);
-            });
-            let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
-            addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
-            addresses_vec.iter().for_each(|(address, _output_index)| {
-                let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
-                    .iter()
-                    .filter(|&&note| {
-                        let query_address = if let Some(ua) = note.recipient_unified_address.clone()
-                        {
-                            ua
-                        } else {
-                            note.recipient.clone()
-                        };
-                        query_address == *address
-                    })
-                    .cloned()
-                    .collect();
-                let value: u64 = outgoing_notes_to_address
-                    .iter()
-                    .map(|&note| note.value)
-                    .sum();
-                let memos: Vec<String> = outgoing_notes_to_address
-                    .iter()
-                    .filter_map(|&note| note.memo.clone())
-                    .collect();
-                value_transfers.push(
-                    ValueTransferBuilder::new()
-                        .txid(transaction_summary.txid())
-                        .datetime(transaction_summary.datetime())
-                        .status(transaction_summary.status())
-                        .blockheight(transaction_summary.blockheight())
-                        .transaction_fee(transaction_summary.fee())
-                        .zec_price(transaction_summary.zec_price())
-                        .kind(ValueTransferKind::Sent(SentValueTransfer::Send))
-                        .value(value)
-                        .recipient_address(Some(address.clone()))
-                        .pool_received(None)
-                        .memos(memos)
-                        .build()
-                        .expect("all fields should be populated"),
-                );
-            });
-            value_transfers
-        }
     }
 
     impl std::fmt::Display for ValueTransfers {
@@ -473,7 +405,6 @@ pub mod summaries {
         SendToSelf(SelfSendValueTransfer),
     }
     /// There are 4 kinds of self sends (so far)
-    #[non_exhaustive]
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum SelfSendValueTransfer {
         /// Explicit memo-less value sent to self
@@ -493,7 +424,7 @@ pub mod summaries {
                 ValueTransferKind::Sent(sent) => match sent {
                     SentValueTransfer::Send => write!(f, "sent"),
                     SentValueTransfer::SendToSelf(selfsend) => match selfsend {
-                        SelfSendValueTransfer::Basic => write!(f, "basic"),
+                        SelfSendValueTransfer::Basic => write!(f, "send-to-self"),
                         SelfSendValueTransfer::Shield => write!(f, "shield"),
                         SelfSendValueTransfer::MemoToSelf => write!(f, "memo-to-self"),
                         SelfSendValueTransfer::Rejection => write!(f, "rejection"),
@@ -974,6 +905,7 @@ pub mod summaries {
     /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
     /// A "snapshot" of the state of the output in the wallet at the time the summary was constructed.
     /// Not to be used for internal logic in the system.
+    // TODO: add scope to distinguish "refund" scope value transfers
     #[derive(Clone, PartialEq, Debug)]
     pub struct BasicCoinSummary {
         value: u64,

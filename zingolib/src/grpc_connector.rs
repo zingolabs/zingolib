@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use tonic::Request;
 
-use zcash_client_backend::proto::service::{
-    BlockId, ChainSpec, Empty, LightdInfo, RawTransaction, TreeState,
-};
+use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
+
+#[cfg(feature = "test-elevation")]
+use zcash_client_backend::proto::service::TreeState;
 
 pub(crate) use zingo_netutils::GrpcConnector;
 

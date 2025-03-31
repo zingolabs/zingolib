@@ -426,7 +426,7 @@ where
                 key_id: key_ids[key_index],
                 note,
                 memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
-                recipient_unified_address: None,
+                recipient_full_unified_address: None,
             });
         }
     }
@@ -496,7 +496,7 @@ fn add_recipient_unified_address<P, Nz>(
             .iter_mut()
             .filter(|note| ua_receivers.contains(&note.encoded_recipient(parameters)))
             .for_each(|note| {
-                note.recipient_unified_address = Some(ua.clone());
+                note.recipient_full_unified_address = Some(ua.clone());
             });
     }
 }

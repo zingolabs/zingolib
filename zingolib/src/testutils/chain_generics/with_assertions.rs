@@ -295,7 +295,7 @@ where
 
     Ok((
         sender_confirmed_fees.iter().sum(),
-        recipients_confirmed_outputs.into_iter().flatten().sum(), // this construction is problematic, because receivers are often duplicates
+        recipients_confirmed_outputs.into_iter().flatten().sum(),
         sender_confirmed_outputs.iter().sum(), // this construction will be problematic when 2-step transactions mean some value is received and respent.
     ))
 }
