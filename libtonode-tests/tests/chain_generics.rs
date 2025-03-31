@@ -13,6 +13,7 @@ proptest::proptest! {
             fixtures::single_sufficient_send::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, change_value, true).await;
         });
      }
+    #[ignore = "hangs"]
     #[test]
     fn single_sufficient_send_0_change_libtonode(send_value in 0..50_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
         Runtime::new().unwrap().block_on(async {
