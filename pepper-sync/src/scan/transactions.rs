@@ -94,13 +94,18 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             panic!("transaction txid does not match txid requested!")
         }
 
-        // wallet block must exist, otherwise the transaction will not have access to essential data such as the time it was mined
-        let wallet_block = wallet_blocks
-            .get(&block_height)
-            .expect("wallet block should exist at transaction height!");
-        if !wallet_block.txids().contains(&transaction.txid()) {
-            panic!("txid is not found in the wallet block at the transaction height!");
-        }
+        let wallet_block = if let Some(wallet_block) = wallet_blocks.get(&block_height) {
+            wallet_block.clone()
+        } else {
+            WalletBlock::from_compact_block(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &client::get_compact_block(fetch_request_sender.clone(), block_height)
+                    .await
+                    .unwrap(),
+            )
+            .await
+        };
 
         let confirmation_status = ConfirmationStatus::Confirmed(block_height);
         let wallet_transaction = scan_transaction(

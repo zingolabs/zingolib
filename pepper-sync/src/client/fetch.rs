@@ -107,12 +107,17 @@ async fn fetch_from_server(
             let block_id = get_latest_block(client).await.unwrap();
             sender.send(block_id).unwrap();
         }
+        FetchRequest::CompactBlock(sender, block_height) => {
+            tracing::debug!("Fetching compact block. {:?}", &block_height);
+            let block = get_block(client, block_height).await.unwrap();
+            sender.send(block).unwrap();
+        }
         FetchRequest::CompactBlockRange(sender, block_range) => {
             tracing::debug!("Fetching compact blocks. {:?}", &block_range);
             let block_stream = get_block_range(client, block_range).await.unwrap();
             sender.send(block_stream).unwrap();
         }
-        FetchRequest::GetSubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
+        FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
             tracing::debug!(
                 "Fetching subtree roots. start index: {}. shielded protocol: {}",
                 start_index,
@@ -168,6 +173,18 @@ async fn get_latest_block(
     let request = tonic::Request::new(ChainSpec {});
 
     Ok(client.get_latest_block(request).await.unwrap().into_inner())
+}
+
+async fn get_block(
+    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    block_height: BlockHeight,
+) -> Result<CompactBlock, ()> {
+    let request = tonic::Request::new(BlockId {
+        height: u64::from(block_height),
+        hash: vec![],
+    });
+
+    Ok(client.get_block(request).await.unwrap().into_inner())
 }
 
 async fn get_block_range(

@@ -23,7 +23,7 @@ use self::{
     compact_blocks::scan_compact_blocks, error::ScanError, transactions::scan_transactions,
 };
 
-mod compact_blocks;
+pub(crate) mod compact_blocks;
 pub mod error;
 pub(crate) mod task;
 pub(crate) mod transactions;

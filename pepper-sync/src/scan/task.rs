@@ -31,7 +31,7 @@ use crate::{
     MAX_BATCH_OUTPUTS,
 };
 
-use super::{compact_blocks::calculate_block_tree_bounds, error::ScanError, scan, ScanResults};
+use super::{error::ScanError, scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 
@@ -346,47 +346,25 @@ where
                     }
 
                     if first_batch {
-                        let tree_bounds = calculate_block_tree_bounds(
-                            &consensus_parameters,
-                            fetch_request_sender.clone(),
-                            &compact_block,
-                        )
-                        .await;
-
-                        previous_task_first_block = Some(WalletBlock {
-                            block_height: compact_block.height(),
-                            block_hash: compact_block.hash(),
-                            prev_hash: compact_block.prev_hash(),
-                            time: compact_block.time,
-                            txids: compact_block
-                                .vtx
-                                .iter()
-                                .map(|transaction| transaction.txid())
-                                .collect(),
-                            tree_bounds,
-                        });
+                        previous_task_first_block = Some(
+                            WalletBlock::from_compact_block(
+                                &consensus_parameters,
+                                fetch_request_sender.clone(),
+                                &compact_block,
+                            )
+                            .await,
+                        );
                         first_batch = false;
                     }
                     if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        let tree_bounds = calculate_block_tree_bounds(
-                            &consensus_parameters,
-                            fetch_request_sender.clone(),
-                            &compact_block,
-                        )
-                        .await;
-
-                        previous_task_last_block = Some(WalletBlock {
-                            block_height: compact_block.height(),
-                            block_hash: compact_block.hash(),
-                            prev_hash: compact_block.prev_hash(),
-                            time: compact_block.time,
-                            txids: compact_block
-                                .vtx
-                                .iter()
-                                .map(|transaction| transaction.txid())
-                                .collect(),
-                            tree_bounds,
-                        });
+                        previous_task_last_block = Some(
+                            WalletBlock::from_compact_block(
+                                &consensus_parameters,
+                                fetch_request_sender.clone(),
+                                &compact_block,
+                            )
+                            .await,
+                        );
                     }
 
                     sapling_output_count += compact_block
@@ -615,15 +593,12 @@ impl ScanTask {
     /// Splits a scan task into two at `block_height`.
     ///
     /// Panics if `block_height` is not contained in the scan task's block range.
-    async fn split<P>(
+    async fn split(
         self,
-        consensus_parameters: &P,
+        consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block_height: BlockHeight,
-    ) -> Result<(Self, Self), ()>
-    where
-        P: consensus::Parameters + Sync + Send + 'static,
-    {
+    ) -> Result<(Self, Self), ()> {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {
@@ -645,45 +620,26 @@ impl ScanTask {
             lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
-            let tree_bounds = calculate_block_tree_bounds(
-                consensus_parameters,
-                fetch_request_sender.clone(),
-                block,
+            Some(
+                WalletBlock::from_compact_block(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    block,
+                )
+                .await,
             )
-            .await;
-
-            Some(WalletBlock {
-                block_height: block.height(),
-                block_hash: block.hash(),
-                prev_hash: block.prev_hash(),
-                time: block.time,
-                txids: block
-                    .vtx
-                    .iter()
-                    .map(|transaction| transaction.txid())
-                    .collect(),
-                tree_bounds,
-            })
         } else {
             None
         };
         let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
-            let tree_bounds =
-                calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block)
-                    .await;
-
-            Some(WalletBlock {
-                block_height: block.height(),
-                block_hash: block.hash(),
-                prev_hash: block.prev_hash(),
-                time: block.time,
-                txids: block
-                    .vtx
-                    .iter()
-                    .map(|transaction| transaction.txid())
-                    .collect(),
-                tree_bounds,
-            })
+            Some(
+                WalletBlock::from_compact_block(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    block,
+                )
+                .await,
+            )
         } else {
             None
         };

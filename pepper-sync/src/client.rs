@@ -37,6 +37,8 @@ pub(crate) mod fetch;
 pub(crate) enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<BlockId>),
+    /// Gets  a compact block of the given block height.
+    CompactBlock(oneshot::Sender<CompactBlock>, BlockHeight),
     /// Gets the specified range of compact blocks from the server (end exclusive).
     CompactBlockRange(
         oneshot::Sender<tonic::Streaming<CompactBlock>>,
@@ -58,7 +60,7 @@ pub(crate) enum FetchRequest {
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
-    GetSubtreeRoots(
+    SubtreeRoots(
         oneshot::Sender<tonic::Streaming<SubtreeRoot>>,
         u32,
         i32,
@@ -79,6 +81,21 @@ pub(crate) async fn get_chain_height(
     let chain_tip = reply_receiver.await.unwrap();
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
+}
+
+/// Gets the specified range of compact blocks from the server (end exclusive).
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub(crate) async fn get_compact_block(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    block_height: BlockHeight,
+) -> Result<CompactBlock, ()> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::CompactBlock(reply_sender, block_height))
+        .unwrap();
+
+    Ok(reply_receiver.await.unwrap())
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -109,7 +126,7 @@ pub(crate) async fn get_subtree_roots(
 ) -> Result<Vec<SubtreeRoot>, ()> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
-        .send(FetchRequest::GetSubtreeRoots(
+        .send(FetchRequest::SubtreeRoots(
             reply_sender,
             start_index,
             shielded_protocol,
