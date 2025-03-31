@@ -33,7 +33,7 @@ use crate::scan::ScanResults;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
-use crate::wallet::{Locator, NullifierMap, SyncMode, SyncResult, SyncState, SyncStatus};
+use crate::wallet::{Locator, NullifierMap, SyncMode, SyncState};
 use error::MempoolError;
 
 #[cfg(not(feature = "darkside_test"))]
@@ -46,6 +46,111 @@ pub(crate) mod transparent;
 
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+
+/// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
+///
+/// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct SyncStatus {
+    pub scan_ranges: Vec<ScanRange>,
+    pub sync_start_height: BlockHeight,
+    pub scanned_blocks: u32,
+    pub unscanned_blocks: u32,
+    pub percentage_blocks_scanned: f32,
+    pub scanned_sapling_outputs: u32,
+    pub unscanned_sapling_outputs: u32,
+    pub scanned_orchard_outputs: u32,
+    pub unscanned_orchard_outputs: u32,
+    pub percentage_outputs_scanned: f32,
+}
+
+// TODO: complete display, scan ranges in raw form are too verbose
+impl std::fmt::Display for SyncStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                scanned blocks: {}
+                percentage complete: {}
+            }}",
+            self.scanned_blocks, self.percentage_outputs_scanned
+        )
+    }
+}
+
+impl From<SyncStatus> for json::JsonValue {
+    fn from(value: SyncStatus) -> Self {
+        let scan_ranges: Vec<json::JsonValue> = value
+            .scan_ranges
+            .iter()
+            .map(|range| {
+                json::object! {
+                    "priority" => format!("{:?}", range.priority()),
+                    "start_block" => range.block_range().start.to_string(),
+                    "end_block" => (range.block_range().end - 1).to_string(),
+                }
+            })
+            .collect();
+
+        json::object! {
+            "scan_ranges" => scan_ranges,
+            "sync_start_height" => u32::from(value.sync_start_height),
+            "scanned_blocks" => value.scanned_blocks,
+            "unscanned_blocks" => value.unscanned_blocks,
+            "percentage_blocks_scanned" => value.percentage_blocks_scanned,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "unscanned_sapling_outputs" => value.unscanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+            "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
+            "percentage_outputs_scanned" => value.percentage_outputs_scanned,
+        }
+    }
+}
+
+/// Returned when [`crate::sync::sync`] successfully completes.
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub struct SyncResult {
+    pub sync_start_height: BlockHeight,
+    pub sync_end_height: BlockHeight,
+    pub scanned_blocks: u32,
+    pub scanned_sapling_outputs: u32,
+    pub scanned_orchard_outputs: u32,
+}
+
+impl std::fmt::Display for SyncResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Sync completed succesfully:
+{{
+    sync start height: {}
+    sync end height: {}
+    scanned blocks: {}
+    scanned sapling outputs: {}
+    scanned orchard outputs: {}
+}}",
+            self.sync_start_height,
+            self.sync_end_height,
+            self.scanned_blocks,
+            self.scanned_sapling_outputs,
+            self.scanned_orchard_outputs
+        )
+    }
+}
+
+impl From<SyncResult> for json::JsonValue {
+    fn from(value: SyncResult) -> Self {
+        json::object! {
+            "sync_start_height" => u32::from(value.sync_start_height),
+            "sync_end_height" => u32::from(value.sync_end_height),
+            "scanned_blocks" => value.scanned_blocks,
+            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
+            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+        }
+    }
+}
 
 /// Syncs a wallet to the latest state of the blockchain.
 ///
@@ -288,7 +393,7 @@ where
     })
 }
 
-/// Obtains the mutex guard to the wallet and creates a [`crate::wallet::SyncStatus`] from the wallet's current
+/// Creates a [`self::SyncStatus`] from the wallet's current
 /// [`crate::wallet::SyncState`].
 ///
 /// Designed to be called during the sync process with minimal interruption.
