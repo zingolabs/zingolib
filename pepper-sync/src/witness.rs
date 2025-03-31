@@ -4,11 +4,13 @@ use std::collections::BTreeMap;
 
 use incrementalmerkletree::{Position, Retention};
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{store::ShardStore, LocatedPrunableTree};
-use zcash_client_backend::proto::service::SubtreeRoot;
+use shardtree::LocatedPrunableTree;
 use zcash_primitives::consensus::BlockHeight;
 
 use crate::MAX_BATCH_OUTPUTS;
+
+#[cfg(not(feature = "darkside_test"))]
+use {shardtree::store::ShardStore, zcash_client_backend::proto::service::SubtreeRoot};
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
 const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
@@ -93,6 +95,7 @@ where
     Ok(located_tree_data)
 }
 
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_roots: Vec<SubtreeRoot>,
     shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
@@ -120,16 +123,19 @@ pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
 }
 
 /// Allows generic construction of a shardtree node from raw byte representation
+#[cfg(not(feature = "darkside_test"))]
 pub(crate) trait FromBytes<const N: usize> {
     fn from_bytes(array: [u8; N]) -> Self;
 }
 
+#[cfg(not(feature = "darkside_test"))]
 impl FromBytes<32> for orchard::tree::MerkleHashOrchard {
     fn from_bytes(array: [u8; 32]) -> Self {
         Self::from_bytes(&array).unwrap()
     }
 }
 
+#[cfg(not(feature = "darkside_test"))]
 impl FromBytes<32> for sapling_crypto::Node {
     fn from_bytes(array: [u8; 32]) -> Self {
         Self::from_bytes(array).unwrap()

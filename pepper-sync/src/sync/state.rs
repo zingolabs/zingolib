@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
-    proto::service::SubtreeRoot,
     ShieldedProtocol,
 };
 use zcash_primitives::{
@@ -27,6 +26,9 @@ use crate::{
 };
 
 use super::{checked_birthday, VERIFY_BLOCK_RANGE_SIZE};
+
+#[cfg(not(feature = "darkside_test"))]
+use zcash_client_backend::proto::service::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -135,6 +137,55 @@ fn merge_scanned_ranges(sync_state: &mut SyncState) {
                 end: last_range.block_range().end,
             },
             ScanPriority::Scanned,
+        )],
+    );
+}
+
+/// Merges all ranges with `Verify` priority.
+///
+/// Panics if verification ranges are not contiguous as this should not be possible.
+pub(super) fn merge_verification_ranges(sync_state: &mut SyncState) {
+    let verification_ranges = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter(|(_, scan_range)| scan_range.priority() == ScanPriority::Verify)
+        .collect::<Vec<_>>();
+
+    if verification_ranges.is_empty() || verification_ranges.len() == 1 {
+        return;
+    }
+
+    let mut peekable_ranges = verification_ranges
+        .iter()
+        .map(|(_, range)| range.clone())
+        .peekable();
+    while let Some(range) = peekable_ranges.next() {
+        if let Some(next_range) = peekable_ranges.peek() {
+            if range.block_range().end != next_range.block_range().start {
+                panic!("verification ranges not contiguous!")
+            }
+        }
+    }
+
+    let (first_range_index, first_range) = verification_ranges
+        .first()
+        .expect("fn would have returned if empty")
+        .clone();
+    let (last_range_index, last_range) = verification_ranges
+        .last()
+        .expect("fn would have returned if empty")
+        .clone();
+
+    sync_state.scan_ranges.splice(
+        first_range_index..=last_range_index,
+        vec![ScanRange::from_parts(
+            Range {
+                start: first_range.block_range().start,
+                end: last_range.block_range().end,
+            },
+            ScanPriority::Verify,
         )],
     );
 }
@@ -819,6 +870,7 @@ where
 ///
 /// The network upgrade activation height for the `shielded_protocol` is the first shard start height for the case
 /// where shard ranges in `sync_state` are empty.
+#[cfg(not(feature = "darkside_test"))]
 pub(super) fn add_shard_ranges(
     consensus_parameters: &impl consensus::Parameters,
     shielded_protocol: ShieldedProtocol,

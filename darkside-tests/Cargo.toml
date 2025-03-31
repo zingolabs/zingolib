@@ -9,7 +9,6 @@ chain_generic_tests = []
 
 [dependencies]
 zingolib = { path = "../zingolib", features = ["darkside_tests"] }
-pepper-sync = { path = "../pepper-sync" }
 zingo-netutils = { path = "../zingo-netutils" }
 zingo-status = { path = "../zingo-status" }
 testvectors = { path = "../testvectors" }
@@ -35,6 +34,9 @@ zcash_client_backend = { workspace = true }
 serde_json = { workspace = true }
 sapling-crypto.workspace = true
 proptest = { workspace = true }
+
+# Logging
+tracing-subscriber.workspace = true
 
 [build-dependencies]
 tonic-build = { workspace = true }

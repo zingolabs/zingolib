@@ -15,6 +15,7 @@ use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
 
+#[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
     let darkside_handler = DarksideHandler::new(None);
@@ -30,7 +31,7 @@ async fn simple_sync() {
     let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
 
-    let result = light_client.sync_and_await().await.unwrap();
+    let result = light_client.sync_and_await(false).await.unwrap();
 
     println!("{}", result);
 
@@ -52,6 +53,7 @@ async fn simple_sync() {
     );
 }
 
+#[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
     let darkside_handler = DarksideHandler::new(None);
@@ -70,7 +72,7 @@ async fn reorg_receipt_sync_generic() {
         darkside_handler.darkside_dir.clone(),
     )
     .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
-    light_client.sync_and_await().await.unwrap();
+    light_client.sync_and_await(false).await.unwrap();
 
     assert_eq!(
         light_client.do_balance().await,
@@ -89,7 +91,7 @@ async fn reorg_receipt_sync_generic() {
     prepare_darksidewalletd(server_id.clone(), false)
         .await
         .unwrap();
-    light_client.sync_and_await().await.unwrap();
+    light_client.sync_and_await(false).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -106,6 +108,7 @@ async fn reorg_receipt_sync_generic() {
     );
 }
 
+#[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
     let darkside_handler = DarksideHandler::new(None);
@@ -130,7 +133,7 @@ async fn sent_transaction_reorged_into_mempool() {
         regtest_network,
     );
 
-    light_client.sync_and_await().await.unwrap();
+    light_client.sync_and_await(false).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -152,7 +155,7 @@ async fn sent_transaction_reorged_into_mempool() {
     .await
     .unwrap();
     println!("{}", one_txid.first());
-    recipient.sync_and_await().await.unwrap();
+    recipient.sync_and_await(false).await.unwrap();
 
     let connector = DarksideConnector(server_id.clone());
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
@@ -168,7 +171,7 @@ async fn sent_transaction_reorged_into_mempool() {
     connector.apply_staged(4).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    recipient.sync_and_await().await.unwrap();
+    recipient.sync_and_await(false).await.unwrap();
     //  light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient pre-reorg: {}",
@@ -187,8 +190,8 @@ async fn sent_transaction_reorged_into_mempool() {
     connector.apply_staged(105).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    recipient.sync_and_await().await.unwrap();
-    light_client.sync_and_await().await.unwrap();
+    recipient.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await(false).await.unwrap();
     println!(
         "Recipient post-reorg: {}",
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
@@ -201,7 +204,7 @@ async fn sent_transaction_reorged_into_mempool() {
         zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
             .await
             .unwrap();
-    loaded_client.sync_and_await().await.unwrap();
+    loaded_client.sync_and_await(false).await.unwrap();
     assert_eq!(
         loaded_client.do_balance().await.orchard_balance,
         Some(100000000)

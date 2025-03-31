@@ -16,13 +16,15 @@ use crate::utils::scenarios::DarksideEnvironment;
 
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(4))]
+    #[ignore = "darkside bug, invalid block hash length in tree states"]
     #[test]
-    fn single_sufficient_send_darkside(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 1..2) {
+        fn single_sufficient_send_darkside(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 1..2) {
         // note: this darkside test does not check the mempool
         Runtime::new().unwrap().block_on(async {
             fixtures::single_sufficient_send::<DarksideEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, change_value, false).await;
         });
      }
+    #[ignore = "darkside bug, invalid block hash length in tree states"]
     #[test]
     fn single_sufficient_send_0_change_darkside(send_value in 0..50_000u64, sender_protocol in 1..2, receiver_pool in 1..2) {
         Runtime::new().unwrap().block_on(async {

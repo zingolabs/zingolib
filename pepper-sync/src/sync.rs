@@ -8,9 +8,9 @@ use std::time::{Duration, SystemTime};
 
 use error::MempoolError;
 use incrementalmerkletree::{Marking, Retention};
+use shardtree::store::ShardStore as _;
 use tokio::sync::{mpsc, Mutex};
 
-use shardtree::store::ShardStore;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
@@ -35,7 +35,9 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{Locator, NullifierMap, SyncMode, SyncResult, SyncState, SyncStatus};
-use crate::witness;
+
+#[cfg(not(feature = "darkside_test"))]
+use {crate::witness, shardtree::store::ShardStore};
 
 pub mod error;
 pub(crate) mod spend;
@@ -52,12 +54,19 @@ pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 /// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
 /// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
 /// scanning when the wallet guard is next available.
+///
+/// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
+/// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
+/// above the in-use address with the highest address index for each scope and account is determined by
+/// the address gap limit. If `transparent_address_discovery` is disabled, only transactions
+/// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
 // TODO: setting sync_mode to `NotRunning` should kill the sync task immediately.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
     sync_mode: Arc<AtomicU8>,
+    transparent_address_discovery: bool,
 ) -> Result<SyncResult, SyncError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -123,16 +132,19 @@ where
 
     let ufvks = wallet_guard.get_unified_full_viewing_keys().unwrap();
 
-    transparent::update_addresses_and_locators(
-        consensus_parameters,
-        &mut *wallet_guard,
-        fetch_request_sender.clone(),
-        &ufvks,
-        wallet_height,
-        chain_height,
-    )
-    .await;
+    if transparent_address_discovery {
+        transparent::update_addresses_and_locators(
+            consensus_parameters,
+            &mut *wallet_guard,
+            fetch_request_sender.clone(),
+            &ufvks,
+            wallet_height,
+            chain_height,
+        )
+        .await;
+    }
 
+    #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -361,6 +373,7 @@ pub fn scan_pending_transaction<W>(
     let pending_transaction = scan_transaction(
         consensus_parameters,
         ufvks,
+        transaction.txid(),
         transaction,
         status,
         None,
@@ -483,21 +496,31 @@ where
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
-            tracing::info!("Re-org detected.");
-            if height == scan_range.block_range().start {
-                // error handling in case of re-org where first block prev_hash in scan range does not match previous wallet block hash
+            if height == scan_range.block_range().start
+                && scan_range.priority() == ScanPriority::Verify
+            {
+                tracing::info!("Re-org detected.");
                 let sync_state = wallet.get_sync_state_mut().unwrap();
+                let wallet_height = sync_state
+                    .wallet_height()
+                    .expect("scan ranges should be non-empty in this scope");
+
+                // reset scan range from `Ignored` to `Verify`
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
-                    scan_range.priority(),
+                    ScanPriority::Verify,
                 )
-                .unwrap(); // reset scan range to initial priority in wallet sync state
+                .unwrap();
+
+                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verifaction range
                 let scan_range_to_verify = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
                 );
+                state::merge_verification_ranges(sync_state);
+
                 truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1).unwrap();
 
                 if initial_verification_height - scan_range_to_verify.block_range().start
@@ -508,6 +531,14 @@ where
                         MAX_VERIFICATION_WINDOW
                     );
                 }
+
+                state::set_initial_state(
+                    consensus_parameters,
+                    fetch_request_sender.clone(),
+                    wallet,
+                    wallet_height,
+                )
+                .await;
             } else {
                 scan_results?;
             }
@@ -571,14 +602,28 @@ async fn process_mempool_transaction<W>(
 /// Removes all wallet data above the given `truncate_height`.
 fn truncate_wallet_data<W>(wallet: &mut W, truncate_height: BlockHeight) -> Result<(), ()>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
-    wallet.truncate_wallet_blocks(truncate_height).unwrap();
+    let birthday = wallet
+        .get_sync_state()
+        .unwrap()
+        .wallet_birthday()
+        .expect("should be non-empty in this scope");
+    let checked_truncate_height = match truncate_height.cmp(&birthday) {
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
+        std::cmp::Ordering::Less => birthday,
+    };
+
     wallet
-        .truncate_wallet_transactions(truncate_height)
+        .truncate_wallet_blocks(checked_truncate_height)
         .unwrap();
-    wallet.truncate_nullifiers(truncate_height).unwrap();
-    wallet.truncate_shard_trees(truncate_height).unwrap();
+    wallet
+        .truncate_wallet_transactions(checked_truncate_height)
+        .unwrap();
+    wallet.truncate_nullifiers(checked_truncate_height).unwrap();
+    wallet
+        .truncate_shard_trees(checked_truncate_height)
+        .unwrap();
 
     Ok(())
 }
@@ -699,6 +744,7 @@ where
     Ok(())
 }
 
+#[cfg(not(feature = "darkside_test"))]
 async fn update_subtree_roots<W>(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,

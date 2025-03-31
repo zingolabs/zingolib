@@ -383,7 +383,7 @@ impl Command for SyncCommand {
                     lightclient.resume_sync();
                     "Resuming sync task...".to_string()
                 } else {
-                    if let Err(e) = RT.block_on(async move { lightclient.sync().await }) {
+                    if let Err(e) = RT.block_on(async move { lightclient.sync(true).await }) {
                         return format!("Error: {e}");
                     }
                     "Launching sync task...".to_string()
@@ -458,7 +458,7 @@ impl Command for RescanCommand {
         }
 
         RT.block_on(async move {
-            match lightclient.rescan().await {
+            match lightclient.rescan(true).await {
                 Ok(_) => "Launching rescan...".to_string(),
                 Err(e) => format!("Error: {e}"),
             }

@@ -20,17 +20,14 @@ const ADDRESS_GAP_LIMIT: usize = 20;
 /// Discovers all addresses in use by the wallet and returns locators for any new relevant transactions to scan transparent
 /// bundles.
 /// `wallet_height` should be the value before updating scan ranges. i.e. the wallet height as of previous sync.
-pub(crate) async fn update_addresses_and_locators<P, W>(
-    consensus_parameters: &P,
+pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
+    consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
-) where
-    P: consensus::Parameters,
-    W: SyncWallet,
-{
+) {
     let wallet_addresses = wallet.get_transparent_addresses_mut().unwrap();
     let mut locators: BTreeSet<Locator> = BTreeSet::new();
     let block_range = Range {
