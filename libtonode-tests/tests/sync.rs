@@ -41,7 +41,7 @@ async fn sync_mainnet_test() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(false).await.unwrap();
+    lightclient.sync_and_await(true).await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -78,7 +78,7 @@ async fn sync_status() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(false).await.unwrap();
+    lightclient.sync_and_await(true).await.unwrap();
 }
 
 // temporary test for sync development
