@@ -1254,7 +1254,6 @@ mod fast {
     }
 }
 mod slow {
-    use pepper_sync::keys::KeyId;
     use pepper_sync::wallet::{
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
@@ -1269,7 +1268,9 @@ mod slow {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
     use zingolib::lightclient::describe::UAReceivers;
-    use zingolib::lightclient::send::send_with_proposal::QuickSendError;
+    use zingolib::lightclient::send::send_with_proposal::{
+        CompleteAndBroadcastError, QuickSendError,
+    };
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1280,9 +1281,9 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
         TransactionSummaryInterface,
     };
-    use zingolib::wallet::error::{KeyError, WalletError};
     use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::summary::{SendType, TransactionKind};
+    use zingolib::wallet::send::BuildTransactionError;
+    use zingolib::wallet::summary::{self, SendType, TransactionKind};
 
     use super::*;
 
@@ -1590,6 +1591,7 @@ mod slow {
         //     4.3. rescan
         //     4.4. check that notes and utxos were detected by the wallet
 
+        tracing_subscriber::fmt().init();
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let mut faucet = client_builder.build_faucet(false, regtest_network);
@@ -1612,9 +1614,9 @@ mod slow {
             get_base_address_macro!(original_recipient, "unified"),
         );
         let addr_amount_memos = vec![
-            (recipient_taddr.as_str(), 1_000u64, None),
-            (recipient_sapling.as_str(), 2_000u64, None),
-            (recipient_unified.as_str(), 3_000u64, None),
+            (recipient_taddr.as_str(), 10_000u64, None),
+            (recipient_sapling.as_str(), 20_000u64, None),
+            (recipient_unified.as_str(), 30_000u64, None),
         ];
         // 1. fill wallet with a coinbase transaction by syncing faucet with 1-block increase
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
@@ -1635,9 +1637,9 @@ mod slow {
         let sent_t_value = original_recipient_balance.transparent_balance.unwrap();
         let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
         let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
-        assert_eq!(sent_t_value, 1000u64);
-        assert_eq!(sent_s_value, 2000u64);
-        assert_eq!(sent_o_value, 3000u64);
+        assert_eq!(sent_t_value, 10_000u64);
+        assert_eq!(sent_s_value, 20_000u64);
+        assert_eq!(sent_o_value, 30_000u64);
 
         // check that do_rescan works
         original_recipient.rescan_and_await(true).await.unwrap();
@@ -1657,10 +1659,10 @@ mod slow {
             vec![&o_fvk, &s_fvk, &t_fvk],
         ];
         for fvks in fvks_sets.iter() {
-            log::info!("testing UFVK containing:");
-            log::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
-            log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
-            log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
+            tracing::info!("testing UFVK containing:");
+            tracing::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
+            tracing::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
+            tracing::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
             let mut watch_client = build_fvk_client(fvks, zingo_config.clone());
             // assert empty wallet before rescan
@@ -1694,11 +1696,11 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(&watch_client, vec![(testvectors::EXT_TADDR, 1000, None)])
                     .await,
-                Err(QuickSendError::ProposeSend(ProposeSendError::Proposal(
-                    zcash_client_backend::data_api::error::Error::DataSource(
-                        WalletError::KeyError(KeyError::NoSpendCapability)
+                Err(QuickSendError::CompleteAndBroadcast(
+                    CompleteAndBroadcastError::BuildTransaction(
+                        BuildTransactionError::NoSpendCapability
                     )
-                )))
+                ))
             ));
         }
     }
@@ -1926,26 +1928,22 @@ mod slow {
             .sapling_notes(vec![])
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
-                 output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::Internal,
-                 },
                  value: 99_960_000,
                  memo: None,
                  recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
                  recipient_unified_address: None,
+                 output_index: 0,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::External,
-                 },
                  value: first_send_to_sapling,
                  memo: None,
                  recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                  recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::External),
              }])
             .build()
             .unwrap();
@@ -1972,14 +1970,12 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::Internal,
-                 },
                  value: 99_925_000,
                  memo: None,
                  recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
                  recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
             .build()
@@ -2100,14 +2096,12 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::Internal,
-                 },
                  value: 965_000,
                  memo: None,
                  recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
                  recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
             .build()
@@ -2144,25 +2138,21 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::Internal,
-                 },
                  value: 99_885_000,
                  memo: None,
                  recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
                  recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![OutgoingNoteSummary {
                 output_index: 0,
-                key_id: KeyId {
-                    account_id: AccountId::ZERO,
-                    scope: zip32::Scope::External,
-                },
                  value: second_send_to_sapling,
                 memo: None,
                 recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
                 recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::External),
             }])
             .build()
             .unwrap();
@@ -2205,14 +2195,12 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
-                 key_id: KeyId {
-                     account_id: AccountId::ZERO,
-                     scope: zip32::Scope::Internal,
-                 },
                  value: 930_000,
                  memo: None,
                  recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
                  recipient_unified_address: None,
+                 account_id: AccountId::ZERO,
+                 scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
             .build()
@@ -2542,57 +2530,31 @@ mod slow {
         let mut txids = recipient.transaction_summaries().await.txids().into_iter();
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
+
     #[tokio::test]
     async fn sapling_to_sapling_scan_together() {
-        // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
-        // (For this test, the Sapling Domain is assumed in all cases.)
-        // Sender Setup:
-        // 1. create a spend key: SpendK_S
-        // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
-        // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
-        // 4. publish BRT
-        // 5. optionally mine a block including BRT <-- There are two separate tests to run
-        // 6. optionally mine sufficient subsequent blocks to "validate" BRT
-        // Recipient Setup:
-        // 1. create a spend key: "SpendK_R"
-        // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
-        // Test Procedure:
-        // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
-        // 2. publish the transaction to the mempool
-        // 3. mine a block
-        // Constraints:
-        // 1. SpendK_S controls start - spend funds
-        // 2. SpendK_R controls 0 + spend funds
-        let (regtest_manager, _cph, mut faucet, mut recipient) =
-            scenarios::faucet_recipient_default().await;
+        let funding_value = 100_000;
+        let (regtest_manager, _cph, faucet, mut recipient, _, funding_txid, _) =
+            scenarios::faucet_funded_recipient(
+                None,
+                Some(funding_value),
+                None,
+                PoolType::Shielded(ShieldedProtocol::Orchard),
+                RegtestNetwork::all_upgrades_active(),
+                false,
+            )
+            .await;
 
-        // Give the faucet a block reward
-        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
-            .await
-            .unwrap();
-        let value = 100_000;
-
-        // Send some sapling value to the recipient
-        let txid = zingolib::testutils::send_value_between_clients_and_sync(
-            &regtest_manager,
-            &mut faucet,
-            &mut recipient,
-            value,
-            PoolType::Shielded(ShieldedProtocol::Sapling),
+        let spent_value = 20_000;
+        let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+        let spent_txid = from_inputs::quick_send(
+            &recipient,
+            vec![(&faucet_sapling_address, spent_value, None)],
         )
         .await
-        .unwrap();
-
-        let spent_value = 250;
-
-        // Construct transaction to wallet-external recipient-address.
-        let exit_zaddr = get_base_address_macro!(faucet, "sapling");
-        let spent_txid =
-            from_inputs::quick_send(&recipient, vec![(&exit_zaddr, spent_value, None)])
-                .await
-                .unwrap()
-                .first()
-                .to_string();
+        .unwrap()
+        .first()
+        .to_string();
 
         zingolib::testutils::increase_height_and_wait_for_client(
             &regtest_manager,
@@ -2601,7 +2563,7 @@ mod slow {
         )
         .await
         .unwrap();
-        // 5. Check the transaction list to make sure we got all transactions
+
         let transactions = recipient
             .wallet
             .lock()
@@ -2611,36 +2573,31 @@ mod slow {
             .0;
 
         assert_eq!(transactions.first().unwrap().blockheight(), 5.into());
-        assert_eq!(transactions.first().unwrap().txid().to_string(), txid);
-        assert_eq!(transactions.first().unwrap().value(), value);
+        assert_eq!(
+            transactions.first().unwrap().txid().to_string(),
+            funding_txid.unwrap()
+        );
+        assert_eq!(transactions.first().unwrap().value(), funding_value);
 
         assert_eq!(transactions.get(1).unwrap().blockheight(), 6.into());
         assert_eq!(transactions.get(1).unwrap().txid().to_string(), spent_txid);
-        assert_eq!(
-            transactions.get(1).unwrap().value(),
-            spent_value + u64::from(MINIMUM_FEE)
-        );
-        assert_eq!(
-            transactions
-                .get(1)
-                .unwrap()
-                .outgoing_orchard_notes()
-                .first()
-                .unwrap()
-                .recipient,
-            exit_zaddr
-        );
-        assert_eq!(
-            transactions
-                .get(1)
-                .unwrap()
-                .outgoing_orchard_notes()
-                .first()
-                .unwrap()
-                .value,
-            spent_value
-        );
+        assert_eq!(transactions.get(1).unwrap().value(), spent_value);
+        assert!(transactions
+            .get(1)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .iter()
+            .find(|note| { note.recipient == faucet_sapling_address })
+            .is_some());
+        assert!(transactions
+            .get(1)
+            .unwrap()
+            .outgoing_sapling_notes()
+            .iter()
+            .find(|note| { note.value == spent_value })
+            .is_some());
     }
+
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
         // TODO:  Add assertions about Sapling change note.
@@ -2795,11 +2752,12 @@ mod slow {
             assert!(!sent_transaction.status().is_confirmed());
             assert_eq!(sent_transaction.status().get_height(), 5.into());
 
-            let outgoing_sapling_note = sent_transaction.outgoing_sapling_notes().first().unwrap();
-            assert_eq!(
-                outgoing_sapling_note.encoded_recipient(&network),
-                get_base_address_macro!(faucet, "sapling")
-            );
+            let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+            let outgoing_sapling_note = sent_transaction
+                .outgoing_sapling_notes()
+                .iter()
+                .find(|note| note.encoded_recipient(&network) == faucet_sapling_address)
+                .unwrap();
             if let Memo::Text(memo) = outgoing_sapling_note.memo() {
                 assert_eq!(&String::from(memo.clone()), outgoing_memo);
             } else {
@@ -2873,6 +2831,7 @@ mod slow {
             panic!("note not spent!")
         }
     }
+
     #[tokio::test]
     async fn sapling_dust_fee_collection() {
         let (regtest_manager, __cph, faucet, mut recipient) =
@@ -3325,13 +3284,9 @@ mod slow {
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
-        // This test includes combinations that are disallowed in the mobile
-        // app and are not recommended in production.
-        // An example is a transaction that "shields" both transparent and
-        // sapling value into the orchard value pool.
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let mut sapling_faucet = client_builder.build_faucet(false, regtest_network);
+        let mut faucet = client_builder.build_faucet(false, regtest_network);
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
@@ -3341,14 +3296,12 @@ mod slow {
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");
         let pmc_unified = get_base_address_macro!(client, "unified");
-        // Ensure that the client has confirmed spendable funds
-        zingolib::testutils::increase_height_and_wait_for_client(
-            &regtest_manager,
-            &mut sapling_faucet,
-            1,
-        )
-        .await
-        .unwrap();
+
+        // Ensure that the faucet has confirmed spendable funds
+        zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
+            .await
+            .unwrap();
+
         macro_rules! bump_and_check {
             (o: $o:tt s: $s:tt t: $t:tt) => {
                 zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut client, 1).await.unwrap();
@@ -3361,13 +3314,13 @@ mod slow {
         //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_taddr, 50_000, None)])
+        from_inputs::quick_send(&faucet, vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
         assert_eq!(test_dev_total_expected_fee, 0);
 
-        // 2 pmc shields 50_000 transparent, to orchard paying 10_000 fee
+        // 2 pmc shields 50_000 transparent, to orchard paying fee
         //  t -> o
         //  # Expected Fees to recipient:
         //    - legacy: 10_000
@@ -3384,7 +3337,7 @@ mod slow {
         //  # Expected Fees to recipient:
         //    - legacy: 0
         //    - 317:    0
-        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_sapling, 50_000, None)])
+        from_inputs::quick_send(&faucet, vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 35_000 s: 50_000 t: 0);
@@ -3393,7 +3346,7 @@ mod slow {
             test_dev_total_expected_fee
         );
 
-        // 4 pmc shields 40_000 from sapling to orchard and pays 10_000 fee (should be 20_000 post zip317)
+        // 4 pmc migrates 40_000 from sapling to orchard plus fee
         //  z -> o
         //  # Expected Fees:
         //    - legacy: 10_000
@@ -3441,11 +3394,8 @@ mod slow {
             test_dev_total_expected_fee
         );
 
-        // 7 Receipt
-        //  # Expected Fees:
-        //    - legacy: 10_000
-        //    - 317:    disallowed (not *precisely*) BY 317...
-        from_inputs::quick_send(&sapling_faucet, vec![(&pmc_taddr, 500_000, None)])
+        // 7 Receive 500_000 to transparent
+        from_inputs::quick_send(&faucet, vec![(&pmc_taddr, 500_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 10_000 t: 510_000);
@@ -3454,7 +3404,7 @@ mod slow {
             test_dev_total_expected_fee
         );
 
-        // 8 Shield transparent and sapling to orchard
+        // 8 Shield transparent to orchard
         //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
@@ -3468,6 +3418,7 @@ mod slow {
         );
 
         // 9 self o send orchard to orchard
+        // TODO: already tested!?
         //  o -> o
         //  # Expected Fees:
         //    - legacy: 10_000
@@ -3487,19 +3438,19 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 5-o (3 dust)- 10_000 orchard, 1 utxo 5_000 transparent
-        from_inputs::quick_send(&client, vec![(&pmc_taddr, 465_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_taddr, 470_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
-        test_dev_total_expected_fee += 15_000;
+        bump_and_check!(o: 0 s: 0 t: 470_000);
+        test_dev_total_expected_fee += 30_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
         // 10 transparent to transparent
-        // Very explicit catch of reject sending from transparent to other than Self Orchard
-        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 1, None)]).await {
+        // Very explicit catch of reject sending from transparent
+        match from_inputs::quick_send(&client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
                 ProposeSendError::Proposal(insufficient) => match insufficient {
@@ -3507,8 +3458,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(25_001).unwrap());
+                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(25_000).unwrap());
                     }
                     _ => panic!(),
                 },
@@ -3518,7 +3469,7 @@ mod slow {
             },
             _ => panic!(),
         }
-        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        bump_and_check!(o: 0 s: 0 t: 470_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
@@ -3527,7 +3478,7 @@ mod slow {
         // 11 transparent to sapling
         //  t -> z
         // 10 transparent to transparent
-        // Very explicit catch of reject sending from transparent to other than Self Orchard
+        // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposeSend(proposesenderror)) => match proposesenderror {
@@ -3536,8 +3487,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(20_000).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(70_000).unwrap());
+                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
+                        assert_eq!(required, NonNegativeAmount::from_u64(60_000).unwrap());
                     }
                     _ => {
                         panic!()
@@ -3547,27 +3498,26 @@ mod slow {
             },
             _ => panic!(),
         }
-        // End of 11 no change
-        bump_and_check!(o: 10_000 s: 10_000 t: 465_000);
+        bump_and_check!(o: 0 s: 0 t: 470_000);
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 12 Orchard and Sapling demote all to transparent self-send
+        // 12 Shield
         //  t -> o
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 1t and 2o
         client.quick_shield().await.unwrap();
-        bump_and_check!(o: 460_000 s: 10_000 t: 0);
+        bump_and_check!(o: 455_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 13 Orchard and Sapling demote all to transparent self-send
+        // 13 Orchard to Sapling
         //  o -> z
         //  # Expected Fees:
         //    - legacy: 10_000
@@ -3575,61 +3525,60 @@ mod slow {
         from_inputs::quick_send(&client, vec![(&pmc_sapling, 10_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 430_000 s: 20_000 t: 0);
+        bump_and_check!(o: 425_000 s: 10_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard and Sapling demote all to transparent self-send
+        // 14 Orchard self-send
         //  o -> o
+        // TODO: already tested!?
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    10_000
         from_inputs::quick_send(&client, vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 420_000 s: 20_000 t: 0);
+        bump_and_check!(o: 415_000 s: 10_000 t: 0);
         test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 14 Orchard and Sapling demote all to transparent self-send
-        //  zo -> o
+        // 14 Orchard and Sapling to Sapling
+        //  zo -> z
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000
-        from_inputs::quick_send(&client, vec![(&pmc_sapling, 400_000, None)])
+        from_inputs::quick_send(&client, vec![(&pmc_sapling, 405_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 410_000 t: 0);
+        bump_and_check!(o: 0 s: 405_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
 
-        // 15 Orchard and Sapling demote all to transparent self-send
+        // 15 Sapling self-send
         //  z -> z
         //  # Expected Fees:
         //    - legacy: 10_000
-        //    - 317:    10_000  sapling->sapling change to sapling, with 2 or fewer inputs
+        //    - 317:    10_000
         from_inputs::quick_send(&client, vec![(&pmc_sapling, 380_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 400_000 t: 0);
+        bump_and_check!(o: 0 s: 395_000 t: 0);
         test_dev_total_expected_fee += 10_000;
         assert_eq!(
             get_fees_paid_by_client(&client).await,
             test_dev_total_expected_fee
         );
-
-        let total_fee = get_fees_paid_by_client(&client).await;
-        assert_eq!(total_fee, test_dev_total_expected_fee);
     }
+
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {
         let (regtest_manager, __cph, mut faucet, recipient) =

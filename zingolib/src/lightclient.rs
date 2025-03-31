@@ -139,6 +139,7 @@ pub struct AccountBackupInfo {
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
+#[derive(Debug)]
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
@@ -171,7 +172,6 @@ impl LightClient {
 
     /// Creates a LightClient from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
-    // TODO: rename
     pub fn create_from_wallet(
         wallet: LightWallet,
         config: ZingoConfig,
@@ -373,16 +373,8 @@ mod tests {
 
     #[test]
     fn new_wallet_from_phrase() {
-        let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
-        let data_dir = temp_dir
-            .into_path()
-            .canonicalize()
-            .expect("This path is available.");
-
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let config = ZingoConfig::build(ChainType::Regtest(regtest_network))
-            .set_wallet_dir(data_dir)
-            .create();
+        let config = ZingoConfig::build(ChainType::Regtest(regtest_network)).create();
         let lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
@@ -391,22 +383,25 @@ mod tests {
             )
             .unwrap(),
             config.clone(),
-            false,
+            true,
         )
         .unwrap();
 
+        let lc_file_exists_error = LightClient::create_from_wallet(
+            LightWallet::new(
+                config.chain,
+                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                0.into(),
+            )
+            .unwrap(),
+            config,
+            false,
+        )
+        .unwrap_err();
+
         assert!(matches!(
-            LightClient::create_from_wallet(
-                LightWallet::new(
-                    config.chain,
-                    WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
-                    0.into(),
-                )
-                .unwrap(),
-                config,
-                false,
-            ),
-            Err(LightClientError::FileError(_))
+            lc_file_exists_error,
+            LightClientError::FileError(_)
         ));
 
         // The first t address and z address should be derived

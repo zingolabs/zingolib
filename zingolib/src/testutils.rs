@@ -5,7 +5,6 @@
 
 pub mod scenarios;
 
-use crate::lightclient::describe::UAReceivers;
 use crate::lightclient::error::LightClientError;
 // use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
@@ -197,11 +196,12 @@ fn check_outgoing_note_summary_equality(
         return false;
     };
     for i in 0..first.len() {
-        if !(first[i].key_id == second[i].key_id
-            && first[i].value == second[i].value
+        if !(first[i].value == second[i].value
             && first[i].memo == second[i].memo
             && first[i].recipient == second[i].recipient
             && first[i].recipient_unified_address == second[i].recipient_unified_address)
+            && first[i].account_id == second[i].account_id
+            && first[i].scope == second[i].scope
         {
             return false;
         }
@@ -240,7 +240,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     )
 }
 
-/// Send from sender to recipient and then sync the recipient
+/// Send from sender to recipient and then bump chain and sync both lightclients
 pub async fn send_value_between_clients_and_sync(
     manager: &RegtestManager,
     sender: &mut LightClient,
@@ -248,10 +248,6 @@ pub async fn send_value_between_clients_and_sync(
     value: u64,
     address_pool: PoolType,
 ) -> Result<String, LightClientError> {
-    log::debug!(
-        "recipient address is: {}",
-        recipient.do_addresses(UAReceivers::All).await[0]["address"]
-    );
     let txid = lightclient::from_inputs::quick_send(
         sender,
         vec![(

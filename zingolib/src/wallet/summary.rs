@@ -12,6 +12,7 @@ use super::{output::SpendStatus, LightWallet};
 // TODO: move data::summaries and value transfer / transaction summary methods here
 
 /// Scope enum with std::fmt::Display impl for use with summaries.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Scope {
     External,
     Internal,
@@ -43,6 +44,7 @@ impl From<zip32::Scope> for Scope {
 ///
 /// Intended for returning a standalone summary of all notes to the user / consumer outside the context of transactions.
 #[allow(missing_docs)]
+#[derive(Debug)]
 pub struct NoteSummary {
     pub value: u64,
     pub status: ConfirmationStatus,
@@ -104,6 +106,71 @@ impl From<NoteSummary> for json::JsonValue {
             "output_index" => note.output_index,
             "account_id" => u32::from(note.account_id),
             "scope" => note.scope.to_string(),
+        }
+    }
+}
+
+/// A wrapper struct for implementing display and json on a vec of note summaries
+#[derive(Debug)]
+pub struct NoteSummaries(Vec<NoteSummary>);
+
+impl NoteSummaries {
+    /// Creates a new NoteSummaries
+    pub fn new(note_summaries: Vec<NoteSummary>) -> Self {
+        NoteSummaries(note_summaries)
+    }
+}
+
+impl<'a> std::iter::IntoIterator for &'a NoteSummaries {
+    type Item = &'a NoteSummary;
+    type IntoIter = std::slice::Iter<'a, NoteSummary>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl std::ops::Deref for NoteSummaries {
+    type Target = Vec<NoteSummary>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for NoteSummaries {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl std::ops::Index<usize> for NoteSummaries {
+    type Output = NoteSummary; // The type of the value returned by the index
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index] // Forward the indexing operation to the underlying data structure
+    }
+}
+
+impl std::fmt::Display for NoteSummaries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for value_transfer in &self.0 {
+            write!(f, "\n{}", value_transfer)?;
+        }
+        Ok(())
+    }
+}
+
+impl From<NoteSummaries> for json::JsonValue {
+    fn from(note_summaries: NoteSummaries) -> Self {
+        let note_summaries: Vec<json::JsonValue> = note_summaries
+            .0
+            .into_iter()
+            .map(json::JsonValue::from)
+            .collect();
+        json::object! {
+            "note_summaries" => note_summaries
+
         }
     }
 }
@@ -209,11 +276,12 @@ pub enum SendType {
 }
 
 impl LightWallet {
-    pub fn note_summaries<N>(&self, include_spent_notes: bool) -> Vec<NoteSummary>
+    pub fn note_summaries<N>(&self, include_spent_notes: bool) -> NoteSummaries
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
     {
-        self.wallet_outputs::<N>()
+        let note_summaries = self
+            .wallet_outputs::<N>()
             .into_iter()
             .filter(|&note| {
                 if include_spent_notes {
@@ -243,7 +311,9 @@ impl LightWallet {
                     scope: note.key_id().scope.into(),
                 }
             })
-            .collect()
+            .collect();
+
+        NoteSummaries::new(note_summaries)
     }
 
     pub fn coin_summaries(&self, include_spent_coins: bool) -> Vec<CoinSummary> {

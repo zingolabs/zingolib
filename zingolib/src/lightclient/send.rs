@@ -200,7 +200,7 @@ pub mod send_with_proposal {
                 )
                 .unwrap(),
                 config,
-                false,
+                true,
             )
             .unwrap();
             let proposal = ProposalBuilder::default().build();

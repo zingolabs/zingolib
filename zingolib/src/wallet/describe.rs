@@ -52,6 +52,7 @@ use super::data::summaries::ValueTransferBuilder;
 use super::data::summaries::ValueTransferKind;
 use super::data::summaries::ValueTransfers;
 use super::keys::unified::UnifiedKeyStore;
+use super::summary;
 use super::summary::SendType;
 use super::summary::TransactionKind;
 
@@ -468,13 +469,14 @@ impl LightWallet {
                 };
 
                 OutgoingNoteSummary {
-                    output_index: note.output_id().output_index(),
-                    key_id: note.key_id(),
                     memo,
                     value: note.value(),
                     recipient: note.encoded_recipient(&self.network),
                     recipient_unified_address: note
                         .encoded_recipient_full_unified_address(&self.network),
+                    output_index: note.output_id().output_index(),
+                    account_id: note.key_id().account_id,
+                    scope: summary::Scope::from(note.key_id().scope),
                 }
             })
             .collect::<Vec<_>>();
@@ -490,12 +492,13 @@ impl LightWallet {
 
                 OutgoingNoteSummary {
                     output_index: note.output_id().output_index(),
-                    key_id: note.key_id(),
                     memo,
                     value: note.value(),
                     recipient: note.encoded_recipient(&self.network),
                     recipient_unified_address: note
                         .encoded_recipient_full_unified_address(&self.network),
+                    account_id: note.key_id().account_id,
+                    scope: summary::Scope::from(note.key_id().scope),
                 }
             })
             .collect::<Vec<_>>();
@@ -980,6 +983,7 @@ mod test {
         /// gets a string address for the wallet, based on pooltype
         pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
             let ua = self.get_first_ua()?;
+            dbg!(&ua);
             self.encode_ua_as_pool(&ua, pool)
         }
     }

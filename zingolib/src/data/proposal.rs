@@ -25,7 +25,7 @@ pub(crate) type ProportionalFeeShieldProposal =
     Proposal<transaction::fees::zip317::FeeRule, Infallible>;
 
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum ZingoProposal {
     /// Destination somewhere else.
     /// Can propose any valid recipient.
