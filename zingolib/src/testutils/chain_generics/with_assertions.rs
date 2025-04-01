@@ -6,6 +6,7 @@ use crate::testutils::assertions::for_each_proposed_transaction;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
+use crate::testutils::timestamped_test_log;
 use nonempty::NonEmpty;
 use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::PoolType;
@@ -51,9 +52,13 @@ pub async fn propose_send_bump_sync_all_recipients<CC>(
 where
     CC: ConductChain,
 {
+    timestamped_test_log("started integration-test send.");
     sender.sync_and_await(true).await.unwrap();
+    timestamped_test_log("syncked.");
     let proposal = from_inputs::propose(sender, payments).await.unwrap();
+    timestamped_test_log("proposed.");
     let txids = sender.send_stored_proposal().await.unwrap();
+    timestamped_test_log("sent.");
 
     follow_proposal(
         environment,
@@ -100,7 +105,7 @@ pub async fn follow_proposal<CC, NoteRef>(
 where
     CC: ConductChain,
 {
-    println!("following proposal, preparing to unwind if an assertion fails.");
+    timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
     let server_height_at_send = BlockHeight::from(
         crate::grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
@@ -136,8 +141,10 @@ where
     }
 
     let option_recipient_mempool_outputs = if test_mempool {
+        timestamped_test_log("syncking transaction from mempool.");
         // mempool scan shows the same
         sender.sync_and_await(true).await.unwrap();
+        timestamped_test_log("cross-checking mempool records.");
 
         // let the mempool monitor get a chance
         // to listen
@@ -204,9 +211,13 @@ where
         None
     };
 
+    timestamped_test_log("cross-checked mempool records.");
+
     environment.bump_chain().await;
+    timestamped_test_log("syncking transaction confirmation.");
     // chain scan shows the same
     sender.sync_and_await(true).await.unwrap();
+    timestamped_test_log("cross-checking confirmed records.");
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
@@ -264,6 +275,7 @@ where
         }
         recipients_confirmed_outputs.push(recipient_confirmed_outputs);
     }
+    timestamped_test_log("cross-checked confirmed records.");
 
     option_recipient_mempool_outputs.inspect(|recipient_mempool_outputs| {
         assert_eq!(recipients_confirmed_outputs, *recipient_mempool_outputs);

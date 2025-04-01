@@ -11,6 +11,7 @@ use crate::testutils::chain_generics::with_assertions;
 use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
+use crate::testutils::timestamped_test_log;
 use crate::wallet::data::summaries::SelfSendValueTransfer;
 use crate::wallet::data::summaries::SentValueTransfer;
 use crate::wallet::data::summaries::ValueTransferKind;
@@ -470,7 +471,7 @@ where
 }
 
 /// the simplest test that sends from a specific shielded pool to another specific pool. also known as simpool.
-pub async fn single_sufficient_send<CC>(
+pub async fn any_source_sends_to_any_receiver<CC>(
     shpool: ShieldedProtocol,
     pool: PoolType,
     receiver_value: u64,
@@ -479,9 +480,11 @@ pub async fn single_sufficient_send<CC>(
 ) where
     CC: ConductChain,
 {
+    timestamped_test_log(format!("starting a {:?} to {} test", shpool, pool).as_str());
+
     let mut environment = CC::setup().await;
 
-    let mut primary = environment.fund_client_orchard(1_000_000).await;
+    let mut primary = environment.create_faucet().await;
     let mut secondary = environment.create_client();
     let mut tertiary = environment.create_client();
 
