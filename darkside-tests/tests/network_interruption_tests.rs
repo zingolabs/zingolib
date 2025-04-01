@@ -199,12 +199,11 @@ async fn shielded_note_marked_as_change_test() {
         .unwrap();
 
     println!("value transfers:");
-    dbg!(
-        scenario
-            .get_lightclient(0)
-            .sorted_value_transfers(true)
-            .await
-    );
+    dbg!(scenario
+        .get_lightclient(0)
+        .sorted_value_transfers(true)
+        .await
+        .unwrap());
 
     // assert the balance is correct
     assert_eq!(
@@ -222,7 +221,11 @@ async fn shielded_note_marked_as_change_test() {
         }
     );
     // assert all fees are 10000 zats
-    let transaction_summaries = scenario.get_lightclient(0).transaction_summaries().await;
+    let transaction_summaries = scenario
+        .get_lightclient(0)
+        .transaction_summaries()
+        .await
+        .unwrap();
     for summary in transaction_summaries.iter() {
         if let Some(fee) = summary.fee() {
             assert_eq!(fee, 10_000);

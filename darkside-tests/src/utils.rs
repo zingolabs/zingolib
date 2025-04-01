@@ -732,6 +732,6 @@ pub mod scenarios {
         // A generated non-faucet client, accessed by index
         IndexedClient(u64),
         // A client not managed by the DarksideScenario itself
-        ExternalClient(&'a LightClient),
+        ExternalClient(&'a mut LightClient),
     }
 }

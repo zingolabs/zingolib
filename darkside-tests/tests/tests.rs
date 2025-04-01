@@ -149,7 +149,7 @@ async fn sent_transaction_reorged_into_mempool() {
         }
     );
     let one_txid = from_inputs::quick_send(
-        &light_client,
+        &mut light_client,
         vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
     )
     .await

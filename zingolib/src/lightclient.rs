@@ -13,10 +13,7 @@ use json::{array, JsonValue};
 use log::error;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-};
+use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 
@@ -25,7 +22,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{keys::unified::ReceiverSelection, LightWallet, WalletBase},
+    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
 };
 use error::LightClientError;
 
@@ -146,10 +143,10 @@ pub struct LightClient {
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
-    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
+    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
-    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
+    latest_proposal: Option<ZingoProposal>, // TODO: move to wallet
 }
 
 impl LightClient {
@@ -179,7 +176,7 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && config.wallet_path_exists() {
+            if !overwrite && dbg!(config.wallet_path_exists()) {
                 return Err(LightClientError::FileError(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     format!("Cannot save to given data directory as a wallet file already exists at:\n{}",
@@ -194,7 +191,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            latest_proposal: Arc::new(RwLock::new(None)),
+            latest_proposal: None,
         })
     }
 
@@ -366,16 +363,19 @@ mod tests {
         lightclient::{describe::UAReceivers, error::LightClientError},
         wallet::LightWallet,
     };
+    use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use tokio::runtime::Runtime;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
-    #[test]
-    fn new_wallet_from_phrase() {
+    #[tokio::test]
+    async fn new_wallet_from_phrase() {
+        let temp_dir = TempDir::new().unwrap();
         let regtest_network = RegtestNetwork::all_upgrades_active();
-        let config = ZingoConfig::build(ChainType::Regtest(regtest_network)).create();
-        let lc = LightClient::create_from_wallet(
+        let config = ZingoConfig::build(ChainType::Regtest(regtest_network))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .create();
+        let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
@@ -383,9 +383,12 @@ mod tests {
             )
             .unwrap(),
             config.clone(),
-            true,
+            false,
         )
         .unwrap();
+
+        lc.save_task().await;
+        lc.wait_for_save().await;
 
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
@@ -405,17 +408,15 @@ mod tests {
         ));
 
         // The first t address and z address should be derived
-        Runtime::new().unwrap().block_on(async move {
-            let addresses = lc.do_addresses(UAReceivers::All).await;
-            assert_eq!(
-                "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
-                    .to_string(),
-                addresses[0]["receivers"]["sapling"]
-            );
-            assert_eq!(
-                "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
-                addresses[0]["receivers"]["transparent"]
-            );
-        });
+        let addresses = lc.do_addresses(UAReceivers::All).await;
+        assert_eq!(
+            "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
+                .to_string(),
+            addresses[0]["receivers"]["sapling"]
+        );
+        assert_eq!(
+            "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
+            addresses[0]["receivers"]["transparent"]
+        );
     }
 }

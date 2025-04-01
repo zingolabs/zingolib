@@ -1,6 +1,5 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
-use log::error;
 use nonempty::NonEmpty;
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
@@ -20,10 +19,10 @@ use zcash_primitives::transaction::fees::zip317;
 use zingo_memo::create_wallet_internal_memo_version_1;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::lightclient::send::send_with_proposal::BroadcastTransactionsError;
 use crate::wallet::now;
 
-use super::error::WalletError;
+use super::error::CalculateTransactionError;
+use super::error::TransmissionError;
 use super::LightWallet;
 
 /// TODO: Add Doc Comment Here!
@@ -39,7 +38,7 @@ pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
     pub total: u32,
     /// TODO: Add Doc Comment Here!
-    pub last_result: Option<Result<serde_json::Value, String>>,
+    pub last_result: Option<String>,
 }
 
 impl SendProgress {
@@ -57,81 +56,32 @@ impl SendProgress {
 
 impl From<SendProgress> for json::JsonValue {
     fn from(value: SendProgress) -> Self {
-        let last_result = value.last_result.clone();
-        let tx_ids: Vec<String> = match &last_result {
-            Some(r) => {
-                let mut binding = r.clone().unwrap();
-                let binding = binding.as_array_mut();
-                let tx_json_values: Vec<String> = binding
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.as_str().unwrap().to_string())
-                    .collect();
-                tx_json_values
-            }
-            None => vec![],
-        };
-
-        let error: Option<String> = last_result.and_then(|result| result.err());
-
         json::object! {
             "id" => value.id,
             "sending" => value.is_send_in_progress,
             "progress" => value.progress,
             "total" => value.total,
-            "txids" => tx_ids,
-            "error" => error,
+            "last_result" => value.last_result,
         }
     }
 }
 
 impl LightWallet {
     // Reset the send progress status to blank
-    pub(crate) async fn reset_send_progress(&self) {
-        let mut g = self.send_progress.write().await;
-        let next_id = g.id + 1;
-
-        // Discard the old value, since we are replacing it
-        let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
+    pub(crate) async fn reset_send_progress(&mut self) {
+        let next_id = self.send_progress.id + 1;
+        self.send_progress = SendProgress::new(next_id);
     }
-
-    /// Get the current sending status.
-    pub async fn send_progress(&self) -> SendProgress {
-        self.send_progress.read().await.clone()
-    }
-}
-
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
-pub enum BuildTransactionError {
-    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-    NoSpendCapability,
-    #[error("Could not load sapling_params: {0:?}")]
-    SaplingParams(String),
-    #[error("Could not find UnifiedSpendKey: {0:?}")]
-    UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
-    #[error("Can't Calculate {0:?}")]
-    Calculation(
-        #[from]
-        zcash_client_backend::data_api::error::Error<
-            WalletError,
-            std::convert::Infallible,
-            std::convert::Infallible,
-            zcash_primitives::transaction::fees::zip317::FeeError,
-        >,
-    ),
-    #[error("Only tex multistep transactions are supported!")]
-    NonTexMultiStep,
 }
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
-    pub(crate) async fn create_transactions<NoteRef>(
+    pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, BuildTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
         if !self.unified_key_store.is_spending_key() {
-            return Err(BuildTransactionError::NoSpendCapability);
+            return Err(CalculateTransactionError::NoSpendCapability);
         }
 
         // Reset the progress to start. Any errors will get recorded here
@@ -139,14 +89,14 @@ impl LightWallet {
 
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
             crate::wallet::utils::read_sapling_params()
-                .map_err(BuildTransactionError::SaplingParams)?;
+                .map_err(CalculateTransactionError::SaplingParams)?;
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
-        match proposal.steps().len() {
+        let calculated_txids = match proposal.steps().len() {
             1 => {
-                self.create_transaction_helper(sapling_prover, proposal)
-                    .await
+                self.create_proposed_transactions(sapling_prover, proposal)
+                    .await?
             }
             2 if proposal.steps()[1]
                 .transaction_request()
@@ -156,23 +106,26 @@ impl LightWallet {
                     matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
                 }) =>
             {
-                self.create_transaction_helper(sapling_prover, proposal)
-                    .await
+                self.create_proposed_transactions(sapling_prover, proposal)
+                    .await?
             }
 
-            _ => Err(BuildTransactionError::NonTexMultiStep),
-        }
+            _ => return Err(CalculateTransactionError::NonTexMultiStep),
+        };
+        self.save_required = true;
+
+        Ok(calculated_txids)
     }
 
-    async fn create_transaction_helper<NoteRef>(
+    async fn create_proposed_transactions<NoteRef>(
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, BuildTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
         let network = self.network;
         let usk = (&self.unified_key_store)
             .try_into()
-            .map_err(BuildTransactionError::UnifiedSpendKey)?;
+            .map_err(CalculateTransactionError::UnifiedSpendKey)?;
 
         Ok(
             zcash_client_backend::data_api::wallet::create_proposed_transactions(
@@ -188,14 +141,46 @@ impl LightWallet {
         )
     }
 
-    /// Broadcasts calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
+    /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
+    /// Returns list of txids successfully transmitted.
+    ///
     /// Rescans each transaction with an updated confirmation status of `Transmitted`, updating spent statuses of all
     /// outputs in the wallet.
-    pub(crate) async fn broadcast_calculated_transactions(
+    /// Updates `self.send_progress.last_result` with JSON string of successfully transmitted txids or error message in
+    /// case of failure.
+    pub(crate) async fn transmit_transactions(
         &mut self,
         server_uri: http::Uri,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<Vec<TxId>, BroadcastTransactionsError> {
+    ) -> Result<NonEmpty<TxId>, TransmissionError> {
+        match self
+            .transmit_transactions_inner(server_uri, calculated_txids)
+            .await
+        {
+            Ok(txids) => {
+                self.set_send_result(
+                    serde_json::Value::Array(
+                        txids
+                            .iter()
+                            .map(|txid| serde_json::Value::String(txid.to_string()))
+                            .collect(),
+                    )
+                    .to_string(),
+                );
+                Ok(txids)
+            }
+            Err(e) => {
+                self.set_send_result(format!("error: {e}"));
+                Err(e)
+            }
+        }
+    }
+
+    async fn transmit_transactions_inner(
+        &mut self,
+        server_uri: http::Uri,
+        calculated_txids: NonEmpty<TxId>,
+    ) -> Result<NonEmpty<TxId>, TransmissionError> {
         struct SentTransaction {
             txid: TxId,
             height: BlockHeight,
@@ -204,18 +189,17 @@ impl LightWallet {
 
         let network = self.network;
         let mut sent_transactions = Vec::new();
-
         for txid in calculated_txids {
             let calculated_transaction = self
                 .wallet_transactions
                 .get_mut(&txid)
-                .ok_or(BroadcastTransactionsError::TransactionNotFound(txid))?;
+                .ok_or(TransmissionError::TransactionNotFound(txid))?;
 
             if !matches!(
                 calculated_transaction.status(),
                 ConfirmationStatus::Calculated(_)
             ) {
-                return Err(BroadcastTransactionsError::IncorrectTransactionStatus(txid));
+                return Err(TransmissionError::IncorrectTransactionStatus(txid));
             }
 
             let height = calculated_transaction.status().get_height();
@@ -224,35 +208,31 @@ impl LightWallet {
             calculated_transaction
                 .transaction()
                 .write(&mut transaction_bytes)
-                .map_err(|_| BroadcastTransactionsError::TransactionWrite)?;
+                .map_err(|_| TransmissionError::TransactionWrite)?;
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(&network, height),
             )
-            .map_err(|_| BroadcastTransactionsError::TransactionRead)?;
+            .map_err(|_| TransmissionError::TransactionRead)?;
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),
                 transaction_bytes.into_boxed_slice(),
             )
             .await
-            .map_err(BroadcastTransactionsError::Broadcast)?;
+            .map_err(TransmissionError::TransmissionFailed)?;
 
             let txid_from_server =
                 crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())?;
 
             if txid_from_server != txid {
+                // during darkside tests, the server may report a different txid to the one calculated.
                 #[cfg(not(feature = "darkside_tests"))]
                 {
-                    return Err(BroadcastTransactionsError::IncorrectTxidFromServer(
+                    return Err(TransmissionError::IncorrectTxidFromServer(
                         txid,
                         txid_from_server,
                     ));
-                }
-                // during darkside tests, the server may report a different txid to the one calculated.
-                #[cfg(feature = "darkside_tests")]
-                {
-                    // TODO:
                 }
             }
 
@@ -270,18 +250,18 @@ impl LightWallet {
                     &network,
                     &self
                         .get_unified_full_viewing_keys()
-                        .map_err(|_| BroadcastTransactionsError::NoViewCapability)?,
+                        .map_err(|_| TransmissionError::NoViewCapability)?,
                     self,
                     sent_transaction.transaction,
                     ConfirmationStatus::Transmitted(sent_transaction.height),
                     now(),
-                );
+                )?;
 
                 Ok(sent_transaction.txid)
             })
-            .collect::<Result<Vec<TxId>, BroadcastTransactionsError>>()?;
+            .collect::<Result<Vec<TxId>, TransmissionError>>()?;
 
-        Ok(txids)
+        Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
     }
 }
 

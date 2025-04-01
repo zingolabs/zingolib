@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use incrementalmerkletree::Position;
 use orchard::{
@@ -27,8 +27,8 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
+    error::ScanError,
     keys::{self, transparent::TransparentAddressId, KeyId},
-    wallet::traits::{SyncBlocks, SyncNullifiers, SyncTransactions},
     wallet::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
@@ -65,16 +65,16 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn scan_transactions<P: consensus::Parameters>(
+pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    consensus_parameters: &P,
+    consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     locators: BTreeSet<Locator>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
-) -> Result<HashMap<TxId, WalletTransaction>, ()> {
+) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
     let mut wallet_transactions = HashMap::with_capacity(locators.len());
 
     for (_, txid) in locators {
@@ -82,10 +82,12 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             continue;
         }
 
-        let (transaction, block_height) =
-            client::get_transaction_and_block_height(fetch_request_sender.clone(), txid)
-                .await
-                .unwrap();
+        let (transaction, block_height) = client::get_transaction_and_block_height(
+            fetch_request_sender.clone(),
+            consensus_parameters,
+            txid,
+        )
+        .await?;
 
         if transaction.txid() != txid {
             #[cfg(feature = "darkside_test")]
@@ -96,7 +98,10 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             );
 
             #[cfg(not(feature = "darkside_test"))]
-            panic!("transaction txid does not match txid requested!")
+            return Err(ScanError::IncorrectTxid {
+                txid_requested: txid,
+                txid_returned: transaction.txid(),
+            });
         }
 
         let wallet_block = if let Some(wallet_block) = wallet_blocks.get(&block_height) {
@@ -105,11 +110,9 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             WalletBlock::from_compact_block(
                 consensus_parameters,
                 fetch_request_sender.clone(),
-                &client::get_compact_block(fetch_request_sender.clone(), block_height)
-                    .await
-                    .unwrap(),
+                &client::get_compact_block(fetch_request_sender.clone(), block_height).await?,
             )
-            .await
+            .await?
         };
 
         let confirmation_status = ConfirmationStatus::Confirmed(block_height);
@@ -124,8 +127,7 @@ pub(crate) async fn scan_transactions<P: consensus::Parameters>(
             outpoint_map,
             &transparent_addresses,
             wallet_block.time(),
-        )
-        .unwrap();
+        )?;
         wallet_transactions.insert(txid, wallet_transaction);
     }
 
@@ -154,7 +156,7 @@ pub(crate) fn scan_transaction(
     outpoint_map: &mut BTreeMap<OutputId, Locator>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
-) -> Result<WalletTransaction, ()> {
+) -> Result<WalletTransaction, ScanError> {
     let block_height = status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,
@@ -228,16 +230,14 @@ pub(crate) fn scan_transaction(
             sapling_ivks,
             &sapling_outputs,
             decrypted_note_data.map(|d| &d.sapling_nullifiers_and_positions),
-        )
-        .unwrap();
+        )?;
 
         scan_outgoing_notes(
             &mut outgoing_sapling_notes,
             txid,
             sapling_ovks,
             &sapling_outputs,
-        )
-        .unwrap();
+        )?;
 
         encoded_memos.append(&mut parse_encoded_memos(&sapling_notes));
     }
@@ -260,16 +260,14 @@ pub(crate) fn scan_transaction(
             orchard_ivks,
             &orchard_actions,
             decrypted_note_data.map(|d| &d.orchard_nullifiers_and_positions),
-        )
-        .unwrap();
+        )?;
 
         scan_outgoing_notes(
             &mut outgoing_orchard_notes,
             txid,
             orchard_ovks,
             &orchard_actions,
-        )
-        .unwrap();
+        )?;
 
         encoded_memos.append(&mut parse_encoded_memos(&orchard_notes));
     }
@@ -287,12 +285,12 @@ pub(crate) fn scan_transaction(
                     consensus_parameters,
                     uas.clone(),
                     &mut outgoing_sapling_notes,
-                );
+                )?;
                 add_recipient_unified_address(
                     consensus_parameters,
                     uas,
                     &mut outgoing_orchard_notes,
-                );
+                )?;
             }
             ParsedMemo::Version1 {
                 uas,
@@ -302,18 +300,15 @@ pub(crate) fn scan_transaction(
                     consensus_parameters,
                     uas.clone(),
                     &mut outgoing_sapling_notes,
-                );
+                )?;
                 add_recipient_unified_address(
                     consensus_parameters,
                     uas,
                     &mut outgoing_orchard_notes,
-                );
+                )?;
 
                 // TODO: handle rejection addresses from encoded memos
             }
-            _ => panic!(
-                "memo version not supported. please ensure that your software is up-to-date."
-            ),
         }
     }
 
@@ -362,7 +357,7 @@ fn scan_incoming_notes<D, Op, N, Nf>(
     ivks: Vec<(KeyId, D::IncomingViewingKey)>,
     outputs: &[(D, Op)],
     nullifiers_and_positions: Option<&HashMap<OutputId, (Nf, Position)>>,
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     D: BatchDomain<Note = N>,
     D::Memo: AsRef<[u8]>,
@@ -377,18 +372,18 @@ where
     {
         if let Some(((note, _, memo_bytes), key_index)) = output {
             let output_id = OutputId::new(txid, output_index as u16);
-            let (nullifier, position) = nullifiers_and_positions.map_or((None, None), |m| {
+            let (nullifier, position) = nullifiers_and_positions.map_or(Ok((None, None)), |m| {
                 m.get(&output_id)
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
-                    .unwrap()
-            });
+                    .ok_or(ScanError::DecryptedNoteDataNotFound(output_id))
+            })?;
             wallet_notes.push(WalletNote {
                 output_id,
                 key_id: key_ids[key_index],
                 note,
                 nullifier,
                 position,
-                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 spending_transaction: None,
             });
         }
@@ -402,7 +397,7 @@ fn scan_outgoing_notes<D, Op, N>(
     txid: TxId,
     ovks: Vec<(KeyId, D::OutgoingViewingKey)>,
     outputs: &[(D, Op)],
-) -> Result<(), ()>
+) -> Result<(), ScanError>
 where
     D: Domain<Note = N>,
     D::Memo: AsRef<[u8]>,
@@ -422,7 +417,7 @@ where
                 output_id: OutputId::new(txid, output_index as u16),
                 key_id: key_ids[key_index],
                 note,
-                memo: Memo::from_bytes(memo_bytes.as_ref()).unwrap(),
+                memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 recipient_full_unified_address: None,
             });
         }
@@ -476,29 +471,39 @@ fn add_recipient_unified_address<P, Nz>(
     consensus_parameters: &P,
     unified_addresses: Vec<UnifiedAddress>,
     outgoing_notes: &mut [OutgoingNote<Nz>],
-) where
+) -> Result<(), ScanError>
+where
     P: consensus::Parameters + NetworkConstants,
     OutgoingNote<Nz>: OutgoingNoteInterface,
 {
     for unified_address in unified_addresses {
         let encoded_address = match <OutgoingNote<Nz>>::SHIELDED_PROTOCOL {
             ShieldedProtocol::Sapling => unified_address.sapling().map(|address| {
-                zcash_keys::encoding::encode_payment_address(
+                Ok(zcash_keys::encoding::encode_payment_address(
                     consensus_parameters.hrp_sapling_payment_address(),
                     address,
-                )
+                ))
             }),
-            ShieldedProtocol::Orchard => unified_address.orchard().map(|address| {
-                keys::encode_orchard_receiver(consensus_parameters, address).unwrap()
-            }),
-        };
+            ShieldedProtocol::Orchard => unified_address
+                .orchard()
+                .map(|address| keys::encode_orchard_receiver(consensus_parameters, address)),
+        }
+        .transpose()?;
         outgoing_notes
             .iter_mut()
-            .filter(|note| encoded_address == Some(note.encoded_recipient(consensus_parameters)))
+            .filter(|note| {
+                if let Ok(note_encoded_recipient) = note.encoded_recipient(consensus_parameters) {
+                    encoded_address == Some(note_encoded_recipient)
+                } else {
+                    false
+                }
+            })
             .for_each(|note| {
                 note.recipient_full_unified_address = Some(unified_address.clone());
             });
     }
+
+    Ok(())
 }
 
 /// Converts and adds the nullifiers from a transaction to the nullifier map.
@@ -548,66 +553,4 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .for_each(|outpoint| {
             outpoint_map.insert(OutputId::from(outpoint), (block_height, txid));
         });
-}
-
-/// For each locator, fetch the spending transaction and then scan and append to the wallet transactions.
-///
-/// This is only intended to be used for transactions that do not contain any incoming notes and therefore evaded
-/// trial decryption.
-/// For targetted rescan of transactions by locator, locators should be added to the wallet using the `TODO` API and
-/// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
-/// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
-/// spending.
-pub(crate) async fn scan_spending_transactions<L, P, W>(
-    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    consensus_parameters: &P,
-    wallet: &mut W,
-    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    locators: L,
-) -> Result<(), ()>
-where
-    L: Iterator<Item = Locator>,
-    P: consensus::Parameters,
-    W: SyncBlocks + SyncTransactions + SyncNullifiers,
-{
-    let wallet_transactions = wallet.get_wallet_transactions().unwrap();
-    let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
-    let mut spending_locators = BTreeSet::new();
-    let mut wallet_blocks = BTreeMap::new();
-    for locator in locators {
-        let block_height = locator.0;
-        let txid = locator.1;
-
-        // skip if transaction already exists in the wallet
-        if wallet_txids.contains(&txid) {
-            continue;
-        }
-
-        spending_locators.insert(locator);
-        wallet_blocks.insert(
-            block_height,
-            wallet.get_wallet_block(block_height).expect(
-                "wallet block should be in the wallet as nullifiers are mapped during scanning",
-            ),
-        );
-    }
-
-    let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
-    let spending_transactions = scan_transactions(
-        fetch_request_sender,
-        consensus_parameters,
-        ufvks,
-        spending_locators,
-        DecryptedNoteData::new(),
-        &wallet_blocks,
-        &mut outpoint_map,
-        HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
-    )
-    .await
-    .unwrap();
-    wallet
-        .extend_wallet_transactions(spending_transactions)
-        .unwrap();
-
-    Ok(())
 }

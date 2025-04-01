@@ -19,10 +19,13 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
+    error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
-    wallet::traits::{SyncBlocks, SyncWallet},
-    wallet::{Locator, SyncState, TreeBounds, WalletTransaction},
+    wallet::{
+        traits::{SyncBlocks, SyncWallet},
+        Locator, SyncState, TreeBounds, WalletTransaction,
+    },
 };
 
 use super::{checked_birthday, VERIFY_BLOCK_RANGE_SIZE};
@@ -42,14 +45,14 @@ pub(super) enum VerifyEnd {
 pub(super) fn get_wallet_height<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &W,
-) -> Result<BlockHeight, ()>
+) -> Result<BlockHeight, W::Error>
 where
     W: SyncWallet,
 {
-    let wallet_height = if let Some(height) = wallet.get_sync_state().unwrap().wallet_height() {
+    let wallet_height = if let Some(height) = wallet.get_sync_state()?.wallet_height() {
         height
     } else {
-        let birthday = checked_birthday(consensus_parameters, wallet);
+        let birthday = checked_birthday(consensus_parameters, wallet)?;
         birthday - 1
     };
 
@@ -74,18 +77,18 @@ pub(super) async fn update_scan_ranges(
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
-) -> Result<(), ()> {
+) {
     merge_scanned_ranges(sync_state);
-    reset_scan_ranges(sync_state)?;
-    create_scan_range(wallet_height, chain_height, sync_state).await?;
+    reset_scan_ranges(sync_state);
+    create_scan_range(wallet_height, chain_height, sync_state).await;
     let locators = sync_state.locators.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Orchard,
         locators.into_iter(),
-    )?;
-    set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height)?;
+    );
+    set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
 
     let verification_height = sync_state
         .highest_scanned_height()
@@ -94,8 +97,6 @@ pub(super) async fn update_scan_ranges(
     if verification_height <= chain_height {
         set_verify_scan_range(sync_state, verification_height, VerifyEnd::VerifyLowest);
     }
-
-    Ok(())
 }
 
 /// Merges all scanned ranges up to the fully scanned height into a single scan range.
@@ -195,9 +196,9 @@ async fn create_scan_range(
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
-) -> Result<(), ()> {
+) {
     if wallet_height == chain_height {
-        return Ok(());
+        return;
     }
 
     let new_scan_range = ScanRange::from_parts(
@@ -208,15 +209,13 @@ async fn create_scan_range(
         ScanPriority::Historic,
     );
     sync_state.scan_ranges.push(new_scan_range);
-
-    Ok(())
 }
 
 /// Resets scan ranges to recover from previous sync interruptions.
 ///
-/// A range that was previously scanning when sync was last interrupted should be set to `Verify` in the case that
-/// the scanner may have been in the verification state.
-fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
+/// A range that was previously scanning when sync was last interrupted is set to `FoundNote` to be prioritised for
+/// scanning.
+fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
         .iter()
@@ -224,10 +223,12 @@ fn reset_scan_ranges(sync_state: &mut SyncState) -> Result<(), ()> {
         .cloned()
         .collect::<Vec<_>>();
     for scan_range in previously_scanning_scan_ranges {
-        set_scan_priority(sync_state, scan_range.block_range(), ScanPriority::Verify).unwrap();
+        set_scan_priority(
+            sync_state,
+            scan_range.block_range(),
+            ScanPriority::FoundNote,
+        );
     }
-
-    Ok(())
 }
 
 /// Splits out the highest or lowest `VERIFY_BLOCK_RANGE_SIZE` blocks from the scan range containing the given `block height`
@@ -286,7 +287,7 @@ fn set_chain_tip_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     chain_height: BlockHeight,
-) -> Result<(), ()> {
+) {
     let sapling_incomplete_shard = determine_block_range(
         consensus_parameters,
         sync_state,
@@ -306,9 +307,7 @@ fn set_chain_tip_scan_range(
         orchard_incomplete_shard
     };
 
-    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip).unwrap();
-
-    Ok(())
+    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
@@ -317,12 +316,10 @@ pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     locators: L,
-) -> Result<(), ()> {
+) {
     for locator in locators {
-        set_found_note_scan_range(consensus_parameters, sync_state, shielded_protocol, locator)?;
+        set_found_note_scan_range(consensus_parameters, sync_state, shielded_protocol, locator);
     }
-
-    Ok(())
 }
 
 /// Punches in the `shielded_protocol` shard block range surrounding the `locator` with `ScanPriority::FoundNote`.
@@ -331,7 +328,7 @@ pub(super) fn set_found_note_scan_range(
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
     locator: Locator,
-) -> Result<(), ()> {
+) {
     let block_height = locator.0;
     let block_range = determine_block_range(
         consensus_parameters,
@@ -339,15 +336,13 @@ pub(super) fn set_found_note_scan_range(
         block_height,
         shielded_protocol,
     );
-    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote).unwrap();
-
-    Ok(())
+    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote);
 }
 
 pub(super) fn set_scanned_scan_range(
     sync_state: &mut SyncState,
     scanned_range: Range<BlockHeight>,
-) -> Result<(), ()> {
+) {
     let Some((index, scan_range)) =
         sync_state
             .scan_ranges
@@ -367,8 +362,6 @@ pub(super) fn set_scanned_scan_range(
         ScanPriority::Scanned,
     );
     sync_state.scan_ranges.splice(index..=index, split_ranges);
-
-    Ok(())
 }
 
 /// Sets the scan range in `sync_state` with `block_range` to the given `scan_priority`.
@@ -378,7 +371,7 @@ pub(super) fn set_scan_priority(
     sync_state: &mut SyncState,
     block_range: &Range<BlockHeight>,
     scan_priority: ScanPriority,
-) -> Result<(), ()> {
+) {
     if let Some((index, range)) = sync_state
         .scan_ranges
         .iter()
@@ -390,8 +383,6 @@ pub(super) fn set_scan_priority(
     } else {
         panic!("scan range with block range {:?} not found!", block_range)
     }
-
-    Ok(())
 }
 
 /// Punches in a `scan_priority` for a given `block_range`.
@@ -407,7 +398,7 @@ fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
-) -> Result<(), ()> {
+) {
     let mut scan_ranges_contained_by_block_range = Vec::new();
     let mut scan_ranges_for_splitting = Vec::new();
 
@@ -434,7 +425,7 @@ fn punch_scan_priority(
     }
 
     for scan_range in scan_ranges_contained_by_block_range {
-        set_scan_priority(sync_state, scan_range.block_range(), scan_priority).unwrap();
+        set_scan_priority(sync_state, scan_range.block_range(), scan_priority);
     }
 
     // split out the scan ranges in reverse order to maintain the correct index for lower scan ranges
@@ -442,8 +433,6 @@ fn punch_scan_priority(
         let split_ranges = split_out_scan_range(scan_range, block_range.clone(), scan_priority);
         sync_state.scan_ranges.splice(index..=index, split_ranges);
     }
-
-    Ok(())
 }
 
 /// Determines the block range which contains all the note commitments for the shard of a given `shielded_protocol` surrounding
@@ -645,7 +634,6 @@ fn select_scan_range(
         selected_scan_range.block_range().clone()
     };
 
-    // TODO: when this library has its own version of ScanRange this can be simplified and more readable
     Some(ScanRange::from_parts(
         selected_block_range,
         selected_priority,
@@ -656,22 +644,20 @@ fn select_scan_range(
 pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
-) -> Result<Option<ScanTask>, ()>
+) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    if let Some(scan_range) =
-        select_scan_range(consensus_parameters, wallet.get_sync_state_mut().unwrap())
+    if let Some(scan_range) = select_scan_range(consensus_parameters, wallet.get_sync_state_mut()?)
     {
         let start_seam_block = wallet
             .get_wallet_block(scan_range.block_range().start - 1)
             .ok();
         let end_seam_block = wallet.get_wallet_block(scan_range.block_range().end).ok();
 
-        let locators = find_locators(wallet.get_sync_state().unwrap(), scan_range.block_range());
+        let locators = find_locators(wallet.get_sync_state()?, scan_range.block_range());
         let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
-            .get_transparent_addresses()
-            .unwrap()
+            .get_transparent_addresses()?
             .iter()
             .map(|(id, address)| (address.clone(), *id))
             .collect();
@@ -694,12 +680,13 @@ pub(super) async fn set_initial_state<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     chain_height: BlockHeight,
-) where
+) -> Result<(), SyncError<W::Error>>
+where
     W: SyncWallet + SyncBlocks,
 {
     let fully_scanned_height = wallet
         .get_sync_state()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
     let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(
@@ -708,16 +695,18 @@ pub(super) async fn set_initial_state<W>(
         wallet,
         fully_scanned_height,
     )
-    .await;
+    .await?;
     let (chain_tip_sapling_tree_size, chain_tip_orchard_tree_size) = final_tree_sizes(
         consensus_parameters,
         fetch_request_sender.clone(),
         wallet,
         chain_height,
     )
-    .await;
+    .await?;
 
-    let sync_state = wallet.get_sync_state_mut().unwrap();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     sync_state.initial_sync_state.sync_start_height = fully_scanned_height + 1;
     sync_state.initial_sync_state.sync_tree_bounds = TreeBounds {
         sapling_initial_tree_size: sync_start_sapling_tree_size,
@@ -727,9 +716,11 @@ pub(super) async fn set_initial_state<W>(
     };
 
     let (total_sapling_outputs_to_scan, total_orchard_outputs_to_scan) =
-        calculate_unscanned_outputs(wallet);
+        calculate_unscanned_outputs(wallet).map_err(SyncError::WalletError)?;
 
-    let sync_state = wallet.get_sync_state_mut().unwrap();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     let total_blocks_to_scan = sync_state
         .scan_ranges()
         .iter()
@@ -742,13 +733,15 @@ pub(super) async fn set_initial_state<W>(
     sync_state.initial_sync_state.total_blocks_to_scan = total_blocks_to_scan;
     sync_state.initial_sync_state.total_sapling_outputs_to_scan = total_sapling_outputs_to_scan;
     sync_state.initial_sync_state.total_orchard_outputs_to_scan = total_orchard_outputs_to_scan;
+
+    Ok(())
 }
 
-pub(super) fn calculate_unscanned_outputs<W>(wallet: &W) -> (u32, u32)
+pub(super) fn calculate_unscanned_outputs<W>(wallet: &W) -> Result<(u32, u32), W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet.get_sync_state().unwrap();
+    let sync_state = wallet.get_sync_state()?;
     let sync_start_height = sync_state.initial_sync_state.sync_start_height;
 
     let nonlinear_scanned_block_ranges = sync_state
@@ -775,7 +768,7 @@ where
                 )
             });
 
-    let sync_state = wallet.get_sync_state().unwrap();
+    let sync_state = wallet.get_sync_state()?;
     let unscanned_sapling_outputs = sync_state
         .initial_sync_state
         .sync_tree_bounds
@@ -795,7 +788,7 @@ where
             .orchard_initial_tree_size
         - nonlinear_scanned_orchard_outputs;
 
-    (unscanned_sapling_outputs, unscanned_orchard_outputs)
+    Ok((unscanned_sapling_outputs, unscanned_orchard_outputs))
 }
 
 /// Gets `block_height` final tree sizes from wallet block if it exists, otherwise from frontiers fetched from server.
@@ -804,15 +797,15 @@ async fn final_tree_sizes<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     wallet: &mut W,
     block_height: BlockHeight,
-) -> (u32, u32)
+) -> Result<(u32, u32), ServerError>
 where
     W: SyncBlocks,
 {
     if let Ok(block) = wallet.get_wallet_block(block_height) {
-        (
+        Ok((
             block.tree_bounds().sapling_final_tree_size,
             block.tree_bounds().orchard_final_tree_size,
-        )
+        ))
     } else {
         // TODO: move this whole block into `client::get_frontiers`
         let sapling_activation_height = consensus_parameters
@@ -821,10 +814,9 @@ where
 
         match block_height.cmp(&(sapling_activation_height - 1)) {
             cmp::Ordering::Greater => {
-                let frontiers = client::get_frontiers(fetch_request_sender.clone(), block_height)
-                    .await
-                    .unwrap();
-                (
+                let frontiers =
+                    client::get_frontiers(fetch_request_sender.clone(), block_height).await?;
+                Ok((
                     frontiers
                         .final_sapling_tree()
                         .tree_size()
@@ -835,9 +827,9 @@ where
                         .tree_size()
                         .try_into()
                         .expect("should not be more than 2^32 note commitments in the tree!"),
-                )
+                ))
             }
-            cmp::Ordering::Equal => (0, 0),
+            cmp::Ordering::Equal => Ok((0, 0)),
             cmp::Ordering::Less => panic!("pre-sapling not supported!"),
         }
     }
@@ -947,7 +939,6 @@ pub(super) fn update_found_note_shard_priority(
                 wallet_transaction.status().get_height(),
                 wallet_transaction.txid(),
             ),
-        )
-        .unwrap();
+        );
     }
 }

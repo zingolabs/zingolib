@@ -8,6 +8,7 @@ use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::zip32::AccountId;
 
 use crate::client::{self, FetchRequest};
+use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
 use crate::wallet::traits::SyncWallet;
@@ -27,8 +28,10 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
-) {
-    let wallet_addresses = wallet.get_transparent_addresses_mut().unwrap();
+) -> Result<(), SyncError<W::Error>> {
+    let wallet_addresses = wallet
+        .get_transparent_addresses_mut()
+        .map_err(SyncError::WalletError)?;
     let mut locators: BTreeSet<Locator> = BTreeSet::new();
     let block_range = Range {
         start: wallet_height + 1 - MAX_VERIFICATION_WINDOW,
@@ -39,11 +42,11 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     for address in wallet_addresses.values() {
         let transactions = client::get_transparent_address_transactions(
             fetch_request_sender.clone(),
+            consensus_parameters,
             address.clone(),
             block_range.clone(),
         )
-        .await
-        .unwrap();
+        .await?;
 
         // The transaction is not scanned here, instead the locator is stored to be later sent to a scan task for these reasons:
         // - We must search for all relevant transactions MAX_VERIFICATION_WINDOW blocks below wallet height in case of re-org.
@@ -95,16 +98,17 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                         consensus_parameters,
                         account_pubkey,
                         address_id,
-                    );
+                    )
+                    .map_err(SyncError::TransparentAddressDerivationError)?;
                     addresses.push((address_id, address.clone()));
 
                     let transactions = client::get_transparent_address_transactions(
                         fetch_request_sender.clone(),
+                        consensus_parameters,
                         address,
                         block_range.clone(),
                     )
-                    .await
-                    .unwrap();
+                    .await?;
 
                     if transactions.is_empty() {
                         unused_address_count += 1;
@@ -128,9 +132,11 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
 
     wallet
         .get_sync_state_mut()
-        .unwrap()
+        .map_err(SyncError::WalletError)?
         .locators
         .append(&mut locators);
+
+    Ok(())
 }
 
 // TODO: process memo encoded address indexes.

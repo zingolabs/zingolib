@@ -204,7 +204,7 @@ mod load_wallet {
 
         // Interrupt generating send
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 &get_base_address_macro!(recipient, "unified"),
                 10_000,

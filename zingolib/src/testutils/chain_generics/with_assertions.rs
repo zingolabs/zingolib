@@ -15,7 +15,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// this function handles inputs and their lifetimes to create a proposal
 pub async fn to_clients_proposal(
-    sender: &LightClient,
+    sender: &mut LightClient,
     sends: &[(&LightClient, PoolType, u64, Option<&str>)],
 ) -> zcash_client_backend::proposal::Proposal<
     zcash_primitives::transaction::fees::zip317::FeeRule,
@@ -53,10 +53,7 @@ where
 {
     sender.sync_and_await(true).await.unwrap();
     let proposal = from_inputs::propose(sender, payments).await.unwrap();
-    let txids = sender
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
+    let txids = sender.send_stored_proposal().await.unwrap();
 
     follow_proposal(
         environment,
@@ -83,10 +80,7 @@ where
 {
     let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
 
-    let txids = client
-        .complete_and_broadcast_stored_proposal()
-        .await
-        .unwrap();
+    let txids = client.send_stored_proposal().await.unwrap();
 
     let (total_fee, _, s_shielded) =
         follow_proposal(environment, client, vec![], &proposal, txids, test_mempool).await?;

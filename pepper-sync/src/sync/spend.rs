@@ -1,6 +1,6 @@
 //! Module for reading and updating wallet data related to spending
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use tokio::sync::mpsc;
 use zcash_client_backend::ShieldedProtocol;
@@ -12,10 +12,13 @@ use zcash_primitives::{
 use zip32::AccountId;
 
 use crate::{
-    client::FetchRequest,
-    scan::transactions::scan_spending_transactions,
-    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
-    wallet::{Locator, NullifierMap, OutputId, WalletTransaction},
+    client::{self, FetchRequest},
+    error::SyncError,
+    scan::{transactions::scan_transactions, DecryptedNoteData},
+    wallet::{
+        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+        Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction,
+    },
 };
 
 use super::state;
@@ -32,35 +35,41 @@ pub(super) async fn update_shielded_spends<P, W>(
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-) -> Result<(), ()>
+    scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<(), SyncError<W::Error>>
 where
     P: consensus::Parameters,
     W: SyncBlocks + SyncTransactions + SyncNullifiers,
 {
-    let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
-        collect_derived_nullifiers(wallet.get_wallet_transactions().unwrap());
+    let (sapling_derived_nullifiers, orchard_derived_nullifiers) = collect_derived_nullifiers(
+        wallet
+            .get_wallet_transactions()
+            .map_err(SyncError::WalletError)?,
+    );
 
     let (sapling_spend_locators, orchard_spend_locators) = detect_shielded_spends(
-        wallet.get_nullifiers_mut().unwrap(),
+        wallet
+            .get_nullifiers_mut()
+            .map_err(SyncError::WalletError)?,
         sapling_derived_nullifiers,
         orchard_derived_nullifiers,
     );
 
-    let sync_state = wallet.get_sync_state_mut().unwrap();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Sapling,
         sapling_spend_locators.values().cloned(),
-    )
-    .unwrap();
+    );
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Orchard,
         orchard_spend_locators.values().cloned(),
-    )
-    .unwrap();
+    );
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
     scan_spending_transactions(
@@ -72,17 +81,94 @@ where
             .values()
             .chain(orchard_spend_locators.values())
             .cloned(),
+        scanned_blocks,
     )
-    .await
-    .unwrap();
+    .await?;
 
     update_spent_notes(
-        wallet.get_wallet_transactions_mut().unwrap(),
+        wallet
+            .get_wallet_transactions_mut()
+            .map_err(SyncError::WalletError)?,
         sapling_spend_locators,
         orchard_spend_locators,
     );
 
     Ok(())
+}
+
+/// For each locator, fetch the spending transaction and then scan and append to the wallet transactions.
+///
+/// This is only intended to be used for transactions that do not contain any incoming notes and therefore evaded
+/// trial decryption.
+/// For targetted scanning of transactions, locators should be added to the wallet using [`crate::add_scan_targets`] and
+/// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
+/// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
+/// spending.
+async fn scan_spending_transactions<L, P, W>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    consensus_parameters: &P,
+    wallet: &mut W,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    locators: L,
+    scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+) -> Result<(), SyncError<W::Error>>
+where
+    L: Iterator<Item = Locator>,
+    P: consensus::Parameters,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers,
+{
+    let wallet_transactions = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?;
+    let wallet_txids = wallet_transactions.keys().copied().collect::<HashSet<_>>();
+    let mut spending_locators = BTreeSet::new();
+    let mut wallet_blocks = BTreeMap::new();
+    for locator in locators {
+        let block_height = locator.0;
+        let txid = locator.1;
+
+        // skip if transaction already exists in the wallet
+        if wallet_txids.contains(&txid) {
+            continue;
+        }
+
+        spending_locators.insert(locator);
+
+        let wallet_block = match wallet.get_wallet_block(block_height) {
+            Ok(block) => block,
+            Err(_) => match scanned_blocks.get(&block_height) {
+                Some(block) => block.clone(),
+                None => {
+                    WalletBlock::from_compact_block(
+                        consensus_parameters,
+                        fetch_request_sender.clone(),
+                        &client::get_compact_block(fetch_request_sender.clone(), block_height)
+                            .await?,
+                    )
+                    .await?
+                }
+            },
+        };
+
+        wallet_blocks.insert(block_height, wallet_block);
+    }
+
+    let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
+    let spending_transactions = scan_transactions(
+        fetch_request_sender,
+        consensus_parameters,
+        ufvks,
+        spending_locators,
+        DecryptedNoteData::new(),
+        &wallet_blocks,
+        &mut outpoint_map,
+        HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
+    )
+    .await?;
+
+    wallet
+        .extend_wallet_transactions(spending_transactions)
+        .map_err(SyncError::WalletError)
 }
 
 /// Collects the derived nullifiers from each note in the wallet
@@ -163,18 +249,17 @@ pub(super) fn update_spent_notes(
 /// Locates any output ids of coins in the wallet's transactions which match an output id in the wallet's outpoint map.
 /// If a spend is detected, the output id is removed from the outpoint map and added to the map of spend locators.
 /// Finally, all coins that were detected as spent are updated with the located spending transaction.
-pub(super) fn update_transparent_spends<W>(wallet: &mut W) -> Result<(), ()>
+pub(super) fn update_transparent_spends<W>(wallet: &mut W) -> Result<(), W::Error>
 where
     W: SyncBlocks + SyncTransactions + SyncOutPoints,
 {
-    let transparent_output_ids =
-        collect_transparent_output_ids(wallet.get_wallet_transactions().unwrap());
+    let transparent_output_ids = collect_transparent_output_ids(wallet.get_wallet_transactions()?);
 
     let transparent_spend_locators =
-        detect_transparent_spends(wallet.get_outpoints_mut().unwrap(), transparent_output_ids);
+        detect_transparent_spends(wallet.get_outpoints_mut()?, transparent_output_ids);
 
     update_spent_coins(
-        wallet.get_wallet_transactions_mut().unwrap(),
+        wallet.get_wallet_transactions_mut()?,
         transparent_spend_locators,
     );
 

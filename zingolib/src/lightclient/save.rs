@@ -34,6 +34,17 @@ impl LightClient {
         self.save_handle = Some(save_handle);
     }
 
+    pub async fn wait_for_save(&self) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            if !self.wallet.lock().await.save_required {
+                return;
+            }
+        }
+    }
+
     /// Polls the save task, returning [`self::PollReport`].
     fn poll_save_task(&mut self) -> PollReport<(), std::io::Error> {
         if let Some(mut save_handle) = self.save_handle.take() {
@@ -72,7 +83,7 @@ impl LightClient {
     }
 
     /// Calls [`crate::wallet::LightWallet::save`] in a runtime and returns an empty buffer in the case save was not required.
-    // FIXME: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
+    // TODO: zingo2, this is kept in to make zingomobile integration easier but should be moved into zingo-mobile
     pub fn export_save_buffer_runtime(&mut self) -> Result<Vec<u8>, String> {
         crate::commands::RT.block_on(async move {
             match self.wallet.lock().await.save().await {

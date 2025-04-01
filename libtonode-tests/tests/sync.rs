@@ -90,10 +90,11 @@ async fn sync_test() {
     let (regtest_manager, _cph, _faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
 
+    let recipient_ua = get_base_address_macro!(&recipient, "unified");
     from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
-            &get_base_address_macro!(&recipient, "unified"),
+            &recipient_ua,
             100_000,
             None,
             // Some("send to self test"),
@@ -106,12 +107,8 @@ async fn sync_test() {
         .await
         .unwrap();
 
-    println!("{}", recipient.transaction_summaries().await);
-    println!("{}", recipient.value_transfers().await);
-    // let wallet = recipient.wallet.lock().await;
-    // dbg!(&wallet.wallet_transactions);
-    // dbg!(&wallet.wallet_blocks);
-    // dbg!(&wallet.nullifier_map);
-    // dbg!(&wallet.outpoint_map);
-    // dbg!(&wallet.sync_state);
+    // println!("{}", recipient.transaction_summaries().await.unwrap());
+    // println!("{}", recipient.value_transfers().await.unwrap());
+    let wallet = recipient.wallet.lock().await;
+    dbg!(wallet.wallet_blocks.len());
 }

@@ -3,6 +3,7 @@
 
 use crate::data::{proposal, PollReport};
 use crate::lightclient::LightClient;
+use crate::utils::conversion::txid_from_hex_encoded_str;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use indoc::indoc;
 use json::object;
@@ -380,26 +381,27 @@ impl Command for SyncCommand {
         match args[0] {
             "run" => {
                 if lightclient.sync_mode() == SyncMode::Paused {
-                    lightclient.resume_sync();
+                    lightclient.resume_sync().expect("sync should be paused");
                     "Resuming sync task...".to_string()
                 } else {
-                    if let Err(e) = RT.block_on(async move { lightclient.sync(true).await }) {
-                        return format!("Error: {e}");
-                    }
-                    "Launching sync task...".to_string()
+                    RT.block_on(async move {
+                        match lightclient.sync(true).await {
+                            Ok(_) => "Launching sync task...".to_string(),
+                            Err(e) => format!("Error: {e}"),
+                        }
+                    })
                 }
             }
-            "pause" => {
-                lightclient.pause_sync();
-                "Pausing sync task...".to_string()
-            }
-            "status" => RT
-                .block_on(async move {
-                    json::JsonValue::from(
-                        pepper_sync::sync_status(&*lightclient.wallet.lock().await).await,
-                    )
-                })
-                .pretty(2),
+            "pause" => match lightclient.pause_sync() {
+                Ok(_) => "Pausing sync task...".to_string(),
+                Err(e) => format!("Error: {e}"),
+            },
+            "status" => RT.block_on(async move {
+                match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
+                    Ok(status) => json::JsonValue::from(status).pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }),
             "poll" => match lightclient.poll_sync() {
                 PollReport::NoHandle => "Sync task has not been launched.".to_string(),
                 PollReport::NotReady => "Sync task is not complete.".to_string(),
@@ -617,7 +619,7 @@ impl Command for BalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+            serde_json::to_string_pretty(&lightclient.do_balance().await).expect("infallible")
         })
     }
 }
@@ -1083,7 +1085,7 @@ impl Command for ConfirmCommand {
 
         RT.block_on(async move {
             match lightclient
-                .complete_and_broadcast_stored_proposal()
+                .send_stored_proposal()
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
@@ -1093,6 +1095,44 @@ impl Command for ConfirmCommand {
                 }
             }
             .pretty(2)
+        })
+    }
+}
+
+struct ResendCommand {}
+impl Command for ResendCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Re-transmits a calculated transaction from the wallet with the given txid.
+            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
+            to remove the calculated transaction in the case of send failure.
+
+            usage:
+            resend <txid>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Re-transmits a calculated transaction from the wallet with the given txid."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
+                .to_string();
+        }
+
+        let txid = match txid_from_hex_encoded_str(args[0]) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        RT.block_on(async move {
+            match lightclient.resend(txid).await {
+                Ok(_) => "Successfully resent transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1121,7 +1161,7 @@ impl Command for DeleteCommand {
             match lightclient.do_delete().await {
                 Ok(_) => {
                     let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                    "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
                     r.pretty(2)
                 }
                 Err(e) => {
@@ -1156,7 +1196,7 @@ impl Command for SeedCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_seed_phrase().await {
-                Ok(m) => serde_json::to_string_pretty(&m).unwrap(),
+                Ok(m) => serde_json::to_string_pretty(&m).expect("infallible"),
                 Err(e) => object! { "error" => e }.pretty(2),
             }
         })
@@ -1191,9 +1231,12 @@ impl Command for ValueTransfersCommand {
             .unwrap_or(Ok(false))
             .unwrap_or(false);
 
-        RT.block_on(
-            async move { format!("{}", lightclient.sorted_value_transfers(newer_first).await) },
-        )
+        RT.block_on(async move {
+            match lightclient.sorted_value_transfers(newer_first).await {
+                Ok(value_transfers) => value_transfers.to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
@@ -1223,9 +1266,10 @@ impl Command for MessagesFilterCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.messages_containing(args.first().copied()).await)
-                .pretty(2)
-                .to_string()
+            match lightclient.messages_containing(args.first().copied()).await {
+                Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1250,7 +1294,12 @@ impl Command for TransactionsCommand {
             return "Error: invalid arguments\nTry 'help transactions' for correct usage and examples"
                 .to_string();
         }
-        RT.block_on(async move { format!("{}", lightclient.transaction_summaries().await) })
+        RT.block_on(async move {
+            match lightclient.transaction_summaries().await {
+                Ok(transactions) => transactions.to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
@@ -1274,7 +1323,10 @@ impl Command for MemoBytesToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
+            match lightclient.do_total_memobytes_to_address().await {
+                Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1299,7 +1351,10 @@ impl Command for ValueToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+            match lightclient.do_total_value_to_address().await {
+                Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1324,7 +1379,10 @@ impl Command for SendsToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_spends_to_address().await).pretty(2)
+            match lightclient.do_total_spends_to_address().await {
+                Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
         })
     }
 }
@@ -1620,6 +1678,51 @@ impl Command for CoinsCommand {
     }
 }
 
+struct RemoveTransactionCommand {}
+impl Command for RemoveTransactionCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Removes an unconfirmed transaction from the wallet with the given txid.
+            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
+            the "resend" command to attempt to re-transmit.
+            This is a manual operation so important information such as memos are retained in the case of send failure
+            until the user decides to remove them or resend.
+
+            usage:
+            remove_transaction <txid>
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Removes an unconfirmed transaction from the wallet with the given txid."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: remove command expects 1 argument. Type \"help remove\" for usage."
+                .to_string();
+        }
+
+        let txid = match txid_from_hex_encoded_str(args[0]) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        RT.block_on(async move {
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .remove_unconfirmed_transaction(txid)
+            {
+                Ok(_) => "Successfully removed transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> &'static str {
@@ -1756,6 +1859,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
+        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
@@ -1766,6 +1870,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
+        ("remove_transaction", Box::new(RemoveTransactionCommand {})),
     ];
     {
         entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
