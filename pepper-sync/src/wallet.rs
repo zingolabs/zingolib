@@ -5,6 +5,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
     fmt::Debug,
     ops::Range,
     sync::{
@@ -17,6 +18,7 @@ use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use tokio::sync::mpsc;
+use zcash_address::unified::ParseError;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::compact_formats::CompactBlock,
@@ -38,6 +40,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::FetchRequest,
+    error::{ServerError, SyncModeError},
     keys::{self, transparent::TransparentAddressId, KeyId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::MAX_VERIFICATION_WINDOW,
@@ -210,12 +213,12 @@ impl SyncMode {
     /// Constructor from u8.
     ///
     /// Returns `None` if `mode` is not a valid enum variant.
-    pub fn from_u8(mode: u8) -> Option<Self> {
+    pub fn from_u8(mode: u8) -> Result<Self, SyncModeError> {
         match mode {
-            0 => Some(Self::NotRunning),
-            1 => Some(Self::Paused),
-            2 => Some(Self::Running),
-            _ => None,
+            0 => Ok(Self::NotRunning),
+            1 => Ok(Self::Paused),
+            2 => Ok(Self::Running),
+            _ => Err(SyncModeError::InvalidSyncMode(mode)),
         }
     }
 
@@ -226,9 +229,8 @@ impl SyncMode {
     /// Panics if `atomic_sync_mode` corresponds to an invalid enum variant.
     /// It is the consumers responsibility to ensure the library restricts the user API to only set valid values via
     /// [`crate::wallet::SyncMode`].
-    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> SyncMode {
+    pub fn from_atomic_u8(atomic_sync_mode: Arc<AtomicU8>) -> Result<SyncMode, SyncModeError> {
         SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
-            .expect("this library does not allow setting of non-valid sync mode variants")
     }
 }
 
@@ -265,6 +267,19 @@ impl OutputId {
     /// Index of output within the transactions bundle of the given pool type.
     pub fn output_index(&self) -> u16 {
         self.output_index
+    }
+}
+
+impl std::fmt::Display for OutputId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                txid: {}
+                output index: {}
+            }}",
+            self.txid, self.output_index
+        )
     }
 }
 
@@ -327,11 +342,11 @@ impl WalletBlock {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block: &CompactBlock,
-    ) -> Self {
+    ) -> Result<Self, ServerError> {
         let tree_bounds =
-            calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await;
+            calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
-        Self {
+        Ok(Self {
             block_height: block.height(),
             block_hash: block.hash(),
             prev_hash: block.prev_hash(),
@@ -342,7 +357,7 @@ impl WalletBlock {
                 .map(|transaction| transaction.txid())
                 .collect(),
             tree_bounds,
-        }
+        })
     }
 
     /// Block height.
@@ -426,7 +441,7 @@ impl WalletTransaction {
     }
 
     /// Sapling notes mutable
-    pub(crate) fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
+    pub fn sapling_notes_mut(&mut self) -> Vec<&mut SaplingNote> {
         self.sapling_notes.iter_mut().collect()
     }
 
@@ -436,7 +451,7 @@ impl WalletTransaction {
     }
 
     /// Orchard notes mutable
-    pub(crate) fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
+    pub fn orchard_notes_mut(&mut self) -> Vec<&mut OrchardNote> {
         self.orchard_notes.iter_mut().collect()
     }
 
@@ -572,6 +587,9 @@ pub trait OutputInterface: Sized {
     /// If `None`, output is not spent.
     fn spending_transaction(&self) -> Option<TxId>;
 
+    /// Sets spending transaction.
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>);
+
     /// Note value..
     fn value(&self) -> u64;
 
@@ -663,6 +681,10 @@ impl OutputInterface for TransparentCoin {
         self.spending_transaction
     }
 
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
+    }
+
     fn value(&self) -> u64 {
         self.value.into_u64()
     }
@@ -719,6 +741,10 @@ impl OutputInterface for SaplingNote {
 
     fn spending_transaction(&self) -> Option<TxId> {
         self.spending_transaction
+    }
+
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
     }
 
     fn value(&self) -> u64 {
@@ -782,6 +808,10 @@ impl OutputInterface for OrchardNote {
         self.spending_transaction
     }
 
+    fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>) {
+        self.spending_transaction = spending_transaction;
+    }
+
     fn value(&self) -> u64 {
         self.note.value().inner()
     }
@@ -828,6 +858,8 @@ pub trait OutgoingNoteInterface: Sized {
     type ZcashNote;
     /// Address type.
     type Address: Clone + Copy + Debug + PartialEq + Eq;
+    /// Encoding error
+    type Error: Debug + std::error::Error;
 
     /// Note's associated shielded protocol.
     const SHIELDED_PROTOCOL: ShieldedProtocol;
@@ -854,7 +886,7 @@ pub trait OutgoingNoteInterface: Sized {
     fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress>;
 
     /// Encoded recipient address recorded in note on chain (single receiver).
-    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    fn encoded_recipient<P>(&self, parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants;
 
@@ -888,6 +920,7 @@ pub type OutgoingSaplingNote = OutgoingNote<sapling_crypto::Note>;
 impl OutgoingNoteInterface for OutgoingSaplingNote {
     type ZcashNote = sapling_crypto::Note;
     type Address = sapling_crypto::PaymentAddress;
+    type Error = Infallible;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
 
@@ -919,14 +952,14 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         self.recipient_full_unified_address.as_ref()
     }
 
-    fn encoded_recipient<P>(&self, consensus_parameters: &P) -> String
+    fn encoded_recipient<P>(&self, consensus_parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        encode_payment_address(
+        Ok(encode_payment_address(
             consensus_parameters.hrp_sapling_payment_address(),
             &self.note().recipient(),
-        )
+        ))
     }
 
     fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
@@ -949,6 +982,7 @@ pub type OutgoingOrchardNote = OutgoingNote<orchard::Note>;
 impl OutgoingNoteInterface for OutgoingOrchardNote {
     type ZcashNote = orchard::Note;
     type Address = orchard::Address;
+    type Error = ParseError;
 
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 
@@ -980,11 +1014,11 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
         self.recipient_full_unified_address.as_ref()
     }
 
-    fn encoded_recipient<P>(&self, parameters: &P) -> String
+    fn encoded_recipient<P>(&self, parameters: &P) -> Result<String, Self::Error>
     where
         P: consensus::Parameters + consensus::NetworkConstants,
     {
-        keys::encode_orchard_receiver(parameters, &self.note().recipient()).unwrap()
+        keys::encode_orchard_receiver(parameters, &self.note().recipient())
     }
 
     fn encoded_recipient_full_unified_address<P>(&self, consensus_parameters: &P) -> Option<String>
@@ -1001,6 +1035,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     }
 }
 
+// TODO: allow consumer to define shard store
 /// Type alias for sapling memory shard store
 pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 
@@ -1041,8 +1076,6 @@ impl ShardTrees {
 
         Self { sapling, orchard }
     }
-
-    // TODO: clear fn the creates news shard trees and replaces with current, add logic for truncating to height 0
 }
 
 impl Default for ShardTrees {

@@ -1,11 +1,11 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
 use pepper_sync::{
+    error::SyncError,
     keys::transparent::{self, TransparentScope},
-    wallet::traits::SyncWallet,
     wallet::{
-        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
-        SaplingShardStore,
+        traits::SyncWallet, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
+        OutputInterface, SaplingNote, SaplingShardStore,
     },
 };
 use shardtree::{error::ShardTreeError, ShardTree};
@@ -212,18 +212,13 @@ impl WalletRead for LightWallet {
         &self,
         account: Self::AccountId,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
-        Ok(self
-            .transparent_addresses
+        self.transparent_addresses
             .iter()
-            .filter_map(|(address_id, encoded_address)| {
-                if address_id.account_id() != account
-                    || address_id.scope() == TransparentScope::Refund
-                {
-                    return None;
-                }
-
-                let address = ZcashAddress::try_from_encoded(encoded_address)
-                    .unwrap()
+            .filter(|(address_id, _)| {
+                address_id.account_id() == account && address_id.scope() != TransparentScope::Refund
+            })
+            .map(|(address_id, encoded_address)| {
+                let address = ZcashAddress::try_from_encoded(encoded_address)?
                     .convert_if_network::<TransparentAddress>(self.network.network_type())
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::new(
@@ -232,9 +227,9 @@ impl WalletRead for LightWallet {
                         .expect("checked on address derivation"),
                 );
 
-                Some((address, Some(address_metadata)))
+                Ok((address, Some(address_metadata)))
             })
-            .collect())
+            .collect()
     }
 
     fn get_transparent_balances(
@@ -250,24 +245,17 @@ impl WalletRead for LightWallet {
         account: Self::AccountId,
         index_range: Option<Range<u32>>,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        Ok(self
-            .transparent_addresses
+        self.transparent_addresses
             .iter()
-            .filter_map(|(address_id, encoded_address)| {
-                if address_id.account_id() != account
-                    || address_id.scope() != TransparentScope::Refund
-                {
-                    return None;
-                }
-
-                if let Some(range) = index_range.clone() {
-                    if !range.contains(&address_id.address_index()) {
-                        return None;
-                    }
-                }
-
-                let address = ZcashAddress::try_from_encoded(encoded_address)
-                    .unwrap()
+            .filter(|(address_id, _)| {
+                address_id.account_id() == account
+                    && address_id.scope() == TransparentScope::Refund
+                    && index_range
+                        .clone()
+                        .map_or(true, |range| range.contains(&address_id.address_index()))
+            })
+            .map(|(address_id, encoded_address)| {
+                let address = ZcashAddress::try_from_encoded(encoded_address)?
                     .convert_if_network::<TransparentAddress>(self.network.network_type())
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::new(
@@ -276,9 +264,9 @@ impl WalletRead for LightWallet {
                         .expect("checked on address derivation"),
                 );
 
-                Some((address, address_metadata))
+                Ok((address, address_metadata))
             })
-            .collect())
+            .collect()
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
@@ -364,14 +352,21 @@ impl WalletWrite for LightWallet {
                 consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
-            pepper_sync::scan_pending_transaction(
+            match pepper_sync::scan_pending_transaction(
                 &network,
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
                 ConfirmationStatus::Calculated(sent_transaction.target_height()),
                 sent_transaction.created().unix_timestamp() as u32,
-            );
+            ) {
+                Ok(_) => (),
+                Err(SyncError::ScanError(e)) => return Err(e.into()),
+                Err(SyncError::WalletError(e)) => return Err(e),
+                Err(_) => {
+                    panic!("`scan_pending_transactions` should only return scan or wallet errors")
+                }
+            }
         }
 
         Ok(())

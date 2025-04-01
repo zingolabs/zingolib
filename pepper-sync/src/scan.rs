@@ -15,16 +15,14 @@ use zcash_primitives::{
 
 use crate::{
     client::FetchRequest,
+    error::{ScanError, ServerError},
     wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
-use self::{
-    compact_blocks::scan_compact_blocks, error::ScanError, transactions::scan_transactions,
-};
+use self::{compact_blocks::scan_compact_blocks, transactions::scan_transactions};
 
 pub(crate) mod compact_blocks;
-pub mod error;
 pub(crate) mod task;
 pub(crate) mod transactions;
 
@@ -42,7 +40,7 @@ impl InitialScanData {
         first_block: &CompactBlock,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-    ) -> Result<Self, ()>
+    ) -> Result<Self, ServerError>
     where
         P: consensus::Parameters + Sync + Send + 'static,
     {
@@ -58,7 +56,7 @@ impl InitialScanData {
                     fetch_request_sender,
                     first_block,
                 )
-                .await;
+                .await?;
 
                 (
                     tree_bounds.sapling_initial_tree_size,
@@ -86,7 +84,7 @@ struct ScanData {
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) outpoints: BTreeMap<OutputId, Locator>,
-    pub(crate) wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub(crate) scanned_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -154,8 +152,7 @@ where
         start_seam_block,
         end_seam_block,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
@@ -168,7 +165,7 @@ where
         )
     })
     .await
-    .unwrap()?;
+    .expect("task panicked")?;
 
     let ScanData {
         nullifiers,
@@ -191,8 +188,7 @@ where
         &mut outpoints,
         transparent_addresses,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let WitnessData {
         sapling_initial_position,
@@ -203,19 +199,17 @@ where
 
     let (sapling_located_trees, orchard_located_trees) = tokio::task::spawn_blocking(move || {
         (
-            witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions)
-                .unwrap(),
-            witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions)
-                .unwrap(),
+            witness::build_located_trees(sapling_initial_position, sapling_leaves_and_retentions),
+            witness::build_located_trees(orchard_initial_position, orchard_leaves_and_retentions),
         )
     })
     .await
-    .unwrap();
+    .expect("task panicked");
 
     Ok(ScanResults {
         nullifiers,
         outpoints,
-        wallet_blocks,
+        scanned_blocks: wallet_blocks,
         wallet_transactions,
         sapling_located_trees,
         orchard_located_trees,

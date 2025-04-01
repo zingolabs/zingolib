@@ -498,7 +498,7 @@ pub async fn faucet_funded_recipient(
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
             super::lightclient::from_inputs::quick_send(
-                &faucet,
+                &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
             )
             .await
@@ -512,7 +512,7 @@ pub async fn faucet_funded_recipient(
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
             super::lightclient::from_inputs::quick_send(
-                &faucet,
+                &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
             )
             .await
@@ -526,7 +526,7 @@ pub async fn faucet_funded_recipient(
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
             super::lightclient::from_inputs::quick_send(
-                &faucet,
+                &mut faucet,
                 vec![(
                     &get_base_address_macro!(recipient, "transparent"),
                     funds,
@@ -663,7 +663,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
     );
     faucet.sync_and_await(true).await.unwrap();
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
     .await
@@ -705,7 +705,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .unwrap();
     // received from a faucet
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
     .await
@@ -715,7 +715,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .unwrap();
     // send to a faucet
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
             value.checked_div(10).unwrap(),
@@ -728,10 +728,11 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     // send to self sapling
+    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
-            &get_base_address_macro!(recipient, "sapling"),
+            &recipient_sapling_address,
             value.checked_div(10).unwrap(),
             Some("note-to-self test memo"),
         )],
@@ -774,7 +775,7 @@ pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, Chi
 
     // received from a faucet to transparent
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
             value.checked_div(4).unwrap(),
@@ -825,7 +826,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
     // received from a faucet to orchard
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
             value.checked_div(2).unwrap(),
@@ -839,7 +840,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
     // received from a faucet to sapling
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
             value.checked_div(4).unwrap(),
@@ -853,7 +854,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
     // received from a faucet to transparent
     super::lightclient::from_inputs::quick_send(
-        &faucet,
+        &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
             value.checked_div(4).unwrap(),
@@ -867,7 +868,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
     // send to a faucet
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
             value.checked_div(10).unwrap(),
@@ -880,10 +881,11 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self orchard
+    let recipient_unified_address = get_base_address_macro!(recipient, "unified");
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
-            &get_base_address_macro!(recipient, "unified"),
+            &recipient_unified_address,
             value.checked_div(10).unwrap(),
             None,
         )],
@@ -894,10 +896,11 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self sapling
+    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
-            &get_base_address_macro!(recipient, "sapling"),
+            &recipient_sapling_address,
             value.checked_div(10).unwrap(),
             None,
         )],
@@ -908,10 +911,11 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // send to self transparent
+    let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
     super::lightclient::from_inputs::quick_send(
-        &recipient,
+        &mut recipient,
         vec![(
-            &get_base_address_macro!(recipient, "transparent"),
+            &recipient_transparent_address,
             value.checked_div(10).unwrap(),
             None,
         )],

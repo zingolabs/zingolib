@@ -2,13 +2,11 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::config::ZingoConfig;
-use base58::ToBase58;
 use pepper_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
 use sapling_crypto::{
     zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
     PaymentAddress,
 };
-use sha2::Sha256;
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{
@@ -94,37 +92,6 @@ impl LightWallet {
                 Ok((transparent_address_id, refund_address))
             })
             .collect()
-    }
-}
-
-// TODO: zingo2, remove?
-/// Sha256(Sha256(value))
-pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
-    let h1 = <Sha256 as sha2::Digest>::digest(payload);
-    let h2 = <Sha256 as sha2::Digest>::digest(h1.as_slice());
-    h2.to_vec()
-}
-
-// TODO: zingo2, remove?
-/// A trait for converting a [u8] to base58 encoded string.
-pub trait ToBase58Check {
-    /// Converts a value of `self` to a base58 value, returning the owned string.
-    /// The version is a coin-specific prefix that is added.
-    /// The suffix is any bytes that we want to add at the end (like the "iscompressed" flag for
-    /// Secret key encoding)
-    fn to_base58check(&self, version: &[u8], suffix: &[u8]) -> String;
-}
-
-impl ToBase58Check for [u8] {
-    fn to_base58check(&self, version: &[u8], suffix: &[u8]) -> String {
-        let mut payload: Vec<u8> = Vec::new();
-        payload.extend_from_slice(version);
-        payload.extend_from_slice(self);
-        payload.extend_from_slice(suffix);
-
-        let checksum = double_sha256(&payload);
-        payload.append(&mut checksum[..4].to_vec());
-        payload.to_base58()
     }
 }
 

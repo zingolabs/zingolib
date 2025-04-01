@@ -36,7 +36,6 @@ pub(crate) enum ZingoProposal {
 }
 
 /// total sum of all transaction request payment amounts in a proposal
-/// TODO: test for multi-step, zip320 currently unsupported.
 pub(crate) fn total_payment_amount(
     proposal: &ProportionalFeeProposal,
 ) -> Result<NonNegativeAmount, BalanceError> {
@@ -50,7 +49,6 @@ pub(crate) fn total_payment_amount(
 }
 
 /// total sum of all fees in a proposal
-/// TODO: test for multi-step, zip320 currently unsupported.
 pub(crate) fn total_fee(
     proposal: &ProportionalFeeProposal,
 ) -> Result<NonNegativeAmount, BalanceError> {

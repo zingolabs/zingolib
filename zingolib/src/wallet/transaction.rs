@@ -1,8 +1,8 @@
 use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
-use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::transaction::{components::Amount, TxId};
 
 use super::{
-    error::{FeeError, KindError},
+    error::{FeeError, RemovalError, SpendError},
     LightWallet,
 };
 
@@ -12,34 +12,36 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
         fail_on_miss: bool,
-    ) -> Result<Vec<&Op>, KindError> {
-        let spends = self.wallet_outputs::<Op>()
+    ) -> Result<Vec<&Op>, SpendError> {
+        let spends = self
+            .wallet_outputs::<Op>()
             .into_iter()
             .filter_map(|output| {
                 output.spending_transaction().and_then(|txid| {
                     if txid == transaction.txid() {
-                        let spend = Op::transaction_inputs(transaction)
-                            .into_iter()
-                            .find(|&input| {
-                                output.spend_link().map_or(false, |spend_link|
-                                {
-                                    *input
-                                    == spend_link
-                                })
-                            });
+                        let spend =
+                            Op::transaction_inputs(transaction)
+                                .into_iter()
+                                .find(|&input| {
+                                    output
+                                        .spend_link()
+                                        .map_or(false, |spend_link| *input == spend_link)
+                                });
 
                         if spend.is_none() {
-                            // TODO: error handling
-                            panic!("output's spending transaction field incorrectly points to transaction which did not spend output!");
+                            return Some(Err(SpendError::IncorrectSpendingTransaction {
+                                output_id: output.output_id(),
+                                txid,
+                            }));
                         }
 
-                        Some(output)
+                        Some(Ok(output))
                     } else {
                         None
                     }
                 })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, SpendError>>()?;
 
         if fail_on_miss {
             let spend_links = spends
@@ -49,7 +51,8 @@ impl LightWallet {
 
             for input in Op::transaction_inputs(transaction) {
                 if !spend_links.contains(input) {
-                    return Err(KindError::SpendNotFound {
+                    return Err(SpendError::SpendNotFound {
+                        pool: Op::POOL_TYPE,
                         txid: transaction.txid(),
                         spend: format!("{:?}", input),
                     });
@@ -63,7 +66,7 @@ impl LightWallet {
     /// Calculate the fee for a transaction in the wallet.
     ///
     /// Fails if transparent spends are not found in the wallet.
-    // FIXME: zingo2, write integration tests
+    // TODO: write integration test
     pub fn calculate_transaction_fee(
         &self,
         transaction: &WalletTransaction,
@@ -85,6 +88,50 @@ impl LightWallet {
             })?
             .try_into()
             .expect("fee should not be negative"))
+    }
+
+    /// Removes transaction with the given `txid` from the wallet.
+    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` allowing these
+    /// outputs to be re-selected for spending in future sends.
+    ///
+    /// # Error
+    ///
+    /// Returns error if transaction is confirmed or does not exist in the wallet.
+    pub fn remove_unconfirmed_transaction(&mut self, txid: TxId) -> Result<(), RemovalError> {
+        if let Some(transaction) = self.wallet_transactions.get(&txid) {
+            if transaction.status().is_confirmed() {
+                return Err(RemovalError::TransactionAlreadyConfirmed);
+            }
+        } else {
+            return Err(RemovalError::TransactionNotFound);
+        };
+
+        // TODO: could be added as an API to pepper-sync
+        self.wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.sapling_notes_mut())
+            .filter(|note| {
+                note.spending_transaction()
+                    .map_or(false, |spending_txid| spending_txid == txid)
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+        self.wallet_transactions
+            .values_mut()
+            .flat_map(|tx| tx.orchard_notes_mut())
+            .filter(|note| {
+                note.spending_transaction()
+                    .map_or(false, |spending_txid| spending_txid == txid)
+            })
+            .for_each(|note| {
+                note.set_spending_transaction(None);
+            });
+        self.wallet_transactions
+            .remove(&txid)
+            .expect("transaction checked to exist");
+
+        Ok(())
     }
 }
 

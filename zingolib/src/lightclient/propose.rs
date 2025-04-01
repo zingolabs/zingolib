@@ -9,7 +9,6 @@ use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-use crate::wallet::propose::{ProposeSendError, ProposeShieldError};
 
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
@@ -17,6 +16,8 @@ use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
 use crate::lightclient::LightClient;
+use crate::wallet::error::ProposeSendError;
+use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
     fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
@@ -35,16 +36,15 @@ impl LightClient {
 
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
     /// This field must be populated in order to then send a transaction.
-    async fn store_proposal(&self, proposal: ZingoProposal) {
-        let mut latest_proposal_guard = self.latest_proposal.write().await;
-        *latest_proposal_guard = Some(proposal);
+    async fn store_proposal(&mut self, proposal: ZingoProposal) {
+        self.latest_proposal = Some(proposal);
     }
 
     /// Creates and stores a proposal from a transaction request.
     pub async fn propose_send(
-        &self,
+        &mut self,
         request: TransactionRequest,
-    ) -> Result<ProportionalFeeProposal, crate::wallet::propose::ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let proposal = self
             .wallet
             .lock()
@@ -59,7 +59,7 @@ impl LightClient {
 
     /// Creates and stores a proposal for sending all shielded funds to a given address.
     pub async fn propose_send_all(
-        &self,
+        &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
@@ -152,7 +152,7 @@ impl LightClient {
 
     /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
-        &self,
+        &mut self,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
         let proposal = self.wallet.lock().await.create_shield_proposal().await?;
         self.store_proposal(ZingoProposal::Shield(proposal.clone()))
@@ -167,7 +167,7 @@ mod shielding {
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::LightClient,
-        wallet::{propose::ProposeShieldError, LightWallet, WalletBase},
+        wallet::{error::ProposeShieldError, LightWallet, WalletBase},
     };
 
     fn create_basic_client() -> LightClient {
@@ -204,7 +204,12 @@ mod shielding {
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client();
         assert_eq!(
-            basic_client.wallet.lock().await.get_transparent_addresses(),
+            basic_client
+                .wallet
+                .lock()
+                .await
+                .get_transparent_addresses()
+                .unwrap(),
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,

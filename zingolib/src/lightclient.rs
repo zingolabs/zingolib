@@ -13,10 +13,7 @@ use json::{array, JsonValue};
 use log::error;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-};
+use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 
@@ -25,7 +22,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{keys::unified::ReceiverSelection, LightWallet, WalletBase},
+    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
 };
 use error::LightClientError;
 
@@ -146,10 +143,10 @@ pub struct LightClient {
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
-    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError>>>,
+    sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
-    latest_proposal: Arc<RwLock<Option<ZingoProposal>>>, // TODO: move to wallet
+    latest_proposal: Option<ZingoProposal>, // TODO: move to wallet
 }
 
 impl LightClient {
@@ -194,7 +191,7 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            latest_proposal: Arc::new(RwLock::new(None)),
+            latest_proposal: None,
         })
     }
 

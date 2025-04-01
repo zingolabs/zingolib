@@ -47,11 +47,11 @@ impl LightWallet {
     /// Changes in version 32:
     /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        32 // FIXME: double check this is correctly incremented before sync integration is complete
+        32
     }
 
     /// Serialize into `writer`
-    // FIXME: remove arc mutex on price and options and make sync fn
+    // TODO: remove arc mutex on price and options and make sync fn
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,
@@ -319,7 +319,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
             unified_key_store,
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_progress: SendProgress::new(0),
             price: Arc::new(RwLock::new(price)),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
@@ -443,7 +443,7 @@ impl LightWallet {
             sync_state,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             price: Arc::new(RwLock::new(price)),
-            send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            send_progress: SendProgress::new(0),
             save_required: false,
         })
     }

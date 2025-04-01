@@ -55,7 +55,7 @@ pub trait ConductChain {
         faucet.sync_and_await(true).await.unwrap();
 
         from_inputs::quick_send(
-            &faucet,
+            &mut faucet,
             vec![(
                 (get_base_address_macro!(recipient, "unified")).as_str(),
                 value,

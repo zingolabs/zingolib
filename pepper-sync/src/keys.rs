@@ -10,7 +10,7 @@ use orchard::{
 use sapling_crypto::{
     self as sapling, note_encryption::SaplingDomain, NullifierDerivingKey, SaplingIvk,
 };
-use zcash_address::ZcashAddress;
+use zcash_address::{unified::ParseError, ZcashAddress};
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus;
@@ -191,14 +191,13 @@ impl ScanningKeys {
 pub(crate) fn encode_orchard_receiver(
     parameters: &impl consensus::Parameters,
     orchard_address: &orchard::Address,
-) -> Result<String, ()> {
+) -> Result<String, ParseError> {
     Ok(zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
             vec![zcash_address::unified::Receiver::Orchard(
                 orchard_address.to_raw_address_bytes(),
             )],
-        )
-        .unwrap(),
+        )?,
         &parameters.network_type(),
     ))
 }

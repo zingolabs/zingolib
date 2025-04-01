@@ -115,11 +115,11 @@ impl SyncOutPoints for LightWallet {
 }
 
 impl SyncShardTrees for LightWallet {
-    fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
-        Ok(&mut self.shard_trees)
-    }
-
     fn get_shard_trees(&self) -> Result<&ShardTrees, Self::Error> {
         Ok(&self.shard_trees)
+    }
+
+    fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error> {
+        Ok(&mut self.shard_trees)
     }
 }

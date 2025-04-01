@@ -10,7 +10,10 @@ use zcash_primitives::consensus::BlockHeight;
 use crate::MAX_BATCH_OUTPUTS;
 
 #[cfg(not(feature = "darkside_test"))]
-use {shardtree::store::ShardStore, zcash_client_backend::proto::service::SubtreeRoot};
+use {
+    crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
+    zcash_client_backend::proto::service::SubtreeRoot,
+};
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
 const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
@@ -51,7 +54,7 @@ pub struct LocatedTreeData<H> {
 pub(crate) fn build_located_trees<H>(
     initial_position: Position,
     leaves_and_retentions: Vec<(H, Retention<BlockHeight>)>,
-) -> Result<Vec<LocatedTreeData<H>>, ()>
+) -> Vec<LocatedTreeData<H>>
 where
     H: Copy + PartialEq + incrementalmerkletree::Hashable + Sync + Send,
 {
@@ -77,67 +80,76 @@ where
                     incrementalmerkletree::Level::from(SHARD_HEIGHT),
                     chunk.iter().copied(),
                 );
-                sender.send(tree).unwrap();
+                sender.send(tree).expect("receiver should not be dropped");
             })
         }
     });
     drop(sender);
 
     let mut located_tree_data = Vec::new();
-    for tree in receiver.iter() {
-        let tree = tree.unwrap();
+    for tree in receiver.iter().flatten() {
         located_tree_data.push(LocatedTreeData {
             subtree: tree.subtree,
             checkpoints: tree.checkpoints,
         });
     }
 
-    Ok(located_tree_data)
+    located_tree_data
 }
 
 #[cfg(not(feature = "darkside_test"))]
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_roots: Vec<SubtreeRoot>,
     shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
-) where
+) -> Result<(), ServerError>
+where
     S: ShardStore<
-        H: incrementalmerkletree::Hashable + Clone + PartialEq + FromBytes<32>,
+        H: incrementalmerkletree::Hashable + Clone + PartialEq + FromBytes,
         CheckpointId: Clone + Ord + std::fmt::Debug,
         Error = std::convert::Infallible,
     >,
 {
-    subtree_roots
-        .into_iter()
-        .enumerate()
-        .for_each(|(index, tree_root)| {
-            let node = <S::H as FromBytes<32>>::from_bytes(tree_root.root_hash.try_into().unwrap());
-            let shard = LocatedPrunableTree::with_root_value(
-                incrementalmerkletree::Address::from_parts(
-                    incrementalmerkletree::Level::new(SHARD_HEIGHT),
-                    index as u64,
-                ),
-                (node, shardtree::RetentionFlags::EPHEMERAL),
-            );
-            shard_tree.store_mut().put_shard(shard).unwrap();
-        });
+    for (index, tree_root) in subtree_roots.into_iter().enumerate() {
+        let node = <S::H as FromBytes>::from_bytes(
+            tree_root
+                .root_hash
+                .try_into()
+                .map_err(|_| ServerError::InvalidSubtreeRoot)?,
+        )
+        .into_option()
+        .ok_or(ServerError::InvalidSubtreeRoot)?;
+        let shard = LocatedPrunableTree::with_root_value(
+            incrementalmerkletree::Address::from_parts(
+                incrementalmerkletree::Level::new(SHARD_HEIGHT),
+                index as u64,
+            ),
+            (node, shardtree::RetentionFlags::EPHEMERAL),
+        );
+        shard_tree.store_mut().put_shard(shard).expect("infallible");
+    }
+
+    Ok(())
 }
 
 /// Allows generic construction of a shardtree node from raw byte representation
 #[cfg(not(feature = "darkside_test"))]
-pub(crate) trait FromBytes<const N: usize> {
-    fn from_bytes(array: [u8; N]) -> Self;
+pub(crate) trait FromBytes
+where
+    Self: Sized,
+{
+    fn from_bytes(array: [u8; 32]) -> CtOption<Self>;
 }
 
 #[cfg(not(feature = "darkside_test"))]
-impl FromBytes<32> for orchard::tree::MerkleHashOrchard {
-    fn from_bytes(array: [u8; 32]) -> Self {
-        Self::from_bytes(&array).unwrap()
+impl FromBytes for orchard::tree::MerkleHashOrchard {
+    fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
+        Self::from_bytes(&array)
     }
 }
 
 #[cfg(not(feature = "darkside_test"))]
-impl FromBytes<32> for sapling_crypto::Node {
-    fn from_bytes(array: [u8; 32]) -> Self {
-        Self::from_bytes(array).unwrap()
+impl FromBytes for sapling_crypto::Node {
+    fn from_bytes(array: [u8; 32]) -> CtOption<Self> {
+        Self::from_bytes(array)
     }
 }

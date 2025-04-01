@@ -48,7 +48,7 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
 }
 /// Get the total fees paid by a given client (assumes 1 capability per client).
 pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
-    client.transaction_summaries().await.paid_fees()
+    client.transaction_summaries().await.unwrap().paid_fees()
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
@@ -56,11 +56,14 @@ pub mod from_inputs {
     use nonempty::NonEmpty;
     use zcash_primitives::transaction::TxId;
 
-    use crate::lightclient::{send::send_with_proposal::QuickSendError, LightClient};
+    use crate::{
+        lightclient::{error::QuickSendError, LightClient},
+        wallet::error::ProposeSendError,
+    };
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn quick_send(
-        quick_sender: &crate::lightclient::LightClient,
+        quick_sender: &mut crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
@@ -102,12 +105,9 @@ pub mod from_inputs {
 
     /// Panics if the address, amount or memo conversion fails.
     pub async fn propose(
-        proposer: &LightClient,
+        proposer: &mut LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<
-        crate::data::proposal::ProportionalFeeProposal,
-        crate::wallet::propose::ProposeSendError,
-    > {
+    ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         proposer.propose_send(request).await

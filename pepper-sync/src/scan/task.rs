@@ -1,4 +1,5 @@
 use std::{
+    borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
     sync::{
         atomic::{self, AtomicBool},
@@ -6,6 +7,7 @@ use std::{
     },
 };
 
+use futures::FutureExt;
 use tokio::{
     sync::mpsc,
     task::{JoinError, JoinHandle},
@@ -24,14 +26,17 @@ use zcash_primitives::{
 
 use crate::{
     client::{self, FetchRequest},
+    error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     sync,
-    wallet::traits::{SyncBlocks, SyncWallet},
-    wallet::{Locator, WalletBlock},
+    wallet::{
+        traits::{SyncBlocks, SyncWallet},
+        Locator, WalletBlock,
+    },
     MAX_BATCH_OUTPUTS,
 };
 
-use super::{error::ScanError, scan, ScanResults};
+use super::{scan, ScanResults};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 
@@ -62,7 +67,6 @@ pub(crate) struct Scanner<P> {
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
-// TODO: add fn for checking and handling worker errors
 impl<P> Scanner<P>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -105,17 +109,27 @@ where
             self.consensus_parameters.clone(),
             self.fetch_request_sender.clone(),
         );
-        batcher.run().unwrap();
+        batcher.run();
         self.batcher = Some(batcher);
     }
 
-    async fn shutdown_batcher(&mut self) -> Result<(), JoinError> {
+    fn check_batcher_error(&mut self) -> Result<(), ServerError> {
         let batcher = self.batcher.take();
         if let Some(mut batcher) = batcher {
-            batcher.shutdown().await?;
+            batcher.check_error()?;
+            self.batcher = Some(batcher);
         }
 
         Ok(())
+    }
+
+    async fn shutdown_batcher(&mut self) -> Result<(), ServerError> {
+        let batcher = self.batcher.take();
+        if let Some(mut batcher) = batcher {
+            batcher.shutdown().await
+        } else {
+            Ok(())
+        }
     }
 
     /// Spawns a worker.
@@ -130,7 +144,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run().unwrap();
+        worker.run();
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -152,22 +166,21 @@ where
         }
     }
 
-    async fn shutdown_worker(&mut self, worker_id: usize) -> Result<(), ()> {
-        if let Some(worker_index) = self
+    /// Shutdown worker by `worker_id`.
+    ///
+    /// Panics if worker with given `worker_id` is not found.
+    async fn shutdown_worker(&mut self, worker_id: usize) {
+        let worker_index = self
             .workers
             .iter()
             .position(|worker| worker.id == worker_id)
-        {
-            let mut worker = self.workers.swap_remove(worker_index);
-            worker
-                .shutdown()
-                .await
-                .expect("worker should not be able to panic");
-        } else {
-            panic!("id not found in worker pool");
-        }
+            .expect("worker should exist");
 
-        Ok(())
+        let mut worker = self.workers.swap_remove(worker_index);
+        worker
+            .shutdown()
+            .await
+            .expect("worker should not be able to panic");
     }
 
     /// Updates the scanner.
@@ -178,10 +191,16 @@ where
     /// worker for scanning.
     /// When verification is still in progress, only scan tasks with `Verify` scan priority are created.
     /// When all ranges are scanned, the batcher, idle workers and mempool are shutdown.
-    pub(crate) async fn update<W>(&mut self, wallet: &mut W, shutdown_mempool: Arc<AtomicBool>)
+    pub(crate) async fn update<W>(
+        &mut self,
+        wallet: &mut W,
+        shutdown_mempool: Arc<AtomicBool>,
+    ) -> Result<(), SyncError<W::Error>>
     where
         W: SyncWallet + SyncBlocks,
     {
+        self.check_batcher_error()?;
+
         match self.state {
             ScannerState::Verification => {
                 self.batcher
@@ -190,7 +209,7 @@ where
                     .update_batch_store();
                 self.update_workers();
 
-                let sync_state = wallet.get_sync_state().unwrap();
+                let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
                 if !sync_state
                     .scan_ranges()
                     .iter()
@@ -202,16 +221,17 @@ where
                         .any(|scan_range| scan_range.priority() == ScanPriority::Ignored)
                     {
                         // the last scan ranges with `Verify` priority are currently being scanned.
-                        return;
+                        return Ok(());
                     } else {
                         // verification complete
                         self.state.verified();
-                        return;
+                        return Ok(());
                     }
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet);
+                self.update_batcher(wallet)
+                    .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
                 self.batcher
@@ -219,22 +239,28 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet);
+                self.update_batcher(wallet)
+                    .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
                 shutdown_mempool.store(true, atomic::Ordering::Release);
                 while let Some(worker) = self.idle_worker() {
-                    self.shutdown_worker(worker.id).await.unwrap();
+                    self.shutdown_worker(worker.id).await;
                 }
-                self.shutdown_batcher()
-                    .await
-                    .expect("batcher should not fail!");
+                self.shutdown_batcher().await?;
             }
         }
 
-        if !wallet.get_sync_state().unwrap().scan_complete() && self.worker_poolsize() == 0 {
+        if !wallet
+            .get_sync_state()
+            .map_err(SyncError::WalletError)?
+            .scan_complete()
+            && self.worker_poolsize() == 0
+        {
             panic!("worker pool should not be empty with unscanned ranges!")
         }
+
+        Ok(())
     }
 
     fn update_workers(&mut self) {
@@ -254,25 +280,27 @@ where
         }
     }
 
-    fn update_batcher<W>(&mut self, wallet: &mut W)
+    fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
     where
         W: SyncWallet + SyncBlocks,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
             if let Some(scan_task) =
-                sync::state::create_scan_task(&self.consensus_parameters, wallet).unwrap()
+                sync::state::create_scan_task(&self.consensus_parameters, wallet)?
             {
                 batcher.add_scan_task(scan_task);
-            } else if wallet.get_sync_state().unwrap().scan_complete() {
+            } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.scan_completed();
             }
         }
+
+        Ok(())
     }
 }
 
 struct Batcher<P> {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<Result<(), ServerError>>>,
     is_batching: Arc<AtomicBool>,
     batch: Option<ScanTask>,
     consensus_parameters: P,
@@ -304,7 +332,7 @@ where
     ///
     /// Waits for a scan task and then fetches compact blocks to form fixed output batches. The scan task is split if
     /// needed and the compact blocks are added to each scan task and sent to the scan workers for scanning.
-    fn run(&mut self) -> Result<(), ()> {
+    fn run(&mut self) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (batch_sender, batch_receiver) = mpsc::channel::<ScanTask>(1);
 
@@ -312,7 +340,7 @@ where
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle: JoinHandle<Result<(), ServerError>> = tokio::spawn(async move {
             // save seam blocks between scan tasks for linear scanning continuuity checks
             // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
             let mut previous_task_first_block: Option<WalletBlock> = None;
@@ -327,9 +355,8 @@ where
                     fetch_request_sender.clone(),
                     scan_task.scan_range.block_range().clone(),
                 )
-                .await
-                .unwrap();
-                while let Some(compact_block) = block_stream.message().await.unwrap() {
+                .await?;
+                while let Some(compact_block) = block_stream.message().await? {
                     if let Some(block) = previous_task_last_block.as_ref() {
                         if scan_task.start_seam_block.is_none()
                             && scan_task.scan_range.block_range().start == block.block_height() + 1
@@ -352,7 +379,7 @@ where
                                 fetch_request_sender.clone(),
                                 &compact_block,
                             )
-                            .await,
+                            .await?,
                         );
                         first_batch = false;
                     }
@@ -363,7 +390,7 @@ where
                                 fetch_request_sender.clone(),
                                 &compact_block,
                             )
-                            .await,
+                            .await?,
                         );
                     }
 
@@ -383,8 +410,7 @@ where
                                 fetch_request_sender.clone(),
                                 compact_block.height(),
                             )
-                            .await
-                            .unwrap();
+                            .await?;
 
                         batch_sender
                             .send(full_batch)
@@ -406,13 +432,12 @@ where
 
                 is_batching.store(false, atomic::Ordering::Release);
             }
+            Ok(())
         });
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
         self.batch_receiver = Some(batch_receiver);
-
-        Ok(())
     }
 
     fn is_batching(&self) -> bool {
@@ -443,10 +468,22 @@ where
         }
     }
 
+    fn check_error(&mut self) -> Result<(), ServerError> {
+        if let Some(mut handle) = self.handle.take() {
+            if let Some(result) = handle.borrow_mut().now_or_never() {
+                result.expect("task panicked")?;
+            } else {
+                self.handle = Some(handle);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Shuts down batcher by dropping the sender to the batcher task and awaiting the handle.
     ///
     /// This should always be called in the context of the scanner as it must be also be taken from the Scanner struct.
-    async fn shutdown(&mut self) -> Result<(), JoinError> {
+    async fn shutdown(&mut self) -> Result<(), ServerError> {
         tracing::debug!("Shutting down batcher");
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
@@ -456,7 +493,7 @@ where
             .take()
             .expect("batcher should always have a handle to take!");
 
-        handle.await
+        handle.await.expect("task panicked")
     }
 }
 
@@ -497,7 +534,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self) -> Result<(), ()> {
+    fn run(&mut self) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -527,8 +564,6 @@ where
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
-
-        Ok(())
     }
 
     fn is_scanning(&self) -> bool {
@@ -598,7 +633,7 @@ impl ScanTask {
         consensus_parameters: &impl consensus::Parameters,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         block_height: BlockHeight,
-    ) -> Result<(Self, Self), ()> {
+    ) -> Result<(Self, Self), ServerError> {
         if block_height < self.scan_range.block_range().start
             && block_height > self.scan_range.block_range().end - 1
         {
@@ -626,7 +661,7 @@ impl ScanTask {
                     fetch_request_sender.clone(),
                     block,
                 )
-                .await,
+                .await?,
             )
         } else {
             None
@@ -638,7 +673,7 @@ impl ScanTask {
                     fetch_request_sender.clone(),
                     block,
                 )
-                .await,
+                .await?,
             )
         } else {
             None
@@ -647,7 +682,10 @@ impl ScanTask {
         Ok((
             ScanTask {
                 compact_blocks: lower_compact_blocks,
-                scan_range: self.scan_range.truncate_end(block_height).unwrap(),
+                scan_range: self
+                    .scan_range
+                    .truncate_end(block_height)
+                    .expect("block height should be within block range"),
                 start_seam_block: self.start_seam_block,
                 end_seam_block: upper_task_first_block,
                 locators: lower_task_locators,
@@ -655,7 +693,10 @@ impl ScanTask {
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
-                scan_range: self.scan_range.truncate_start(block_height).unwrap(),
+                scan_range: self
+                    .scan_range
+                    .truncate_start(block_height)
+                    .expect("block height should be within block range"),
                 start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
                 locators: upper_task_locators,
