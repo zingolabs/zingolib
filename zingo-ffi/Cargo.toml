@@ -12,6 +12,9 @@ rustls = { version = "0.23.13", features = ["ring"] }
 
 [profile.release]
 debug = false
+lto = true
+codegen-units = 1
+overflow-checks = false
 
 [profile.test]
 opt-level = 3
