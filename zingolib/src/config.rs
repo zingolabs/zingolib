@@ -204,8 +204,8 @@ impl ZingoConfigBuilder {
     /// # Examples
     /// ```
     /// use zingolib::config::ZingoConfigBuilder;
-    /// use tempdir::TempDir;
-    /// let dir = TempDir::new("zingo_doc_test").unwrap().into_path();
+    /// use tempfile::TempDir;
+    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().into_path();
     /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
     /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
     /// ```

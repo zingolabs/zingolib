@@ -12,7 +12,7 @@ darkside_tests = []
 default = ["sync"]
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
-test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
+test-elevation = ["portpicker", "testvectors", "tempfile"]
 sync = ['zingo-sync']
 zaino-test = ['test-elevation']
 
@@ -25,9 +25,17 @@ testvectors = { path = "../testvectors", optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
-incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
+incrementalmerkletree = { workspace = true, features = [
+    "test-dependencies",
+    "legacy-api",
+] }
 zcash_address = { workspace = true }
-zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
+zcash_client_backend = { workspace = true, features = [
+    "unstable",
+    "transparent-inputs",
+    "unstable-serialization",
+    "unstable-spanning-tree",
+] }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_note_encryption = { workspace = true }
@@ -75,11 +83,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 subtle = { workspace = true }
-tempdir = {workspace = true, optional = true }
-tempfile = {workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 test-case = { workspace = true }
 thiserror = { workspace = true }
-tokio =  { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tonic = { workspace = true }
 tracing-subscriber = { workspace = true }
 bech32 = { workspace = true }
