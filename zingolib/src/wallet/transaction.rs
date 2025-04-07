@@ -19,14 +19,9 @@ impl LightWallet {
             .filter_map(|output| {
                 output.spending_transaction().and_then(|txid| {
                     if txid == transaction.txid() {
-                        let spend =
-                            Op::transaction_inputs(transaction)
-                                .into_iter()
-                                .find(|&input| {
-                                    output
-                                        .spend_link()
-                                        .map_or(false, |spend_link| *input == spend_link)
-                                });
+                        let spend = Op::transaction_inputs(transaction)
+                            .into_iter()
+                            .find(|&input| (output.spend_link() == Some(input.clone())));
 
                         if spend.is_none() {
                             return Some(Err(SpendError::IncorrectSpendingTransaction {
@@ -110,20 +105,14 @@ impl LightWallet {
         self.wallet_transactions
             .values_mut()
             .flat_map(|tx| tx.sapling_notes_mut())
-            .filter(|note| {
-                note.spending_transaction()
-                    .map_or(false, |spending_txid| spending_txid == txid)
-            })
+            .filter(|note| (note.spending_transaction() == Some(txid)))
             .for_each(|note| {
                 note.set_spending_transaction(None);
             });
         self.wallet_transactions
             .values_mut()
             .flat_map(|tx| tx.orchard_notes_mut())
-            .filter(|note| {
-                note.spending_transaction()
-                    .map_or(false, |spending_txid| spending_txid == txid)
-            })
+            .filter(|note| (note.spending_transaction() == Some(txid)))
             .for_each(|note| {
                 note.set_spending_transaction(None);
             });

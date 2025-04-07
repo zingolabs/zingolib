@@ -2586,15 +2586,13 @@ mod slow {
             .unwrap()
             .outgoing_sapling_notes()
             .iter()
-            .find(|note| { note.recipient == faucet_sapling_address })
-            .is_some());
+            .any(|note| { note.recipient == faucet_sapling_address }));
         assert!(transactions
             .get(1)
             .unwrap()
             .outgoing_sapling_notes()
             .iter()
-            .find(|note| { note.value == spent_value })
-            .is_some());
+            .any(|note| { note.value == spent_value }));
     }
 
     #[tokio::test]
