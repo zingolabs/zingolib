@@ -8,7 +8,7 @@ use std::{
     process::{Child, Command},
     time::Duration,
 };
-use tempdir;
+use tempfile;
 use tokio::time::sleep;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
@@ -101,7 +101,7 @@ pub async fn prepare_darksidewalletd(
 }
 pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (String, PathBuf) {
     let darkside_grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
-    let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
+    let darkside_dir = tempfile::TempDir::with_prefix("zingo_darkside_test")
         .unwrap()
         .into_path();
     (darkside_grpc_port, darkside_dir)

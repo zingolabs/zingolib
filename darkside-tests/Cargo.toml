@@ -26,7 +26,7 @@ http-body = { workspace = true }
 hex = { workspace = true }
 
 zcash_primitives = { workspace = true }
-tempdir = { workspace = true }
+tempfile = { workspace = true }
 portpicker = { workspace = true }
 futures-util = { workspace = true }
 orchard = { workspace = true }
