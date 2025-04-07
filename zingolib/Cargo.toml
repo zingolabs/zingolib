@@ -13,11 +13,11 @@ test-elevation = ["portpicker", "testvectors", "tempfile", "tempdir"]
 zaino-test = ['test-elevation']
 
 [dependencies]
-zingo-memo = { path = "../zingo-memo" }
-zingo-status = { path = "../zingo-status" }
-zingo-netutils = { path = "../zingo-netutils" }
-pepper-sync = { path = "../pepper-sync" }
-testvectors = { path = "../testvectors", optional = true }
+zingo-memo = { workspace = true }
+zingo-status = { workspace = true }
+zingo-netutils = { workspace = true }
+pepper-sync = { workspace = true }
+testvectors = { workspace = true, optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }

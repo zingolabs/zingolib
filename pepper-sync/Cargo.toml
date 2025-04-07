@@ -12,9 +12,9 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-zingo-netutils = { path = "../zingo-netutils" }
-zingo-memo = { path = "../zingo-memo" }
-zingo-status = { path = "../zingo-status" }
+zingo-netutils = { workspace = true }
+zingo-memo = { workspace = true }
+zingo-status = { workspace = true }
 
 # Zcash
 zcash_encoding = { workspace = true, optional = true }
