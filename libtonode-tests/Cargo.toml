@@ -9,11 +9,11 @@ ci = ["zingolib/ci"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { path = "../zingolib", features = [ "test-elevation" ] }
-zingo-status = { path = "../zingo-status" }
-zingo-netutils = { path = "../zingo-netutils" }
-pepper-sync = { path = "../pepper-sync" }
-testvectors = { path = "../testvectors" }
+zingolib = { workspace = true, features = [ "test-elevation" ] }
+zingo-status = { workspace = true}
+zingo-netutils = { workspace = true}
+pepper-sync = { workspace = true}
+testvectors = { workspace = true}
 
 bip0039.workspace = true
 zcash_primitives = { workspace = true }

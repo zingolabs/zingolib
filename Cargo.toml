@@ -11,6 +11,7 @@ members = [
     "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
+    "testvectors"
 ]
 resolver = "2"
 
@@ -107,7 +108,7 @@ testvectors = { path = "testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }
 zingo-status = { path = "zingo-status" }
-zingo-sync = { path = "zingo-sync" }
+pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
 [profile.release]
