@@ -15,6 +15,9 @@ members = [
 ]
 resolver = "2"
 
+# Specify the Rust edition for the workspace
+edition = "2024"
+
 [workspace.dependencies]
 bip0039 = "0.11"
 incrementalmerkletree = "0.7"
@@ -71,7 +74,7 @@ portpicker = "0.1"
 proptest = "1"
 prost = "0.13"
 rand = "0.8"
-reqwest = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
 ring = "0.17"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
