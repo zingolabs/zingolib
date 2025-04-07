@@ -5,19 +5,17 @@ use zingolib::testutils::{
 };
 
 proptest::proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(4))]
-    #[ignore = "hangs"]
+    #![proptest_config(proptest::test_runner::Config::with_cases(1))]
     #[test]
-    fn single_sufficient_send_libtonode(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
+    fn any_source_sends_to_any_receiver_libtonode(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
         Runtime::new().unwrap().block_on(async {
-            fixtures::single_sufficient_send::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, change_value, true).await;
+            fixtures::any_source_sends_to_any_receiver::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, change_value, true).await;
         });
      }
-    #[ignore = "hangs"]
     #[test]
-    fn single_sufficient_send_0_change_libtonode(send_value in 0..50_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
+    fn any_source_sends_te_any_receiver_0_change_libtonode(send_value in 0..50_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
         Runtime::new().unwrap().block_on(async {
-            fixtures::single_sufficient_send::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, 0, true).await;
+            fixtures::any_source_sends_to_any_receiver::<LibtonodeEnvironment>(int_to_shieldedprotocol(sender_protocol), int_to_pooltype(receiver_pool), send_value, 0, true).await;
         });
      }
 }

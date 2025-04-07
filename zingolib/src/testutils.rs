@@ -668,3 +668,9 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
         n => PoolType::Shielded(int_to_shieldedprotocol(n)),
     }
 }
+
+/// helperized test print.
+/// if someone figures out how to improve this code it can be done in one place right here.
+pub(crate) fn timestamped_test_log(text: &str) {
+    println!("{}: {}", crate::wallet::now(), text);
+}

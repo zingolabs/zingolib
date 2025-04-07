@@ -8,6 +8,7 @@ use crate::config::RegtestNetwork;
 use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::scenarios::setup::ScenarioBuilder;
+use crate::testutils::timestamped_test_log;
 
 /// includes utilities for connecting to zcashd regtest
 pub struct LibtonodeEnvironment {
@@ -21,6 +22,7 @@ pub struct LibtonodeEnvironment {
 /// these tests cannot portray the full range of network weather.
 impl ConductChain for LibtonodeEnvironment {
     async fn setup() -> Self {
+        timestamped_test_log("starting mock libtonode network");
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(
             Some(PoolType::Shielded(Sapling)),
@@ -30,6 +32,7 @@ impl ConductChain for LibtonodeEnvironment {
             true,
         )
         .await;
+        timestamped_test_log("started mock libtonode network");
         LibtonodeEnvironment {
             regtest_network,
             scenario_builder,
