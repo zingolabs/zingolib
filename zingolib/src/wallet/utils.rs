@@ -19,7 +19,7 @@ pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
 /// TODO: Add Doc Comment Here!
 pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     // Strings are written as len + utf8
-    writer.write_u64::<LittleEndian>(s.as_bytes().len() as u64)?;
+    writer.write_u64::<LittleEndian>(s.len() as u64)?;
     writer.write_all(s.as_bytes())
 }
 
