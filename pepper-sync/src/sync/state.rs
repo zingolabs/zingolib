@@ -1,4 +1,4 @@
-//! Module for reading and updating the fields of [`crate::primitives::SyncState`] which tracks the wallet's state of sync.
+//! Module for reading and updating the fields of [`crate::wallet::SyncState`] which tracks the wallet's state of sync.
 
 use std::{
     cmp,
@@ -59,7 +59,7 @@ where
     Ok(wallet_height)
 }
 
-/// Returns the locators for a given `block_range` from the wallet's [`crate::primitives::SyncState`]
+/// Returns the locators for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
 fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BTreeSet<Locator> {
     sync_state
         .locators

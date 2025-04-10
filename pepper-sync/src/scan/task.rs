@@ -497,7 +497,7 @@ where
     }
 }
 
-struct ScanWorker<P> {
+pub(crate) struct ScanWorker<P> {
     id: usize,
     handle: Option<JoinHandle<()>>,
     is_scanning: Arc<AtomicBool>,

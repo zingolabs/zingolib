@@ -134,7 +134,7 @@ pub(crate) async fn scan_transactions(
     Ok(wallet_transactions)
 }
 
-/// Scans `transaction` with the given `status` and returns [crate::primitives::WalletTransaction], decrypting all
+/// Scans `transaction` with the given `status` and returns [crate::wallet::WalletTransaction], decrypting all
 /// incoming and outgoing notes with `ufvks` and adding any transparent coins matching `transparent_addresses`.
 ///
 /// `decrypted_note_data` will be `None` for pending transactions. For confirmed transactions, it must contain the

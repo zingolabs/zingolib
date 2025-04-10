@@ -1,7 +1,8 @@
 //! Zingo-Memo
 //!
-//! Utilities for procedural creation and parsing of the Memo field
-//! These memos are currently never directly exposed to the user,
+//! Utilities for procedural creation and parsing of the Memo field.
+//!
+//! These memos are not directly exposed to the user,
 //! but instead write down UAs on-chain for recovery after rescan.
 
 #![warn(missing_docs)]
