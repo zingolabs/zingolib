@@ -159,6 +159,8 @@ pub enum WalletBase {
     Ufvk(String),
     /// Generate a wallet from a unified spending key.
     Usk(Vec<u8>),
+    /// Sapling extended full viewing key
+    SaplingExtendedFvk(String),
 }
 
 impl WalletBase {
@@ -166,6 +168,8 @@ impl WalletBase {
     pub fn from_string(base: String) -> WalletBase {
         if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
+        } else if (&base[0..7]) == "zxviews" {
+            WalletBase::SaplingExtendedFvk(base)
         } else {
             WalletBase::MnemonicPhrase(base)
         }
@@ -299,6 +303,7 @@ impl LightWallet {
                     UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?;
                 (unified_key_store, None)
             }
+            WalletBase::SaplingExtendedFvk(_sapling_extended_fvk) => todo!(),
         };
 
         let first_address_index = 0;
