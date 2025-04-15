@@ -16,7 +16,7 @@ tokio = { workspace = true }
 rustls = { workspace = true }
 
 [build-dependencies]
-uniffi_build = { version = "0.27", features = [ "builtin-bindgen" ] }
+uniffi_build = { version = "0.29", features = [ "builtin-bindgen" ] }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

@@ -17,7 +17,7 @@ use rustls::crypto::CryptoProvider;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
-use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
+use zingolib::{commands, lightclient::LightClient, wallet::WalletBase, wallet::LightWallet};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -29,13 +29,8 @@ lazy_static! {
 
 fn lock_client_return_seed(
     lightclient: LightClient,
-    monitor_mempool: bool,
 ) -> String {
     let lc = Arc::new(lightclient);
-
-    if monitor_mempool {
-        let _ = LightClient::start_mempool_monitor(lc.clone());
-    }
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
@@ -46,7 +41,6 @@ fn construct_uri_load_config(
     uri: String,
     data_dir: String,
     chain_hint: String,
-    monitor_mempool: bool,
 ) -> Result<(ZingoConfig, http::Uri), String> {
     // if uri is empty -> Offline Mode.
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
@@ -61,7 +55,6 @@ fn construct_uri_load_config(
         lightwalletd_uri.clone(),
         None,
         chaintype,
-        monitor_mempool,
     ) {
         Ok(c) => c,
         Err(e) => {
@@ -91,10 +84,9 @@ pub fn init_new(
     server_uri: String,
     data_dir: String,
     chain_hint: String,
-    monitor_mempool: bool,
 ) -> String {
     let (config, lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
+    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -104,13 +96,13 @@ pub fn init_new(
         Ok(height) => height,
         Err(e) => return e,
     };
-    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
+    let lightclient = match LightClient::new(config, (latest_block_height.saturating_sub(100) as u32).into(), false) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
-    lock_client_return_seed(lightclient, monitor_mempool)
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_seed(
@@ -119,17 +111,15 @@ pub fn init_from_seed(
     birthday: u64,
     data_dir: String,
     chain_hint: String,
-    monitor_mempool: bool,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
+    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient = match LightClient::create_from_wallet_base(
-        WalletBase::MnemonicPhrase(seed),
-        &config,
-        birthday,
+    let lightclient = match LightClient::create_from_wallet(
+        LightWallet::new(chain_hint, WalletBase::MnemonicPhrase(seed), birthday)?,
+        config,
         false,
     ) {
         Ok(l) => l,
@@ -137,7 +127,7 @@ pub fn init_from_seed(
             return format!("Error: {}", e);
         }
     };
-    lock_client_return_seed(lightclient, monitor_mempool)
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_ufvk(
@@ -146,14 +136,13 @@ pub fn init_from_ufvk(
     birthday: u64,
     data_dir: String,
     chain_hint: String,
-    monitor_mempool: bool,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
+    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient = match LightClient::create_from_wallet_base(
+    let lightclient = match LightClient::create_from_wallet(
         WalletBase::Ufvk(ufvk),
         &config,
         birthday,
@@ -164,7 +153,7 @@ pub fn init_from_ufvk(
             return format!("Error: {}", e);
         }
     };
-    lock_client_return_seed(lightclient, monitor_mempool)
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_b64(
@@ -172,10 +161,9 @@ pub fn init_from_b64(
     base64_data: String,
     data_dir: String,
     chain_hint: String,
-    monitor_mempool: bool,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
+    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -198,7 +186,7 @@ pub fn init_from_b64(
                 return format!("Error: {}", e);
             }
         };
-    lock_client_return_seed(lightclient, monitor_mempool)
+    lock_client_return_seed(lightclient)
 }
 
 pub fn save_to_b64() -> String {
@@ -286,7 +274,7 @@ pub fn get_transaction_summaries() -> String {
     resp
 }
 
-pub fn get_value_transfers(recent_vts_to_retrive: String) -> String {
+pub fn get_value_transfers() -> String {
     let resp: String;
     {
         let lightclient: Arc<LightClient>;
@@ -300,13 +288,8 @@ pub fn get_value_transfers(recent_vts_to_retrive: String) -> String {
             lightclient = lc.borrow().as_ref().unwrap().clone();
         };
 
-        let recent_vts: usize = match recent_vts_to_retrive.parse::<usize>() {
-            Ok(value) => value,
-            Err(_) => return "Error: recent_vts_to_retrive is not a valid number".to_string(),
-        };
-
         let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async { lightclient.value_transfers_json_string(recent_vts).await });
+        resp = rt.block_on(async { lightclient.value_transfers_json_string().await });
     };
 
     resp
