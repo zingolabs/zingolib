@@ -1,6 +1,6 @@
 //! implementation of conduct chain for live chains
 
-use crate::lightclient::LightClient;
+use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
 
 use super::conduct_chain::ConductChain;
 
@@ -27,6 +27,9 @@ impl ConductChain for LiveChain {
     }
 
     fn lightserver_uri(&self) -> Option<http::Uri> {
-        unimplemented!()
+        Some(
+            <http::Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
+                .unwrap(),
+        )
     }
 }

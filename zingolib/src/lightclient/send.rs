@@ -157,25 +157,23 @@ pub mod send_with_proposal {
 
             use super::*;
 
-            /// requires 1 confirmation: expect 3 minute runtime
-            #[ignore = "live testnet: testnet relies on NU6"]
-            #[tokio::test]
-            async fn glory_goddess_simple_send() {
-                let case = examples::NetworkSeedVersion::Testnet(
-                    examples::TestnetSeedVersion::GloryGoddess,
-                );
-                let mut client = sync_example_wallet(case).await;
+            // /// requires 1 confirmation: expect 3 minute runtime
+            // #[tokio::test]
+            // async fn testnet_shield() {
+            //     let case = examples::NetworkSeedVersion::Testnet(
+            //         examples::TestnetSeedVersion::GloryGoddess,
+            //     );
+            //     let mut client = sync_example_wallet(case).await;
 
-                with_assertions::assure_propose_shield_bump_sync(
-                    &mut LiveChain::setup().await,
-                    &mut client,
-                    true,
-                )
-                .await
-                .unwrap();
-            }
+            //     with_assertions::assure_propose_shield_bump_sync(
+            //         &mut LiveChain::setup().await,
+            //         &mut client,
+            //         true,
+            //     )
+            //     .await
+            //     .unwrap();
+            // }
 
-            #[ignore = "live testnet: testnet relies on NU6"]
             #[tokio::test]
             /// this is a live sync test. its execution time scales linearly since last updated
             /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain

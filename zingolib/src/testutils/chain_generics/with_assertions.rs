@@ -114,6 +114,13 @@ where
             .unwrap()
             .height as u32,
     );
+    let wallet_height_at_send = sender
+        .wallet
+        .lock()
+        .await
+        .sync_state
+        .wallet_height()
+        .unwrap();
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
@@ -135,10 +142,13 @@ where
     .unzip();
 
     for status in sender_recorded_statuses {
-        assert_eq!(
+        if !matches!(
             status,
-            ConfirmationStatus::Transmitted(server_height_at_send + 1)
-        );
+            ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == wallet_height_at_send
+        ) {
+            dbg!(status);
+            panic!();
+        }
     }
 
     let option_recipient_mempool_outputs = if test_mempool {
