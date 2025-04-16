@@ -7,17 +7,14 @@ use std::sync::atomic::AtomicUsize;
 
 use crossbeam_channel as channel;
 
-use orchard::note_encryption::CompactAction;
-use orchard::note_encryption::OrchardDomain;
-use sapling_crypto::note_encryption::CompactOutputDescription;
-use sapling_crypto::note_encryption::SaplingDomain;
-
+use orchard::note_encryption::{CompactAction, OrchardDomain};
+use sapling_crypto::note_encryption::{CompactOutputDescription, SaplingDomain};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::ShieldedProtocol;
-use zcash_note_encryption::{batch, BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
-use zcash_primitives::consensus;
-use zcash_primitives::transaction::components::sapling::zip212_enforcement;
-use zcash_primitives::{block::BlockHash, transaction::TxId};
+use zcash_note_encryption::{BatchDomain, COMPACT_NOTE_SIZE, Domain, ShieldedOutput, batch};
+use zcash_primitives::{
+    block::BlockHash, transaction::TxId, transaction::components::sapling::zip212_enforcement,
+};
+use zcash_protocol::{ShieldedProtocol, consensus};
 
 use memuse::DynamicUsage;
 
@@ -495,11 +492,11 @@ where
             self.pending_results.dynamic_usage_bounds(),
         );
         (
-            bounds.0 .0 + running_usage + bounds.1 .0,
+            bounds.0.0 + running_usage + bounds.1.0,
             bounds
                 .0
-                 .1
-                .zip(bounds.1 .1)
+                .1
+                .zip(bounds.1.1)
                 .map(|(a, b)| a + running_usage + b),
         )
     }

@@ -8,13 +8,11 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{
     ShieldedProtocol,
-};
-use zcash_primitives::{
     consensus::{self, BlockHeight, NetworkUpgrade},
-    transaction::TxId,
 };
 
 use crate::{
@@ -23,12 +21,12 @@ use crate::{
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
     wallet::{
-        traits::{SyncBlocks, SyncWallet},
         Locator, SyncState, TreeBounds, WalletTransaction,
+        traits::{SyncBlocks, SyncWallet},
     },
 };
 
-use super::{checked_birthday, VERIFY_BLOCK_RANGE_SIZE};
+use super::{VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;

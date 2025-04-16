@@ -2,24 +2,22 @@
 
 use zcash_address::{ToAddress as _, ZcashAddress};
 use zcash_primitives::{
-    consensus,
     legacy::{
+        TransparentAddress,
         keys::{
             AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
         },
-        TransparentAddress,
     },
     zip32::AccountId,
 };
-
-use super::AddressIndex;
+use zcash_protocol::consensus;
 
 /// Unique ID for transparent addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TransparentAddressId {
     account_id: AccountId,
     scope: TransparentScope,
-    address_index: AddressIndex,
+    address_index: NonHardenedChildIndex,
 }
 
 impl TransparentAddressId {
@@ -27,7 +25,7 @@ impl TransparentAddressId {
     pub fn new(
         account_id: zcash_primitives::zip32::AccountId,
         scope: TransparentScope,
-        address_index: AddressIndex,
+        address_index: NonHardenedChildIndex,
     ) -> Self {
         Self {
             account_id,
@@ -47,7 +45,7 @@ impl TransparentAddressId {
     }
 
     /// Gets address index
-    pub fn address_index(&self) -> AddressIndex {
+    pub fn address_index(&self) -> NonHardenedChildIndex {
         self.address_index
     }
 }
@@ -125,34 +123,29 @@ pub(crate) fn derive_address(
 
 fn derive_external_address(
     account_pubkey: &AccountPubKey,
-    address_index: AddressIndex,
+    address_index: NonHardenedChildIndex,
 ) -> Result<TransparentAddress, bip32::Error> {
-    account_pubkey.derive_external_ivk()?.derive_address(
-        NonHardenedChildIndex::from_index(address_index)
-            .expect("all non-hardened address indexes in use!"),
-    )
+    account_pubkey
+        .derive_external_ivk()?
+        .derive_address(address_index)
 }
 
 fn derive_internal_address(
     account_pubkey: &AccountPubKey,
-    address_index: AddressIndex,
+    address_index: NonHardenedChildIndex,
 ) -> Result<TransparentAddress, bip32::Error> {
-    account_pubkey.derive_internal_ivk()?.derive_address(
-        NonHardenedChildIndex::from_index(address_index)
-            .expect("all non-hardened address indexes in use!"),
-    )
+    account_pubkey
+        .derive_internal_ivk()?
+        .derive_address(address_index)
 }
 
 fn derive_refund_address(
     account_pubkey: &AccountPubKey,
-    address_index: AddressIndex,
+    address_index: NonHardenedChildIndex,
 ) -> Result<TransparentAddress, bip32::Error> {
     account_pubkey
         .derive_ephemeral_ivk()?
-        .derive_ephemeral_address(
-            NonHardenedChildIndex::from_index(address_index)
-                .expect("all non-hardened address indexes in use!"),
-        )
+        .derive_ephemeral_address(address_index)
 }
 
 /// Encodes transparent address

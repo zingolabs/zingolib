@@ -6,26 +6,23 @@ use std::{
 
 use incrementalmerkletree::{Marking, Position, Retention};
 use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
-use sapling_crypto::{note_encryption::CompactOutputDescription, Node};
+use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
 use zcash_client_backend::proto::compact_formats::{
     CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_primitives::{
-    block::BlockHash,
-    consensus::{self, BlockHeight},
-    zip32::AccountId,
-};
+use zcash_primitives::{block::BlockHash, zip32::AccountId};
+use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
+    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
     witness::WitnessData,
-    MAX_BATCH_OUTPUTS,
 };
 
 #[cfg(not(feature = "darkside_test"))]
@@ -257,7 +254,14 @@ fn check_tree_size(
         {
             #[cfg(feature = "darkside_test")]
             {
-                tracing::error!("darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().sapling_final_tree_size, compact_block.chain_metadata.expect("should exist in this scope").sapling_commitment_tree_size);
+                tracing::error!(
+                    "darkside compact block sapling tree size incorrect.\nwallet block: {}\ncompact_block: {}",
+                    wallet_block.tree_bounds().sapling_final_tree_size,
+                    compact_block
+                        .chain_metadata
+                        .expect("should exist in this scope")
+                        .sapling_commitment_tree_size
+                );
                 return Ok(());
             }
 
@@ -273,7 +277,14 @@ fn check_tree_size(
         {
             #[cfg(feature = "darkside_test")]
             {
-                tracing::error!("darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}", wallet_block.tree_bounds().orchard_final_tree_size, compact_block.chain_metadata.expect("should exist in this scope").orchard_commitment_tree_size);
+                tracing::error!(
+                    "darkside compact block orchard tree size incorrect.\nwallet block: {}\ncompact_block: {}",
+                    wallet_block.tree_bounds().orchard_final_tree_size,
+                    compact_block
+                        .chain_metadata
+                        .expect("should exist in this scope")
+                        .orchard_commitment_tree_size
+                );
                 return Ok(());
             }
 

@@ -9,8 +9,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use incrementalmerkletree::{Hashable, Position};
 use shardtree::{
-    store::{memory::MemoryShardStore, Checkpoint, ShardStore, TreeState},
     LocatedPrunableTree, ShardTree,
+    store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
@@ -19,20 +19,23 @@ use zcash_client_backend::{
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight},
     legacy::Script,
     memo::Memo,
     merkle_tree::HashSer,
-    transaction::{components::amount::NonNegativeAmount, Transaction, TxId},
+    transaction::{Transaction, TxId},
+};
+use zcash_protocol::{
+    consensus::{self, BlockHeight},
+    value::Zatoshis,
 };
 
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     keys::{
-        decode_unified_address,
+        KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
-        KeyId,
     },
     sync::MAX_VERIFICATION_WINDOW,
 };
@@ -220,7 +223,7 @@ impl NullifierMap {
         Vector::write(
             &mut writer,
             &self.sapling.iter().collect::<Vec<_>>(),
-            |w, (&nullifier, &locator)| {
+            |w, &(&nullifier, &locator)| {
                 w.write_all(nullifier.as_ref())?;
                 w.write_u32::<LittleEndian>(locator.0.into())?;
                 locator.1.write(w)
@@ -229,7 +232,7 @@ impl NullifierMap {
         Vector::write(
             &mut writer,
             &self.orchard.iter().collect::<Vec<_>>(),
-            |w, (&nullifier, &locator)| {
+            |w, &(&nullifier, &locator)| {
                 w.write_all(&nullifier.to_bytes())?;
                 w.write_u32::<LittleEndian>(locator.0.into())?;
                 locator.1.write(w)
@@ -366,13 +369,18 @@ impl TransparentCoin {
 
         let address = read_string(&mut reader)?;
         let script = Script::read(&mut reader)?;
-        let value = NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?)
+        let value = Zatoshis::from_u64(reader.read_u64::<LittleEndian>()?)
             .expect("only valid values written");
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
 
         Ok(Self {
             output_id: OutputId { txid, output_index },
-            key_id: TransparentAddressId::new(account_id, scope, address_index),
+            key_id: TransparentAddressId::new(
+                account_id,
+                scope,
+                NonHardenedChildIndex::from_index(address_index)
+                    .expect("only non-hardened child indexes should be written"),
+            ),
             address,
             value,
             script,
@@ -389,7 +397,7 @@ impl TransparentCoin {
 
         writer.write_u32::<LittleEndian>(self.key_id.account_id().into())?;
         writer.write_u8(self.key_id.scope() as u8)?;
-        writer.write_u32::<LittleEndian>(self.key_id.address_index())?;
+        writer.write_u32::<LittleEndian>(self.key_id.address_index().index())?;
 
         write_string(&mut writer, &self.address)?;
         self.script.write(&mut writer)?;
@@ -454,7 +462,7 @@ impl SaplingNote {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "invalid rseed zip212 byte",
-                ))
+                ));
             }
         };
 
@@ -686,7 +694,7 @@ impl OutgoingSaplingNote {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "invalid rseed zip212 byte",
-                ))
+                ));
             }
         };
 
@@ -884,11 +892,21 @@ impl ShardTrees {
             let index = r.read_u64::<LittleEndian>()?;
             let root_addr = incrementalmerkletree::Address::from_parts(level, index);
             let shard = read_shard(r)?;
-            Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+            Ok(
+                LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "parent node in root has level 0 relative to root address: {:?}",
+                            addr
+                        ),
+                    )
+                })?,
+            )
         })?;
         let mut store = MemoryShardStore::empty();
         for shard in shards {
-            store.put_shard(shard).expect("Infallible");
+            store.put_shard(shard).expect("infallible");
         }
         let checkpoints = Vector::read(&mut reader, |r| {
             let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
@@ -901,7 +919,7 @@ impl ShardTrees {
                         format!(
                             "failed to read TreeState. expected boolean value, found {otherwise}"
                         ),
-                    ))
+                    ));
                 }
             };
             let marks_removed =

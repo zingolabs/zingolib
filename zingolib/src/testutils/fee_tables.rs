@@ -2,14 +2,8 @@
 
 use std::cmp::max;
 
-use zcash_client_backend::PoolType;
-use zcash_client_backend::PoolType::Shielded;
-use zcash_client_backend::PoolType::Transparent;
-use zcash_client_backend::ShieldedProtocol;
-use zcash_client_backend::ShieldedProtocol::Orchard;
-use zcash_client_backend::ShieldedProtocol::Sapling;
-use zcash_primitives::transaction::fees::zip317::GRACE_ACTIONS;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 /// estimates a fee based on the zip317 protocol rules
 /// <https://zips.z.cash/zip-0317>
@@ -25,14 +19,14 @@ pub fn one_to_one(
     let mut orchard_inputs = 0;
     let mut orchard_outputs = 0;
     match source_protocol {
-        Some(Sapling) => sapling_inputs += 1,
-        Some(Orchard) => orchard_inputs += 1,
+        Some(ShieldedProtocol::Sapling) => sapling_inputs += 1,
+        Some(ShieldedProtocol::Orchard) => orchard_inputs += 1,
         _ => {}
     }
     match target_pool {
-        Transparent => transparent_outputs += 1,
-        Shielded(Sapling) => sapling_outputs += 1,
-        Shielded(Orchard) => orchard_outputs += 1,
+        PoolType::Transparent => transparent_outputs += 1,
+        PoolType::Shielded(ShieldedProtocol::Sapling) => sapling_outputs += 1,
+        PoolType::Shielded(ShieldedProtocol::Orchard) => orchard_outputs += 1,
     }
     if change {
         if orchard_inputs + orchard_outputs == 0 {
