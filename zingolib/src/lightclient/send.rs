@@ -157,32 +157,13 @@ pub mod send_with_proposal {
 
             use super::*;
 
-            // /// requires 1 confirmation: expect 3 minute runtime
-            // #[tokio::test]
-            // async fn testnet_shield() {
-            //     let case = examples::NetworkSeedVersion::Testnet(
-            //         examples::TestnetSeedVersion::GloryGoddess,
-            //     );
-            //     let mut client = sync_example_wallet(case).await;
-
-            //     with_assertions::assure_propose_shield_bump_sync(
-            //         &mut LiveChain::setup().await,
-            //         &mut client,
-            //         true,
-            //     )
-            //     .await
-            //     .unwrap();
-            // }
-
             #[tokio::test]
-            /// this is a live sync test. its execution time scales linearly since last updated
-            /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-            async fn testnet_send_to_self_orchard() {
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            /// note: networked send waits 2 minutes for confirmation. expect 3min runtime
+            async fn testnet_send_to_self_orchard_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
-                    examples::TestnetSeedVersion::ChimneyBetter(
-                        examples::ChimneyBetterVersion::Latest,
-                    ),
+                    examples::TestnetSeedVersion::GloryGoddess,
                 );
 
                 let mut client = sync_example_wallet(case).await;
