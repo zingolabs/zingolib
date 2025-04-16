@@ -201,7 +201,7 @@ pub fn save_to_b64() -> String {
             match lightclient.wallet.lock().await.save().await {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
-                Ok(None) => STANDARD.encode(vec![]),
+                Ok(None) => format!("Error: No need to save the wallet file"),
                 Err(e) => format!("Error: {e}"),
             }
         })
