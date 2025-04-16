@@ -4950,6 +4950,7 @@ dependencies = [
  "tokio",
  "uniffi",
  "uniffi_build",
+ "zcash_primitives",
  "zingolib",
 ]
 
