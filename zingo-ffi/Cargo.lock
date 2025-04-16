@@ -4950,6 +4950,7 @@ dependencies = [
  "tokio",
  "uniffi",
  "uniffi_build",
+ "zcash_primitives",
  "zingolib",
 ]
 
@@ -5028,7 +5029,6 @@ dependencies = [
  "nonempty",
  "orchard",
  "pepper-sync",
- "portpicker",
  "proptest",
  "prost",
  "rand 0.8.5",
@@ -5044,9 +5044,7 @@ dependencies = [
  "sha2",
  "shardtree",
  "subtle",
- "tempfile",
  "test-case",
- "testvectors",
  "thiserror 1.0.69",
  "tokio",
  "tonic",

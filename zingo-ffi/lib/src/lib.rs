@@ -16,8 +16,9 @@ use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
+use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
-use zingolib::{commands, lightclient::LightClient, wallet::WalletBase, wallet::LightWallet};
+use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -27,9 +28,7 @@ lazy_static! {
         Mutex::new(RefCell::new(None));
 }
 
-fn lock_client_return_seed(
-    lightclient: LightClient,
-) -> String {
+fn lock_client_return_seed(lightclient: LightClient) -> String {
     let lc = Arc::new(lightclient);
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
@@ -51,16 +50,13 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
-    let mut config = match zingolib::config::load_clientconfig(
-        lightwalletd_uri.clone(),
-        None,
-        chaintype,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            return Err(format!("Error: Config load: {}", e));
-        }
-    };
+    let mut config =
+        match zingolib::config::load_clientconfig(lightwalletd_uri.clone(), None, chaintype) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(format!("Error: Config load: {}", e));
+            }
+        };
     config.set_data_dir(data_dir);
 
     Ok((config, lightwalletd_uri))
@@ -80,11 +76,7 @@ pub fn init_logging() -> String {
     "OK".to_string()
 }
 
-pub fn init_new(
-    server_uri: String,
-    data_dir: String,
-    chain_hint: String,
-) -> String {
+pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> String {
     let (config, lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
@@ -96,7 +88,11 @@ pub fn init_new(
         Ok(height) => height,
         Err(e) => return e,
     };
-    let lightclient = match LightClient::new(config, (latest_block_height.saturating_sub(100) as u32).into(), false) {
+    let lightclient = match LightClient::new(
+        config,
+        (latest_block_height.saturating_sub(100) as u32).into(),
+        false,
+    ) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
@@ -117,14 +113,19 @@ pub fn init_from_seed(
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient = match LightClient::create_from_wallet(
-        LightWallet::new(chain_hint, WalletBase::MnemonicPhrase(seed), birthday)?,
-        config,
-        false,
+
+    let wallet = match LightWallet::new(
+        config.chain,
+        WalletBase::MnemonicPhrase(seed),
+        BlockHeight::from_u32(birthday as u32),
     ) {
+        Ok(w) => w,
+        Err(e) => return format!("Error: {e}"),
+    };
+    let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
         Err(e) => {
-            return format!("Error: {}", e);
+            return format!("Error: {e}");
         }
     };
     lock_client_return_seed(lightclient)
@@ -142,15 +143,19 @@ pub fn init_from_ufvk(
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient = match LightClient::create_from_wallet(
+
+    let wallet = match LightWallet::new(
+        config.chain,
         WalletBase::Ufvk(ufvk),
-        &config,
-        birthday,
-        false,
+        BlockHeight::from_u32(birthday as u32),
     ) {
+        Ok(w) => w,
+        Err(e) => return format!("Error: {e}"),
+    };
+    let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
         Err(e) => {
-            return format!("Error: {}", e);
+            return format!("Error: {e}");
         }
     };
     lock_client_return_seed(lightclient)
@@ -179,13 +184,16 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient =
-        match LightClient::read_wallet_from_buffer_runtime(&config, &decoded_bytes[..]) {
-            Ok(l) => l,
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let wallet = match LightWallet::read(&decoded_bytes[..], config.chain) {
+        Ok(w) => w,
+        Err(e) => return format!("Error: {e}"),
+    };
+    let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
+        Ok(l) => l,
+        Err(e) => {
+            return format!("Error: {e}");
+        }
+    };
     lock_client_return_seed(lightclient)
 }
 
