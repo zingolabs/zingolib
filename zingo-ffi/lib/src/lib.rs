@@ -8,14 +8,12 @@ extern crate android_logger;
 use android_logger::{Config, FilterBuilder};
 #[cfg(target_os = "android")]
 use log::Level;
-use tokio::runtime::Runtime;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
-use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
@@ -24,14 +22,11 @@ use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::
 // so we don't have to keep creating it. We need to store it here, in rust
 // because we can't return such a complex structure back to JS
 lazy_static! {
-    static ref LIGHTCLIENT: Mutex<RefCell<Option<Arc<LightClient>>>> =
-        Mutex::new(RefCell::new(None));
+    static ref LIGHTCLIENT: Mutex<Option<LightClient>> = Mutex::new(None);
 }
 
 fn lock_client_return_seed(lightclient: LightClient) -> String {
-    let lc = Arc::new(lightclient);
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
+    LIGHTCLIENT.lock().unwrap().replace(lightclient);
 
     execute_command("seed".to_string(), "".to_string())
 }
@@ -199,50 +194,33 @@ pub fn init_from_b64(
 
 pub fn save_to_b64() -> String {
     // Return the wallet as a base64 encoded string
-    let lightclient: Arc<LightClient>;
-    {
-        let lc = LIGHTCLIENT.lock().unwrap();
-
-        if lc.borrow().is_none() {
-            return "Error: Lightclient is not initialized".to_string();
-        }
-
-        lightclient = lc.borrow().as_ref().unwrap().clone();
-    };
-
-    // we need to use STANDARD because swift is expecting the encoded String with padding
-    // I tried with STANDARD_NO_PAD and the decoding return `nil`.
-    match lightclient.export_save_buffer_runtime() {
-        Ok(buf) => STANDARD.encode(&buf),
-        Err(e) => {
-            format!("Error: {}", e)
-        }
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        // we need to use STANDARD because swift is expecting the encoded String with padding
+        // I tried with STANDARD_NO_PAD and the decoding return `nil`.
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.wallet.lock().await.save().await {
+                Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
+                // TODO: check this is better than a custom error when save is not required (empty buffer)
+                Ok(None) => STANDARD.encode(vec![]),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
     }
 }
 
 pub fn execute_command(cmd: String, args_list: String) -> String {
-    let resp: String;
-    {
-        let lightclient: Arc<LightClient>;
-        {
-            let lc = LIGHTCLIENT.lock().unwrap();
-
-            if lc.borrow().is_none() {
-                return "Error: Lightclient is not initialized".to_string();
-            }
-
-            lightclient = lc.borrow().as_ref().unwrap().clone();
-        };
-
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         let args = if args_list.is_empty() {
             vec![]
         } else {
             vec![args_list.as_ref()]
         };
-        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref()).clone();
-    };
-
-    resp
+        commands::do_user_command(&cmd, &args, lightclient)
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
 
 pub fn get_latest_block_server(server_uri: String) -> String {
@@ -262,45 +240,21 @@ pub fn get_zennies_for_zingo_donation_address() -> String {
 }
 
 pub fn get_transaction_summaries() -> String {
-    let resp: String;
-    {
-        let lightclient: Arc<LightClient>;
-        {
-            let lc = LIGHTCLIENT.lock().unwrap();
-
-            if lc.borrow().is_none() {
-                return "Error: Lightclient is not initialized".to_string();
-            }
-
-            lightclient = lc.borrow().as_ref().unwrap().clone();
-        };
-
-        let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async { lightclient.transaction_summaries_json_string().await });
-    };
-
-    resp
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT
+            .block_on(async move { lightclient.transaction_summaries_json_string().await })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
 
 pub fn get_value_transfers() -> String {
-    let resp: String;
-    {
-        let lightclient: Arc<LightClient>;
-        {
-            let lc = LIGHTCLIENT.lock().unwrap();
-
-            if lc.borrow().is_none() {
-                return "Error: Lightclient is not initialized".to_string();
-            }
-
-            lightclient = lc.borrow().as_ref().unwrap().clone();
-        };
-
-        let rt = Runtime::new().unwrap();
-        resp = rt.block_on(async { lightclient.value_transfers_json_string().await });
-    };
-
-    resp
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT
+            .block_on(async move { lightclient.value_transfers_json_string().await })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
 
 pub fn set_crypto_default_provider_to_ring() -> String {
