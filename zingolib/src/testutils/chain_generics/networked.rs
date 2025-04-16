@@ -6,9 +6,9 @@ use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
 /// allows using existing ChainGeneric functions with TestNet wallets
-pub struct LiveChain;
+pub struct NetworkedTestEnvironment;
 
-impl ConductChain for LiveChain {
+impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {}
     }

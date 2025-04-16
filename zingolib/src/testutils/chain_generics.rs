@@ -12,7 +12,7 @@
 
 pub mod conduct_chain;
 pub mod libtonode;
-pub mod live_chain;
+pub mod networked;
 
 pub mod fixtures;
 pub mod with_assertions;

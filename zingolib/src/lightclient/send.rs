@@ -117,7 +117,8 @@ pub mod send_with_proposal {
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
-                conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
+                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                with_assertions,
             },
             wallet::{LightWallet, WalletBase, disk::testing::examples},
         };
@@ -171,7 +172,7 @@ pub mod send_with_proposal {
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
                 with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
+                    &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 10_000, None)],
                     vec![],
