@@ -120,8 +120,9 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "append-only-vec"
-version = "0.1.2"
-source = "git+https://github.com/zancas/append-only-vec.git?branch=add_debug_impl#ec919c9c8f5429edbac69f0c2203dd01c861ce15"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7992085ec035cfe96992dd31bfd495a2ebd31969bb95f624471cb6c0b349e571"
 
 [[package]]
 name = "arc-swap"
