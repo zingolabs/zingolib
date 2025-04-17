@@ -16,6 +16,7 @@ use rustls::crypto::CryptoProvider;
 use std::sync::Mutex;
 use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
+use zingolib::data::PollReport;
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -274,4 +275,22 @@ pub fn set_crypto_default_provider_to_ring() -> String {
     }
 
     resp
+}
+
+pub fn poll_sync() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        match lightclient.poll_sync() {
+            PollReport::NoHandle => "Sync task has not been launched.".to_string(),
+            PollReport::NotReady => "Sync task is not complete.".to_string(),
+            PollReport::Ready(result) => match result {
+                Ok(sync_result) => {
+                    json::object! { "sync_complete" => json::JsonValue::from(sync_result) }
+                        .pretty(2)
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }

@@ -4944,6 +4944,7 @@ dependencies = [
  "android_logger",
  "base64 0.22.1",
  "http",
+ "json",
  "lazy_static",
  "log",
  "rustls",
