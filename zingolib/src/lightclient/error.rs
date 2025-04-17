@@ -31,9 +31,11 @@ pub enum LightClientError {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum SendError<NoteRef> {
-    #[error("The transaction could not be calculated. {0}")]
-    CalculateTransactionError(#[from] CalculateTransactionError<NoteRef>),
+pub enum SendError {
+    #[error("The sending transaction could not be calculated. {0}")]
+    CalculateSendError(CalculateTransactionError<OutputRef>),
+    #[error("The shieldng transaction could not be calculated. {0}")]
+    CalculateShieldError(CalculateTransactionError<Infallible>),
     #[error("Transmission failed. {0}")]
     TransmissionError(#[from] TransmissionError),
     #[error("No proposal found.")]
@@ -46,7 +48,7 @@ pub enum QuickSendError {
     #[error("proposal failed. {0}")]
     ProposalError(#[from] ProposeSendError),
     #[error("send failed. {0}")]
-    SendError(#[from] SendError<OutputRef>),
+    SendError(#[from] SendError),
 }
 
 #[allow(missing_docs)] // error types document themselves
@@ -55,5 +57,5 @@ pub enum QuickShieldError {
     #[error("proposal failed. {0}")]
     ProposalError(#[from] ProposeShieldError),
     #[error("send failed. {0}")]
-    SendError(#[from] SendError<Infallible>),
+    SendError(#[from] SendError),
 }

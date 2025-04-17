@@ -30,12 +30,31 @@ pub mod send_with_proposal {
     use crate::wallet::output::OutputRef;
 
     impl LightClient {
-        async fn send<NoteRef>(
+        async fn send(
             &mut self,
-            proposal: &Proposal<zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, SendError<NoteRef>> {
+            proposal: &Proposal<zip317::FeeRule, OutputRef>,
+        ) -> Result<NonEmpty<TxId>, SendError> {
             let mut wallet = self.wallet.lock().await;
-            let calculated_txids = wallet.calculate_transactions(proposal).await?;
+            let calculated_txids = wallet
+                .calculate_transactions(proposal)
+                .await
+                .map_err(SendError::CalculateSendError)?;
+            self.latest_proposal = None;
+
+            Ok(wallet
+                .transmit_transactions(self.get_server_uri(), calculated_txids)
+                .await?)
+        }
+
+        async fn shield(
+            &mut self,
+            proposal: &Proposal<zip317::FeeRule, Infallible>,
+        ) -> Result<NonEmpty<TxId>, SendError> {
+            let mut wallet = self.wallet.lock().await;
+            let calculated_txids = wallet
+                .calculate_transactions(proposal)
+                .await
+                .map_err(SendError::CalculateShieldError)?;
             self.latest_proposal = None;
 
             Ok(wallet
@@ -59,11 +78,9 @@ pub mod send_with_proposal {
             if let Some(proposal) = self.latest_proposal.clone() {
                 match proposal {
                     ZingoProposal::Transfer(transfer_proposal) => {
-                        self.send::<OutputRef>(&transfer_proposal).await
+                        self.send(&transfer_proposal).await
                     }
-                    ZingoProposal::Shield(shield_proposal) => {
-                        self.send::<Infallible>(&shield_proposal).await
-                    }
+                    ZingoProposal::Shield(shield_proposal) => self.shield(&shield_proposal).await,
                 }
             } else {
                 Err(SendError::NoStoredProposal)
@@ -82,14 +99,14 @@ pub mod send_with_proposal {
                 .create_send_proposal(request)
                 .await?;
 
-            Ok(self.send::<OutputRef>(&proposal).await?)
+            Ok(self.send(&proposal).await?)
         }
 
         /// Shields all transparent funds skipping proposal confirmation.
         pub async fn quick_shield(&mut self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.lock().await.create_shield_proposal().await?;
 
-            Ok(self.send::<Infallible>(&proposal).await?)
+            Ok(self.shield(&proposal).await?)
         }
     }
 
