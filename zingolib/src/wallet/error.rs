@@ -200,7 +200,7 @@ pub enum TransmissionError {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum CalculateTransactionError {
+pub enum CalculateTransactionError<NoteRef> {
     #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
     NoSpendCapability,
     #[error("Could not load sapling_params: {0}")]
@@ -209,12 +209,13 @@ pub enum CalculateTransactionError {
     UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
-        #[from]
         zcash_client_backend::data_api::error::Error<
             WalletError,
-            std::convert::Infallible,
-            std::convert::Infallible,
+            Infallible,
+            Infallible,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            NoteRef,
         >,
     ),
     #[error("Only tex multistep transactions are supported!")]
@@ -230,11 +231,10 @@ pub enum ProposeSendError {
         zcash_client_backend::data_api::error::Error<
             WalletError,
             WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                zcash_client_backend::wallet::NoteId,
-            >,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_client_backend::wallet::NoteId,
         >,
     ),
     /// failed to construct a transaction request
@@ -261,11 +261,10 @@ pub enum ProposeShieldError {
         zcash_client_backend::data_api::error::Error<
             WalletError,
             WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                Infallible,
-            >,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            Infallible,
         >,
     ),
     #[error("not enough transparent funds to shield.")]

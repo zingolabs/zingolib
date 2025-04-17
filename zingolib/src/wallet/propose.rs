@@ -4,9 +4,10 @@ use std::num::NonZeroU32;
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector, zip321::TransactionRequest,
+    data_api::wallet::input_selection::GreedyInputSelector,
+    fees::{DustAction, DustOutputPolicy},
+    zip321::TransactionRequest,
 };
-use zcash_primitives::memo::MemoBytes;
 use zcash_protocol::{ShieldedProtocol, value::Zatoshis};
 
 use crate::config::ChainType;
@@ -16,27 +17,6 @@ use super::{
     error::{ProposeSendError, ProposeShieldError, WalletError},
     send::change_memo_from_transaction_request,
 };
-
-type GISKit = GreedyInputSelector<
-    LightWallet,
-    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
->;
-
-fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
-    let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-        zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-        memo,
-        ShieldedProtocol::Orchard,
-    );
-
-    GISKit::new(
-        change_strategy,
-        zcash_client_backend::fees::DustOutputPolicy::new(
-            zcash_client_backend::fees::DustAction::AllowDustChange,
-            None,
-        ),
-    )
-}
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -50,20 +30,30 @@ impl LightWallet {
             .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
             .count() as u32;
         let memo = change_memo_from_transaction_request(&request, refund_address_count);
-        let input_selector = build_default_giskit(Some(memo));
-
+        let input_selector = GreedyInputSelector::new();
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            Some(memo),
+            ShieldedProtocol::Orchard,
+            DustOutputPolicy::new(DustAction::AllowDustChange, None),
+        );
         let network = self.network;
 
         zcash_client_backend::data_api::wallet::propose_transfer::<
             LightWallet,
             ChainType,
-            GISKit,
+            GreedyInputSelector<LightWallet>,
+            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
+                zcash_primitives::transaction::fees::zip317::FeeRule,
+                LightWallet,
+            >,
             WalletError,
         >(
             self,
             &network,
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
+            &change_strategy,
             request,
             NonZeroU32::MIN,
         )
@@ -81,20 +71,32 @@ impl LightWallet {
     pub(crate) async fn create_shield_proposal(
         &mut self,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
+        let input_selector = GreedyInputSelector::new();
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+            DustOutputPolicy::new(DustAction::AllowDustChange, None),
+        );
         let network = self.network;
-        let input_selector = build_default_giskit(None);
 
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
             LightWallet,
             ChainType,
-            GISKit,
+            GreedyInputSelector<LightWallet>,
+            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
+                zcash_primitives::transaction::fees::zip317::FeeRule,
+                LightWallet,
+            >,
             WalletError,
         >(
             self,
             &network,
             &input_selector,
+            &change_strategy,
             Zatoshis::const_from_u64(10_000),
             &self.get_transparent_addresses()?,
+            zip32::AccountId::ZERO,
             1,
         )
         .map_err(ProposeShieldError::Component)?;

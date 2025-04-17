@@ -1,5 +1,7 @@
 //! Errors assoicated with [`crate::lightclient::LightClient`].
 
+use std::convert::Infallible;
+
 use crate::wallet::error::{
     CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError, WalletError,
 };
@@ -25,9 +27,9 @@ pub enum LightClientError {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum SendError {
+pub enum SendError<NoteRef> {
     #[error("The transaction could not be calculated. {0}")]
-    CalculateTransactionError(#[from] CalculateTransactionError),
+    CalculateTransactionError(#[from] CalculateTransactionError<NoteRef>),
     #[error("Transmission failed. {0}")]
     TransmissionError(#[from] TransmissionError),
     #[error("No proposal found.")]
@@ -40,7 +42,7 @@ pub enum QuickSendError {
     #[error("proposal failed. {0}")]
     ProposalError(#[from] ProposeSendError),
     #[error("send failed. {0}")]
-    SendError(#[from] SendError),
+    SendError(#[from] SendError<zcash_client_backend::wallet::NoteId>),
 }
 
 #[allow(missing_docs)] // error types document themselves
@@ -49,5 +51,5 @@ pub enum QuickShieldError {
     #[error("proposal failed. {0}")]
     ProposalError(#[from] ProposeShieldError),
     #[error("send failed. {0}")]
-    SendError(#[from] SendError),
+    SendError(#[from] SendError<Infallible>),
 }

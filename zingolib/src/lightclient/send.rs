@@ -21,18 +21,19 @@ pub mod send_with_proposal {
     use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
-    use zcash_primitives::transaction::fees::zip317;
     use zcash_primitives::transaction::TxId;
+    use zcash_primitives::transaction::fees::zip317;
 
     use crate::data::proposal::ZingoProposal;
-    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
     use crate::lightclient::LightClient;
+    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
+    use crate::wallet::error::TransmissionError;
 
     impl LightClient {
         async fn send<NoteRef>(
             &mut self,
             proposal: &Proposal<zip317::FeeRule, NoteRef>,
-        ) -> Result<NonEmpty<TxId>, SendError> {
+        ) -> Result<NonEmpty<TxId>, SendError<NoteRef>> {
             let mut wallet = self.wallet.lock().await;
             let calculated_txids = wallet.calculate_transactions(proposal).await?;
             self.latest_proposal = None;
@@ -43,7 +44,7 @@ pub mod send_with_proposal {
         }
 
         /// Re-transmits a previously calculated transaction that failed to send.
-        pub async fn resend(&self, txid: TxId) -> Result<(), SendError> {
+        pub async fn resend(&self, txid: TxId) -> Result<(), TransmissionError> {
             self.wallet
                 .lock()
                 .await
@@ -103,7 +104,7 @@ pub mod send_with_proposal {
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
-            wallet::{disk::testing::examples, LightWallet, WalletBase},
+            wallet::{LightWallet, WalletBase, disk::testing::examples},
         };
 
         #[tokio::test]

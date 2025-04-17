@@ -77,7 +77,7 @@ impl LightWallet {
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         if !self.unified_key_store.is_spending_key() {
             return Err(CalculateTransactionError::NoSpendCapability);
         }
@@ -119,24 +119,22 @@ impl LightWallet {
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
         let usk = (&self.unified_key_store)
             .try_into()
             .map_err(CalculateTransactionError::UnifiedSpendKey)?;
 
-        Ok(
-            zcash_client_backend::data_api::wallet::create_proposed_transactions(
-                self,
-                &network,
-                &sapling_prover,
-                &sapling_prover,
-                &usk,
-                zcash_client_backend::wallet::OvkPolicy::Sender,
-                proposal,
-                None,
-            )?,
+        zcash_client_backend::data_api::wallet::create_proposed_transactions(
+            self,
+            &network,
+            &sapling_prover,
+            &sapling_prover,
+            &usk,
+            zcash_client_backend::wallet::OvkPolicy::Sender,
+            proposal,
         )
+        .map_err(CalculateTransactionError::Calculation)
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
