@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
@@ -21,8 +22,60 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub mod query;
 
+/// Output reference.
+///
+/// Identifier with pool type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputRef {
+    output_id: OutputId,
+    pool_type: PoolType,
+}
+
+impl OutputRef {
+    /// Creates new OutputRef from parts.
+    pub fn new(output_id: OutputId, pool_type: PoolType) -> Self {
+        OutputRef {
+            output_id,
+            pool_type,
+        }
+    }
+
+    /// Output identifier.
+    pub fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    /// Output identifier.
+    pub fn txid(&self) -> TxId {
+        self.output_id.txid()
+    }
+
+    /// Output identifier.
+    pub fn output_index(&self) -> u16 {
+        self.output_id.output_index()
+    }
+
+    /// Pool type.
+    pub fn pool_type(&self) -> PoolType {
+        self.pool_type
+    }
+}
+
+impl std::fmt::Display for OutputRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                output id: {}
+                pool type: {}
+            }}",
+            self.output_id, self.pool_type
+        )
+    }
+}
+
 /// Spend status of an output
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpendStatus {
     /// Output is not spent.
     Unspent,

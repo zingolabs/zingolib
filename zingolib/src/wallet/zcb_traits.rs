@@ -23,13 +23,13 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 use zcash_protocol::{
-    ShieldedProtocol,
+    PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
     value::Zatoshis,
 };
 use zcash_transparent::bundle::{OutPoint, TxOut};
 
-use super::{LightWallet, error::WalletError};
+use super::{LightWallet, error::WalletError, output::OutputRef};
 use crate::wallet::output::RemainingNeeded;
 use pepper_sync::{
     error::SyncError,
@@ -531,7 +531,7 @@ impl WalletCommitmentTrees for LightWallet {
 impl InputSource for LightWallet {
     type Error = WalletError;
     type AccountId = zip32::AccountId;
-    type NoteRef = NoteId;
+    type NoteRef = OutputRef;
 
     fn get_spendable_note(
         &self,
@@ -560,13 +560,13 @@ impl InputSource for LightWallet {
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let exclude_sapling = exclude
             .iter()
-            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
-            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
+            .filter(|&note_id| note_id.pool_type() == PoolType::SAPLING)
+            .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let exclude_orchard = exclude
             .iter()
-            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
-            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
+            .filter(|&note_id| note_id.pool_type() == PoolType::ORCHARD)
+            .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
@@ -625,10 +625,9 @@ impl InputSource for LightWallet {
             .iter()
             .map(|note| {
                 ReceivedNote::from_parts(
-                    NoteId::new(
-                        note.output_id().txid(),
-                        ShieldedProtocol::Sapling,
-                        note.output_id().output_index(),
+                    OutputRef::new(
+                        OutputId::new(note.output_id().txid(), note.output_id().output_index()),
+                        PoolType::SAPLING,
                     ),
                     note.output_id().txid(),
                     note.output_id().output_index(),
@@ -643,10 +642,9 @@ impl InputSource for LightWallet {
             .iter()
             .map(|note| {
                 ReceivedNote::from_parts(
-                    NoteId::new(
-                        note.output_id().txid(),
-                        ShieldedProtocol::Orchard,
-                        note.output_id().output_index(),
+                    OutputRef::new(
+                        OutputId::new(note.output_id().txid(), note.output_id().output_index()),
+                        PoolType::ORCHARD,
                     ),
                     note.output_id().txid(),
                     note.output_id().output_index(),

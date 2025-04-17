@@ -2,8 +2,12 @@
 
 use std::convert::Infallible;
 
-use crate::wallet::error::{
-    CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError, WalletError,
+use crate::wallet::{
+    error::{
+        CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError,
+        WalletError,
+    },
+    output::OutputRef,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +46,7 @@ pub enum QuickSendError {
     #[error("proposal failed. {0}")]
     ProposalError(#[from] ProposeSendError),
     #[error("send failed. {0}")]
-    SendError(#[from] SendError<zcash_client_backend::wallet::NoteId>),
+    SendError(#[from] SendError<OutputRef>),
 }
 
 #[allow(missing_docs)] // error types document themselves

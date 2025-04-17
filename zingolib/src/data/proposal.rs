@@ -3,8 +3,10 @@
 use std::convert::Infallible;
 
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::transaction;
+use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::value::{BalanceError, Zatoshis};
+
+use crate::wallet::output::OutputRef;
 
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
@@ -13,14 +15,13 @@ use zcash_protocol::value::{BalanceError, Zatoshis};
 /// as the fee structure for a transaction series.  This innovation was created in response
 /// "Binance Constraint" that t-addresses that only receive from t-addresses be supported.
 /// <https://zips.z.cash/zip-0320>
-pub(crate) type ProportionalFeeProposal =
-    Proposal<transaction::fees::zip317::FeeRule, zcash_client_backend::wallet::NoteId>;
+pub(crate) type ProportionalFeeProposal = Proposal<zip317::FeeRule, OutputRef>;
+
 /// A proposed shielding.
 /// The zcash_client_backend Proposal type exposes a "NoteRef" generic
 /// parameter to track Shielded inputs to the proposal these are
 /// disallowed in Zingo ShieldedProposals
-pub(crate) type ProportionalFeeShieldProposal =
-    Proposal<transaction::fees::zip317::FeeRule, Infallible>;
+pub(crate) type ProportionalFeeShieldProposal = Proposal<zip317::FeeRule, Infallible>;
 
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Debug, Clone)]

@@ -18,7 +18,6 @@ pub mod send_with_proposal {
     use nonempty::NonEmpty;
 
     use zcash_client_backend::proposal::Proposal;
-    use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
     use zcash_primitives::transaction::TxId;
@@ -28,6 +27,7 @@ pub mod send_with_proposal {
     use crate::lightclient::LightClient;
     use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
     use crate::wallet::error::TransmissionError;
+    use crate::wallet::output::OutputRef;
 
     impl LightClient {
         async fn send<NoteRef>(
@@ -59,7 +59,7 @@ pub mod send_with_proposal {
             if let Some(proposal) = self.latest_proposal.clone() {
                 match proposal {
                     ZingoProposal::Transfer(transfer_proposal) => {
-                        self.send::<NoteId>(&transfer_proposal).await
+                        self.send::<OutputRef>(&transfer_proposal).await
                     }
                     ZingoProposal::Shield(shield_proposal) => {
                         self.send::<Infallible>(&shield_proposal).await
@@ -82,7 +82,7 @@ pub mod send_with_proposal {
                 .create_send_proposal(request)
                 .await?;
 
-            Ok(self.send::<NoteId>(&proposal).await?)
+            Ok(self.send::<OutputRef>(&proposal).await?)
         }
 
         /// Shields all transparent funds skipping proposal confirmation.
@@ -96,8 +96,6 @@ pub mod send_with_proposal {
     #[cfg(test)]
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
-
-        use zcash_client_backend::PoolType;
 
         use crate::{
             lightclient::sync::test::sync_example_wallet,
@@ -136,7 +134,7 @@ pub mod send_with_proposal {
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod testnet {
-            use zcash_client_backend::ShieldedProtocol;
+            use zcash_protocol::{PoolType, ShieldedProtocol};
 
             use crate::testutils::lightclient::get_base_address;
 
@@ -214,7 +212,7 @@ pub mod send_with_proposal {
         /// live send MAINNET: spends on-chain ZEC.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod mainnet {
-            use zcash_client_backend::ShieldedProtocol;
+            use zcash_protocol::{PoolType, ShieldedProtocol};
 
             use crate::testutils::lightclient::get_base_address;
 

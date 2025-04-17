@@ -7,6 +7,8 @@ use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 use zcash_protocol::PoolType;
 
+use super::output::OutputRef;
+
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
 pub enum WalletError {
@@ -234,7 +236,7 @@ pub enum ProposeSendError {
             zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
             zcash_primitives::transaction::fees::zip317::FeeError,
             zcash_primitives::transaction::fees::zip317::FeeError,
-            zcash_client_backend::wallet::NoteId,
+            OutputRef,
         >,
     ),
     /// failed to construct a transaction request
