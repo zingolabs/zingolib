@@ -2,19 +2,18 @@
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_protocol::value::Zatoshis;
 
 use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
-use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
+use crate::data::receivers::transaction_request_from_receivers;
 use crate::lightclient::LightClient;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
@@ -28,7 +27,7 @@ impl LightClient {
         };
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
-            NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
+            Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
             None,
         );
         receivers.push(dev_donation_receiver);
@@ -67,7 +66,7 @@ impl LightClient {
         let spendable_balance = self
             .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
             .await?;
-        if spendable_balance == NonNegativeAmount::ZERO {
+        if spendable_balance == Zatoshis::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
         let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
@@ -102,7 +101,7 @@ impl LightClient {
         &self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
-    ) -> Result<NonNegativeAmount, ProposeSendError> {
+    ) -> Result<Zatoshis, ProposeSendError> {
         let mut wallet = self.wallet.lock().await;
         let confirmed_shielded_balance = wallet.confirmed_shielded_balance_excluding_dust().await?;
         let mut receivers = vec![Receiver::new(
@@ -139,7 +138,7 @@ impl LightClient {
                 }
             }
             Err(e) => Err(e),
-            Ok(_) => Ok(NonNegativeAmount::ZERO), // in the case there is zero fee and the proposal is successful
+            Ok(_) => Ok(Zatoshis::ZERO), // in the case there is zero fee and the proposal is successful
         }?;
 
         (confirmed_shielded_balance - shortfall).ok_or(ProposeSendError::Proposal(
@@ -167,7 +166,7 @@ mod shielding {
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::LightClient,
-        wallet::{error::ProposeShieldError, LightWallet, WalletBase},
+        wallet::{LightWallet, WalletBase, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {

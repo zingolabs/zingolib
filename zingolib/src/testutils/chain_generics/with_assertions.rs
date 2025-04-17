@@ -1,5 +1,12 @@
 //! lightclient functions with added assertions. used for tests.
 
+use nonempty::NonEmpty;
+
+use zcash_client_backend::proposal::Proposal;
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::PoolType;
+
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
 use crate::testutils::assertions::for_each_proposed_transaction;
@@ -7,11 +14,6 @@ use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
-use nonempty::NonEmpty;
-use zcash_client_backend::proposal::Proposal;
-use zcash_client_backend::PoolType;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::TxId;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// this function handles inputs and their lifetimes to create a proposal

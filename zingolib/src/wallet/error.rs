@@ -3,9 +3,9 @@
 use std::convert::Infallible;
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
-use zcash_client_backend::PoolType;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_protocol::PoolType;
 
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +18,7 @@ pub enum WalletError {
     MnemonicError(#[from] bip0039::Error),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
-    InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
+    InvalidValue(#[from] zcash_protocol::value::BalanceError),
     /// Failed to write transaction.
     #[error("Failed to write transaction. {0:?}")]
     TransactionWrite(#[from] std::io::Error),
@@ -68,7 +68,7 @@ pub enum FeeError {
     /// Transparent spend not found in wallet
     SpendNotFound { txid: TxId, spend: String },
     /// Balance error
-    BalanceError(zcash_primitives::transaction::components::amount::BalanceError),
+    BalanceError(zcash_protocol::value::BalanceError),
 }
 
 impl std::error::Error for FeeError {}
@@ -87,8 +87,8 @@ impl std::fmt::Display for FeeError {
     }
 }
 
-impl From<zcash_primitives::transaction::components::amount::BalanceError> for FeeError {
-    fn from(value: zcash_primitives::transaction::components::amount::BalanceError) -> Self {
+impl From<zcash_protocol::value::BalanceError> for FeeError {
+    fn from(value: zcash_protocol::value::BalanceError) -> Self {
         Self::BalanceError(value)
     }
 }
@@ -97,7 +97,9 @@ impl From<zcash_primitives::transaction::components::amount::BalanceError> for F
 #[derive(Debug, thiserror::Error)]
 pub enum SpendError {
     /// Transaction spends not found in wallet
-    #[error("spend not found for transaction id {txid}. is the wallet fully synced?\nmissing spend: {spend}")]
+    #[error(
+        "spend not found for transaction id {txid}. is the wallet fully synced?\nmissing spend: {spend}"
+    )]
     SpendNotFound {
         pool: PoolType,
         txid: TxId,
@@ -187,7 +189,9 @@ pub enum TransmissionError {
     #[error("No view capability")]
     NoViewCapability,
     /// Txid reported by server does not match calculated txid.
-    #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
+    #[error(
+        "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
+    )]
     IncorrectTxidFromServer(TxId, TxId),
     /// Failed to scan transmitted transaction..
     #[error("Failed to scan transmitted transaction. {0}")]

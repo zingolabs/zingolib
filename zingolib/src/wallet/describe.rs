@@ -1,42 +1,21 @@
 //! Wallet-State reporters as LightWallet methods.
-use json::JsonValue;
-use pepper_sync::keys::decode_address;
-use pepper_sync::keys::transparent;
-use pepper_sync::keys::transparent::TransparentScope;
-use zcash_address::ZcashAddress;
-use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
-
-use pepper_sync::wallet::NoteInterface as _;
-use pepper_sync::wallet::OrchardNote;
-use pepper_sync::wallet::OutgoingNoteInterface;
-use pepper_sync::wallet::OutputInterface;
-use pepper_sync::wallet::SaplingNote;
-use pepper_sync::wallet::TransparentCoin;
-use pepper_sync::wallet::WalletTransaction;
-use zcash_keys::encoding::encode_payment_address;
-use zcash_primitives::consensus::NetworkConstants as _;
-use zcash_primitives::consensus::Parameters;
-use zcash_primitives::legacy::TransparentAddress;
-use zcash_primitives::memo::Memo;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use bip0039::Mnemonic;
+use json::JsonValue;
 
-use crate::config::ChainType;
-use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
-use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
-use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-use crate::lightclient::describe::UAReceivers;
-use crate::utils;
-
-use crate::wallet::error::BalanceError;
-
-use crate::wallet::LightWallet;
+use zcash_address::ZcashAddress;
+use zcash_keys::encoding::encode_payment_address;
+use zcash_primitives::consensus::NetworkConstants as _;
+use zcash_primitives::consensus::Parameters;
+use zcash_primitives::legacy::TransparentAddress;
+use zcash_primitives::memo::Memo;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::PoolType;
+use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::value::Zatoshis;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
@@ -58,6 +37,24 @@ use super::keys::unified::UnifiedKeyStore;
 use super::summary;
 use super::summary::SendType;
 use super::summary::TransactionKind;
+use crate::config::ChainType;
+use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
+use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
+use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
+use crate::lightclient::describe::UAReceivers;
+use crate::utils;
+use crate::wallet::LightWallet;
+use crate::wallet::error::BalanceError;
+use pepper_sync::keys::decode_address;
+use pepper_sync::keys::transparent;
+use pepper_sync::keys::transparent::TransparentScope;
+use pepper_sync::wallet::NoteInterface as _;
+use pepper_sync::wallet::OrchardNote;
+use pepper_sync::wallet::OutgoingNoteInterface;
+use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::SaplingNote;
+use pepper_sync::wallet::TransparentCoin;
+use pepper_sync::wallet::WalletTransaction;
 
 impl LightWallet {
     /// Returns wallet addresses in a JSON array
@@ -201,7 +198,7 @@ impl LightWallet {
     /// Returns an error if the full viewing key is not found or if the balance summation exceeds the valid range of zatoshis.
     pub async fn confirmed_shielded_balance_excluding_dust(
         &self,
-    ) -> Result<NonNegativeAmount, BalanceError> {
+    ) -> Result<Zatoshis, BalanceError> {
         Ok(utils::conversion::zatoshis_from_u64(
             self.confirmed_balance_excluding_dust::<OrchardNote>()
                 .await
@@ -954,10 +951,7 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "test-elevation"))]
 mod test {
-
-    use zcash_client_backend::PoolType;
-    use zcash_client_backend::ShieldedProtocol;
-    use zcash_primitives::consensus::NetworkConstants as _;
+    use zcash_protocol::{PoolType, ShieldedProtocol, consensus::NetworkConstants};
 
     use crate::wallet::LightWallet;
 

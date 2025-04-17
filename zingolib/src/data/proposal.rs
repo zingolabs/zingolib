@@ -3,10 +3,8 @@
 use std::convert::Infallible;
 
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::transaction::{
-    self,
-    components::amount::{BalanceError, NonNegativeAmount},
-};
+use zcash_primitives::transaction;
+use zcash_protocol::value::{BalanceError, Zatoshis};
 
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
@@ -38,32 +36,30 @@ pub(crate) enum ZingoProposal {
 /// total sum of all transaction request payment amounts in a proposal
 pub(crate) fn total_payment_amount(
     proposal: &ProportionalFeeProposal,
-) -> Result<NonNegativeAmount, BalanceError> {
+) -> Result<Zatoshis, BalanceError> {
     proposal
         .steps()
         .iter()
         .map(|step| step.transaction_request())
-        .try_fold(NonNegativeAmount::ZERO, |acc, request| {
+        .try_fold(Zatoshis::ZERO, |acc, request| {
             (acc + request.total()?).ok_or(BalanceError::Overflow)
         })
 }
 
 /// total sum of all fees in a proposal
-pub(crate) fn total_fee(
-    proposal: &ProportionalFeeProposal,
-) -> Result<NonNegativeAmount, BalanceError> {
+pub(crate) fn total_fee(proposal: &ProportionalFeeProposal) -> Result<Zatoshis, BalanceError> {
     proposal
         .steps()
         .iter()
         .map(|step| step.balance().fee_required())
-        .try_fold(NonNegativeAmount::ZERO, |acc, fee| {
+        .try_fold(Zatoshis::ZERO, |acc, fee| {
             (acc + fee).ok_or(BalanceError::Overflow)
         })
 }
 
 #[cfg(test)]
 mod tests {
-    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+    use zcash_protocol::value::Zatoshis;
 
     use crate::mocks;
 
@@ -72,7 +68,7 @@ mod tests {
         let proposal = mocks::proposal::ProposalBuilder::default().build();
         assert_eq!(
             super::total_payment_amount(&proposal).unwrap(),
-            NonNegativeAmount::from_u64(100_000).unwrap()
+            Zatoshis::from_u64(100_000).unwrap()
         );
     }
     #[test]
@@ -80,7 +76,7 @@ mod tests {
         let proposal = mocks::proposal::ProposalBuilder::default().build();
         assert_eq!(
             super::total_fee(&proposal).unwrap(),
-            NonNegativeAmount::from_u64(20_000).unwrap()
+            Zatoshis::from_u64(20_000).unwrap()
         );
     }
 }

@@ -5,16 +5,16 @@ use std::num::NonZeroU32;
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector, zip321::TransactionRequest,
-    ShieldedProtocol,
 };
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
+use zcash_primitives::memo::MemoBytes;
+use zcash_protocol::{ShieldedProtocol, value::Zatoshis};
 
 use crate::config::ChainType;
 
 use super::{
+    LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
     send::change_memo_from_transaction_request,
-    LightWallet,
 };
 
 type GISKit = GreedyInputSelector<
@@ -93,7 +93,7 @@ impl LightWallet {
             self,
             &network,
             &input_selector,
-            NonNegativeAmount::const_from_u64(10_000),
+            Zatoshis::const_from_u64(10_000),
             &self.get_transparent_addresses()?,
             1,
         )
@@ -117,7 +117,7 @@ impl LightWallet {
 
 #[cfg(test)]
 mod test {
-    use zcash_client_backend::PoolType;
+    use zcash_protocol::{PoolType, ShieldedProtocol};
 
     use crate::{
         testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
@@ -135,7 +135,7 @@ mod test {
         .await;
         let mut wallet = client.wallet.lock().await;
 
-        let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
+        let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
         let self_address = wallet.get_first_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];

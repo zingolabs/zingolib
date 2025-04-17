@@ -1,7 +1,7 @@
 //! Conversion specific utilities
 
 use zcash_address::ZcashAddress;
-use zcash_primitives::transaction::{components::amount::NonNegativeAmount, TxId};
+use zcash_protocol::{TxId, value::Zatoshis};
 
 use super::error::ConversionError;
 
@@ -22,6 +22,6 @@ pub fn address_from_str(address: &str) -> Result<ZcashAddress, ConversionError> 
 }
 
 /// Convert a valid u64 into Zatoshis.
-pub fn zatoshis_from_u64(amount: u64) -> Result<NonNegativeAmount, ConversionError> {
-    NonNegativeAmount::from_u64(amount).map_err(|_e| ConversionError::OutsideValidRange)
+pub fn zatoshis_from_u64(amount: u64) -> Result<Zatoshis, ConversionError> {
+    Zatoshis::from_u64(amount).map_err(|_e| ConversionError::OutsideValidRange)
 }

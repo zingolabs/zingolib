@@ -12,32 +12,36 @@
 //! All scenarios have a default (i.e. faucet_default) which take minimal parameters and
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
+
+use zcash_protocol::{PoolType, ShieldedProtocol};
+
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
 use crate::testutils::regtest::{ChildProcessHandler, RegtestManager};
 use setup::ClientBuilder;
-use testvectors::{seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
-use zcash_client_backend::{PoolType, ShieldedProtocol};
+use testvectors::{BASE_HEIGHT, seeds::HOSPITAL_MUSEUM_SEED};
 
 mod config_templaters;
 
 /// TODO: Add Doc Comment Here!
 pub mod setup {
-    use testvectors::{
-        seeds, BASE_HEIGHT, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
-        REG_Z_ADDR_FROM_ABANDONART,
-    };
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
+    use std::path::PathBuf;
 
+    use tokio::time::sleep;
+
+    use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use crate::testutils::RegtestManager;
     use crate::testutils::paths::get_regtest_dir;
     use crate::testutils::poll_server_height;
     use crate::testutils::regtest::ChildProcessHandler;
-    use crate::testutils::RegtestManager;
     use crate::wallet::LightWallet;
     use crate::{lightclient::LightClient, wallet::WalletBase};
-    use std::path::PathBuf;
-    use tokio::time::sleep;
+    use testvectors::{
+        BASE_HEIGHT, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+        REG_Z_ADDR_FROM_ABANDONART, seeds,
+    };
 
     /// TODO: Add Doc Comment Here!
     pub struct ScenarioBuilder {

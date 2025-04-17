@@ -36,9 +36,9 @@ pub fn default_zaddr() -> (
     zaddr_from_seed([0u8; 32])
 }
 
-use rand::{rngs::OsRng, Rng};
+use rand::{Rng, rngs::OsRng};
 use sapling_crypto::{
-    note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey, PaymentAddress,
+    PaymentAddress, note_encryption::PreparedIncomingViewingKey, zip32::ExtendedSpendingKey,
 };
 
 /// Any old OS randomness
@@ -153,10 +153,10 @@ pub mod nullifier {
 mod sapling_crypto_note {
     //! Sapling Note Mocker
 
-    use sapling_crypto::value::NoteValue;
     use sapling_crypto::Note;
     use sapling_crypto::PaymentAddress;
     use sapling_crypto::Rseed;
+    use sapling_crypto::value::NoteValue;
 
     use crate::utils::build_method;
 
@@ -217,12 +217,12 @@ pub mod orchard_note {
     //! Orchard Note Mocker
 
     use orchard::{
+        Address, Note,
         keys::{FullViewingKey, SpendingKey},
         note::{RandomSeed, Rho},
         value::NoteValue,
-        Address, Note,
     };
-    use rand::{rngs::OsRng, Rng};
+    use rand::{Rng, rngs::OsRng};
     use zip32::Scope;
 
     use crate::utils::build_method;
@@ -378,13 +378,12 @@ pub mod proposal {
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
-    use zcash_primitives::transaction::{
-        components::amount::NonNegativeAmount, fees::zip317::FeeRule,
-    };
+    use zcash_primitives::transaction::fees::zip317::FeeRule;
 
     use zcash_client_backend::wallet::NoteId;
+    use zcash_protocol::value::Zatoshis;
+    use zcash_protocol::{PoolType, ShieldedProtocol};
 
     use crate::utils::conversion::address_from_str;
     use crate::utils::{build_method, build_method_push};
@@ -530,7 +529,7 @@ pub mod proposal {
                 .shielded_inputs(Some(ShieldedInputs::from_parts(
                     BlockHeight::from_u32(1),
                     NonEmpty::singleton(ReceivedNote::from_parts(
-                        NoteId::new(txid, zcash_client_backend::ShieldedProtocol::Sapling, 0),
+                        NoteId::new(txid, ShieldedProtocol::Sapling, 0),
                         txid,
                         0,
                         zcash_client_backend::wallet::Note::Sapling(note),
@@ -539,10 +538,7 @@ pub mod proposal {
                     )),
                 )))
                 .prior_step_inputs(vec![])
-                .balance(
-                    TransactionBalance::new(vec![], NonNegativeAmount::const_from_u64(20_000))
-                        .unwrap(),
-                )
+                .balance(TransactionBalance::new(vec![], Zatoshis::const_from_u64(20_000)).unwrap())
                 .is_shielding(false);
             builder
         }
@@ -595,7 +591,7 @@ pub mod proposal {
     /// ````
     pub struct PaymentBuilder {
         recipient_address: Option<ZcashAddress>,
-        amount: Option<NonNegativeAmount>,
+        amount: Option<Zatoshis>,
     }
 
     impl PaymentBuilder {
@@ -608,7 +604,7 @@ pub mod proposal {
         }
 
         build_method!(recipient_address, ZcashAddress);
-        build_method!(amount, NonNegativeAmount);
+        build_method!(amount, Zatoshis);
 
         /// Builds after all fields have been set.
         pub fn build(&self) -> Payment {
@@ -627,7 +623,7 @@ pub mod proposal {
                 .recipient_address(
                     address_from_str(testvectors::REG_O_ADDR_FROM_ABANDONART).unwrap(),
                 )
-                .amount(NonNegativeAmount::from_u64(100_000).unwrap());
+                .amount(Zatoshis::from_u64(100_000).unwrap());
             builder
         }
     }

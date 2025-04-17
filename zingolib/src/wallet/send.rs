@@ -1,29 +1,27 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
 use nonempty::NonEmpty;
+
 use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::consensus;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::Transaction;
-use zcash_primitives::transaction::TxId;
-use zcash_proofs::prover::LocalTxProver;
-
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::memo::MemoBytes;
-
-use pepper_sync::wallet::traits::SyncWallet as _;
+use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
-use zingo_memo::create_wallet_internal_memo_version_1;
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus;
 
-use crate::wallet::now;
-
+use super::LightWallet;
 use super::error::CalculateTransactionError;
 use super::error::TransmissionError;
-use super::LightWallet;
+use crate::wallet::now;
+use pepper_sync::wallet::traits::SyncWallet as _;
+use zingo_memo::create_wallet_internal_memo_version_1;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// TODO: Add Doc Comment Here!
 // TODO: revisit send progress to separate json and handle errors properly
@@ -311,21 +309,19 @@ mod tests {
 
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_primitives::{
-        memo::{Memo, MemoBytes},
-        transaction::components::amount::NonNegativeAmount,
-    };
+    use zcash_primitives::memo::{Memo, MemoBytes};
+    use zcash_protocol::value::Zatoshis;
 
-    use crate::data::receivers::{transaction_request_from_receivers, Receivers};
+    use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 
     #[test]
     fn test_build_request() {
-        let amount_1 = NonNegativeAmount::const_from_u64(20000);
+        let amount_1 = Zatoshis::const_from_u64(20000);
         let recipient_address_1 =
             ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_1 = None;
 
-        let amount_2 = NonNegativeAmount::const_from_u64(20000);
+        let amount_2 = Zatoshis::const_from_u64(20000);
         let recipient_address_2 =
             ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
