@@ -7,9 +7,9 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
-        compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction, TransparentAddressBlockFilter,
-        TreeState, TxFilter,
+        BlockId, BlockRange, ChainSpec, GetAddressUtxosArg, GetAddressUtxosReply, RawTransaction,
+        TransparentAddressBlockFilter, TreeState, TxFilter,
+        compact_tx_streamer_client::CompactTxStreamerClient,
     },
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};

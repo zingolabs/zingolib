@@ -12,9 +12,9 @@ use zingo_netutils::GetClientError;
 use crate::data::PollReport;
 use crate::wallet::error::WalletError;
 
-use super::error::LightClientError;
 use super::LightClient;
 use super::SyncResult;
+use super::error::LightClientError;
 
 impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the

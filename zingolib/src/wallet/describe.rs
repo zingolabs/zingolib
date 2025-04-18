@@ -262,15 +262,13 @@ impl LightWallet {
         } else if transaction
             .transaction()
             .transparent_bundle()
-            .map_or(true, |bundle| {
-                bundle.vout.len() == transaction.transparent_coins().len()
-            })
+            .is_none_or(|bundle| bundle.vout.len() == transaction.transparent_coins().len())
             && transaction
                 .outgoing_sapling_notes()
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address.sapling().map_or(true, |address| {
+                        full_address.sapling().is_none_or(|address| {
                             self.is_sapling_send_to_self(address)
                                 .expect("must have sapling view capability in this scope")
                         }) || outgoing_note
@@ -287,7 +285,7 @@ impl LightWallet {
                 .iter()
                 .all(|outgoing_note| {
                     if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address.orchard().map_or(true, |address| {
+                        full_address.orchard().is_none_or(|address| {
                             self.is_orchard_send_to_self(address)
                                 .expect("must have orchard view capability in this scope")
                         }) || outgoing_note
@@ -851,17 +849,19 @@ impl LightWallet {
                     self.is_transparent_send_to_self(&address).is_none()
                 }
                 zcash_keys::address::Address::Unified(address) => {
-                    address.transparent().map_or(true, |addr| {
-                        self.is_transparent_send_to_self(addr).is_none()
-                    }) && address.sapling().map_or(true, |addr| {
-                        !self
-                            .is_sapling_send_to_self(addr)
-                            .expect("should have sapling view capability in this scope")
-                    }) && address.orchard().map_or(true, |addr| {
-                        !self
-                            .is_orchard_send_to_self(addr)
-                            .expect("should have sapling view capability in this scope")
-                    })
+                    address
+                        .transparent()
+                        .is_none_or(|addr| self.is_transparent_send_to_self(addr).is_none())
+                        && address.sapling().is_none_or(|addr| {
+                            !self
+                                .is_sapling_send_to_self(addr)
+                                .expect("should have sapling view capability in this scope")
+                        })
+                        && address.orchard().is_none_or(|addr| {
+                            !self
+                                .is_orchard_send_to_self(addr)
+                                .expect("should have sapling view capability in this scope")
+                        })
                 }
                 zcash_keys::address::Address::Tex(_) => true,
             };
@@ -998,7 +998,6 @@ mod test {
         /// gets a string address for the wallet, based on pooltype
         pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
             let ua = self.get_first_ua()?;
-            dbg!(&ua);
             self.encode_ua_as_pool(&ua, pool)
         }
     }

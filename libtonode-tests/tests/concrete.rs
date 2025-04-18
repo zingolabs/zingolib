@@ -762,26 +762,30 @@ mod fast {
     }
 
     pub mod tex {
-        use zcash_primitives::transaction::TxId;
-        use zcash_protocol::consensus::Parameters;
-        use zingolib::{utils, wallet::LightWallet};
+        use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
+        use zingolib::{
+            utils,
+            wallet::{LightWallet, keys::unified::UnifiedAddressId},
+        };
 
         use super::*;
 
         fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
-            let taddr = ZcashAddress::try_from_encoded(
-                &wallet.get_first_address(PoolType::Transparent).unwrap(),
-            )
-            .unwrap();
-
-            let zcash_keys::address::Address::Tex(taddr_bytes) = taddr
-                .convert_if_network::<zcash_keys::address::Address>(wallet.network.network_type())
+            let taddr = wallet
+                .unified_addresses
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 0,
+                })
                 .unwrap()
-            else {
-                panic!("failed to convert to tex address")
+                .transparent()
+                .unwrap();
+
+            let taddr_bytes = match taddr {
+                TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes.clone(),
+                TransparentAddress::ScriptHash(_) => panic!(),
             };
             let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
-            //            let tex_string = utils::interpret_taddr_as_tex_addr(*taddr_bytes);
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
@@ -1946,7 +1950,7 @@ mod slow {
             .outgoing_orchard_notes(vec![OutgoingNoteSummary {
                  value: 99_960_000,
                  memo: None,
-                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  output_index: 0,
                  account_id: AccountId::ZERO,
@@ -1988,7 +1992,7 @@ mod slow {
                  output_index: 0,
                  value: 99_925_000,
                  memo: None,
-                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::Internal),
@@ -2114,7 +2118,7 @@ mod slow {
                  output_index: 0,
                  value: 965_000,
                  memo: None,
-                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::Internal),
@@ -2156,7 +2160,7 @@ mod slow {
                  output_index: 0,
                  value: 99_885_000,
                  memo: None,
-                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::Internal),
@@ -2213,7 +2217,7 @@ mod slow {
                  output_index: 0,
                  value: 930_000,
                  memo: None,
-                 recipient: "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9".to_string(),
+                 recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::Internal),
@@ -3488,7 +3492,7 @@ mod slow {
                         required,
                     } => {
                         assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                        assert_eq!(required, Zatoshis::from_u64(25_000).unwrap());
+                        assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
                     }
                     _ => panic!(),
                 },
@@ -3506,8 +3510,6 @@ mod slow {
 
         // 11 transparent to sapling
         //  t -> z
-        // 10 transparent to transparent
-        // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
@@ -4370,7 +4372,7 @@ mod send_all {
                 },
             )) => {
                 assert_eq!(a, Zatoshis::const_from_u64(10_000));
-                assert_eq!(r, Zatoshis::const_from_u64(20_000));
+                assert_eq!(r, Zatoshis::const_from_u64(30_000));
             }
             _ => panic!("expected an InsufficientFunds error"),
         }

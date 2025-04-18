@@ -112,10 +112,10 @@ impl std::fmt::Display for SpendStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SpendStatus::Unspent => write!(f, "unspent"),
-            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated: spent in {}", txid),
-            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted: spent in {}", txid),
-            SpendStatus::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
-            SpendStatus::Spent(txid) => write!(f, "confirmed: spent in {}", txid),
+            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated spent in {}", txid),
+            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted spent in {}", txid),
+            SpendStatus::MempoolSpent(txid) => write!(f, "mempool spent in {}", txid),
+            SpendStatus::Spent(txid) => write!(f, "confirmed spent in {}", txid),
         }
     }
 }

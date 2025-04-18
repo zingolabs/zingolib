@@ -274,7 +274,7 @@ impl WalletRead for LightWallet {
                     && address_id.scope() == TransparentScope::Refund
                     && index_range
                         .clone()
-                        .map_or(true, |range| range.contains(&address_id.address_index()))
+                        .is_none_or(|range| range.contains(&address_id.address_index()))
             })
             .map(|(address_id, encoded_address)| {
                 let address = ZcashAddress::try_from_encoded(encoded_address)?

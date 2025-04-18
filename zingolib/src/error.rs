@@ -55,15 +55,8 @@ impl std::fmt::Display for ZingoLibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ZingoLibError::*;
         match self {
-            UnknownError => write!(
-                f,
-                "UnknownError",
-            ),
-            Error(string) => write!(
-                f,
-                "Error: {}",
-                string,
-            ),
+            UnknownError => write!(f, "UnknownError",),
+            Error(string) => write!(f, "Error: {}", string,),
             NoWalletLocation => write!(
                 f,
                 "No wallet location! (compiled for native rust, wallet location expected)"
@@ -73,11 +66,7 @@ impl std::fmt::Display for ZingoLibError {
                 "Metadata underflow! Recorded metadata shows greater output than input value. This may be because input notes are prebirthday. {}",
                 explanation,
             ),
-            InternalWriteBufferError(err) => write!(
-                f,
-                "Internal save error! {} ",
-                err,
-            ),
+            InternalWriteBufferError(err) => write!(f, "Internal save error! {} ", err,),
             WriteFileError(err) => write!(
                 f,
                 "Could not write to wallet save file. Was this erroneously attempted in mobile?, instead of native save buffer handling? Is there a permission issue? {} ",
@@ -92,28 +81,18 @@ impl std::fmt::Display for ZingoLibError {
                 "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
                 err,
             ),
-            NoSuchTxId(txid) => write!(
-                f,
-                "Cant find TxId {}!",
-                txid,
-            ),
+            NoSuchTxId(txid) => write!(f, "Cant find TxId {}!", txid,),
             NoSuchSaplingOutputInTx(txid, output_index) => write!(
                 f,
                 "Cant find note with sapling output_index {} in TxId {}",
-                output_index,
-                txid,
+                output_index, txid,
             ),
             NoSuchOrchardOutputInTx(txid, output_index) => write!(
                 f,
                 "Cant find note with orchard output_index {} in TxId {}",
-                output_index,
-                txid,
+                output_index, txid,
             ),
-            NoSuchNullifierInTx(txid) => write!(
-                f,
-                "Cant find that Nullifier in TxId {}",
-                txid,
-            ),
+            NoSuchNullifierInTx(txid) => write!(f, "Cant find that Nullifier in TxId {}", txid,),
             CouldNotDecodeMemo(err) => write!(
                 f,
                 "Could not decode memo. Zingo plans to support foreign memo formats soon. {}",
@@ -123,10 +102,7 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "{txid} is missing output_index for note, cannot mark change"
             ),
-            Lightwalletd(string) => write!(
-                f,
-                "{string}"
-            ),
+            Lightwalletd(string) => write!(f, "{string}"),
         }
     }
 }

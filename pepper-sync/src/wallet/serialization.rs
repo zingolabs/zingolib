@@ -892,17 +892,16 @@ impl ShardTrees {
             let index = r.read_u64::<LittleEndian>()?;
             let root_addr = incrementalmerkletree::Address::from_parts(level, index);
             let shard = read_shard(r)?;
-            Ok(
-                LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!(
-                            "parent node in root has level 0 relative to root address: {:?}",
-                            addr
-                        ),
-                    )
-                })?,
-            )
+
+            LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "parent node in root has level 0 relative to root address: {:?}",
+                        addr
+                    ),
+                )
+            })
         })?;
         let mut store = MemoryShardStore::empty();
         for shard in shards {
