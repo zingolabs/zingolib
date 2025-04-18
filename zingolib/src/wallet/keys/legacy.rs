@@ -3,15 +3,16 @@
 use std::{
     io::{self, Read, Write},
     sync::{
-        atomic::{self, AtomicBool},
         Arc,
+        atomic::{self, AtomicBool},
     },
 };
 
 use append_only_vec::AppendOnlyVec;
-use bip0039::Mnemonic;
 use bip32::ExtendedPublicKey;
+use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
 use zcash_address::unified::Typecode;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
@@ -20,18 +21,17 @@ use zcash_keys::{
     keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::legacy::{
-    keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex},
     TransparentAddress,
+    keys::{AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex},
 };
 use zip32::{AccountId, DiversifierIndex};
 
+use super::unified::{
+    KEY_TYPE_EMPTY, KEY_TYPE_SPEND, KEY_TYPE_VIEW, ReceiverSelection, UnifiedKeyStore,
+};
 use crate::{
     config::{ChainType, ZingoConfig},
     wallet::{error::KeyError, legacy::WitnessTrees, traits::ReadableWriteable},
-};
-
-use super::unified::{
-    ReceiverSelection, UnifiedKeyStore, KEY_TYPE_EMPTY, KEY_TYPE_SPEND, KEY_TYPE_VIEW,
 };
 
 pub mod extended_transparent;
@@ -407,7 +407,7 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "Invalid WalletCapability version".to_string(),
-                ))
+                ));
             }
         };
         let receiver_selections = Vector::read(&mut reader, |r| ReceiverSelection::read(r, ()))?;
@@ -473,7 +473,7 @@ where
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Unknown wallet Capability type: {}", x),
-                ))
+                ));
             }
         })
     }
