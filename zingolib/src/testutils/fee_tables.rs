@@ -10,8 +10,12 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 pub fn one_to_one(
     source_protocol: Option<ShieldedProtocol>,
     target_pool: PoolType,
-    change: bool,
+    mut change: bool,
 ) -> u64 {
+    if source_protocol.is_none() && target_pool == PoolType::TRANSPARENT {
+        change = false;
+    }
+
     let transparent_inputs = 0;
     let mut transparent_outputs = 0;
     let mut sapling_inputs = 0;

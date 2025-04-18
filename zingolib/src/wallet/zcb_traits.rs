@@ -302,7 +302,7 @@ impl WalletRead for LightWallet {
         &self,
         _address: &TransparentAddress,
     ) -> Result<Option<Self::AccountId>, Self::Error> {
-        unimplemented!()
+        Ok(Some(zip32::AccountId::ZERO))
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
