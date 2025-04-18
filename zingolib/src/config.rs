@@ -39,8 +39,7 @@ pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 /// The lightserver that handles blockchain requests
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 /// Used for testnet
-pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str =
-    "https://lightwalletd.testnet.electriccoin.co:9067";
+pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str = "https://testnet.zec.rocks";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
