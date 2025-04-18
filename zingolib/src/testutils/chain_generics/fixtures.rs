@@ -36,6 +36,7 @@ where
     println!("client is ready to send");
 
     let mut recipient = environment.create_client();
+    dbg!("TEST 1");
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
@@ -97,6 +98,7 @@ where
         1
     );
 
+    dbg!("TEST 2");
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,

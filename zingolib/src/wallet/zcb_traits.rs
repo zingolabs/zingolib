@@ -255,14 +255,6 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn get_transparent_address_metadata(
-        &self,
-        _account: Self::AccountId,
-        _address: &TransparentAddress,
-    ) -> Result<Option<TransparentAddressMetadata>, Self::Error> {
-        unimplemented!()
-    }
-
     fn utxo_query_height(
         &self,
         _account: Self::AccountId,
@@ -296,13 +288,6 @@ impl WalletRead for LightWallet {
                 Ok((address, address_metadata))
             })
             .collect()
-    }
-
-    fn find_account_for_ephemeral_address(
-        &self,
-        _address: &TransparentAddress,
-    ) -> Result<Option<Self::AccountId>, Self::Error> {
-        Ok(Some(zip32::AccountId::ZERO))
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
