@@ -2,21 +2,24 @@
 
 use std::num::NonZeroU32;
 
-use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
-use zcash_protocol::{ShieldedProtocol, value::Zatoshis};
-
-use crate::config::ChainType;
+use zcash_protocol::{
+    ShieldedProtocol,
+    consensus::Parameters,
+    memo::{Memo, MemoBytes},
+    value::Zatoshis,
+};
 
 use super::{
     LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
-    send::change_memo_from_transaction_request,
 };
+use crate::config::ChainType;
+use pepper_sync::keys::transparent::TransparentScope;
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -29,7 +32,7 @@ impl LightWallet {
             .keys()
             .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
             .count() as u32;
-        let memo = change_memo_from_transaction_request(&request, refund_address_count);
+        let memo = self.change_memo_from_transaction_request(&request, refund_address_count);
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -114,6 +117,49 @@ impl LightWallet {
         }
 
         Ok(proposed_shield)
+    }
+
+    fn change_memo_from_transaction_request(
+        &self,
+        request: &TransactionRequest,
+        mut refund_address_count: u32,
+    ) -> MemoBytes {
+        let mut recipient_uas = Vec::new();
+        let mut refund_address_indexes = Vec::new();
+        for payment in request.payments().values() {
+            if let Ok(address) = payment
+                .recipient_address()
+                .clone()
+                .convert_if_network::<zcash_keys::address::Address>(self.network.network_type())
+            {
+                match address {
+                    zcash_keys::address::Address::Unified(unified_address) => {
+                        recipient_uas.push(unified_address)
+                    }
+                    zcash_keys::address::Address::Tex(_) => {
+                        // TODO: rework: only need to encode highest used refund address index, not all of them
+                        refund_address_indexes.push(refund_address_count);
+                        refund_address_count += 1;
+                    }
+                    _ => (),
+                }
+            }
+        }
+        let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+            recipient_uas.as_slice(),
+            refund_address_indexes.as_slice(),
+        ) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
+            }
+        };
+        MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 }
 

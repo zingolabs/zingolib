@@ -2,25 +2,20 @@
 
 use nonempty::NonEmpty;
 
-use zcash_address::AddressKind;
 use zcash_client_backend::proposal::Proposal;
-use zcash_client_backend::zip321::TransactionRequest;
-use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::memo::Memo;
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus;
+use zcash_protocol::consensus::Parameters;
 
 use super::LightWallet;
 use super::error::CalculateTransactionError;
 use super::error::TransmissionError;
 use crate::wallet::now;
 use pepper_sync::wallet::traits::SyncWallet as _;
-use zingo_memo::create_wallet_internal_memo_version_1;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// TODO: Add Doc Comment Here!
@@ -101,7 +96,15 @@ impl LightWallet {
                 .payments()
                 .values()
                 .any(|payment| {
-                    matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
+                    matches!(
+                        payment
+                            .recipient_address()
+                            .clone()
+                            .convert_if_network::<zcash_keys::address::Address>(
+                                self.network.network_type()
+                            ),
+                        Ok(zcash_keys::address::Address::Tex(_))
+                    )
                 }) =>
             {
                 self.create_proposed_transactions(sapling_prover, proposal)
@@ -259,46 +262,6 @@ impl LightWallet {
 
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
     }
-}
-
-// TODO: move to a more suitable place
-// TODO: only need to encode highest used refund address index, not all of them
-pub(crate) fn change_memo_from_transaction_request(
-    request: &TransactionRequest,
-    mut refund_address_count: u32,
-) -> MemoBytes {
-    let mut recipient_uas = Vec::new();
-    let mut refund_address_indexes = Vec::new();
-    for payment in request.payments().values() {
-        match payment.recipient_address().kind() {
-            AddressKind::Unified(ua) => {
-                if let Ok(ua) = UnifiedAddress::try_from(ua.clone()) {
-                    recipient_uas.push(ua);
-                }
-            }
-            AddressKind::Tex(_) => {
-                refund_address_indexes.push(refund_address_count);
-
-                refund_address_count += 1;
-            }
-            _ => (),
-        }
-    }
-    let uas_bytes = match create_wallet_internal_memo_version_1(
-        recipient_uas.as_slice(),
-        refund_address_indexes.as_slice(),
-    ) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log::error!(
-                "Could not write uas to memo field: {e}\n\
-        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
-        The correct address was sent to."
-            );
-            [0; 511]
-        }
-    };
-    MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
 }
 
 #[cfg(test)]
