@@ -4,12 +4,12 @@ use std::{
     fs::File,
     io::BufReader,
     sync::{
-        Arc,
         atomic::{AtomicBool, AtomicU8},
+        Arc,
     },
 };
 
-use json::{JsonValue, array};
+use json::{array, JsonValue};
 use log::error;
 use serde::Serialize;
 use serde_json::Value;
@@ -22,7 +22,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{LightWallet, WalletBase, error::WalletError, keys::unified::ReceiverSelection},
+    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
 };
 use error::LightClientError;
 
