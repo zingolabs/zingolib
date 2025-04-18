@@ -15,7 +15,7 @@ jobs:
     name: Build test artifacts
     container:
       image: zingodevops/ci-build:004
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
@@ -44,7 +44,7 @@ jobs:
 
   run-tests:
     name: Run tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     needs: build-test-artifacts
     env:
