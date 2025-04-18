@@ -280,8 +280,8 @@ pub fn set_crypto_default_provider_to_ring() -> String {
 pub fn poll_sync() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         match lightclient.poll_sync() {
-            PollReport::NoHandle => "Error: Sync task has not been launched.".to_string(),
-            PollReport::NotReady => "Error: Sync task is not complete.".to_string(),
+            PollReport::NoHandle => "Sync task has not been launched.".to_string(),
+            PollReport::NotReady => "Sync task is not complete.".to_string(),
             PollReport::Ready(result) => match result {
                 Ok(sync_result) => {
                     json::object! { "sync_complete" => json::JsonValue::from(sync_result) }
