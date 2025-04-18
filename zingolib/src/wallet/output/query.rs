@@ -1,10 +1,6 @@
 //! Contains structs for querying a database about notes.
 
-use zcash_client_backend::PoolType;
-use zcash_client_backend::PoolType::Shielded;
-use zcash_client_backend::PoolType::Transparent;
-use zcash_client_backend::ShieldedProtocol::Orchard;
-use zcash_client_backend::ShieldedProtocol::Sapling;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 /// Selects received notes by how they been spent
 #[derive(Clone, Copy)]
@@ -89,17 +85,17 @@ impl OutputPoolQuery {
     /// a query that will match only a specific pool.
     pub fn one_pool(pool_type: PoolType) -> Self {
         match pool_type {
-            Transparent => Self {
+            PoolType::Transparent => Self {
                 transparent: true,
                 sapling: false,
                 orchard: false,
             },
-            Shielded(Sapling) => Self {
+            PoolType::Shielded(ShieldedProtocol::Sapling) => Self {
                 transparent: false,
                 sapling: true,
                 orchard: false,
             },
-            Shielded(Orchard) => Self {
+            PoolType::Shielded(ShieldedProtocol::Orchard) => Self {
                 transparent: false,
                 sapling: false,
                 orchard: true,

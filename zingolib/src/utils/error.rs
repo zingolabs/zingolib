@@ -3,7 +3,7 @@
 use std::fmt;
 
 /// The error type for conversion errors.
-#[derive(thiserror::Error, Debug, Clone, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum ConversionError {
     /// Failed to decode hex
     DecodeHexFailed(hex::FromHexError),

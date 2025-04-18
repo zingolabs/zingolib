@@ -1,43 +1,45 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
-use pepper_sync::{
-    error::SyncError,
-    keys::transparent::{self, TransparentScope},
-    wallet::{
-        traits::SyncWallet, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
-        OutputInterface, SaplingNote, SaplingShardStore,
-    },
-};
-use shardtree::{error::ShardTreeError, ShardTree};
+use secrecy::SecretVec;
+use shardtree::{ShardTree, error::ShardTreeError};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
-        chain::CommitmentTreeRoot, scanning::ScanRange, Account, BlockMetadata, InputSource,
-        NullifierQuery, SpendableNotes, TransactionDataRequest, WalletCommitmentTrees, WalletRead,
-        WalletSummary, WalletWrite, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT,
+        Account, AccountBirthday, AccountPurpose, BlockMetadata, InputSource, NullifierQuery,
+        ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TransactionDataRequest,
+        WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite, chain::CommitmentTreeRoot,
+        scanning::ScanRange,
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
-    ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight, Parameters as _},
     legacy::{
-        keys::{NonHardenedChildIndex, TransparentKeyScope},
         TransparentAddress,
+        keys::{NonHardenedChildIndex, TransparentKeyScope},
     },
     memo::Memo,
-    transaction::{
-        components::{amount::NonNegativeAmount, OutPoint},
-        Transaction, TxId,
+    transaction::{Transaction, TxId},
+};
+use zcash_protocol::{
+    PoolType, ShieldedProtocol,
+    consensus::{self, BlockHeight, Parameters},
+    value::Zatoshis,
+};
+use zcash_transparent::bundle::{OutPoint, TxOut};
+
+use super::{LightWallet, error::WalletError, output::OutputRef};
+use crate::wallet::output::RemainingNeeded;
+use pepper_sync::{
+    error::SyncError,
+    keys::transparent::{self, TransparentScope},
+    wallet::{
+        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
+        SaplingShardStore, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
-
-use crate::wallet::output::RemainingNeeded;
-
-use super::{error::WalletError, LightWallet};
 
 pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 
@@ -48,7 +50,11 @@ impl Account for ZingoAccount {
         self.0
     }
 
-    fn source(&self) -> zcash_client_backend::data_api::AccountSource {
+    fn name(&self) -> Option<&str> {
+        Some("Account 0")
+    }
+
+    fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
         unimplemented!()
     }
 
@@ -107,9 +113,17 @@ impl WalletRead for LightWallet {
         Ok(Some(ZingoAccount(Self::AccountId::ZERO, ufvk.clone())))
     }
 
-    fn get_current_address(
+    fn list_addresses(
         &self,
         _account: Self::AccountId,
+    ) -> Result<Vec<zcash_client_backend::data_api::AddressInfo>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn get_last_generated_address_matching(
+        &self,
+        _account: Self::AccountId,
+        _address_filter: zcash_keys::keys::UnifiedAddressRequest,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
         unimplemented!()
     }
@@ -211,6 +225,8 @@ impl WalletRead for LightWallet {
     fn get_transparent_receivers(
         &self,
         account: Self::AccountId,
+        // TODO: only get internal receivers if true
+        _include_change: bool,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         self.transparent_addresses
             .iter()
@@ -223,8 +239,7 @@ impl WalletRead for LightWallet {
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::new(
                     address_id.scope().into(),
-                    NonHardenedChildIndex::from_index(address_id.address_index())
-                        .expect("checked on address derivation"),
+                    address_id.address_index(),
                 );
 
                 Ok((address, Some(address_metadata)))
@@ -236,14 +251,21 @@ impl WalletRead for LightWallet {
         &self,
         _account: Self::AccountId,
         _max_height: BlockHeight,
-    ) -> Result<HashMap<TransparentAddress, NonNegativeAmount>, Self::Error> {
+    ) -> Result<HashMap<TransparentAddress, Zatoshis>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn utxo_query_height(
+        &self,
+        _account: Self::AccountId,
+    ) -> Result<zcash_protocol::consensus::BlockHeight, Self::Error> {
         unimplemented!()
     }
 
     fn get_known_ephemeral_addresses(
         &self,
         account: Self::AccountId,
-        index_range: Option<Range<u32>>,
+        index_range: Option<Range<NonHardenedChildIndex>>,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
         self.transparent_addresses
             .iter()
@@ -252,7 +274,7 @@ impl WalletRead for LightWallet {
                     && address_id.scope() == TransparentScope::Refund
                     && index_range
                         .clone()
-                        .map_or(true, |range| range.contains(&address_id.address_index()))
+                        .is_none_or(|range| range.contains(&address_id.address_index()))
             })
             .map(|(address_id, encoded_address)| {
                 let address = ZcashAddress::try_from_encoded(encoded_address)?
@@ -260,8 +282,7 @@ impl WalletRead for LightWallet {
                     .expect("incorrect network should be checked on wallet load");
                 let address_metadata = TransparentAddressMetadata::new(
                     address_id.scope().into(),
-                    NonHardenedChildIndex::from_index(address_id.address_index())
-                        .expect("checked on address derivation"),
+                    address_id.address_index(),
                 );
 
                 Ok((address, address_metadata))
@@ -279,26 +300,32 @@ impl WalletWrite for LightWallet {
 
     fn create_account(
         &mut self,
-        _seed: &secrecy::SecretVec<u8>,
-        _birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _account_name: &str,
+        _seed: &SecretVec<u8>,
+        _birthday: &AccountBirthday,
+        _key_source: Option<&str>,
     ) -> Result<(Self::AccountId, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
 
     fn import_account_hd(
         &mut self,
-        _seed: &secrecy::SecretVec<u8>,
+        _account_name: &str,
+        _seed: &SecretVec<u8>,
         _account_index: zip32::AccountId,
-        _birthday: &zcash_client_backend::data_api::AccountBirthday,
+        _birthday: &AccountBirthday,
+        _key_source: Option<&str>,
     ) -> Result<(Self::Account, zcash_keys::keys::UnifiedSpendingKey), Self::Error> {
         unimplemented!()
     }
 
     fn import_account_ufvk(
         &mut self,
+        _account_name: &str,
         _unified_key: &UnifiedFullViewingKey,
-        _birthday: &zcash_client_backend::data_api::AccountBirthday,
-        _purpose: zcash_client_backend::data_api::AccountPurpose,
+        _birthday: &AccountBirthday,
+        _purpose: AccountPurpose,
+        _key_source: Option<&str>,
     ) -> Result<Self::Account, Self::Error> {
         unimplemented!()
     }
@@ -306,6 +333,15 @@ impl WalletWrite for LightWallet {
     fn get_next_available_address(
         &mut self,
         _account: Self::AccountId,
+        _request: zcash_keys::keys::UnifiedAddressRequest,
+    ) -> Result<Option<(UnifiedAddress, zip32::DiversifierIndex)>, Self::Error> {
+        unimplemented!()
+    }
+
+    fn get_address_for_index(
+        &mut self,
+        _account: Self::AccountId,
+        _diversifier_index: zip32::DiversifierIndex,
         _request: zcash_keys::keys::UnifiedAddressRequest,
     ) -> Result<Option<UnifiedAddress>, Self::Error> {
         unimplemented!()
@@ -389,8 +425,7 @@ impl WalletWrite for LightWallet {
                     address,
                     TransparentAddressMetadata::new(
                         TransparentKeyScope::EPHEMERAL,
-                        NonHardenedChildIndex::from_index(address_id.address_index())
-                            .expect("non-hardened bit should be checked on derivation"),
+                        address_id.address_index(),
                     ),
                 )
             })
@@ -481,7 +516,7 @@ impl WalletCommitmentTrees for LightWallet {
 impl InputSource for LightWallet {
     type Error = WalletError;
     type AccountId = zip32::AccountId;
-    type NoteRef = NoteId;
+    type NoteRef = OutputRef;
 
     fn get_spendable_note(
         &self,
@@ -503,20 +538,20 @@ impl InputSource for LightWallet {
     fn select_spendable_notes(
         &self,
         _account: Self::AccountId,
-        target_value: NonNegativeAmount,
+        target_value: Zatoshis,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let exclude_sapling = exclude
             .iter()
-            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Sapling)
-            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
+            .filter(|&note_id| note_id.pool_type() == PoolType::SAPLING)
+            .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let exclude_orchard = exclude
             .iter()
-            .filter(|&note_id| note_id.protocol() == ShieldedProtocol::Orchard)
-            .map(|note_id| OutputId::new(*note_id.txid(), note_id.output_index()))
+            .filter(|&note_id| note_id.pool_type() == PoolType::ORCHARD)
+            .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
@@ -575,10 +610,9 @@ impl InputSource for LightWallet {
             .iter()
             .map(|note| {
                 ReceivedNote::from_parts(
-                    NoteId::new(
-                        note.output_id().txid(),
-                        ShieldedProtocol::Sapling,
-                        note.output_id().output_index(),
+                    OutputRef::new(
+                        OutputId::new(note.output_id().txid(), note.output_id().output_index()),
+                        PoolType::SAPLING,
                     ),
                     note.output_id().txid(),
                     note.output_id().output_index(),
@@ -593,10 +627,9 @@ impl InputSource for LightWallet {
             .iter()
             .map(|note| {
                 ReceivedNote::from_parts(
-                    NoteId::new(
-                        note.output_id().txid(),
-                        ShieldedProtocol::Orchard,
-                        note.output_id().output_index(),
+                    OutputRef::new(
+                        OutputId::new(note.output_id().txid(), note.output_id().output_index()),
+                        PoolType::ORCHARD,
                     ),
                     note.output_id().txid(),
                     note.output_id().output_index(),
@@ -612,6 +645,15 @@ impl InputSource for LightWallet {
             sapling_recieved_notes,
             orchard_recieved_notes,
         ))
+    }
+
+    fn get_account_metadata(
+        &self,
+        _account: Self::AccountId,
+        _selector: &zcash_client_backend::data_api::NoteFilter,
+        _exclude: &[Self::NoteRef],
+    ) -> Result<zcash_client_backend::data_api::AccountMeta, Self::Error> {
+        unimplemented!()
     }
 
     fn get_unspent_transparent_output(
@@ -640,7 +682,7 @@ impl InputSource for LightWallet {
             .flat_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
-                    zcash_primitives::transaction::components::TxOut {
+                    TxOut {
                         value: output.value().try_into().expect("value from checked type"),
                         script_pubkey: output.script().clone(),
                     },

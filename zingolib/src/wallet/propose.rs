@@ -2,41 +2,24 @@
 
 use std::num::NonZeroU32;
 
-use pepper_sync::keys::transparent::TransparentScope;
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector, zip321::TransactionRequest,
-    ShieldedProtocol,
+    data_api::wallet::input_selection::GreedyInputSelector,
+    fees::{DustAction, DustOutputPolicy},
+    zip321::TransactionRequest,
 };
-use zcash_primitives::{memo::MemoBytes, transaction::components::amount::NonNegativeAmount};
-
-use crate::config::ChainType;
+use zcash_protocol::{
+    ShieldedProtocol,
+    consensus::Parameters,
+    memo::{Memo, MemoBytes},
+    value::Zatoshis,
+};
 
 use super::{
+    LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
-    send::change_memo_from_transaction_request,
-    LightWallet,
 };
-
-type GISKit = GreedyInputSelector<
-    LightWallet,
-    zcash_client_backend::fees::zip317::SingleOutputChangeStrategy,
->;
-
-fn build_default_giskit(memo: Option<MemoBytes>) -> GISKit {
-    let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-        zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-        memo,
-        ShieldedProtocol::Orchard,
-    );
-
-    GISKit::new(
-        change_strategy,
-        zcash_client_backend::fees::DustOutputPolicy::new(
-            zcash_client_backend::fees::DustAction::AllowDustChange,
-            None,
-        ),
-    )
-}
+use crate::config::ChainType;
+use pepper_sync::keys::transparent::TransparentScope;
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
@@ -49,21 +32,31 @@ impl LightWallet {
             .keys()
             .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
             .count() as u32;
-        let memo = change_memo_from_transaction_request(&request, refund_address_count);
-        let input_selector = build_default_giskit(Some(memo));
-
+        let memo = self.change_memo_from_transaction_request(&request, refund_address_count);
+        let input_selector = GreedyInputSelector::new();
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            Some(memo),
+            ShieldedProtocol::Orchard,
+            DustOutputPolicy::new(DustAction::AllowDustChange, None),
+        );
         let network = self.network;
 
         zcash_client_backend::data_api::wallet::propose_transfer::<
             LightWallet,
             ChainType,
-            GISKit,
+            GreedyInputSelector<LightWallet>,
+            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
+                zcash_primitives::transaction::fees::zip317::FeeRule,
+                LightWallet,
+            >,
             WalletError,
         >(
             self,
             &network,
             zcash_primitives::zip32::AccountId::ZERO,
             &input_selector,
+            &change_strategy,
             request,
             NonZeroU32::MIN,
         )
@@ -81,20 +74,32 @@ impl LightWallet {
     pub(crate) async fn create_shield_proposal(
         &mut self,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
+        let input_selector = GreedyInputSelector::new();
+        let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            None,
+            ShieldedProtocol::Orchard,
+            DustOutputPolicy::new(DustAction::AllowDustChange, None),
+        );
         let network = self.network;
-        let input_selector = build_default_giskit(None);
 
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
             LightWallet,
             ChainType,
-            GISKit,
+            GreedyInputSelector<LightWallet>,
+            zcash_client_backend::fees::zip317::SingleOutputChangeStrategy<
+                zcash_primitives::transaction::fees::zip317::FeeRule,
+                LightWallet,
+            >,
             WalletError,
         >(
             self,
             &network,
             &input_selector,
-            NonNegativeAmount::const_from_u64(10_000),
+            &change_strategy,
+            Zatoshis::const_from_u64(10_000),
             &self.get_transparent_addresses()?,
+            zip32::AccountId::ZERO,
             1,
         )
         .map_err(ProposeShieldError::Component)?;
@@ -113,11 +118,54 @@ impl LightWallet {
 
         Ok(proposed_shield)
     }
+
+    fn change_memo_from_transaction_request(
+        &self,
+        request: &TransactionRequest,
+        mut refund_address_count: u32,
+    ) -> MemoBytes {
+        let mut recipient_uas = Vec::new();
+        let mut refund_address_indexes = Vec::new();
+        for payment in request.payments().values() {
+            if let Ok(address) = payment
+                .recipient_address()
+                .clone()
+                .convert_if_network::<zcash_keys::address::Address>(self.network.network_type())
+            {
+                match address {
+                    zcash_keys::address::Address::Unified(unified_address) => {
+                        recipient_uas.push(unified_address)
+                    }
+                    zcash_keys::address::Address::Tex(_) => {
+                        // TODO: rework: only need to encode highest used refund address index, not all of them
+                        refund_address_indexes.push(refund_address_count);
+                        refund_address_count += 1;
+                    }
+                    _ => (),
+                }
+            }
+        }
+        let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+            recipient_uas.as_slice(),
+            refund_address_indexes.as_slice(),
+        ) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
+            }
+        };
+        MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use zcash_client_backend::PoolType;
+    use zcash_protocol::{PoolType, ShieldedProtocol};
 
     use crate::{
         testutils::lightclient::from_inputs::transaction_request_from_send_inputs,
@@ -135,7 +183,7 @@ mod test {
         .await;
         let mut wallet = client.wallet.lock().await;
 
-        let pool = PoolType::Shielded(zcash_client_backend::ShieldedProtocol::Orchard);
+        let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
         let self_address = wallet.get_first_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];

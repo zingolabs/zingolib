@@ -7,10 +7,10 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
-use incrementalmerkletree::{witness::IncrementalWitness, Address, Hashable, Level, Position};
+use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
 use shardtree::{
-    store::{memory::MemoryShardStore, Checkpoint, ShardStore as _},
     LocatedPrunableTree, ShardTree,
+    store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
 use zcash_client_backend::{
     proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
@@ -19,7 +19,7 @@ use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
-    merkle_tree::{read_commitment_tree, read_incremental_witness, HashSer},
+    merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -1019,7 +1019,16 @@ fn read_shardtree<
         let index = r.read_u64::<LittleEndian>()?;
         let root_addr = Address::from_parts(level, index);
         let shard = read_shard(r)?;
-        Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+
+        LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "parent node in root has level 0 relative to root address: {:?}",
+                    addr
+                ),
+            )
+        })
     })?;
     let mut store = MemoryShardStore::empty();
     for shard in shards {
@@ -1036,7 +1045,7 @@ fn read_shardtree<
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("error reading TreeState: expected boolean value, found {otherwise}"),
-                ))
+                ));
             }
         };
         let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;

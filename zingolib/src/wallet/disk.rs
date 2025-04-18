@@ -1,13 +1,4 @@
 //! This mod contains write and read functionality of impl LightWallet
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
-use log::info;
-use pepper_sync::{
-    keys::transparent::{self, TransparentAddressId, TransparentScope},
-    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
-};
-use zcash_keys::keys::UnifiedSpendingKey;
-use zip32::AccountId;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -15,18 +6,25 @@ use std::{
     sync::Arc,
 };
 
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use log::info;
 use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
+use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_primitives::{legacy::keys::NonHardenedChildIndex, transaction::TxId};
+use zcash_protocol::consensus::{self, BlockHeight};
+use zip32::AccountId;
 
-use zcash_primitives::{
-    consensus::{self, BlockHeight},
-    transaction::TxId,
-};
-
+use super::LightWallet;
+use super::data::WalletZecPriceInfo;
+use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
+use crate::wallet::WalletOptions;
+use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::{SendProgress, utils};
 use crate::{
     config::ChainType,
     wallet::{
@@ -34,14 +32,10 @@ use crate::{
         legacy::{BlockData, TxMap},
     },
 };
-
-use crate::wallet::traits::ReadableWriteable;
-use crate::wallet::WalletOptions;
-use crate::wallet::{utils, SendProgress};
-
-use super::data::WalletZecPriceInfo;
-use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use super::LightWallet;
+use pepper_sync::{
+    keys::transparent::{self, TransparentAddressId, TransparentScope},
+    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
+};
 
 impl LightWallet {
     /// Changes in version 32:
@@ -92,7 +86,7 @@ impl LightWallet {
             |w, address_id| {
                 w.write_u32::<LittleEndian>(address_id.account_id().into())?;
                 w.write_u8(address_id.scope() as u8)?;
-                w.write_u32::<LittleEndian>(address_id.address_index())
+                w.write_u32::<LittleEndian>(address_id.address_index().index())
             },
         )?;
 
@@ -110,7 +104,7 @@ impl LightWallet {
         Vector::write(
             &mut writer,
             &self.outpoint_map.iter().collect::<Vec<_>>(),
-            |w, (&output_id, &locator)| {
+            |w, &(&output_id, &locator)| {
                 output_id.txid().write(&mut *w)?;
                 w.write_u16::<LittleEndian>(output_id.output_index())?;
                 w.write_u32::<LittleEndian>(locator.0.into())?;
@@ -387,7 +381,12 @@ impl LightWallet {
             let address_index = r.read_u32::<LittleEndian>()?;
 
             Ok((
-                TransparentAddressId::new(account_id, scope, address_index),
+                TransparentAddressId::new(
+                    account_id,
+                    scope,
+                    NonHardenedChildIndex::from_index(address_index)
+                        .expect("only non-hardened child indexes should be written"),
+                ),
                 transparent::encode_address(
                     &network,
                     unified_key_store

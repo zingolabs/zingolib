@@ -18,23 +18,43 @@ pub mod send_with_proposal {
     use nonempty::NonEmpty;
 
     use zcash_client_backend::proposal::Proposal;
-    use zcash_client_backend::wallet::NoteId;
     use zcash_client_backend::zip321::TransactionRequest;
 
-    use zcash_primitives::transaction::fees::zip317;
     use zcash_primitives::transaction::TxId;
+    use zcash_primitives::transaction::fees::zip317;
 
     use crate::data::proposal::ZingoProposal;
-    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
     use crate::lightclient::LightClient;
+    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
+    use crate::wallet::error::TransmissionError;
+    use crate::wallet::output::OutputRef;
 
     impl LightClient {
-        async fn send<NoteRef>(
+        async fn send(
             &mut self,
-            proposal: &Proposal<zip317::FeeRule, NoteRef>,
+            proposal: &Proposal<zip317::FeeRule, OutputRef>,
         ) -> Result<NonEmpty<TxId>, SendError> {
             let mut wallet = self.wallet.lock().await;
-            let calculated_txids = wallet.calculate_transactions(proposal).await?;
+            let calculated_txids = wallet
+                .calculate_transactions(proposal)
+                .await
+                .map_err(SendError::CalculateSendError)?;
+            self.latest_proposal = None;
+
+            Ok(wallet
+                .transmit_transactions(self.get_server_uri(), calculated_txids)
+                .await?)
+        }
+
+        async fn shield(
+            &mut self,
+            proposal: &Proposal<zip317::FeeRule, Infallible>,
+        ) -> Result<NonEmpty<TxId>, SendError> {
+            let mut wallet = self.wallet.lock().await;
+            let calculated_txids = wallet
+                .calculate_transactions(proposal)
+                .await
+                .map_err(SendError::CalculateShieldError)?;
             self.latest_proposal = None;
 
             Ok(wallet
@@ -43,7 +63,7 @@ pub mod send_with_proposal {
         }
 
         /// Re-transmits a previously calculated transaction that failed to send.
-        pub async fn resend(&self, txid: TxId) -> Result<(), SendError> {
+        pub async fn resend(&self, txid: TxId) -> Result<(), TransmissionError> {
             self.wallet
                 .lock()
                 .await
@@ -58,11 +78,9 @@ pub mod send_with_proposal {
             if let Some(proposal) = self.latest_proposal.clone() {
                 match proposal {
                     ZingoProposal::Transfer(transfer_proposal) => {
-                        self.send::<NoteId>(&transfer_proposal).await
+                        self.send(&transfer_proposal).await
                     }
-                    ZingoProposal::Shield(shield_proposal) => {
-                        self.send::<Infallible>(&shield_proposal).await
-                    }
+                    ZingoProposal::Shield(shield_proposal) => self.shield(&shield_proposal).await,
                 }
             } else {
                 Err(SendError::NoStoredProposal)
@@ -81,14 +99,14 @@ pub mod send_with_proposal {
                 .create_send_proposal(request)
                 .await?;
 
-            Ok(self.send::<NoteId>(&proposal).await?)
+            Ok(self.send(&proposal).await?)
         }
 
         /// Shields all transparent funds skipping proposal confirmation.
         pub async fn quick_shield(&mut self) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self.wallet.lock().await.create_shield_proposal().await?;
 
-            Ok(self.send::<Infallible>(&proposal).await?)
+            Ok(self.shield(&proposal).await?)
         }
     }
 
@@ -96,14 +114,12 @@ pub mod send_with_proposal {
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
-        use zcash_client_backend::PoolType;
-
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
             },
-            wallet::{disk::testing::examples, LightWallet, WalletBase},
+            wallet::{LightWallet, WalletBase, disk::testing::examples},
         };
 
         #[tokio::test]
@@ -135,7 +151,7 @@ pub mod send_with_proposal {
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod testnet {
-            use zcash_client_backend::ShieldedProtocol;
+            use zcash_protocol::{PoolType, ShieldedProtocol};
 
             use crate::testutils::lightclient::get_base_address;
 
@@ -213,7 +229,7 @@ pub mod send_with_proposal {
         /// live send MAINNET: spends on-chain ZEC.
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod mainnet {
-            use zcash_client_backend::ShieldedProtocol;
+            use zcash_protocol::{PoolType, ShieldedProtocol};
 
             use crate::testutils::lightclient::get_base_address;
 

@@ -18,7 +18,7 @@ pub mod receivers {
     use zcash_client_backend::zip321::TransactionRequest;
     use zcash_client_backend::zip321::Zip321Error;
     use zcash_primitives::memo::MemoBytes;
-    use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+    use zcash_protocol::value::Zatoshis;
 
     /// A list of Receivers
     pub(crate) type Receivers = Vec<Receiver>;
@@ -27,14 +27,14 @@ pub mod receivers {
     #[derive(Clone, Debug, PartialEq)]
     pub(crate) struct Receiver {
         pub(crate) recipient_address: ZcashAddress,
-        pub(crate) amount: NonNegativeAmount,
+        pub(crate) amount: Zatoshis,
         pub(crate) memo: Option<MemoBytes>,
     }
     impl Receiver {
         /// Create a new Receiver
         pub(crate) fn new(
             recipient_address: ZcashAddress,
-            amount: NonNegativeAmount,
+            amount: Zatoshis,
             memo: Option<MemoBytes>,
         ) -> Self {
             Self {

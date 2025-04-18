@@ -1,10 +1,11 @@
-use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
-use zcash_primitives::transaction::{components::Amount, TxId};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::value::ZatBalance;
 
 use super::{
-    error::{FeeError, RemovalError, SpendError},
     LightWallet,
+    error::{FeeError, RemovalError, SpendError},
 };
+use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -68,7 +69,7 @@ impl LightWallet {
     ) -> Result<u64, FeeError> {
         Ok(transaction
             .transaction()
-            .fee_paid(|outpoint| -> Result<Amount, FeeError> {
+            .fee_paid(|outpoint| -> Result<ZatBalance, FeeError> {
                 let outpoint = OutputId::from(outpoint);
                 let prevout = self
                     .wallet_outputs::<TransparentCoin>()
@@ -79,7 +80,8 @@ impl LightWallet {
                         spend: format!("{:?}", outpoint),
                     })?;
 
-                Ok(Amount::from_u64(prevout.value()).expect("value converted from checked type"))
+                Ok(ZatBalance::from_u64(prevout.value())
+                    .expect("value converted from checked type"))
             })?
             .try_into()
             .expect("fee should not be negative"))

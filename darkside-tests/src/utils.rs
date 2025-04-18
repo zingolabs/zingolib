@@ -1,5 +1,3 @@
-use http::Uri;
-use orchard::tree::MerkleHashOrchard;
 use std::{
     fs,
     fs::File,
@@ -8,26 +6,29 @@ use std::{
     process::{Child, Command},
     time::Duration,
 };
+
+use http::Uri;
 use tempfile;
 use tokio::time::sleep;
+
+use incrementalmerkletree::frontier::CommitmentTree;
+use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingolib::testutils::{
-    incrementalmerkletree::frontier::CommitmentTree,
-    paths::{get_bin_dir, get_cargo_manifest_dir},
-    regtest::launch_lightwalletd,
-    scenarios::setup::TestEnvironmentGenerator,
-};
 
+use super::{
+    constants,
+    darkside_types::{RawTransaction, TreeState},
+};
 use crate::{
     constants::BRANCH_ID,
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-
-use super::{
-    constants,
-    darkside_types::{RawTransaction, TreeState},
+use zingolib::testutils::{
+    paths::{get_bin_dir, get_cargo_manifest_dir},
+    regtest::launch_lightwalletd,
+    scenarios::setup::TestEnvironmentGenerator,
 };
 
 pub async fn prepare_darksidewalletd(
@@ -365,21 +366,21 @@ pub mod scenarios {
     use std::fs::File;
     use std::ops::Add;
 
+    use zcash_primitives::consensus::{BlockHeight, BranchId};
+    use zcash_protocol::{PoolType, ShieldedProtocol};
+
+    use super::{
+        DarksideConnector, DarksideHandler, init_darksidewalletd,
+        update_tree_states_for_transaction, write_raw_transaction,
+    };
     use crate::{
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
     use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
-    use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::setup::ClientBuilder;
-
-    use super::{
-        init_darksidewalletd, update_tree_states_for_transaction, write_raw_transaction,
-        DarksideConnector, DarksideHandler,
-    };
 
     pub struct DarksideEnvironment {
         darkside_handler: DarksideHandler,
@@ -448,7 +449,9 @@ pub mod scenarios {
                     constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT
                 }
                 PoolType::Transparent => {
-                    panic!("Error: Transparent funding transactions for faucet are not currently implemented!")
+                    panic!(
+                        "Error: Transparent funding transactions for faucet are not currently implemented!"
+                    )
                 }
             };
             self.stage_transaction(faucet_funding_transaction).await;

@@ -3,21 +3,21 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use tokio::sync::mpsc;
-use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{
+    ShieldedProtocol,
     consensus::{self, BlockHeight},
-    transaction::TxId,
 };
 use zip32::AccountId;
 
 use crate::{
     client::{self, FetchRequest},
     error::SyncError,
-    scan::{transactions::scan_transactions, DecryptedNoteData},
+    scan::{DecryptedNoteData, transactions::scan_transactions},
     wallet::{
-        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
         Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction,
+        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
     },
 };
 

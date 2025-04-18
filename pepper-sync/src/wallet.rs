@@ -9,31 +9,31 @@ use std::{
     fmt::Debug,
     ops::Range,
     sync::{
-        atomic::{self, AtomicU8},
         Arc,
+        atomic::{self, AtomicU8},
     },
 };
 
 use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{store::memory::MemoryShardStore, ShardTree};
+use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
     proto::compact_formats::CompactBlock,
-    PoolType, ShieldedProtocol,
 };
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{self, BlockHeight},
     legacy::Script,
     memo::Memo,
-    transaction::{
-        components::{amount::NonNegativeAmount, OutPoint},
-        TxId,
-    },
+    transaction::{TxId, components::transparent::OutPoint},
+};
+use zcash_protocol::{
+    PoolType, ShieldedProtocol,
+    consensus::{self, BlockHeight},
+    value::Zatoshis,
 };
 
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -41,7 +41,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 use crate::{
     client::FetchRequest,
     error::{ServerError, SyncModeError},
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     sync::MAX_VERIFICATION_WINDOW,
     witness,
@@ -645,7 +645,7 @@ pub struct TransparentCoin {
     /// Script.
     pub(crate) script: Script,
     /// Coin value.
-    pub(crate) value: NonNegativeAmount,
+    pub(crate) value: Zatoshis,
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,

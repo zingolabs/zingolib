@@ -6,7 +6,6 @@ use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use pepper_sync::keys::transparent::TransparentScope;
-use pepper_sync::keys::AddressIndex;
 use zcash_address::unified::{Encoding as _, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
@@ -14,8 +13,8 @@ use zcash_encoding::CompactSize;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
-    keys::{IncomingViewingKey, NonHardenedChildIndex},
     TransparentAddress,
+    keys::{IncomingViewingKey, NonHardenedChildIndex},
 };
 use zcash_primitives::zip32::{AccountId, DiversifierIndex};
 
@@ -33,7 +32,7 @@ pub(crate) const KEY_TYPE_SPEND: u8 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnifiedAddressId {
     pub account_id: AccountId,
-    pub address_index: AddressIndex,
+    pub address_index: u32,
 }
 
 /// In-memory store for wallet spending or viewing keys
@@ -251,7 +250,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Unknown key type: {}", x),
-                ))
+                ));
             }
         })
     }

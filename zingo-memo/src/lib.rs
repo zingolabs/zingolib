@@ -122,11 +122,11 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
     let receivers = address.items();
     Vector::write(writer, &receivers, |mut w, receiver| {
         let (typecode, data): (u32, &[u8]) = match receiver {
-            Receiver::Orchard(ref data) => (3, data),
-            Receiver::Sapling(ref data) => (2, data),
-            Receiver::P2pkh(ref data) => (0, data),
-            Receiver::P2sh(ref data) => (1, data),
-            Receiver::Unknown { typecode, ref data } => (*typecode, data.as_slice()),
+            Receiver::Orchard(data) => (3, data),
+            Receiver::Sapling(data) => (2, data),
+            Receiver::P2sh(data) => (1, data),
+            Receiver::P2pkh(data) => (0, data),
+            Receiver::Unknown { typecode, data } => (*typecode, data.as_slice()),
         };
         CompactSize::write(&mut w, typecode as usize)?;
         CompactSize::write(&mut w, data.len())?;

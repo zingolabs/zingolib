@@ -1,29 +1,22 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
 use nonempty::NonEmpty;
-use zcash_address::AddressKind;
+
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::consensus;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
-use zcash_proofs::prover::LocalTxProver;
-
-use zcash_client_backend::zip321::TransactionRequest;
-use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::memo::Memo;
-use zcash_primitives::memo::MemoBytes;
-
-use pepper_sync::wallet::traits::SyncWallet as _;
 use zcash_primitives::transaction::fees::zip317;
-use zingo_memo::create_wallet_internal_memo_version_1;
-use zingo_status::confirmation_status::ConfirmationStatus;
+use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus;
+use zcash_protocol::consensus::Parameters;
 
-use crate::wallet::now;
-
+use super::LightWallet;
 use super::error::CalculateTransactionError;
 use super::error::TransmissionError;
-use super::LightWallet;
+use crate::wallet::now;
+use pepper_sync::wallet::traits::SyncWallet as _;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// TODO: Add Doc Comment Here!
 // TODO: revisit send progress to separate json and handle errors properly
@@ -79,7 +72,7 @@ impl LightWallet {
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         if !self.unified_key_store.is_spending_key() {
             return Err(CalculateTransactionError::NoSpendCapability);
         }
@@ -103,7 +96,15 @@ impl LightWallet {
                 .payments()
                 .values()
                 .any(|payment| {
-                    matches!(payment.recipient_address().kind(), AddressKind::Tex(_))
+                    matches!(
+                        payment
+                            .recipient_address()
+                            .clone()
+                            .convert_if_network::<zcash_keys::address::Address>(
+                                self.network.network_type()
+                            ),
+                        Ok(zcash_keys::address::Address::Tex(_))
+                    )
                 }) =>
             {
                 self.create_proposed_transactions(sapling_prover, proposal)
@@ -121,24 +122,22 @@ impl LightWallet {
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
-    ) -> Result<NonEmpty<TxId>, CalculateTransactionError> {
+    ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
         let usk = (&self.unified_key_store)
             .try_into()
             .map_err(CalculateTransactionError::UnifiedSpendKey)?;
 
-        Ok(
-            zcash_client_backend::data_api::wallet::create_proposed_transactions(
-                self,
-                &network,
-                &sapling_prover,
-                &sapling_prover,
-                &usk,
-                zcash_client_backend::wallet::OvkPolicy::Sender,
-                proposal,
-                None,
-            )?,
+        zcash_client_backend::data_api::wallet::create_proposed_transactions(
+            self,
+            &network,
+            &sapling_prover,
+            &sapling_prover,
+            &usk,
+            zcash_client_backend::wallet::OvkPolicy::Sender,
+            proposal,
         )
+        .map_err(CalculateTransactionError::Calculation)
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
@@ -265,67 +264,25 @@ impl LightWallet {
     }
 }
 
-// TODO: move to a more suitable place
-// TODO: only need to encode highest used refund address index, not all of them
-pub(crate) fn change_memo_from_transaction_request(
-    request: &TransactionRequest,
-    mut refund_address_count: u32,
-) -> MemoBytes {
-    let mut recipient_uas = Vec::new();
-    let mut refund_address_indexes = Vec::new();
-    for payment in request.payments().values() {
-        match payment.recipient_address().kind() {
-            AddressKind::Unified(ua) => {
-                if let Ok(ua) = UnifiedAddress::try_from(ua.clone()) {
-                    recipient_uas.push(ua);
-                }
-            }
-            AddressKind::Tex(_) => {
-                refund_address_indexes.push(refund_address_count);
-
-                refund_address_count += 1;
-            }
-            _ => (),
-        }
-    }
-    let uas_bytes = match create_wallet_internal_memo_version_1(
-        recipient_uas.as_slice(),
-        refund_address_indexes.as_slice(),
-    ) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log::error!(
-                "Could not write uas to memo field: {e}\n\
-        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
-        The correct address was sent to."
-            );
-            [0; 511]
-        }
-    };
-    MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_primitives::{
-        memo::{Memo, MemoBytes},
-        transaction::components::amount::NonNegativeAmount,
-    };
+    use zcash_primitives::memo::{Memo, MemoBytes};
+    use zcash_protocol::value::Zatoshis;
 
-    use crate::data::receivers::{transaction_request_from_receivers, Receivers};
+    use crate::data::receivers::{Receivers, transaction_request_from_receivers};
 
     #[test]
     fn test_build_request() {
-        let amount_1 = NonNegativeAmount::const_from_u64(20000);
+        let amount_1 = Zatoshis::const_from_u64(20000);
         let recipient_address_1 =
             ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_1 = None;
 
-        let amount_2 = NonNegativeAmount::const_from_u64(20000);
+        let amount_2 = Zatoshis::const_from_u64(20000);
         let recipient_address_2 =
             ZcashAddress::try_from_encoded("utest17wwv8nuvdnpjsxtu6ndz6grys5x8wphcwtzmg75wkx607c7cue9qz5kfraqzc7k9dfscmylazj4nkwazjj26s9rhyjxm0dcqm837ykgh2suv0at9eegndh3kvtfjwp3hhhcgk55y9d2ys56zkw8aaamcrv9cy0alj0ndvd0wll4gxhrk9y4yy9q9yg8yssrencl63uznqnkv7mk3w05").unwrap();
         let memo_2 = Some(MemoBytes::from(
