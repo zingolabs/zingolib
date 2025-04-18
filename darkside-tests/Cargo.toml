@@ -13,6 +13,13 @@ zingo-netutils = { workspace = true }
 zingo-status = { workspace = true }
 testvectors = { workspace = true }
 
+orchard = { workspace = true }
+sapling-crypto = { workspace = true }
+incrementalmerkletree = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 http = { workspace = true }
@@ -24,15 +31,10 @@ prost = { workspace = true }
 tower = { workspace = true }
 http-body = { workspace = true }
 hex = { workspace = true }
-
-zcash_primitives = { workspace = true }
 tempfile = { workspace = true }
 portpicker = { workspace = true }
 futures-util = { workspace = true }
-orchard = { workspace = true }
-zcash_client_backend = { workspace = true }
 serde_json = { workspace = true }
-sapling-crypto.workspace = true
 proptest = { workspace = true }
 
 # Logging

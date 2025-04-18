@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
 use json::JsonValue;
-use testvectors::{block_rewards, seeds::HOSPITAL_MUSEUM_SEED, BASE_HEIGHT};
+
 use zcash_address::unified::Fvk;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
+
+use testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::config::RegtestNetwork;
 use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
@@ -115,13 +116,9 @@ mod fast {
     use bip0039::Mnemonic;
     use pepper_sync::wallet::{OutputInterface, TransparentCoin};
     use zcash_address::ZcashAddress;
-    use zcash_client_backend::{
-        zip321::{Payment, TransactionRequest},
-        PoolType, ShieldedProtocol,
-    };
-    use zcash_primitives::{
-        consensus::BlockHeight, memo::Memo, transaction::components::amount::NonNegativeAmount,
-    };
+    use zcash_client_backend::zip321::{Payment, TransactionRequest};
+    use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+    use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -579,73 +576,84 @@ mod fast {
             .unwrap();
 
         // messages
-        let alice_to_bob = TransactionRequest::new(vec![Payment::new(
-            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-            NonNegativeAmount::from_u64(1_000).unwrap(),
-            Some(Memo::encode(
-                &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
-            )),
-            None,
-            None,
-            vec![],
-        )
-        .unwrap()])
+        let alice_to_bob = TransactionRequest::new(vec![
+            Payment::new(
+                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Memo::encode(
+                    &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
+                )),
+                None,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        ])
         .unwrap();
-        let alice_to_bob_2 = TransactionRequest::new(vec![Payment::new(
-            ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
-            NonNegativeAmount::from_u64(1_000).unwrap(),
-            Some(Memo::encode(
-                &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
-            )),
-            None,
-            None,
-            vec![],
-        )
-        .unwrap()])
+        let alice_to_bob_2 = TransactionRequest::new(vec![
+            Payment::new(
+                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Memo::encode(
+                    &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
+                )),
+                None,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        ])
         .unwrap();
-        let alice_to_charlie = TransactionRequest::new(vec![Payment::new(
-            ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
-            NonNegativeAmount::from_u64(1_000).unwrap(),
-            Some(Memo::encode(
-                &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice)).unwrap(),
-            )),
-            None,
-            None,
-            vec![],
-        )
-        .unwrap()])
+        let alice_to_charlie = TransactionRequest::new(vec![
+            Payment::new(
+                ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Memo::encode(
+                    &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
+                        .unwrap(),
+                )),
+                None,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        ])
         .unwrap();
-        let charlie_to_alice = TransactionRequest::new(vec![Payment::new(
-            ZcashAddress::from_str(&alice).unwrap(),
-            NonNegativeAmount::from_u64(1_000).unwrap(),
-            Some(Memo::encode(
-                &Memo::from_str(
-                    &("Charlie->Alice #2\nReply to\n".to_string()
-                        + &charlie.encode(&faucet.config().chain)),
-                )
-                .unwrap(),
-            )),
-            None,
-            None,
-            vec![],
-        )
-        .unwrap()])
+        let charlie_to_alice = TransactionRequest::new(vec![
+            Payment::new(
+                ZcashAddress::from_str(&alice).unwrap(),
+                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Memo::encode(
+                    &Memo::from_str(
+                        &("Charlie->Alice #2\nReply to\n".to_string()
+                            + &charlie.encode(&faucet.config().chain)),
+                    )
+                    .unwrap(),
+                )),
+                None,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        ])
         .unwrap();
-        let bob_to_alice = TransactionRequest::new(vec![Payment::new(
-            ZcashAddress::from_str(&alice).unwrap(),
-            NonNegativeAmount::from_u64(1_000).unwrap(),
-            Some(Memo::encode(
-                &Memo::from_str(
-                    &("Bob->Alice #2\nReply to\n".to_string()
-                        + &bob.encode(&faucet.config().chain)),
-                )
-                .unwrap(),
-            )),
-            None,
-            None,
-            vec![],
-        )
-        .unwrap()])
+        let bob_to_alice = TransactionRequest::new(vec![
+            Payment::new(
+                ZcashAddress::from_str(&alice).unwrap(),
+                Zatoshis::from_u64(1_000).unwrap(),
+                Some(Memo::encode(
+                    &Memo::from_str(
+                        &("Bob->Alice #2\nReply to\n".to_string()
+                            + &bob.encode(&faucet.config().chain)),
+                    )
+                    .unwrap(),
+                )),
+                None,
+                None,
+                vec![],
+            )
+            .unwrap(),
+        ])
         .unwrap();
         // Complete test setup
 
@@ -678,13 +686,17 @@ mod fast {
 
         // Also asserting the order now (sorry juanky)
         // ALL MESSAGES (First one should be the oldest one)
-        assert!(all_messages
-            .windows(2)
-            .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() }));
+        assert!(
+            all_messages
+                .windows(2)
+                .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() })
+        );
         // ALL VTS (First one should be the most recent one)
-        assert!(all_vts
-            .windows(2)
-            .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() }));
+        assert!(
+            all_vts
+                .windows(2)
+                .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() })
+        );
     }
 
     /// Tests that value transfers are properly sorted by block height and index.
@@ -751,6 +763,7 @@ mod fast {
 
     pub mod tex {
         use zcash_primitives::transaction::TxId;
+        use zcash_protocol::consensus::Parameters;
         use zingolib::{utils, wallet::LightWallet};
 
         use super::*;
@@ -761,10 +774,13 @@ mod fast {
             )
             .unwrap();
 
-            let zcash_address::AddressKind::P2pkh(taddr_bytes) = taddr.kind() else {
-                panic!()
+            let zcash_keys::address::Address::Tex(taddr_bytes) = taddr
+                .convert_if_network::<zcash_keys::address::Address>(wallet.network.network_type())
+                .unwrap()
+            else {
+                panic!("failed to convert to tex address")
             };
-            let tex_string = utils::interpret_taddr_as_tex_addr(*taddr_bytes, &wallet.network);
+            let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
             //            let tex_string = utils::interpret_taddr_as_tex_addr(*taddr_bytes);
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
@@ -777,7 +793,7 @@ mod fast {
             let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet.lock().await);
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
-                NonNegativeAmount::from_u64(100_000).unwrap(),
+                Zatoshis::from_u64(100_000).unwrap(),
             )];
 
             let transaction_request = TransactionRequest::new(payment).unwrap();
@@ -880,9 +896,11 @@ mod fast {
             .cloned()
             .collect::<Vec<_>>();
         assert_eq!(preshield_utxos.len(), 1);
-        assert!(wallet
-            .output_spend_status(preshield_utxos.first().unwrap())
-            .is_unspent());
+        assert!(
+            wallet
+                .output_spend_status(preshield_utxos.first().unwrap())
+                .is_unspent()
+        );
         drop(wallet);
 
         recipient.quick_shield().await.unwrap();
@@ -893,9 +911,11 @@ mod fast {
         let wallet = recipient.wallet.lock().await;
         let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(postshield_utxos.len(), 1);
-        assert!(wallet
-            .output_spend_status(*postshield_utxos.first().unwrap())
-            .is_confirmed_spent());
+        assert!(
+            wallet
+                .output_spend_status(*postshield_utxos.first().unwrap())
+                .is_confirmed_spent()
+        );
         assert_eq!(
             preshield_utxos.first().unwrap().output_id(),
             postshield_utxos.first().unwrap().output_id(),
@@ -1046,14 +1066,15 @@ mod fast {
             rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
             pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
         let sapling_index_1_match = sapling_index_1
-        == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
+            == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
         let transparent_index_1_match =
             transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
 
         //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
         let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
         let ua_address_index_2 = new_orchard_only_address[0].to_string();
-        let ua_2_orchard_match = ua_address_index_2 ==  "\
+        let ua_2_orchard_match = ua_address_index_2
+            == "\
         uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n";
         assert!(
             ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
@@ -1197,7 +1218,7 @@ mod fast {
         assert_eq!(only_step.transparent_inputs().len(), 4);
         assert_eq!(
             only_step.balance().fee_required(),
-            NonNegativeAmount::const_from_u64(expected_fee)
+            Zatoshis::const_from_u64(expected_fee)
         );
         // Only one change item. I guess change could be split between pools?
         assert_eq!(only_step.balance().proposed_change().len(), 1);
@@ -1208,7 +1229,7 @@ mod fast {
                 .first()
                 .unwrap()
                 .value(),
-            NonNegativeAmount::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
+            Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         )
     }
     #[tokio::test]
@@ -1230,7 +1251,7 @@ mod fast {
         assert_eq!(only_step.transparent_inputs().len(), 4);
         assert_eq!(
             only_step.balance().fee_required(),
-            NonNegativeAmount::const_from_u64(expected_fee)
+            Zatoshis::const_from_u64(expected_fee)
         );
         // Only one change item. I guess change could be split between pools?
         assert_eq!(only_step.balance().proposed_change().len(), 1);
@@ -1241,7 +1262,7 @@ mod fast {
                 .first()
                 .unwrap()
                 .value(),
-            NonNegativeAmount::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
+            Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         )
     }
 }
@@ -1252,11 +1273,11 @@ mod slow {
     };
     use shardtree::store::ShardStore;
     use testvectors::TEST_TXID;
-    use zcash_client_backend::{PoolType, ShieldedProtocol};
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::memo::Memo;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-    use zcash_primitives::zip32::{self, AccountId};
+    use zcash_protocol::value::Zatoshis;
+    use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
     use zingolib::lightclient::describe::UAReceivers;
@@ -1274,6 +1295,7 @@ mod slow {
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::{self, SendType, TransactionKind};
+    use zip32::AccountId;
 
     use super::*;
 
@@ -1689,11 +1711,9 @@ mod slow {
                     vec![(testvectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
-                Err(QuickSendError::SendError(
-                    SendError::CalculateTransactionError(
-                        CalculateTransactionError::NoSpendCapability
-                    )
-                ))
+                Err(QuickSendError::SendError(SendError::CalculateSendError(
+                    CalculateTransactionError::NoSpendCapability
+                )))
             ));
         }
     }
@@ -2348,28 +2368,36 @@ mod slow {
         {
             let wallet = faucet.wallet.lock().await;
             dbg!(wallet.sync_state.wallet_height());
-            dbg!(wallet
-                .shard_trees
-                .sapling
-                .store()
-                .max_checkpoint_id()
-                .unwrap());
-            dbg!(wallet
-                .shard_trees
-                .orchard
-                .store()
-                .max_checkpoint_id()
-                .unwrap());
-            dbg!(wallet
-                .shard_trees
-                .sapling
-                .root_at_checkpoint_id(&3.into())
-                .unwrap());
-            dbg!(wallet
-                .shard_trees
-                .orchard
-                .root_at_checkpoint_id(&3.into())
-                .unwrap());
+            dbg!(
+                wallet
+                    .shard_trees
+                    .sapling
+                    .store()
+                    .max_checkpoint_id()
+                    .unwrap()
+            );
+            dbg!(
+                wallet
+                    .shard_trees
+                    .orchard
+                    .store()
+                    .max_checkpoint_id()
+                    .unwrap()
+            );
+            dbg!(
+                wallet
+                    .shard_trees
+                    .sapling
+                    .root_at_checkpoint_id(&3.into())
+                    .unwrap()
+            );
+            dbg!(
+                wallet
+                    .shard_trees
+                    .orchard
+                    .root_at_checkpoint_id(&3.into())
+                    .unwrap()
+            );
         }
 
         let amount_to_send = 5_000;
@@ -2581,18 +2609,22 @@ mod slow {
         assert_eq!(transactions.get(1).unwrap().blockheight(), 6.into());
         assert_eq!(transactions.get(1).unwrap().txid().to_string(), spent_txid);
         assert_eq!(transactions.get(1).unwrap().value(), spent_value);
-        assert!(transactions
-            .get(1)
-            .unwrap()
-            .outgoing_sapling_notes()
-            .iter()
-            .any(|note| { note.recipient == faucet_sapling_address }));
-        assert!(transactions
-            .get(1)
-            .unwrap()
-            .outgoing_sapling_notes()
-            .iter()
-            .any(|note| { note.value == spent_value }));
+        assert!(
+            transactions
+                .get(1)
+                .unwrap()
+                .outgoing_sapling_notes()
+                .iter()
+                .any(|note| { note.recipient == faucet_sapling_address })
+        );
+        assert!(
+            transactions
+                .get(1)
+                .unwrap()
+                .outgoing_sapling_notes()
+                .iter()
+                .any(|note| { note.value == spent_value })
+        );
     }
 
     #[tokio::test]
@@ -3455,8 +3487,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(25_000).unwrap());
+                        assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                        assert_eq!(required, Zatoshis::from_u64(25_000).unwrap());
                     }
                     _ => panic!(),
                 },
@@ -3484,8 +3516,8 @@ mod slow {
                         available,
                         required,
                     } => {
-                        assert_eq!(available, NonNegativeAmount::from_u64(0).unwrap());
-                        assert_eq!(required, NonNegativeAmount::from_u64(60_000).unwrap());
+                        assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                        assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
                     }
                     _ => {
                         panic!()
@@ -3730,10 +3762,12 @@ mod slow {
                 recipient_wallet.output_spend_status(&orchard_change_note),
                 SpendStatus::Unspent
             );
-            assert!(!recipient_wallet
-                .output_transaction(&orchard_change_note)
-                .status()
-                .is_confirmed());
+            assert!(
+                !recipient_wallet
+                    .output_transaction(&orchard_change_note)
+                    .status()
+                    .is_confirmed()
+            );
         }
         let balance = recipient.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(880_000));
@@ -3766,10 +3800,12 @@ mod slow {
                 recipient_wallet.output_spend_status(&orchard_change_note),
                 SpendStatus::Unspent
             );
-            assert!(recipient_wallet
-                .output_transaction(&orchard_change_note)
-                .status()
-                .is_confirmed());
+            assert!(
+                recipient_wallet
+                    .output_transaction(&orchard_change_note)
+                    .status()
+                    .is_confirmed()
+            );
         }
         let balance = recipient.do_balance().await;
         assert_eq!(balance.orchard_balance, Some(880_000));
@@ -4166,11 +4202,6 @@ mod basic_transactions {
     //     recipient.do_sync(true).await.unwrap();
     // }
 }
-#[ignore = "flake"]
-#[tokio::test]
-async fn proxy_server_worky() {
-    zingolib::testutils::check_proxy_server_works().await
-}
 
 // FIXME: does not assert dust was included in the proposal
 #[tokio::test]
@@ -4199,6 +4230,7 @@ async fn propose_orchard_dust_to_sapling() {
 mod send_all {
 
     use pepper_sync::wallet::{OrchardNote, SaplingNote};
+    use zcash_protocol::value::Zatoshis;
     use zingolib::wallet::error::ProposeSendError;
 
     use super::*;
@@ -4226,7 +4258,7 @@ mod send_all {
         let external_uaddress =
             address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap();
         let expected_balance =
-            NonNegativeAmount::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
+            Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
             recipient
                 .get_spendable_shielded_balance(external_uaddress, true)
@@ -4337,8 +4369,8 @@ mod send_all {
                     required: r,
                 },
             )) => {
-                assert_eq!(a, NonNegativeAmount::const_from_u64(10_000));
-                assert_eq!(r, NonNegativeAmount::const_from_u64(20_000));
+                assert_eq!(a, Zatoshis::const_from_u64(10_000));
+                assert_eq!(r, Zatoshis::const_from_u64(20_000));
             }
             _ => panic!("expected an InsufficientFunds error"),
         }
