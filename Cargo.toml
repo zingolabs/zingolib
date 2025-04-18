@@ -11,7 +11,7 @@ members = [
     "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
-    "testvectors"
+    "testvectors",
 ]
 resolver = "2"
 
@@ -34,7 +34,7 @@ zcash_proofs = "0.22.0"
 zcash_protocol = "0.5.1"
 zcash_transparent = "0.2.3"
 
-append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
+append-only-vec = "0.1.7"
 base58 = "0.1"
 base64 = "0.13"
 bech32 = "0.11.0"
@@ -72,7 +72,10 @@ portpicker = "0.1"
 proptest = "1"
 prost = "0.13"
 rand = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "cookies",
+    "rustls-tls",
+] }
 ring = "0.17"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
@@ -91,7 +94,11 @@ test-case = "3"
 thiserror = "1"
 tokio = "1"
 tokio-rustls = "0.26"
-tonic = {version = "0.12", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tonic = { version = "0.12", features = [
+    "tls",
+    "tls-roots",
+    "tls-webpki-roots",
+] }
 tonic-build = "0.12"
 tower = { version = "0.5" }
 tracing = "0.1"

@@ -4,12 +4,12 @@ use std::{
     fs::File,
     io::BufReader,
     sync::{
-        atomic::{AtomicBool, AtomicU8},
         Arc,
+        atomic::{AtomicBool, AtomicU8},
     },
 };
 
-use json::{array, JsonValue};
+use json::{JsonValue, array};
 use log::error;
 use serde::Serialize;
 use serde_json::Value;
@@ -22,7 +22,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
+    wallet::{LightWallet, WalletBase, error::WalletError, keys::unified::ReceiverSelection},
 };
 use error::LightClientError;
 
@@ -176,11 +176,13 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && dbg!(config.wallet_path_exists()) {
+            if !overwrite && config.wallet_path_exists() {
                 return Err(LightClientError::FileError(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
-                    format!("Cannot save to given data directory as a wallet file already exists at:\n{}",
-                    config.get_wallet_pathbuf().to_string_lossy())
+                    format!(
+                        "Cannot save to given data directory as a wallet file already exists at:\n{}",
+                        config.get_wallet_pathbuf().to_string_lossy()
+                    ),
                 )));
             }
         }
@@ -211,7 +213,7 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, false)
+        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 
     /// TODO: Add Doc Comment Here!
