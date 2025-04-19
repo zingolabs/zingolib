@@ -2,22 +2,69 @@
 
 //! Crate for fetching historical and live ZEC prices
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct ResponseData {
+    /// Date.
     #[serde(rename = "date")]
     _date: String,
+    /// ZEC price in USD.
     #[serde(rename = "priceUsd")]
     price_usd: String,
-    time: u64,
+    /// Time in milliseconds.
+    time: u128,
 }
 
 /// Price of ZEC in USD at a given point in time.
 #[derive(Debug)]
 pub struct Price {
-    time: u64,
+    /// Time in seconds.
+    time: u32,
+    /// ZEC price in USD.
     price_usd: f32,
+}
+
+/// Price list for wallets to maintain an updated list of daily ZEC prices.
+#[derive(Debug)]
+pub struct PriceList {
+    /// Time of last price update in seconds.
+    time_last_updated: u32,
+    /// Historical price data by day.
+    daily_prices: Vec<Price>,
+}
+
+impl PriceList {
+    /// Constructs a new price list from the time of wallet creation.
+    pub fn new(time_of_birthday: u32) -> Self {
+        PriceList {
+            time_last_updated: time_of_birthday,
+            daily_prices: Vec::new(),
+        }
+    }
+
+    /// Updates price list.
+    pub async fn update(&mut self) -> Result<(), PriceError> {
+        // FIXME: move to secret or user specified
+        let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
+
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+
+        // TODO: test no overlap / duplicates
+        self.daily_prices.append(
+            &mut get_daily_prices(self.time_last_updated as u128 * 1000, current_time, api_key)
+                .await?,
+        );
+
+        self.time_last_updated = (current_time / 1000) as u32;
+
+        Ok(())
+    }
 }
 
 /// Errors with price requests and parsing.
@@ -40,7 +87,7 @@ pub enum PriceError {
 /// Get daily prices in USD from `start` to `end` time in milliseconds.
 ///
 /// Prices taken at 00.00 UTC.
-async fn get_daily_prices(start: u128, end: u128) -> Result<Vec<Price>, PriceError> {
+async fn get_daily_prices(start: u128, end: u128, api_key: &str) -> Result<Vec<Price>, PriceError> {
     let url = format!(
         "https://rest.coincap.io/v3/assets/zcash/history?interval=d1&start={}&end={}",
         start, end
@@ -50,8 +97,7 @@ async fn get_daily_prices(start: u128, end: u128) -> Result<Vec<Price>, PriceErr
     let response: serde_json::Value = serde_json::from_str(
         client
             .get(url)
-            // TODO: make secret or user specifies their own API keys
-            .bearer_auth("4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0")
+            .bearer_auth(api_key)
             .send()
             .await?
             .text()
@@ -74,7 +120,7 @@ async fn get_daily_prices(start: u128, end: u128) -> Result<Vec<Price>, PriceErr
         .into_iter()
         .map(|data| {
             Ok(Price {
-                time: data.time / 1000,
+                time: (data.time / 1000) as u32,
                 price_usd: data.price_usd.parse()?,
             })
         })
@@ -89,6 +135,7 @@ mod test {
     #[tokio::test]
     async fn price_test() {
         let start: u128 = 1744870230000;
+        let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
 
         let prices = get_daily_prices(
             start,
@@ -96,6 +143,7 @@ mod test {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis(),
+            api_key,
         )
         .await
         .unwrap();
