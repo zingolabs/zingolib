@@ -13,7 +13,7 @@ struct ResponseData {
     time: u64,
 }
 
-///
+/// Price of ZEC in USD at a given point in time.
 #[derive(Debug)]
 pub struct Price {
     time: u64,
@@ -37,6 +37,9 @@ pub enum PriceError {
     ParseError(#[from] std::num::ParseFloatError),
 }
 
+/// Get daily prices in USD from `start` to `end` time in milliseconds.
+///
+/// Prices taken at 00.00 UTC.
 async fn get_daily_prices(start: u128, end: u128) -> Result<Vec<Price>, PriceError> {
     let url = format!(
         "https://rest.coincap.io/v3/assets/zcash/history?interval=d1&start={}&end={}",
