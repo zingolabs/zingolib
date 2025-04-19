@@ -6,9 +6,6 @@ edition = "2021"
 
 [dependencies]
 zingolib = { workspace = true }
-
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2"  }
-
 http = "1.1.0"
 json = "0.12"
 lazy_static = "1.4.0"
