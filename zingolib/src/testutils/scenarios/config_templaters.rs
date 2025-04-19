@@ -69,6 +69,8 @@ rpcallowip=127.0.0.1
 # https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#zcash-conf-guide
 listen=0
 
+i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
+
 {extra}"
             )
     }
