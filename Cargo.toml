@@ -12,6 +12,7 @@ members = [
     "zingo-memo",
     "pepper-sync",
     "testvectors",
+    "zingo-price",
 ]
 resolver = "2"
 
