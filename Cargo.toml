@@ -11,7 +11,7 @@ members = [
     "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
-    "testvectors", "zingo-price",
+    "testvectors",
 ]
 resolver = "2"
 
