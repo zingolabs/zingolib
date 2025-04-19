@@ -4859,6 +4859,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo_price"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "zingolib"
 version = "0.2.0"
 dependencies = [
