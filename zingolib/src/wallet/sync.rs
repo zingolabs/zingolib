@@ -13,7 +13,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zip32::AccountId;
 
-use super::{error::WalletError, LightWallet};
+use super::{LightWallet, error::WalletError};
 
 impl SyncWallet for LightWallet {
     type Error = WalletError;

@@ -7,7 +7,7 @@ use pepper_sync::{
 use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::{output::SpendStatus, LightWallet};
+use super::{LightWallet, output::SpendStatus};
 
 // TODO: move data::summaries and value transfer / transaction summary methods here
 
@@ -339,7 +339,7 @@ impl LightWallet {
                     output_index: coin.output_id().output_index(),
                     account_id: coin.key_id().account_id(),
                     scope: coin.key_id().scope(),
-                    address_index: coin.key_id().address_index(),
+                    address_index: coin.key_id().address_index().index(),
                 }
             })
             .collect()

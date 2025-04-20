@@ -2,28 +2,80 @@
 
 use std::num::NonZeroU32;
 
+use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::PoolType;
+use zcash_protocol::value::Zatoshis;
+
+use super::LightWallet;
+use super::error::WalletError;
+use super::transaction::transaction_unspent_outputs;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
 use pepper_sync::wallet::TransparentCoin;
 use pepper_sync::wallet::WalletTransaction;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zcash_primitives::transaction::TxId;
-
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use super::error::WalletError;
-use super::transaction::transaction_unspent_outputs;
-use super::LightWallet;
-
 pub mod query;
 
+/// Output reference.
+///
+/// Identifier with pool type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputRef {
+    output_id: OutputId,
+    pool_type: PoolType,
+}
+
+impl OutputRef {
+    /// Creates new OutputRef from parts.
+    pub fn new(output_id: OutputId, pool_type: PoolType) -> Self {
+        OutputRef {
+            output_id,
+            pool_type,
+        }
+    }
+
+    /// Output identifier.
+    pub fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    /// Output identifier.
+    pub fn txid(&self) -> TxId {
+        self.output_id.txid()
+    }
+
+    /// Output identifier.
+    pub fn output_index(&self) -> u16 {
+        self.output_id.output_index()
+    }
+
+    /// Pool type.
+    pub fn pool_type(&self) -> PoolType {
+        self.pool_type
+    }
+}
+
+impl std::fmt::Display for OutputRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                output id: {}
+                pool type: {}
+            }}",
+            self.output_id, self.pool_type
+        )
+    }
+}
+
 /// Spend status of an output
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpendStatus {
     /// Output is not spent.
     Unspent,
@@ -60,10 +112,10 @@ impl std::fmt::Display for SpendStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SpendStatus::Unspent => write!(f, "unspent"),
-            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated: spent in {}", txid),
-            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted: spent in {}", txid),
-            SpendStatus::MempoolSpent(txid) => write!(f, "mempool: spent in {}", txid),
-            SpendStatus::Spent(txid) => write!(f, "confirmed: spent in {}", txid),
+            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated spent in {}", txid),
+            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted spent in {}", txid),
+            SpendStatus::MempoolSpent(txid) => write!(f, "mempool spent in {}", txid),
+            SpendStatus::Spent(txid) => write!(f, "confirmed spent in {}", txid),
         }
     }
 }
@@ -256,7 +308,7 @@ impl LightWallet {
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
         let _dust_notes = unselected_notes.drain(..dust_index).collect::<Vec<_>>();
         let mut unselected_note_index = 0;
-        let mut total_selected_note_value: NonNegativeAmount;
+        let mut total_selected_note_value: Zatoshis;
 
         loop {
             // if no unselected notes are available, return the currently selected notes even if the target value has not been reached
@@ -264,7 +316,7 @@ impl LightWallet {
                 break;
             }
             // update target value for further note selection
-            total_selected_note_value = NonNegativeAmount::from_u64(
+            total_selected_note_value = Zatoshis::from_u64(
                 selected_notes
                     .iter()
                     .fold(0, |acc, output: &&N| acc + output.value()),
@@ -305,8 +357,8 @@ impl LightWallet {
 }
 
 pub(crate) enum RemainingNeeded {
-    Positive(NonNegativeAmount),
-    GracelessChangeAmount(NonNegativeAmount),
+    Positive(Zatoshis),
+    GracelessChangeAmount(Zatoshis),
 }
 
 /// Calculate remaining difference between target and selected.
@@ -315,14 +367,11 @@ pub(crate) enum RemainingNeeded {
 ///    (Positive) We need > 0 more value.
 /// This function represents the NonPositive case as None, which then serves to signal a break in the note selection
 /// for where this helper is uniquely called.
-fn calculate_remaining_needed(
-    target_value: NonNegativeAmount,
-    selected_value: NonNegativeAmount,
-) -> RemainingNeeded {
+fn calculate_remaining_needed(target_value: Zatoshis, selected_value: Zatoshis) -> RemainingNeeded {
     if let Some(amount) = target_value - selected_value {
-        if amount == NonNegativeAmount::ZERO {
+        if amount == Zatoshis::ZERO {
             // Case (Change) target_value == total_selected_value
-            RemainingNeeded::GracelessChangeAmount(NonNegativeAmount::ZERO)
+            RemainingNeeded::GracelessChangeAmount(Zatoshis::ZERO)
         } else {
             // Case (Positive) target_value > total_selected_value
             RemainingNeeded::Positive(amount)

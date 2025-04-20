@@ -1,7 +1,7 @@
 [package]
 name = "zingo-testutils"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 grpc-proxy = ["tonic"]
@@ -16,7 +16,7 @@ zingo-netutils = { workspace = true, features = ["test-features"] }
 zingo-testvectors = { workspace = true }
 zingo-status = { workspace = true }
 
-zcash_client_backend = { workspace = true }
+zcash_client_backend = { workspace = true, features = [ "lightwalletd-tonic-transport" ] }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }

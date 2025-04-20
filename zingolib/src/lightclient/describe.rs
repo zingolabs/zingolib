@@ -1,5 +1,5 @@
 //! These functions can be called by consumer to learn about the LightClient.
-use json::{object, JsonValue};
+use json::{JsonValue, object};
 use pepper_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;

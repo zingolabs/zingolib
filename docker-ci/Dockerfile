@@ -35,9 +35,7 @@ RUN git clone https://github.com/zcash/lightwalletd \
 # Build zcashd and fetch params
 RUN git clone https://github.com/zcash/zcash.git \
     && cd zcash/ \
-    && git checkout v5.6.1 \
-    && ./zcutil/fetch-params.sh \
-    && ./zcutil/clean.sh \
+    && git checkout v6.2.0 \
     && ./zcutil/build.sh -j$(nproc)
 
 FROM debian:bookworm-slim
@@ -46,7 +44,6 @@ FROM debian:bookworm-slim
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
 COPY --from=builder /usr/src/zcash/src/zcashd /usr/bin/
 COPY --from=builder /usr/src/zcash/src/zcash-cli /usr/bin/
-COPY --from=builder /root/.zcash-params/ /root/.zcash-params/
 
 # Install dependencies and update ca certificates
 RUN apt update \

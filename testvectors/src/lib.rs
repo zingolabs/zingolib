@@ -7,8 +7,7 @@ pub const BASE_HEIGHT: u32 = 3;
 pub mod seeds {
 
     /// TODO: Add Doc Comment Here!
-    pub const DARKSIDE_SEED: &str =
-"still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
+    pub const DARKSIDE_SEED: &str = "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread";
     #[test]
     fn validate_seeds() {
         let abandon_art_seed = bip0039::Mnemonic::<bip0039::English>::from_entropy([0; 32])
@@ -20,8 +19,7 @@ pub mod seeds {
 
     /// Generate test seed
     /// TODO: Add Doc Comment Here!
-    pub const ABANDON_ART_SEED: &str =
-        "abandon abandon abandon abandon abandon abandon abandon abandon \
+    pub const ABANDON_ART_SEED: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon art";
     /// TODO: Add Doc Comment Here!

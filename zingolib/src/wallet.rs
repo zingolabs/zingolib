@@ -7,11 +7,12 @@ use error::WalletError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use send::SendProgress;
 use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use log::{info, warn};
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::ShardTrees;
@@ -322,7 +323,7 @@ impl LightWallet {
                 TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::External,
-                    first_address_index,
+                    NonHardenedChildIndex::from_index(first_address_index).expect("infallible"),
                 ),
                 transparent::encode_address(&network, *transparent_address),
             );

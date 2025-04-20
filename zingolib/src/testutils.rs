@@ -5,8 +5,16 @@
 
 pub mod scenarios;
 
+use std::{io::Read, string::String, time::Duration};
+
+use json::JsonValue;
+
+use zcash_address::unified::Fvk;
+use zcash_protocol::{PoolType, ShieldedProtocol};
+
+use crate::config::ZingoConfig;
+use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
-// use crate::lightclient::describe::UAReceivers;
 use crate::wallet::data::summaries::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
     TransactionSummaryInterface as _,
@@ -14,30 +22,12 @@ use crate::wallet::data::summaries::{
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::{LightWallet, WalletBase};
-use grpc_proxy::ProxyServer;
-pub use incrementalmerkletree;
 use lightclient::get_base_address;
-use std::collections::HashMap;
-use std::io::Read;
-use std::string::String;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::task::JoinHandle;
-use zcash_address::unified::Fvk;
-use zcash_client_backend::{PoolType, ShieldedProtocol};
-
-use crate::config::ZingoConfig;
-use crate::lightclient::LightClient;
-use json::JsonValue;
-// use log::debug;
 use regtest::RegtestManager;
 
 pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
-/// TODO: Add Doc Comment Here!
-pub mod grpc_proxy;
 /// lightclient helpers
 pub mod lightclient;
 /// macros to help test
@@ -72,7 +62,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
             fvks.iter().copied().cloned().collect(),
         )
         .unwrap(),
-        &zcash_address::Network::Regtest,
+        &zcash_protocol::consensus::NetworkType::Regtest,
     );
     LightClient::create_from_wallet(
         LightWallet::new(config.chain, WalletBase::Ufvk(ufvk), 0.into()).unwrap(),
@@ -610,42 +600,6 @@ pub struct TxActionsCount {
 
 //     tx_spend - tx_change
 // }
-
-/// TODO: Add Doc Comment Here!
-#[allow(clippy::type_complexity)]
-pub fn start_proxy_and_connect_lightclient(
-    client: &LightClient,
-    conditional_operations: HashMap<&'static str, Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>>,
-) -> (
-    JoinHandle<Result<(), tonic::transport::Error>>,
-    Arc<AtomicBool>,
-) {
-    let proxy_online = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let proxy_port = portpicker::pick_unused_port().unwrap();
-    let proxy_uri = format!("http://localhost:{proxy_port}");
-    let proxy_handle = ProxyServer {
-        lightwalletd_uri: client.get_server_uri(),
-        online: proxy_online.clone(),
-        conditional_operations,
-    }
-    .serve(proxy_port);
-    client.set_server(proxy_uri.parse().unwrap());
-    (proxy_handle, proxy_online)
-}
-
-/// TODO: Add Doc Comment Here!
-pub async fn check_proxy_server_works() {
-    let (_regtest_manager, _cph, ref faucet) = scenarios::faucet_default().await;
-    let (_proxy_handle, proxy_status) = start_proxy_and_connect_lightclient(faucet, HashMap::new());
-    proxy_status.store(false, std::sync::atomic::Ordering::Relaxed);
-    tokio::task::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        println!("Wakening proxy!");
-        proxy_status.store(true, std::sync::atomic::Ordering::Relaxed);
-    });
-    println!("Doing info!");
-    println!("{}", faucet.do_info().await)
-}
 
 /// TODO: Add Doc Comment Here!
 pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {

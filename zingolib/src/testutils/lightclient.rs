@@ -1,12 +1,13 @@
 //! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
 //! (obviously) in a test environment.
 
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::{PoolType, ShieldedProtocol};
+
 use crate::{
-    lightclient::{describe::UAReceivers, error::LightClientError, LightClient},
+    lightclient::{LightClient, describe::UAReceivers, error::LightClientError},
     wallet::LightWallet,
 };
-use zcash_client_backend::{PoolType, ShieldedProtocol};
-use zcash_primitives::transaction::TxId;
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
@@ -30,10 +31,11 @@ pub async fn new_client_from_save_buffer(
 /// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Transparent => client.do_addresses(UAReceivers::All).await[0]["receivers"]
-            ["transparent"]
-            .clone()
-            .to_string(),
+        PoolType::Transparent => {
+            client.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"]
+                .clone()
+                .to_string()
+        }
         PoolType::Shielded(ShieldedProtocol::Sapling) => {
             client.do_addresses(UAReceivers::All).await[0]["receivers"]["sapling"]
                 .clone()
@@ -57,7 +59,7 @@ pub mod from_inputs {
     use zcash_primitives::transaction::TxId;
 
     use crate::{
-        lightclient::{error::QuickSendError, LightClient},
+        lightclient::{LightClient, error::QuickSendError},
         wallet::error::ProposeSendError,
     };
 

@@ -9,21 +9,21 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use log::{info, LevelFilter};
+use log::{LevelFilter, info};
 use log4rs::{
+    Config,
     append::rolling_file::{
-        policy::compound::{
-            roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger, CompoundPolicy,
-        },
         RollingFileAppender,
+        policy::compound::{
+            CompoundPolicy, roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger,
+        },
     },
     config::{Appender, Root},
     encode::pattern::PatternEncoder,
     filter::threshold::ThresholdFilter,
-    Config,
 };
 use zcash_primitives::consensus::{
-    BlockHeight, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK,
+    BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
 /// TODO: Add Doc Comment Here!

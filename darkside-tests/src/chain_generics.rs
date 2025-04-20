@@ -3,11 +3,6 @@
 use proptest::proptest;
 use tokio::runtime::Runtime;
 
-use zcash_client_backend::PoolType::Shielded;
-use zcash_client_backend::PoolType::Transparent;
-use zcash_client_backend::ShieldedProtocol::Orchard;
-use zcash_client_backend::ShieldedProtocol::Sapling;
-
 use zingolib::testutils::chain_generics::fixtures;
 use zingolib::testutils::int_to_pooltype;
 use zingolib::testutils::int_to_shieldedprotocol;
@@ -38,7 +33,9 @@ pub(crate) mod conduct_chain {
 
     //!   - these tests cannot portray the full range of network weather.
 
+    use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
+
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::wallet::LightWallet;
@@ -122,12 +119,11 @@ pub(crate) mod conduct_chain {
                     hex::decode(trees.sapling_tree).unwrap().as_slice(),
                 )
                 .unwrap();
-            let mut orchard_tree: zingolib::testutils::incrementalmerkletree::frontier::CommitmentTree<MerkleHashOrchard, 32> = zcash_primitives::merkle_tree::read_commitment_tree(
-                hex::decode(trees.orchard_tree)
-                    .unwrap()
-                    .as_slice(),
-            )
-            .unwrap();
+            let mut orchard_tree: CommitmentTree<MerkleHashOrchard, 32> =
+                zcash_primitives::merkle_tree::read_commitment_tree(
+                    hex::decode(trees.orchard_tree).unwrap().as_slice(),
+                )
+                .unwrap();
 
             self.darkside_connector
                 .stage_blocks_create(height_before as i32 + 1, blocks_to_add, 0)

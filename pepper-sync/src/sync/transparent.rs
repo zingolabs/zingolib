@@ -4,15 +4,16 @@ use std::ops::Range;
 use tokio::sync::mpsc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_transparent::keys::NonHardenedChildIndex;
 
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
-use crate::wallet::traits::SyncWallet;
 use crate::wallet::Locator;
+use crate::wallet::traits::SyncWallet;
 
 use super::MAX_VERIFICATION_WINDOW;
 
@@ -85,7 +86,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                     .filter(|id| id.account_id() == *account_id && id.scope() == scope)
                     .next_back()
                 {
-                    id.address_index() + 1
+                    id.address_index().index() + 1
                 } else {
                     0
                 };
@@ -93,7 +94,12 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                 let mut addresses: Vec<(TransparentAddressId, String)> = Vec::new();
 
                 while unused_address_count < ADDRESS_GAP_LIMIT {
-                    let address_id = TransparentAddressId::new(*account_id, scope, address_index);
+                    let address_id = TransparentAddressId::new(
+                        *account_id,
+                        scope,
+                        NonHardenedChildIndex::from_index(address_index)
+                            .expect("all non-hardened addresses in use!"),
+                    );
                     let address = keys::transparent::derive_address(
                         consensus_parameters,
                         account_pubkey,

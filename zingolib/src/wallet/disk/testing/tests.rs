@@ -1,12 +1,13 @@
 use bip0039::Mnemonic;
 
-use zcash_client_backend::{PoolType, ShieldedProtocol};
 use zcash_keys::keys::Era;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
     config::ZingoConfig,
     lightclient::LightClient,
     wallet::{
+        LightWallet,
         disk::testing::{
             assert_wallet_capability_matches_seed,
             examples::{
@@ -16,7 +17,6 @@ use crate::{
             },
         },
         keys::unified::UnifiedKeyStore,
-        LightWallet,
     },
 };
 

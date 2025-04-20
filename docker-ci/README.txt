@@ -5,3 +5,5 @@ The following is required to successfully update the docker container for Github
  - run 'docker login' and fill in the credentials for DockerHub
  - run 'docker push zingodevops/ci-build:<new image version number>' to push to DockerHub
  - update github workflow files to the new image version number
+
+ NOTE: if `sudo` is necessary use `sudo` with all commands including login.

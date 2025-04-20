@@ -1,11 +1,10 @@
 use bytes::Buf;
-use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
 
-use crate::config::ChainType;
-use crate::lightclient::LightClient;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::super::LightWallet;
+use crate::config::ChainType;
+use crate::lightclient::LightClient;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.

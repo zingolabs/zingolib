@@ -3,8 +3,8 @@
 use std::{
     ops::Range,
     sync::{
-        atomic::{self, AtomicBool},
         Arc,
+        atomic::{self, AtomicBool},
     },
     time::Duration,
 };
@@ -16,15 +16,13 @@ use zcash_client_backend::{
     proto::{
         compact_formats::CompactBlock,
         service::{
-            compact_tx_streamer_client::CompactTxStreamerClient, BlockId, GetAddressUtxosReply,
-            RawTransaction, TreeState,
+            BlockId, GetAddressUtxosReply, RawTransaction, TreeState,
+            compact_tx_streamer_client::CompactTxStreamerClient,
         },
     },
 };
-use zcash_primitives::{
-    consensus::{self, BlockHeight},
-    transaction::{Transaction, TxId},
-};
+use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_protocol::consensus::{self, BlockHeight};
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;

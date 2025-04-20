@@ -5,7 +5,7 @@
 #![warn(missing_docs)]
 
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use log::{error, info};
 
@@ -404,7 +404,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
             return Err(format!(
                 "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-                server ));
+                server
+            ));
         }
 
         let sync = !matches.get_flag("nosync");

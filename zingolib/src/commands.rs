@@ -1,22 +1,26 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
-use crate::data::{proposal, PollReport};
-use crate::lightclient::LightClient;
-use crate::utils::conversion::txid_from_hex_encoded_str;
-use crate::wallet::keys::unified::UnifiedKeyStore;
-use indoc::indoc;
-use json::object;
-use lazy_static::lazy_static;
-use pepper_sync::wallet::{OrchardNote, SaplingNote, SyncMode};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
+
+use indoc::indoc;
+use json::object;
+use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
+
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_protocol::consensus::NetworkType;
+use zcash_protocol::value::Zatoshis;
+
+use crate::data::{PollReport, proposal};
+use crate::lightclient::LightClient;
+use crate::utils::conversion::txid_from_hex_encoded_str;
+use crate::wallet::keys::unified::UnifiedKeyStore;
+use pepper_sync::wallet::{OrchardNote, SaplingNote, SyncMode};
 
 mod error;
 mod utils;
@@ -299,13 +303,12 @@ impl Command for ParseViewKeyCommand {
 
     fn exec(&self, args: &[&str], _lightclient: &mut LightClient) -> String {
         match args.len() {
-            1 => {
-                json::stringify_pretty(
-                    match Ufvk::decode(args[0]) {
-                        Ok((network, ufvk)) => {
-                            let mut pools_available = vec![];
-                            for fvk in ufvk.items_as_parsed() {
-                                match fvk {
+            1 => json::stringify_pretty(
+                match Ufvk::decode(args[0]) {
+                    Ok((network, ufvk)) => {
+                        let mut pools_available = vec![];
+                        for fvk in ufvk.items_as_parsed() {
+                            match fvk {
                             zcash_address::unified::Fvk::Orchard(_) => {
                                 pools_available.push("orchard")
                             }
@@ -318,29 +321,28 @@ impl Command for ParseViewKeyCommand {
                             zcash_address::unified::Fvk::Unknown { .. } => pools_available
                                 .push("Unknown future protocol. Perhaps you're using old software"),
                         }
-                            }
-                            object! {
-                                "status" => "success",
-                                "chain_name" => match network {
-                                    zcash_address::Network::Main => "main",
-                                    zcash_address::Network::Test => "test",
-                                    zcash_address::Network::Regtest => "regtest",
-                                },
-                                "address_kind" => "ufvk",
-                                "pools_available" => pools_available,
-                            }
                         }
-                        Err(_) => {
-                            object! {
-                                "status" => "Invalid viewkey",
-                                "chain_name" => json::JsonValue::Null,
-                                "address_kind" => json::JsonValue::Null
-                            }
+                        object! {
+                            "status" => "success",
+                            "chain_name" => match network {
+                                NetworkType::Main => "main",
+                                NetworkType::Test => "test",
+                                NetworkType::Regtest => "regtest",
+                            },
+                            "address_kind" => "ufvk",
+                            "pools_available" => pools_available,
                         }
-                    },
-                    4,
-                )
-            }
+                    }
+                    Err(_) => {
+                        object! {
+                            "status" => "Invalid viewkey",
+                            "chain_name" => json::JsonValue::Null,
+                            "address_kind" => json::JsonValue::Null
+                        }
+                    }
+                },
+                4,
+            ),
             _ => self.help().to_string(),
         }
     }
@@ -803,7 +805,7 @@ impl Command for SendCommand {
                 return format!(
                     "Error: {}\nTry 'help send' for correct usage and examples.",
                     e
-                )
+                );
             }
         };
         let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
@@ -812,7 +814,7 @@ impl Command for SendCommand {
                 return format!(
                     "Error: {}\nTry 'help send' for correct usage and examples.",
                     e
-                )
+                );
             }
         };
         RT.block_on(async move {
@@ -867,7 +869,7 @@ impl Command for SendAllCommand {
                 return format!(
                     "Error: {}\nTry 'help sendall' for correct usage and examples.",
                     e
-                )
+                );
             }
         };
         RT.block_on(async move {
@@ -927,7 +929,7 @@ impl Command for QuickSendCommand {
                 return format!(
                     "Error: {}\nTry 'help quicksend' for correct usage and examples.",
                     e
-                )
+                );
             }
         };
         let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
@@ -936,7 +938,7 @@ impl Command for QuickSendCommand {
                 return format!(
                     "Error: {}\nTry 'help quicksend' for correct usage and examples.",
                     e
-                )
+                );
             }
         };
         RT.block_on(async move {
@@ -993,7 +995,7 @@ impl Command for ShieldCommand {
                         .balance()
                         .proposed_change()
                         .iter()
-                        .try_fold(NonNegativeAmount::ZERO, |acc, c| acc + c.value()) else {
+                        .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
                             return object! { "error" => "shield amount outside valid range of zatoshis" }
                                 .pretty(2);
                     };
@@ -1614,7 +1616,7 @@ impl Command for NotesCommand {
                     return format!(
                         "Invalid argument \"{}\". Specify 'all' to include spent notes",
                         a
-                    )
+                    );
                 }
             }
         } else {
@@ -1662,7 +1664,7 @@ impl Command for CoinsCommand {
                     return format!(
                         "Invalid argument \"{}\". Specify 'all' to include spent coins",
                         a
-                    )
+                    );
                 }
             }
         } else {

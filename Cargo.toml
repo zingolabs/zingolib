@@ -11,34 +11,35 @@ members = [
     "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
-    "testvectors"
+    "testvectors",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 bip0039 = "0.11"
-incrementalmerkletree = "0.7"
-orchard = "0.10"
-sapling-crypto = "0.3"
-shardtree = "0.5"
+bip32 = { version = "0.6.0-pre.1", default-features = false }
 
-# annotated tag starting with LRZ base tag and ending with `git describe --dirty`
-# TAG FROM `main_zingolib` BRANCH OF LIBRUSTZCASH FORK!
-# FIXME: point to tag off of `main_zingolib` branch instead of custom branch. even better... point to latest LRZ main
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2"  }
-zcash_keys = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2" , features = ["transparent-inputs", "sapling", "orchard" ] }
-zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2"  }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2"  }
-zcash_protocol = { git = "https://github.com/zingolabs/librustzcash.git", branch = "zcash_client_sqlite-0.12.1_plus_zingolabs_changes_zingo2"  }
-zip32 = "0.1"
+zip32 = "0.2.0"
+orchard = "0.11.0"
+sapling-crypto = "0.5.0"
+incrementalmerkletree = "0.8.2"
+shardtree = "0.6.1"
+zcash_address = "0.7.0"
+zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_encoding = "0.3.0"
+zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
+zcash_note_encryption = "0.4.1"
+zcash_primitives = "0.22.0"
+zcash_proofs = "0.22.0"
+zcash_protocol = "0.5.1"
+zcash_transparent = "0.2.3"
 
-append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
+append-only-vec = "0.1.7"
 base58 = "0.1"
 base64 = "0.13"
+bech32 = "0.11.0"
 bls12_381 = "0.8"
+bs58 = "0.5"
 build_utils = { path = "./build_utils" }
 byteorder = "1"
 bytes = "1"
@@ -66,18 +67,21 @@ lazy_static = "1"
 log = "0.4"
 log4rs = "1"
 memuse = "0.2"
-nonempty = "0.7"
+nonempty = "0.11.0"
 portpicker = "0.1"
 proptest = "1"
 prost = "0.13"
 rand = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "cookies",
+    "rustls-tls",
+] }
 ring = "0.17"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 rustyline = "11"
-secp256k1 = "0.27"
+secp256k1 = "0.29.1"
 secrecy = "0.8"
 serde = "1"
 serde_json = "1"
@@ -90,7 +94,11 @@ test-case = "3"
 thiserror = "1"
 tokio = "1"
 tokio-rustls = "0.26"
-tonic = {version = "0.12", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tonic = { version = "0.12", features = [
+    "tls",
+    "tls-roots",
+    "tls-webpki-roots",
+] }
 tonic-build = "0.12"
 tower = { version = "0.5" }
 tracing = "0.1"
@@ -101,9 +109,6 @@ webpki-roots = "0.26"
 crossbeam-channel = "0.5"
 rayon = "1"
 
-bip32 = { version = "0.5", default-features = false }
-bs58 = "0.5"
-bech32 = "0.11.0"
 testvectors = { path = "testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }

@@ -2,26 +2,25 @@
 
 use std::cmp;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
-use orchard::tree::MerkleHashOrchard;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
+use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use zcash_client_backend::proto::service::RawTransaction;
-use zcash_client_backend::ShieldedProtocol;
 use zcash_client_backend::{
     data_api::scanning::{ScanPriority, ScanRange},
-    proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
+    proto::service::{RawTransaction, compact_tx_streamer_client::CompactTxStreamerClient},
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::consensus::{self, BlockHeight};
 
+use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
@@ -29,9 +28,9 @@ use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
 };
 use crate::keys::transparent::TransparentAddressId;
+use crate::scan::ScanResults;
 use crate::scan::task::{Scanner, ScannerState};
 use crate::scan::transactions::scan_transaction;
-use crate::scan::ScanResults;
 use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };

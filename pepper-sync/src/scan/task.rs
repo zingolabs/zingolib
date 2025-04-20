@@ -2,8 +2,8 @@ use std::{
     borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
     sync::{
-        atomic::{self, AtomicBool},
         Arc,
+        atomic::{self, AtomicBool},
     },
 };
 
@@ -18,25 +18,22 @@ use zcash_client_backend::{
     proto::compact_formats::CompactBlock,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{
-    consensus::{self, BlockHeight},
-    transaction::TxId,
-    zip32::AccountId,
-};
+use zcash_primitives::{transaction::TxId, zip32::AccountId};
+use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
+    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     sync,
     wallet::{
-        traits::{SyncBlocks, SyncWallet},
         Locator, WalletBlock,
+        traits::{SyncBlocks, SyncWallet},
     },
-    MAX_BATCH_OUTPUTS,
 };
 
-use super::{scan, ScanResults};
+use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 

@@ -8,12 +8,12 @@ use orchard::{
     note_encryption::OrchardDomain,
 };
 use sapling_crypto::{
-    self as sapling, note_encryption::SaplingDomain, NullifierDerivingKey, SaplingIvk,
+    self as sapling, NullifierDerivingKey, SaplingIvk, note_encryption::SaplingDomain,
 };
-use zcash_address::{unified::ParseError, ZcashAddress};
+use zcash_address::{ZcashAddress, unified::ParseError};
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::Domain;
-use zcash_primitives::consensus;
+use zcash_protocol::consensus;
 use zip32::Scope;
 
 pub mod transparent;

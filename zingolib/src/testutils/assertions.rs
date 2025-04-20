@@ -42,9 +42,9 @@ pub fn compare_fee<NoteRef>(
 /// 3. if the fee from the calculate_transaction_fee matches the sum of the per-step fees
 ///
 /// if any of these checks fail, rather than panic immediately, this function will include an error enum in its output. make sure to expect this.
-pub async fn lookup_fees_with_proposal_check<NoteId>(
+pub async fn lookup_fees_with_proposal_check<N>(
     client: &LightClient,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
+    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
     txids: &NonEmpty<TxId>,
 ) -> Vec<Result<u64, ProposalToTransactionRecordComparisonError>> {
     for_each_proposed_transaction(client, proposal, txids, |records, record, step| {
@@ -70,11 +70,11 @@ pub enum LookupRecordsPairStepsError {
 }
 
 /// checks the client for record of each of the expected transactions, and does anything to them.
-pub async fn for_each_proposed_transaction<NoteId, Res>(
+pub async fn for_each_proposed_transaction<N, Res>(
     client: &LightClient,
-    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteId>,
+    proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
     txids: &NonEmpty<TxId>,
-    f: fn(&LightWallet, &WalletTransaction, &Step<NoteId>) -> Res,
+    f: fn(&LightWallet, &WalletTransaction, &Step<N>) -> Res,
 ) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
     let wallet = client.wallet.lock().await;
 
