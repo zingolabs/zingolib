@@ -11,12 +11,13 @@ lazy_static = "1.4.0"
 base64 = "0.22"
 android_logger = "0.11"
 log = "0.4"
-uniffi = { workspace = true, features = [ "cli" ] }
+uniffi = { workspace = true, features = ["cli"] }
 tokio = { workspace = true }
 rustls = { workspace = true }
 
+
 [build-dependencies]
-uniffi_build = { version = "0.27", features = [ "builtin-bindgen" ] }
+uniffi_build = { version = "0.27", features = ["builtin-bindgen"] }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
