@@ -1057,10 +1057,9 @@ async fn mempool_monitor(
                         mempool_stream_message = mempool_stream.message() => {
                             match mempool_stream_message.unwrap_or(None) {
                                 Some(raw_transaction) => {
-                                    mempool_transaction_sender
+                                     let _ignore_error = mempool_transaction_sender
                                         .send(raw_transaction)
-                                        .await
-                                        .expect("receiver should not be dropped");
+                                        .await;
                                     unprocessed_transactions_count.fetch_add(1, atomic::Ordering::Release);
                                 }
                                 None => {

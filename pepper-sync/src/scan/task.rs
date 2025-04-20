@@ -409,10 +409,7 @@ where
                             )
                             .await?;
 
-                        batch_sender
-                            .send(full_batch)
-                            .await
-                            .expect("receiver should never be dropped before sender!");
+                        let _ignore_error = batch_sender.send(full_batch).await;
 
                         scan_task = new_batch;
                         sapling_output_count = 0;
@@ -422,10 +419,7 @@ where
                     scan_task.compact_blocks.push(compact_block);
                 }
 
-                batch_sender
-                    .send(scan_task)
-                    .await
-                    .expect("receiver should never be dropped before sender!");
+                let _ignore_error = batch_sender.send(scan_task).await;
 
                 is_batching.store(false, atomic::Ordering::Release);
             }
@@ -551,9 +545,7 @@ where
                 )
                 .await;
 
-                scan_results_sender
-                    .send((scan_range, scan_results))
-                    .expect("receiver should never be dropped before sender!");
+                let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }

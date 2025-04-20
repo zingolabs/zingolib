@@ -69,6 +69,8 @@ rpcallowip=127.0.0.1
 # https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#zcash-conf-guide
 listen=0
 
+i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
+
 {extra}"
             )
     }
@@ -130,6 +132,8 @@ rpcallowip=127.0.0.1
 # Buried config option to allow non-canonical RPC-PORT:
 # https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#zcash-conf-guide
 listen=0
+
+i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
 
 ### Zcashd Help provides documentation of the following:
 mineraddress=zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p

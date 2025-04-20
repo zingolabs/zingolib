@@ -90,7 +90,7 @@ pub struct TxMap {
 impl TxMap {
     /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
-        22
+        23
     }
 
     /// TODO: Doc-comment!
@@ -465,6 +465,8 @@ pub struct TransparentOutput {
     pub value: u64,
     /// whether, where, and when it was spent
     spend: Option<(TxId, ConfirmationStatus)>,
+    /// Output is from a coinbase transaction
+    pub is_coinbase: bool,
 }
 
 impl TransparentOutput {
@@ -530,6 +532,12 @@ impl TransparentOutput {
         let spend =
             spent_tuple.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
 
+        let is_coinbase = if version >= 5 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(TransparentOutput {
             address,
             txid: transaction_id,
@@ -537,6 +545,7 @@ impl TransparentOutput {
             script,
             value,
             spend,
+            is_coinbase,
         })
     }
 }
