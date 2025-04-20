@@ -14,6 +14,7 @@ zaino-test = ['test-elevation']
 
 [dependencies]
 zingo-memo = { workspace = true }
+zingo-price = { workspace = true }
 zingo-status = { workspace = true }
 zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }

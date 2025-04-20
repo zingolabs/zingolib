@@ -1123,3 +1123,66 @@ impl ReadableWriteable for ConfirmationStatus {
         unimplemented!()
     }
 }
+
+/// Struct that tracks the latest and historical price of ZEC in the wallet
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct WalletZecPriceInfo {
+    /// Latest price of ZEC and when it was fetched
+    pub zec_price: Option<(u64, f64)>,
+
+    /// Wallet's currency. All the prices are in this currency
+    pub currency: String,
+
+    /// When the last time historical prices were fetched
+    pub last_historical_prices_fetched_at: Option<u64>,
+
+    /// Historical prices retry count
+    pub historical_prices_retry_count: u64,
+}
+
+impl Default for WalletZecPriceInfo {
+    fn default() -> Self {
+        Self {
+            zec_price: None,
+            currency: "USD".to_string(), // Only USD is supported right now.
+            last_historical_prices_fetched_at: None,
+            historical_prices_retry_count: 0,
+        }
+    }
+}
+
+impl WalletZecPriceInfo {
+    /// TODO: Add Doc Comment Here!
+    pub fn serialized_version() -> u64 {
+        20
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        if version > Self::serialized_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Can't read ZecPriceInfo because of incorrect version",
+            ));
+        }
+
+        // The "current" zec price is not persisted, since it is almost certainly outdated
+        let zec_price = None;
+
+        // Currency is only USD for now
+        let currency = "USD".to_string();
+
+        let last_historical_prices_fetched_at =
+            Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+        let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
+
+        Ok(Self {
+            zec_price,
+            currency,
+            last_historical_prices_fetched_at,
+            historical_prices_retry_count,
+        })
+    }
+}

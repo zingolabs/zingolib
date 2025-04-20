@@ -2,38 +2,35 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use error::WalletError;
-use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use send::SendProgress;
-use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::legacy::keys::NonHardenedChildIndex;
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-
-use log::{info, warn};
-use rand::Rng;
-use rand::rngs::OsRng;
-
-use pepper_sync::keys::transparent::{self, TransparentScope};
-use pepper_sync::wallet::ShardTrees;
-use pepper_sync::{
-    keys::transparent::TransparentAddressId,
-    wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
-};
-
-use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
 use std::{
     io::{self, Read, Write},
     sync::Arc,
     time::SystemTime,
 };
+
+use bip0039::Mnemonic;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use rand::Rng;
+use rand::rngs::OsRng;
 use tokio::sync::RwLock;
 
-use crate::config::ChainType;
 use zcash_encoding::Optional;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::legacy::keys::NonHardenedChildIndex;
+use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use self::data::WalletZecPriceInfo;
+use crate::config::ChainType;
+use error::WalletError;
+use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
+use pepper_sync::keys::transparent::{self, TransparentScope};
+use pepper_sync::wallet::ShardTrees;
+use pepper_sync::{
+    keys::transparent::TransparentAddressId,
+    wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+};
+use send::SendProgress;
+use zingo_price::PriceList;
 
 pub mod data;
 pub mod error;
@@ -215,7 +212,7 @@ pub struct LightWallet {
     /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
     /// The current price of ZEC. (time_fetched, price in USD)
-    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    pub price_list: PriceList,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
@@ -335,7 +332,7 @@ impl LightWallet {
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
             send_progress: SendProgress::new(0),
-            price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
+            price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -352,17 +349,6 @@ impl LightWallet {
     /// TODO: Add Doc Comment Here!
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
         self.wallet_options.write().await.download_memos = value;
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_latest_zec_price(&self, price: f64) {
-        if price <= 0 as f64 {
-            warn!("Tried to set a bad current zec price {}", price);
-            return;
-        }
-
-        self.price.write().await.zec_price = Some((now() as u64, price));
-        info!("Set current ZEC Price to USD {}", price);
     }
 
     // Set the previous send's result as a JSON string.

@@ -4851,15 +4851,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-status"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "zcash_primitives",
-]
-
-[[package]]
-name = "zingo_price"
+name = "zingo-price"
 version = "0.1.0"
 dependencies = [
  "reqwest",
@@ -4867,6 +4859,14 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+]
+
+[[package]]
+name = "zingo-status"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -4937,6 +4937,7 @@ dependencies = [
  "zcash_transparent",
  "zingo-memo",
  "zingo-netutils",
+ "zingo-price",
  "zingo-status",
  "zip32",
 ]

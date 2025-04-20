@@ -31,18 +31,35 @@ pub struct Price {
 #[derive(Debug)]
 pub struct PriceList {
     /// Time of last price update in seconds.
-    time_last_updated: u32,
+    time_last_updated: Option<u32>,
     /// Historical price data by day.
     daily_prices: Vec<Price>,
 }
 
 impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
-    pub fn new(time_of_birthday: u32) -> Self {
+    pub fn new() -> Self {
         PriceList {
-            time_last_updated: time_of_birthday,
+            time_last_updated: None,
             daily_prices: Vec::new(),
         }
+    }
+
+    /// Returns time price list was last updated.
+    pub fn time_last_updated(&self) -> Option<u32> {
+        self.time_last_updated
+    }
+
+    /// Returns historical price data by day.
+    pub fn daily_prices(&self) -> &[Price] {
+        &self.daily_prices
+    }
+
+    /// Price list requires a start time before it can be updated.
+    ///
+    /// Recommended start time is the time the wallet's birthday block height was mined.
+    pub fn set_start_time(&mut self, time_of_birthday: u32) {
+        self.time_last_updated = Some(time_of_birthday);
     }
 
     /// Updates price list.
@@ -52,16 +69,20 @@ impl PriceList {
 
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("duration too large to fail")
             .as_millis();
 
         // TODO: test no overlap / duplicates
-        self.daily_prices.append(
-            &mut get_daily_prices(self.time_last_updated as u128 * 1000, current_time, api_key)
-                .await?,
-        );
+        if let Some(time_last_updated) = self.time_last_updated {
+            self.daily_prices.append(
+                &mut get_daily_prices(time_last_updated as u128 * 1000, current_time, api_key)
+                    .await?,
+            );
+        } else {
+            return Err(PriceError::PriceListNotInitialized);
+        }
 
-        self.time_last_updated = (current_time / 1000) as u32;
+        self.time_last_updated = Some((current_time / 1000) as u32);
 
         Ok(())
     }
@@ -82,6 +103,9 @@ pub enum PriceError {
     /// Parse error.
     #[error("parse error. {0}")]
     ParseError(#[from] std::num::ParseFloatError),
+    /// Price list start time not set. Call `PriceList::set_start_time`.
+    #[error("price list start time not set. call `PriceList::set_start_time`.")]
+    PriceListNotInitialized,
 }
 
 /// Get daily prices in USD from `start` to `end` time in milliseconds.

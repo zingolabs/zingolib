@@ -583,24 +583,46 @@ impl Command for InfoCommand {
     }
 }
 
-struct UpdateCurrentPriceCommand {}
-impl Command for UpdateCurrentPriceCommand {
+struct UpdatePriceCommand {}
+impl Command for UpdatePriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the latest ZEC price from Gemini exchange's API.
-            Currently using USD.
+            Updates current zec price and historic prices for wallet transactions.
+            Currently only supports USD.
+
             Usage:
-            zecprice
+            update_price
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the latest ZEC price in the wallet's currency (USD)"
+        "Updates current zec price and historic prices for wallet transactions."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.update_current_price().await })
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.lock().await;
+            let Some(birthday) = wallet.sync_state.wallet_birthday() else {
+                return "Error: price list not initialised. please wait for sync to obtain time of wallet birthday".to_string();
+            };
+
+            if wallet.price_list.time_last_updated().is_none() {
+                let birthday_block = match wallet.wallet_blocks.get(&birthday) {
+                    Some(block) => block.clone(),
+                    None => 
+                    {
+                        return "Error: price list not initialised. please wait for sync to obtain time of wallet birthday".to_string();
+                    }
+                };
+                wallet.price_list.set_start_time(birthday_block.time());
+            }
+            
+            match lightclient.wallet.lock().await.price_list.update().await {
+                Ok(_) => "prices successfully updated".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     }
 }
 
@@ -1859,7 +1881,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
-        ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
+        ("update_price", Box::new(UpdatePriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),

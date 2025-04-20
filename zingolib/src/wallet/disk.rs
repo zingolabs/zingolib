@@ -17,14 +17,14 @@ use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::{legacy::keys::NonHardenedChildIndex, transaction::TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_price::PriceList;
 use zip32::AccountId;
 
 use super::LightWallet;
-use super::data::WalletZecPriceInfo;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use crate::wallet::WalletOptions;
 use crate::wallet::traits::ReadableWriteable;
 use crate::wallet::{SendProgress, utils};
+use crate::wallet::{WalletOptions, legacy::WalletZecPriceInfo};
 use crate::{
     config::ChainType,
     wallet::{
@@ -38,14 +38,14 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 32:
-    /// - Wallet restructure due to integration of new sync engine
+    /// Changes in version 33:
+    /// - New price list
     pub const fn serialized_version() -> u64 {
         32
     }
 
     /// Serialize into `writer`
-    // TODO: remove arc mutex on price and options and make sync fn
+    // TODO: remove arc mutex on options and make sync fn
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,
@@ -114,8 +114,12 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
 
-        self.wallet_options.read().await.write(&mut writer)?;
-        self.price.read().await.write(&mut writer)
+        // TODO: revisit options
+        // self.wallet_options.read().await.write(&mut writer)
+        // FIXME: price list read write
+        // self.price_list.read().await.write(&mut writer)
+
+        Ok(())
     }
 
     /// Deserialize into `reader`
@@ -187,7 +191,7 @@ impl LightWallet {
             })?
         };
 
-        let price = if version <= 13 {
+        let _price = if version <= 13 {
             WalletZecPriceInfo::default()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -314,7 +318,7 @@ impl LightWallet {
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
-            price: Arc::new(RwLock::new(price)),
+            price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -424,8 +428,10 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
-        let wallet_options = WalletOptions::read(&mut reader)?;
-        let price = WalletZecPriceInfo::read(&mut reader)?;
+        // TODO: revisit options
+        // let wallet_options = WalletOptions::read(&mut reader)?;
+        // FIXME: price list read write
+        // let price = WalletZecPriceInfo::read(&mut reader)?;
 
         Ok(Self {
             network,
@@ -440,8 +446,9 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
-            price: Arc::new(RwLock::new(price)),
+            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
+            // FIXME: loaded price list
+            price_list: PriceList::new(),
             send_progress: SendProgress::new(0),
             save_required: false,
         })

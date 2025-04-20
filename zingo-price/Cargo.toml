@@ -1,5 +1,5 @@
 [package]
-name = "zingo_price"
+name = "zingo-price"
 version = "0.1.0"
 edition = "2024"
 
