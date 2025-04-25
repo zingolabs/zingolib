@@ -2,8 +2,6 @@
 
 //! Crate for fetching historical and live ZEC prices
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

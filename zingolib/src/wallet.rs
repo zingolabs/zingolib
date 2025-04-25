@@ -21,7 +21,7 @@ use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use crate::config::ChainType;
-use error::WalletError;
+use error::{PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::ShardTrees;
@@ -373,6 +373,23 @@ impl LightWallet {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn update_price(&mut self) -> Result<(), PriceError> {
+        if self.price_list.time_last_updated().is_none() {
+            let Some(birthday) = self.sync_state.wallet_birthday() else {
+                return Err(PriceError::NotInitialised);
+            };
+            let birthday_block = match self.wallet_blocks.get(&birthday) {
+                Some(block) => block.clone(),
+                None => {
+                    return Err(PriceError::NotInitialised);
+                }
+            };
+            self.price_list.set_start_time(birthday_block.time());
+        }
+
+        Ok(self.price_list.update().await?)
     }
 }
 

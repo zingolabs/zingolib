@@ -602,26 +602,8 @@ impl Command for UpdatePriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.lock().await;
-            let Some(birthday) = wallet.sync_state.wallet_birthday() else {
-                return "Error: price list not initialised. please wait for sync to obtain time of wallet birthday".to_string();
-            };
-
-            if wallet.price_list.time_last_updated().is_none() {
-                let birthday_block = match wallet.wallet_blocks.get(&birthday) {
-                    Some(block) => block.clone(),
-                    None => 
-                    {
-                        return "Error: price list not initialised. please wait for sync to obtain time of wallet birthday".to_string();
-                    }
-                };
-                wallet.price_list.set_start_time(birthday_block.time());
-            }
-            
-            match wallet.price_list.update().await {
-                Ok(_) => {
-                   "prices successfully updated".to_string() 
-                },
+            match lightclient.wallet.lock().await.update_price().await {
+                Ok(_) => "prices successfully updated".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
