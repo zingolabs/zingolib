@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 zingolib = { workspace = true }
+pepper-sync = { workspace = true }
 http = "1.1.0"
 json = "0.12"
 lazy_static = "1.4.0"

@@ -38,4 +38,7 @@ namespace zingo {
   string get_value_transfers();
   string set_crypto_default_provider_to_ring();
   string poll_sync();
+  string run_sync();
+  string pause_sync();
+  string status_sync();
 };

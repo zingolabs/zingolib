@@ -18,6 +18,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
+use pepper_sync::wallet::SyncMode;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -290,6 +291,48 @@ pub fn poll_sync() -> String {
                 Err(e) => format!("Error: {e}"),
             },
         }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn run_sync() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        if lightclient.sync_mode() == SyncMode::Paused {
+            lightclient.resume_sync().expect("sync should be paused");
+            "Resuming sync task...".to_string()
+        } else {
+            zingolib::commands::RT.block_on(async move {
+                match lightclient.sync(true).await {
+                    Ok(_) => "Launching sync task...".to_string(),
+                    Err(e) => format!("Error: {e}"),
+                }
+            })
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn pause_sync() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        match lightclient.pause_sync() {
+            Ok(_) => "Pausing sync task...".to_string(),
+            Err(e) => format!("Error: {e}"),
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn status_sync() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
+                Ok(status) => json::JsonValue::from(status).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
