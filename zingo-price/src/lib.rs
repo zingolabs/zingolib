@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct ResponseData {
+struct HistoricalPriceData {
     /// Date.
     #[serde(rename = "date")]
     _date: String,
@@ -18,8 +18,15 @@ struct ResponseData {
     time: u128,
 }
 
+#[derive(Debug, Deserialize)]
+struct CurrentPriceData {
+    /// ZEC price in USD.
+    #[serde(rename = "priceUsd")]
+    price_usd: String,
+}
+
 /// Price of ZEC in USD at a given point in time.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Price {
     /// Time in seconds.
     time: u32,
@@ -32,6 +39,8 @@ pub struct Price {
 pub struct PriceList {
     /// Time of last price update in seconds.
     time_last_updated: Option<u32>,
+    /// Current price.
+    current_price: Option<Price>,
     /// Historical price data by day.
     daily_prices: Vec<Price>,
 }
@@ -41,6 +50,7 @@ impl PriceList {
     pub fn new() -> Self {
         PriceList {
             time_last_updated: None,
+            current_price: None,
             daily_prices: Vec::new(),
         }
     }
@@ -48,6 +58,11 @@ impl PriceList {
     /// Returns time price list was last updated.
     pub fn time_last_updated(&self) -> Option<u32> {
         self.time_last_updated
+    }
+
+    /// Returns current price.
+    pub fn current_price(&self) -> Option<Price> {
+        self.current_price
     }
 
     /// Returns historical price data by day.
@@ -67,22 +82,33 @@ impl PriceList {
         // FIXME: move to secret or user specified
         let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("duration too large to fail")
-            .as_millis();
+        self.current_price = Some(get_current_price(&api_key).await?);
+        let current_time = self
+            .current_price
+            .clone()
+            .expect("should be non-empty")
+            .time;
 
         // TODO: test no overlap / duplicates
         if let Some(time_last_updated) = self.time_last_updated {
             self.daily_prices.append(
-                &mut get_daily_prices(time_last_updated as u128 * 1000, current_time, api_key)
-                    .await?,
+                &mut get_daily_prices(
+                    time_last_updated as u128 * 1000,
+                    current_time as u128 * 1000,
+                    api_key,
+                )
+                .await?,
             );
         } else {
             return Err(PriceError::PriceListNotInitialized);
         }
 
-        self.time_last_updated = Some((current_time / 1000) as u32);
+        self.time_last_updated = Some(
+            self.current_price
+                .clone()
+                .expect("should be non-empty")
+                .time,
+        );
 
         Ok(())
     }
@@ -108,6 +134,46 @@ pub enum PriceError {
     PriceListNotInitialized,
 }
 
+/// Get current price of ZEC in USD.
+async fn get_current_price(api_key: &str) -> Result<Price, PriceError> {
+    let url = "https://rest.coincap.io/v3/assets/zcash".to_string();
+
+    let client = reqwest::Client::new();
+    let response: serde_json::Value = serde_json::from_str(
+        client
+            .get(url)
+            .bearer_auth(api_key)
+            .send()
+            .await?
+            .text()
+            .await?
+            .as_str(),
+    )?;
+
+    let current_price = if let Some(data) = response.get("data") {
+        let response_data: CurrentPriceData = serde_json::from_value(data.clone())?;
+        let response_time = response
+            .get("timestamp")
+            .expect("data should include timestamp")
+            .as_u64()
+            .expect("should be positive integer");
+
+        Price {
+            time: (response_time / 1000) as u32,
+            price_usd: response_data.price_usd.parse()?,
+        }
+    } else {
+        return Err(PriceError::ResponseError(
+            response
+                .get("error")
+                .expect("if no `data` is present must have `error` key")
+                .to_string(),
+        ));
+    };
+
+    Ok(current_price)
+}
+
 /// Get daily prices in USD from `start` to `end` time in milliseconds.
 ///
 /// Prices taken at 00.00 UTC.
@@ -129,7 +195,7 @@ async fn get_daily_prices(start: u128, end: u128, api_key: &str) -> Result<Vec<P
             .as_str(),
     )?;
 
-    let response_data: Vec<ResponseData> = if let Some(data) = response.get("data") {
+    let response_data: Vec<HistoricalPriceData> = if let Some(data) = response.get("data") {
         serde_json::from_value(data.clone())?
     } else {
         return Err(PriceError::ResponseError(

@@ -211,7 +211,7 @@ pub struct LightWallet {
     pub sync_state: SyncState,
     /// Wallet options
     pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
-    /// The current price of ZEC. (time_fetched, price in USD)
+    /// The current and historical daily price of zec.
     pub price_list: PriceList,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,

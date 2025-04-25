@@ -587,7 +587,7 @@ struct UpdatePriceCommand {}
 impl Command for UpdatePriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Updates current zec price and historic prices for wallet transactions.
+            Updates current zec price and historical prices for wallet transactions.
             Currently only supports USD.
 
             Usage:
@@ -618,8 +618,10 @@ impl Command for UpdatePriceCommand {
                 wallet.price_list.set_start_time(birthday_block.time());
             }
             
-            match lightclient.wallet.lock().await.price_list.update().await {
-                Ok(_) => "prices successfully updated".to_string(),
+            match wallet.price_list.update().await {
+                Ok(_) => {
+                   "prices successfully updated".to_string() 
+                },
                 Err(e) => format!("Error: {e}"),
             }
         })
