@@ -3,19 +3,12 @@
 //! TODO: Add Mod Description Here
 
 use std::collections::{BTreeMap, HashMap};
-use std::{
-    io::{self, Read, Write},
-    sync::Arc,
-    time::SystemTime,
-};
+use std::time::SystemTime;
 
 use bip0039::Mnemonic;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::Rng;
 use rand::rngs::OsRng;
-use tokio::sync::RwLock;
 
-use zcash_encoding::Optional;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -57,84 +50,6 @@ pub fn now() -> u32 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("should never fail when comparing with an instant so far in the past")
         .as_secs() as u32
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemoDownloadOption {
-    /// TODO: Add Doc Comment Here!
-    NoMemos = 0,
-    /// TODO: Add Doc Comment Here!
-    WalletMemos,
-    /// TODO: Add Doc Comment Here!
-    AllMemos,
-}
-
-/// TODO: Add Doc Comment Here!
-// FIXME: zingo2 re-implement options
-#[derive(Debug, Clone, Copy)]
-pub struct WalletOptions {
-    pub(crate) download_memos: MemoDownloadOption,
-    /// TODO: Add Doc Comment Here!
-    pub transaction_size_filter: Option<u32>,
-}
-
-/// TODO: Add Doc Comment Here!
-pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
-
-impl Default for WalletOptions {
-    fn default() -> Self {
-        WalletOptions {
-            download_memos: MemoDownloadOption::WalletMemos,
-            transaction_size_filter: Some(MAX_TRANSACTION_SIZE_DEFAULT),
-        }
-    }
-}
-
-impl WalletOptions {
-    /// TODO: Add Doc Comment Here!
-    pub const fn serialized_version() -> u64 {
-        2
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let external_version = reader.read_u64::<LittleEndian>()?;
-
-        let download_memos = match reader.read_u8()? {
-            0 => MemoDownloadOption::NoMemos,
-            1 => MemoDownloadOption::WalletMemos,
-            2 => MemoDownloadOption::AllMemos,
-            v => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Bad download option {}", v),
-                ));
-            }
-        };
-
-        let transaction_size_filter = if external_version > 1 {
-            Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
-        } else {
-            Some(500)
-        };
-
-        Ok(Self {
-            download_memos,
-            transaction_size_filter,
-        })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Write the version
-        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-
-        writer.write_u8(self.download_memos as u8)?;
-        Optional::write(writer, self.transaction_size_filter, |mut w, filter| {
-            w.write_u32::<LittleEndian>(filter)
-        })
-    }
 }
 
 /// Data used to initialize new instance of LightWallet
@@ -209,8 +124,6 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Wallet options
-    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
     /// Progress of an outgoing transaction
@@ -328,7 +241,6 @@ impl LightWallet {
 
         Ok(Self {
             mnemonic,
-            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
             send_progress: SendProgress::new(0),
@@ -344,11 +256,6 @@ impl LightWallet {
             network,
             save_required: true,
         })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_download_memo(&self, value: MemoDownloadOption) {
-        self.wallet_options.write().await.download_memos = value;
     }
 
     // Set the previous send's result as a JSON string.

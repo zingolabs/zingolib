@@ -1124,9 +1124,71 @@ impl ReadableWriteable for ConfirmationStatus {
     }
 }
 
-/// Struct that tracks the latest and historical price of ZEC in the wallet
-#[derive(Clone, Debug)]
+/// TODO: Add Doc Comment Here!
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoDownloadOption {
+    /// TODO: Add Doc Comment Here!
+    NoMemos = 0,
+    /// TODO: Add Doc Comment Here!
+    WalletMemos,
+    /// TODO: Add Doc Comment Here!
+    AllMemos,
+}
+
+/// TODO: Add Doc Comment Here!
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct WalletOptions {
+    pub(crate) download_memos: MemoDownloadOption,
+    /// TODO: Add Doc Comment Here!
+    pub transaction_size_filter: Option<u32>,
+}
+
+/// TODO: Add Doc Comment Here!
+pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
+
+impl Default for WalletOptions {
+    fn default() -> Self {
+        WalletOptions {
+            download_memos: MemoDownloadOption::WalletMemos,
+            transaction_size_filter: Some(MAX_TRANSACTION_SIZE_DEFAULT),
+        }
+    }
+}
+
+impl WalletOptions {
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let external_version = reader.read_u64::<LittleEndian>()?;
+
+        let download_memos = match reader.read_u8()? {
+            0 => MemoDownloadOption::NoMemos,
+            1 => MemoDownloadOption::WalletMemos,
+            2 => MemoDownloadOption::AllMemos,
+            v => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Bad download option {}", v),
+                ));
+            }
+        };
+
+        let transaction_size_filter = if external_version > 1 {
+            Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
+        } else {
+            Some(500)
+        };
+
+        Ok(Self {
+            download_memos,
+            transaction_size_filter,
+        })
+    }
+}
+
+/// Struct that tracks the latest and historical price of ZEC in the wallet
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub struct WalletZecPriceInfo {
     /// Latest price of ZEC and when it was fetched
     pub zec_price: Option<(u64, f64)>,

@@ -3,12 +3,10 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
-    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::info;
-use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
 
@@ -22,9 +20,8 @@ use zip32::AccountId;
 
 use super::LightWallet;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use crate::wallet::traits::ReadableWriteable;
-use crate::wallet::{SendProgress, utils};
-use crate::wallet::{WalletOptions, legacy::WalletZecPriceInfo};
+use crate::wallet::{SendProgress, legacy::WalletZecPriceInfo, utils};
+use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
     config::ChainType,
     wallet::{
@@ -114,11 +111,6 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
 
-        // TODO: revisit options
-        // self.wallet_options.read().await.write(&mut writer)
-        // FIXME: price list read write
-        // self.price_list.read().await.write(&mut writer)
-
         Ok(())
     }
 
@@ -160,7 +152,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version <= 23 {
+        let _wallet_options = if version <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -314,7 +306,6 @@ impl LightWallet {
 
         let lw = Self {
             mnemonic,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
@@ -428,11 +419,6 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
-        // TODO: revisit options
-        // let wallet_options = WalletOptions::read(&mut reader)?;
-        // FIXME: price list read write
-        // let price = WalletZecPriceInfo::read(&mut reader)?;
-
         Ok(Self {
             network,
             mnemonic,
@@ -446,8 +432,6 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
-            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            // FIXME: loaded price list
             price_list: PriceList::new(),
             send_progress: SendProgress::new(0),
             save_required: false,
