@@ -1125,10 +1125,11 @@ impl ReadableWriteable for ConfirmationStatus {
 }
 
 /// TODO: Add Doc Comment Here!
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoDownloadOption {
     /// TODO: Add Doc Comment Here!
-    NoMemos = 0,
+    NoMemos,
     /// TODO: Add Doc Comment Here!
     WalletMemos,
     /// TODO: Add Doc Comment Here!
