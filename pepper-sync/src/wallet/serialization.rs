@@ -740,11 +740,11 @@ impl OutgoingSaplingNote {
         writer.write_u64::<LittleEndian>(self.value())?;
         match self.note.rseed() {
             sapling_crypto::Rseed::BeforeZip212(fr) => {
-                writer.write_u8(1)?;
+                writer.write_u8(0)?;
                 writer.write_all(&fr.to_bytes())?;
             }
             sapling_crypto::Rseed::AfterZip212(bytes) => {
-                writer.write_u8(2)?;
+                writer.write_u8(1)?;
                 writer.write_all(bytes)?;
             }
         }
