@@ -277,6 +277,13 @@ where
     )
     .await?;
 
+    let initial_verification_height = wallet_guard
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+        .expect("scan ranges must be non-empty")
+        + 1;
+
     remove_irrelevant_blocks(&mut *wallet_guard).map_err(SyncError::WalletError)?;
 
     drop(wallet_guard);
@@ -293,18 +300,12 @@ where
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
-    let mut wallet_guard = wallet.lock().await;
-    let initial_verification_height = wallet_guard
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .highest_scanned_height()
-        .expect("scan ranges must be non-empty")
-        + 1;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
+                let mut wallet_guard = wallet.lock().await;
                 process_scan_results(
                     consensus_parameters,
                     &mut *wallet_guard,
@@ -316,8 +317,6 @@ where
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-
-                // allow tasks outside the sync engine access to the wallet data
                 drop(wallet_guard);
 
                 sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
@@ -330,11 +329,10 @@ where
                     }
 
                 }
-
-                wallet_guard = wallet.lock().await;
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
+                let mut wallet_guard = wallet.lock().await;
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
@@ -343,9 +341,11 @@ where
                 )
                 .await?;
                 unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                drop(wallet_guard);
             }
 
             _update_scanner = interval.tick() => {
+                let mut wallet_guard = wallet.lock().await;
                 scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
@@ -358,10 +358,12 @@ where
                         break;
                     }
                 }
+                drop(wallet_guard);
             }
         }
     }
 
+    let mut wallet_guard = wallet.lock().await;
     let sync_status = sync_status(&*wallet_guard)
         .await
         .map_err(SyncError::WalletError)?;
@@ -396,15 +398,29 @@ where
     })
 }
 
-/// Creates a [`self::SyncStatus`] from the wallet's current
-/// [`crate::wallet::SyncState`].
+/// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
-/// Designed to be called during the sync process with minimal interruption.
+/// Intended to be called while [self::sync] is running in a separate task.
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state()?.clone();
+
+    if sync_state.initial_sync_state.sync_start_height == 0.into() {
+        return Ok(SyncStatus {
+            scan_ranges: sync_state.scan_ranges.clone(),
+            sync_start_height: 0.into(),
+            scanned_blocks: 0,
+            unscanned_blocks: 0,
+            percentage_blocks_scanned: 0.0,
+            scanned_sapling_outputs: 0,
+            unscanned_sapling_outputs: 0,
+            scanned_orchard_outputs: 0,
+            unscanned_orchard_outputs: 0,
+            percentage_outputs_scanned: 0.0,
+        });
+    }
 
     let unscanned_blocks = sync_state
         .scan_ranges()
