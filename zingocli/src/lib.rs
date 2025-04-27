@@ -191,7 +191,9 @@ fn start_interactive(
             .unwrap();
 
         match send_command("sync".to_string(), vec!["poll".to_string()]) {
-            poll if poll.starts_with("Error:") => eprintln!("{poll}"),
+            poll if poll.starts_with("Error:") => {
+                eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.")
+            }
             poll if poll.starts_with("Sync completed succesfully:") => println!("{poll}"),
             _ => (),
         }
