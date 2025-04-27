@@ -38,11 +38,11 @@ impl LightWallet {
     /// Changes in version 33:
     /// - New price list
     pub const fn serialized_version() -> u64 {
-        32
+        33
     }
 
     /// Serialize into `writer`
-    // TODO: remove arc mutex on options and make sync fn
+    // TODO: make sync fn
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,
@@ -110,8 +110,7 @@ impl LightWallet {
         )?;
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
-
-        Ok(())
+        self.price_list.write(&mut writer)
     }
 
     /// Deserialize into `reader`
@@ -121,7 +120,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32 => Self::read_v32(reader, network),
+            32..=33 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -325,7 +324,7 @@ impl LightWallet {
         Ok(lw)
     }
 
-    fn read_v32<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+    fn read_v32<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
         let saved_network = utils::read_string(&mut reader)?;
         if saved_network != network.to_string() {
             return Err(Error::new(
@@ -419,6 +418,12 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
+        let price_list = if version >= 33 {
+            PriceList::read(&mut reader)?
+        } else {
+            PriceList::new()
+        };
+
         Ok(Self {
             network,
             mnemonic,
@@ -432,7 +437,7 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
-            price_list: PriceList::new(),
+            price_list,
             send_progress: SendProgress::new(0),
             save_required: false,
         })

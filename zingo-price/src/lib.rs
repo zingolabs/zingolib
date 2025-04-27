@@ -2,7 +2,12 @@
 
 //! Crate for fetching historical and live ZEC prices
 
+use std::io::{Read, Write};
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::Deserialize;
+
+use zcash_encoding::{Optional, Vector};
 
 #[derive(Debug, Deserialize)]
 struct HistoricalPriceData {
@@ -27,9 +32,9 @@ struct CurrentPriceData {
 #[derive(Debug, Clone, Copy)]
 pub struct Price {
     /// Time in seconds.
-    time: u32,
+    pub time: u32,
     /// ZEC price in USD.
-    price_usd: f32,
+    pub price_usd: f32,
 }
 
 /// Price list for wallets to maintain an updated list of daily ZEC prices.
@@ -109,6 +114,52 @@ impl PriceList {
         );
 
         Ok(())
+    }
+
+    fn serialized_version() -> u8 {
+        0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let time_last_updated = Optional::read(&mut reader, |r| r.read_u32::<LittleEndian>())?;
+        let current_price = Optional::read(&mut reader, |r| {
+            Ok(Price {
+                time: r.read_u32::<LittleEndian>()?,
+                price_usd: r.read_f32::<LittleEndian>()?,
+            })
+        })?;
+        let daily_prices = Vector::read(&mut reader, |r| {
+            Ok(Price {
+                time: r.read_u32::<LittleEndian>()?,
+                price_usd: r.read_f32::<LittleEndian>()?,
+            })
+        })?;
+
+        Ok(Self {
+            time_last_updated,
+            current_price,
+            daily_prices,
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        Optional::write(&mut writer, self.time_last_updated(), |w, time| {
+            w.write_u32::<LittleEndian>(time)
+        })?;
+        Optional::write(&mut writer, self.current_price(), |w, price| {
+            w.write_u32::<LittleEndian>(price.time)?;
+            w.write_f32::<LittleEndian>(price.price_usd)
+        })?;
+        Vector::write(&mut writer, &self.daily_prices(), |w, price| {
+            w.write_u32::<LittleEndian>(price.time)?;
+            w.write_f32::<LittleEndian>(price.price_usd)
+        })
     }
 }
 

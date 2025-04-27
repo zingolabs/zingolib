@@ -4854,11 +4854,13 @@ dependencies = [
 name = "zingo-price"
 version = "0.1.0"
 dependencies = [
+ "byteorder",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "zcash_encoding",
 ]
 
 [[package]]

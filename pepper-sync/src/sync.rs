@@ -853,9 +853,12 @@ fn remove_irrelevant_blocks<W>(wallet: &mut W) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
-    let fully_scanned_height = wallet
-        .get_sync_state()?
+    let sync_state = wallet.get_sync_state()?;
+    let fully_scanned_height = sync_state
         .fully_scanned_height()
+        .expect("scan ranges must be non-empty");
+    let birthday = sync_state
+        .wallet_birthday()
         .expect("scan ranges must be non-empty");
 
     let wallet_transaction_heights = wallet
@@ -867,6 +870,7 @@ where
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
         *height >= fully_scanned_height - MAX_VERIFICATION_WINDOW
             || wallet_transaction_heights.contains(height)
+            || *height == birthday
     });
 
     Ok(())

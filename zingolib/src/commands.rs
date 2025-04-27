@@ -602,8 +602,13 @@ impl Command for UpdatePriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.update_price().await {
-                Ok(_) => "prices successfully updated".to_string(),
+            let mut w = lightclient.wallet.lock().await;
+            match w.update_price().await {
+                // match lightclient.wallet.lock().await.update_price().await {
+                Ok(_) => {
+                    dbg!(&w.price_list);
+                    "prices successfully updated".to_string()
+                }
                 Err(e) => format!("Error: {e}"),
             }
         })
