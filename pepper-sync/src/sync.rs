@@ -400,7 +400,7 @@ where
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
-/// Intended to be called while [self::Sync] is running in a separate task.
+/// Intended to be called while [self::sync] is running in a separate task.
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, W::Error>
 where
     W: SyncWallet + SyncBlocks,
