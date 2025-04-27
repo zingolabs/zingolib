@@ -396,15 +396,27 @@ where
     })
 }
 
-/// Creates a [`self::SyncStatus`] from the wallet's current
-/// [`crate::wallet::SyncState`].
-///
-/// Designed to be called during the sync process with minimal interruption.
+/// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, W::Error>
 where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state()?.clone();
+
+    if sync_state.initial_sync_state.sync_start_height == 0.into() {
+        return Ok(SyncStatus {
+            scan_ranges: sync_state.scan_ranges.clone(),
+            sync_start_height: 0.into(),
+            scanned_blocks: 0,
+            unscanned_blocks: 0,
+            percentage_blocks_scanned: 0.0,
+            scanned_sapling_outputs: 0,
+            unscanned_sapling_outputs: 0,
+            scanned_orchard_outputs: 0,
+            unscanned_orchard_outputs: 0,
+            percentage_outputs_scanned: 0.0,
+        });
+    }
 
     let unscanned_blocks = sync_state
         .scan_ranges()

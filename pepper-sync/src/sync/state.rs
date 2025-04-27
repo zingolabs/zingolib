@@ -705,7 +705,11 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    sync_state.initial_sync_state.sync_start_height = fully_scanned_height + 1;
+    sync_state.initial_sync_state.sync_start_height = if chain_height > fully_scanned_height {
+        fully_scanned_height + 1
+    } else {
+        chain_height
+    };
     sync_state.initial_sync_state.sync_tree_bounds = TreeBounds {
         sapling_initial_tree_size: sync_start_sapling_tree_size,
         sapling_final_tree_size: chain_tip_sapling_tree_size,
