@@ -3,12 +3,10 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
-    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::info;
-use tokio::sync::RwLock;
 
 use bip0039::Mnemonic;
 
@@ -20,11 +18,9 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
 
 use super::LightWallet;
-use super::data::WalletZecPriceInfo;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use crate::wallet::WalletOptions;
-use crate::wallet::traits::ReadableWriteable;
-use crate::wallet::{SendProgress, utils};
+use crate::wallet::{SendProgress, legacy::WalletZecPriceInfo, utils};
+use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
     config::ChainType,
     wallet::{
@@ -114,8 +110,7 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
 
-        self.wallet_options.read().await.write(&mut writer)?;
-        self.price.read().await.write(&mut writer)
+        Ok(())
     }
 
     /// Deserialize into `reader`
@@ -156,7 +151,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version <= 23 {
+        let _wallet_options = if version <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -187,7 +182,7 @@ impl LightWallet {
             })?
         };
 
-        let price = if version <= 13 {
+        let _price = if version <= 13 {
             WalletZecPriceInfo::default()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -310,11 +305,9 @@ impl LightWallet {
 
         let lw = Self {
             mnemonic,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
-            price: Arc::new(RwLock::new(price)),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -424,9 +417,6 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
-        let wallet_options = WalletOptions::read(&mut reader)?;
-        let price = WalletZecPriceInfo::read(&mut reader)?;
-
         Ok(Self {
             network,
             mnemonic,
@@ -440,8 +430,6 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
-            price: Arc::new(RwLock::new(price)),
             send_progress: SendProgress::new(0),
             save_required: false,
         })

@@ -599,8 +599,10 @@ impl Command for UpdateCurrentPriceCommand {
         "Get the latest ZEC price in the wallet's currency (USD)"
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.update_current_price().await })
+    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
+        // NOTE: re-implemented in following PR
+        // RT.block_on(async move { lightclient.update_current_price().await })
+        "Error: unimplemented".to_string()
     }
 }
 
