@@ -337,3 +337,16 @@ pub fn status_sync() -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn run_rescan() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.rescan(true).await {
+                Ok(_) => "Launching rescan...".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
