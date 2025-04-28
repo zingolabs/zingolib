@@ -682,11 +682,31 @@ pub(super) async fn set_initial_state<W>(
 where
     W: SyncWallet + SyncBlocks,
 {
+    let birthday = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_birthday()
+        .expect("scan ranges must be non-empty");
     let fully_scanned_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
+    let (birthday_initial_sapling_tree_size, birthday_initial_orchard_tree_size) =
+        if let Ok(block) = wallet.get_wallet_block(birthday) {
+            (
+                block.tree_bounds.sapling_initial_tree_size,
+                block.tree_bounds.orchard_initial_tree_size,
+            )
+        } else {
+            final_tree_sizes(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                wallet,
+                birthday - 1,
+            )
+            .await?
+        };
     let (sync_start_sapling_tree_size, sync_start_orchard_tree_size) = final_tree_sizes(
         consensus_parameters,
         fetch_request_sender.clone(),
@@ -735,6 +755,14 @@ where
     sync_state.initial_sync_state.total_blocks_to_scan = total_blocks_to_scan;
     sync_state.initial_sync_state.total_sapling_outputs_to_scan = total_sapling_outputs_to_scan;
     sync_state.initial_sync_state.total_orchard_outputs_to_scan = total_orchard_outputs_to_scan;
+    sync_state
+        .initial_sync_state
+        .previously_scanned_sapling_outputs =
+        sync_start_sapling_tree_size - birthday_initial_sapling_tree_size;
+    sync_state
+        .initial_sync_state
+        .previously_scanned_orchard_outputs =
+        sync_start_orchard_tree_size - birthday_initial_orchard_tree_size;
 
     Ok(())
 }

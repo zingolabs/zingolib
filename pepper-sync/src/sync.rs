@@ -52,6 +52,7 @@ pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
+/// `percentage_total_outputs_scanned` is the percentage of outputs scanned from birthday to chain height.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct SyncStatus {
@@ -65,6 +66,7 @@ pub struct SyncStatus {
     pub scanned_orchard_outputs: u32,
     pub unscanned_orchard_outputs: u32,
     pub percentage_outputs_scanned: f32,
+    pub percentage_total_outputs_scanned: f32,
 }
 
 // TODO: complete display, scan ranges in raw form are too verbose
@@ -106,6 +108,7 @@ impl From<SyncStatus> for json::JsonValue {
             "scanned_orchard_outputs" => value.scanned_orchard_outputs,
             "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
             "percentage_outputs_scanned" => value.percentage_outputs_scanned,
+            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
 }
@@ -419,6 +422,7 @@ where
             scanned_orchard_outputs: 0,
             unscanned_orchard_outputs: 0,
             percentage_outputs_scanned: 0.0,
+            percentage_total_outputs_scanned: 0.0,
         });
     }
 
@@ -452,6 +456,20 @@ where
             + sync_state.initial_sync_state.total_orchard_outputs_to_scan) as f32)
         * 100.0;
 
+    let previously_scanned_outputs = sync_state
+        .initial_sync_state
+        .previously_scanned_sapling_outputs
+        + sync_state
+            .initial_sync_state
+            .previously_scanned_orchard_outputs;
+    let percentage_total_outputs_scanned = ((previously_scanned_outputs
+        + scanned_sapling_outputs
+        + scanned_orchard_outputs) as f32
+        / (previously_scanned_outputs
+            + sync_state.initial_sync_state.total_sapling_outputs_to_scan
+            + sync_state.initial_sync_state.total_orchard_outputs_to_scan) as f32)
+        * 100.0;
+
     Ok(SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
         sync_start_height: sync_state.initial_sync_state.sync_start_height,
@@ -463,6 +481,7 @@ where
         scanned_orchard_outputs,
         unscanned_orchard_outputs,
         percentage_outputs_scanned,
+        percentage_total_outputs_scanned,
     })
 }
 
