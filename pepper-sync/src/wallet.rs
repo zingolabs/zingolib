@@ -67,17 +67,13 @@ pub struct InitialSyncState {
     /// height instead.
     pub(crate) sync_start_height: BlockHeight,
     /// The tree sizes of the fully scanned height and chain tip at start of sync session.
-    pub(crate) sync_tree_bounds: TreeBounds,
-    /// Total number of blocks to scan.
-    pub(crate) total_blocks_to_scan: u32,
+    pub(crate) wallet_tree_bounds: TreeBounds,
+    /// Total number of blocks scanned in previous sync sessions.
+    pub(crate) previously_scanned_blocks: u32,
     /// Total number of sapling outputs to scanned in previous sync sessions.
     pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of sapling outputs to scan.
-    pub(crate) total_sapling_outputs_to_scan: u32,
     /// Total number of orchard outputs to scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
-    /// Total number of orchard outputs to scan.
-    pub(crate) total_orchard_outputs_to_scan: u32,
 }
 
 impl InitialSyncState {
@@ -85,17 +81,15 @@ impl InitialSyncState {
     pub fn new() -> Self {
         InitialSyncState {
             sync_start_height: 0.into(),
-            sync_tree_bounds: TreeBounds {
+            wallet_tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 0,
                 sapling_final_tree_size: 0,
                 orchard_initial_tree_size: 0,
                 orchard_final_tree_size: 0,
             },
-            total_blocks_to_scan: 0,
+            previously_scanned_blocks: 0,
             previously_scanned_sapling_outputs: 0,
-            total_sapling_outputs_to_scan: 0,
             previously_scanned_orchard_outputs: 0,
-            total_orchard_outputs_to_scan: 0,
         }
     }
 }
