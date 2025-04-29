@@ -435,7 +435,7 @@ where
             percentage_total_outputs_scanned: 0.0,
         });
     }
-    let total_blocks_scanned = state::calculate_scanned_blocks(&sync_state);
+    let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
     let birthday = sync_state
         .wallet_birthday()
@@ -908,7 +908,7 @@ where
         .get_sync_state_mut()?
         .locators
         .retain(|(height, _)| *height > fully_scanned_height);
-    remove_irrelevant_blocks(wallet);
+    remove_irrelevant_blocks(wallet)?;
 
     Ok(())
 }

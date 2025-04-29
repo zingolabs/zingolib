@@ -630,7 +630,7 @@ where
     let fully_scanned_height = sync_state
         .fully_scanned_height()
         .expect("scan ranges must be non-empty");
-    let previously_scanned_blocks = calculate_scanned_blocks(&sync_state);
+    let previously_scanned_blocks = calculate_scanned_blocks(sync_state);
     let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
         calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
     let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
