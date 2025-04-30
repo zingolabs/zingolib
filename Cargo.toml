@@ -51,7 +51,7 @@ http = "1"
 http-body-util = "0.1"
 http-body = "1"
 hyper-util = "0.1"
-hyper = { version = "1", features = ["full"] }
+hyper = "1.6"
 hyper-rustls = { version = "0.27", features = ["http2"] }
 indoc = "2"
 itertools = "0.13"
