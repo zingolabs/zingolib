@@ -36,7 +36,7 @@ async fn simple_sync() {
     println!("{}", result);
 
     assert_eq!(result.sync_end_height, 3.into());
-    assert_eq!(result.scanned_blocks, 3);
+    assert_eq!(result.blocks_scanned, 3);
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
