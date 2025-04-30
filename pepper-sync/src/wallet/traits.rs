@@ -275,7 +275,7 @@ pub trait SyncShardTrees: SyncWallet {
                         shard_trees
                             .sapling
                             .store()
-                            .for_each_checkpoint(100, |height, checkpoint| {
+                            .for_each_checkpoint(1_000, |height, checkpoint| {
                                 if *height < checkpoint_height {
                                     next_checkpoint_below = Some(checkpoint.clone());
                                 }
@@ -283,21 +283,20 @@ pub trait SyncShardTrees: SyncWallet {
                             })
                             .expect("infallible");
 
-                        Checkpoint::from_parts(
-                            next_checkpoint_below
-                                .expect("should always have a checkpoint below")
-                                .tree_state(),
-                            BTreeSet::new(),
-                        )
+                        next_checkpoint_below.map(|checkpoint| {
+                            Checkpoint::from_parts(checkpoint.tree_state(), BTreeSet::new())
+                        })
                     },
-                    |(_, position)| Checkpoint::at_position(*position),
+                    |(_, position)| Some(Checkpoint::at_position(*position)),
                 );
 
-            shard_trees
-                .sapling
-                .store_mut()
-                .add_checkpoint(checkpoint_height, checkpoint)
-                .expect("infallible");
+            if let Some(c) = checkpoint {
+                shard_trees
+                    .sapling
+                    .store_mut()
+                    .add_checkpoint(checkpoint_height, c)
+                    .expect("infallible");
+            }
 
             let checkpoint = orchard_located_trees
                 .iter()
@@ -309,7 +308,7 @@ pub trait SyncShardTrees: SyncWallet {
                         shard_trees
                             .orchard
                             .store()
-                            .for_each_checkpoint(100, |height, checkpoint| {
+                            .for_each_checkpoint(1_000, |height, checkpoint| {
                                 if *height < checkpoint_height {
                                     next_checkpoint_below = Some(checkpoint.clone());
                                 }
@@ -317,21 +316,20 @@ pub trait SyncShardTrees: SyncWallet {
                             })
                             .expect("infallible");
 
-                        Checkpoint::from_parts(
-                            next_checkpoint_below
-                                .expect("should always have a checkpoint below")
-                                .tree_state(),
-                            BTreeSet::new(),
-                        )
+                        next_checkpoint_below.map(|checkpoint| {
+                            Checkpoint::from_parts(checkpoint.tree_state(), BTreeSet::new())
+                        })
                     },
-                    |(_, position)| Checkpoint::at_position(*position),
+                    |(_, position)| Some(Checkpoint::at_position(*position)),
                 );
 
-            shard_trees
-                .orchard
-                .store_mut()
-                .add_checkpoint(checkpoint_height, checkpoint)
-                .expect("infallible");
+            if let Some(c) = checkpoint {
+                shard_trees
+                    .orchard
+                    .store_mut()
+                    .add_checkpoint(checkpoint_height, c)
+                    .expect("infallible");
+            }
         }
 
         for tree in sapling_located_trees.into_iter() {
