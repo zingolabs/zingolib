@@ -357,6 +357,7 @@ impl Command for SyncCommand {
             Sub-commands:
             `run` starts or resumes sync.
             `pause` pauses scanning until sync is resumed.
+            `stop` shuts down sync before its complete.
             `status` returns a report of the wallet's current sync status.
             `poll` polls the sync task handle, returning a sync result if complete. If sync failed, returns the error
             instead. Poll is not intended to be called manually for zingo-cli.
@@ -364,6 +365,7 @@ impl Command for SyncCommand {
             Usage:
             sync run
             sync pause
+            sync stop
             sync status
             sync poll
 
@@ -396,6 +398,10 @@ impl Command for SyncCommand {
             }
             "pause" => match lightclient.pause_sync() {
                 Ok(_) => "Pausing sync task...".to_string(),
+                Err(e) => format!("Error: {e}"),
+            },
+            "stop" => match lightclient.stop_sync() {
+                Ok(_) => "Stopping sync task...".to_string(),
                 Err(e) => format!("Error: {e}"),
             },
             "status" => RT.block_on(async move {
