@@ -58,4 +58,4 @@ pub use sync::scan_pending_transaction;
 pub use sync::sync;
 pub use sync::sync_status;
 
-pub(crate) const MAX_BATCH_OUTPUTS: usize = 16_384; // 2^14
+pub(crate) const MAX_BATCH_OUTPUTS: usize = 2usize.pow(12);
