@@ -325,6 +325,17 @@ pub fn pause_sync() -> String {
     }
 }
 
+pub fn stop_sync() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        match lightclient.stop_sync() {
+            Ok(_) => "Stopping sync task...".to_string(),
+            Err(e) => format!("Error: {e}"),
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
 pub fn status_sync() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {

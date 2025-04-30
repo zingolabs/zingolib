@@ -40,6 +40,7 @@ namespace zingo {
   string poll_sync();
   string run_sync();
   string pause_sync();
+  string stop_sync();
   string status_sync();
   string run_rescan();
 };
