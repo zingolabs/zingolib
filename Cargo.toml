@@ -25,9 +25,9 @@ sapling-crypto = "0.5.0"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.1"
 zcash_address = "0.7.0"
-zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard"] }
 zcash_encoding = "0.3.0"
-zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
+zcash_keys = { version = "0.8.0" , features = ["sapling", "orchard" ] }
 zcash_note_encryption = "0.4.1"
 zcash_primitives = "0.22.0"
 zcash_proofs = "0.22.0"
