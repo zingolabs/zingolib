@@ -68,7 +68,7 @@ prost = "0.13"
 rand = "0.8"
 ring = "0.17"
 rust-embed = "6"
-rustls = { version = "0.23", features = ["ring"] }
+rustls = "0.23"
 rustls-pemfile = "2"
 rustyline = "11"
 secp256k1 = "0.29.1"
