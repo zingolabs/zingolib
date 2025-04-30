@@ -9,10 +9,3 @@ edition = "2024"
 test-elevation = []
 
 [dependencies]
-zcash_primitives.workspace = true
-http.workspace = true
-
-dirs = { workspace = true }
-log = { workspace = true }
-log4rs = { workspace = true }
-tempfile.workspace = true
