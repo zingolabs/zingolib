@@ -13,7 +13,7 @@ members = [
     "pepper-sync",
     "testvectors",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.dependencies]
 bip0039 = "0.12"
