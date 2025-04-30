@@ -16,6 +16,13 @@ members = [
 resolver = "3"
 
 [workspace.dependencies]
+testvectors = { path = "testvectors" }
+zingo-memo = { path = "zingo-memo" }
+zingo-netutils = { path = "zingo-netutils" }
+zingo-status = { path = "zingo-status" }
+pepper-sync = { path = "pepper-sync" }
+zingolib = { path = "zingolib" }
+
 bip0039 = "0.12"
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 
@@ -92,13 +99,6 @@ webpki-roots = "0.26"
 # Parallel processing
 crossbeam-channel = "0.5"
 rayon = "1"
-
-testvectors = { path = "testvectors" }
-zingo-memo = { path = "zingo-memo" }
-zingo-netutils = { path = "zingo-netutils" }
-zingo-status = { path = "zingo-status" }
-pepper-sync = { path = "pepper-sync" }
-zingolib = { path = "zingolib" }
 
 [profile.release]
 debug = false
