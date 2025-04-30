@@ -7,7 +7,6 @@ use futures::FutureExt;
 use pepper_sync::error::SyncError;
 use pepper_sync::error::SyncModeError;
 use pepper_sync::wallet::SyncMode;
-use zingo_netutils::GetClientError;
 
 use crate::data::PollReport;
 use crate::wallet::error::WalletError;
@@ -23,7 +22,13 @@ impl LightClient {
     pub async fn sync(
         &mut self,
         transparent_address_discovery: bool,
-    ) -> Result<(), GetClientError> {
+    ) -> Result<(), LightClientError> {
+        if SyncMode::from_atomic_u8(self.sync_mode.clone())? != SyncMode::NotRunning {
+            return Err(LightClientError::SyncModeError(
+                SyncModeError::SyncAlreadyRunning,
+            ));
+        }
+
         let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
             .get_client()
             .await?;
@@ -49,7 +54,12 @@ impl LightClient {
     pub async fn rescan(
         &mut self,
         transparent_address_discovery: bool,
-    ) -> Result<(), GetClientError> {
+    ) -> Result<(), LightClientError> {
+        if SyncMode::from_atomic_u8(self.sync_mode.clone())? != SyncMode::NotRunning {
+            return Err(LightClientError::SyncModeError(
+                SyncModeError::SyncAlreadyRunning,
+            ));
+        }
         self.wallet.lock().await.clear_all();
         self.sync(transparent_address_discovery).await
     }
@@ -61,6 +71,8 @@ impl LightClient {
     }
 
     /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
+    ///
+    /// Returns an error if sync is not running or paused.
     pub fn pause_sync(&self) -> Result<(), SyncModeError> {
         if self.sync_mode() != SyncMode::Running {
             return Err(SyncModeError::SyncNotRunning);
@@ -71,7 +83,22 @@ impl LightClient {
         Ok(())
     }
 
+    /// Stop the sync engine after the next batch is scanned.
+    ///
+    /// Returns an error if sync is not running.
+    pub fn stop_sync(&self) -> Result<(), SyncModeError> {
+        if self.sync_mode() == SyncMode::NotRunning {
+            return Err(SyncModeError::SyncNotRunning);
+        }
+        self.sync_mode
+            .store(SyncMode::Shutdown as u8, atomic::Ordering::Release);
+
+        Ok(())
+    }
+
     /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
+    ///
+    /// Returns an error if sync is not paused.
     pub fn resume_sync(&self) -> Result<(), SyncModeError> {
         if self.sync_mode() != SyncMode::Paused {
             return Err(SyncModeError::SyncNotPaused);

@@ -210,6 +210,8 @@ pub enum SyncMode {
     Paused,
     /// Sync is running.
     Running,
+    /// Sync is shutting down.
+    Shutdown,
 }
 
 impl SyncMode {
@@ -221,6 +223,7 @@ impl SyncMode {
             0 => Ok(Self::NotRunning),
             1 => Ok(Self::Paused),
             2 => Ok(Self::Running),
+            3 => Ok(Self::Shutdown),
             _ => Err(SyncModeError::InvalidSyncMode(mode)),
         }
     }

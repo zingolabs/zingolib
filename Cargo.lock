@@ -4823,6 +4823,7 @@ dependencies = [
  "rustls",
  "rustyline",
  "shellwords",
+ "tracing-subscriber",
  "zingolib",
 ]
 

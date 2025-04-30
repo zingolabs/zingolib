@@ -48,7 +48,7 @@ impl ScannerState {
         *self = ScannerState::Scan
     }
 
-    fn scan_completed(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         *self = ScannerState::Shutdown
     }
 }
@@ -248,15 +248,6 @@ where
             }
         }
 
-        if !wallet
-            .get_sync_state()
-            .map_err(SyncError::WalletError)?
-            .scan_complete()
-            && self.worker_poolsize() == 0
-        {
-            panic!("worker pool should not be empty with unscanned ranges!")
-        }
-
         Ok(())
     }
 
@@ -288,7 +279,7 @@ where
             {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
-                self.state.scan_completed();
+                self.state.shutdown();
             }
         }
 
@@ -478,6 +469,9 @@ where
         tracing::debug!("Shutting down batcher");
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
+        }
+        if let Some(receiver) = self.batch_receiver.take() {
+            drop(receiver);
         }
         let handle = self
             .handle

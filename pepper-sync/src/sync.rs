@@ -122,6 +122,7 @@ pub struct SyncResult {
     pub blocks_scanned: u32,
     pub sapling_outputs_scanned: u32,
     pub orchard_outputs_scanned: u32,
+    pub percentage_total_outputs_scanned: f32,
 }
 
 impl std::fmt::Display for SyncResult {
@@ -135,12 +136,14 @@ impl std::fmt::Display for SyncResult {
     scanned blocks: {}
     scanned sapling outputs: {}
     scanned orchard outputs: {}
+    percentage_total_outputs_scanned: {}
 }}",
             self.sync_start_height,
             self.sync_end_height,
             self.blocks_scanned,
             self.sapling_outputs_scanned,
-            self.orchard_outputs_scanned
+            self.orchard_outputs_scanned,
+            self.percentage_total_outputs_scanned,
         )
     }
 }
@@ -153,6 +156,7 @@ impl From<SyncResult> for json::JsonValue {
             "scanned_blocks" => value.blocks_scanned,
             "scanned_sapling_outputs" => value.sapling_outputs_scanned,
             "scanned_orchard_outputs" => value.orchard_outputs_scanned,
+            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
 }
@@ -160,10 +164,11 @@ impl From<SyncResult> for json::JsonValue {
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
-/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` or `NotRunning`
+/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` and `NotRunning`
 /// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
 /// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
-/// scanning when the wallet guard is next available.
+/// scanning when the wallet guard is next available. Setting `sync_mode` to `Shutdown` will stop the sync process after
+/// the next scan range is scanned.
 ///
 /// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
 /// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
@@ -319,17 +324,6 @@ where
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
                 drop(wallet_guard);
-
-                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                if sync_mode_enum == SyncMode::Paused {
-                    let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
-                    pause_interval.tick().await;
-                    while sync_mode_enum != SyncMode::Running {
-                        pause_interval.tick().await;
-                        sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                    }
-
-                }
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
@@ -346,20 +340,38 @@ where
             }
 
             _update_scanner = interval.tick() => {
-                let mut wallet_guard = wallet.lock().await;
-                scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await?;
+                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                tracing::info!("{:?}", &sync_mode_enum);
+                match sync_mode_enum {
+                    SyncMode::Paused => {
+                        let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
+                        pause_interval.tick().await;
+                        while sync_mode_enum == SyncMode::Paused {
+                            pause_interval.tick().await;
+                            sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                        }
+                    },
+                    SyncMode::Shutdown => {
+                        scanner.state.shutdown();
+                    }
+                    SyncMode::Running => (),
+                    SyncMode::NotRunning => {
+                        panic!("sync mode should not be manually set to NotRunning!");
+                    },
+                }
+
+                scanner.update(&mut *wallet.lock().await, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
+                        tracing::info!("check is shutdown.");
                     // wait for mempool monitor to receive mempool transactions
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sync_complete(&scanner, unprocessed_mempool_transactions_count.clone(), &*wallet_guard)
-                        .map_err(SyncError::WalletError)?
+                    if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
                     {
-                        tracing::info!("Sync complete.");
+                        tracing::info!("Sync successfully shutdown.");
                         break;
                     }
                 }
-                drop(wallet_guard);
             }
         }
     }
@@ -402,6 +414,7 @@ where
         blocks_scanned: sync_status.session_blocks_scanned,
         sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
         orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+        percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
     })
 }
 
@@ -614,24 +627,16 @@ pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[Locator]) {
     }
 }
 
-/// Returns true if sync is complete.
-///
-/// Sync is complete when:
-/// - all scan workers have been shutdown
-/// - there is no unprocessed mempool transactions
-/// - all scan ranges have `Scanned` priority
-fn sync_complete<P, W>(
+/// Returns true if the scanner and mempool are shutdown.
+fn is_shutdown<P>(
     scanner: &Scanner<P>,
     mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-    wallet: &W,
-) -> Result<bool, W::Error>
+) -> bool
 where
     P: consensus::Parameters + Sync + Send + 'static,
-    W: SyncWallet,
 {
-    Ok(scanner.worker_poolsize() == 0
+    scanner.worker_poolsize() == 0
         && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
-        && wallet.get_sync_state()?.scan_complete())
 }
 
 /// Scan post-processing
