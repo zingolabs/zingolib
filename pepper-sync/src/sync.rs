@@ -133,10 +133,10 @@ impl std::fmt::Display for SyncResult {
 {{
     sync start height: {}
     sync end height: {}
-    scanned blocks: {}
-    scanned sapling outputs: {}
-    scanned orchard outputs: {}
-    percentage_total_outputs_scanned: {}
+    blocks scanned: {}
+    sapling outputs scanned: {}
+    orchard outputs scanned: {}
+    percentage total outputs scanned: {}
 }}",
             self.sync_start_height,
             self.sync_end_height,
@@ -153,9 +153,9 @@ impl From<SyncResult> for json::JsonValue {
         json::object! {
             "sync_start_height" => u32::from(value.sync_start_height),
             "sync_end_height" => u32::from(value.sync_end_height),
-            "scanned_blocks" => value.blocks_scanned,
-            "scanned_sapling_outputs" => value.sapling_outputs_scanned,
-            "scanned_orchard_outputs" => value.orchard_outputs_scanned,
+            "blocks_scanned" => value.blocks_scanned,
+            "sapling_outputs_scanned" => value.sapling_outputs_scanned,
+            "orchard_outputs_scanned" => value.orchard_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
@@ -341,7 +341,6 @@ where
 
             _update_scanner = interval.tick() => {
                 sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                tracing::info!("{:?}", &sync_mode_enum);
                 match sync_mode_enum {
                     SyncMode::Paused => {
                         let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
@@ -363,7 +362,6 @@ where
                 scanner.update(&mut *wallet.lock().await, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
-                        tracing::info!("check is shutdown.");
                     // wait for mempool monitor to receive mempool transactions
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
