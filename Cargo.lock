@@ -4831,7 +4831,7 @@ dependencies = [
 name = "zingo-memo"
 version = "0.1.0"
 dependencies = [
- "rand 0.8.5",
+ "rand 0.9.1",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -4904,7 +4904,7 @@ dependencies = [
  "portpicker",
  "proptest",
  "prost",
- "rand 0.8.5",
+ "rand 0.9.1",
  "reqwest",
  "ring",
  "rust-embed",
