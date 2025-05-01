@@ -485,7 +485,37 @@ where
                         }
                     },
                     SyncMode::Shutdown => {
-                        scanner.state.shutdown();
+                        let mut wallet_guard = wallet.lock().await;
+                        let sync_status = match sync_status(&*wallet_guard).await {
+                            Ok(status) => status,
+                            Err(SyncStatusError::WalletError(e)) => {
+                                return Err(SyncError::WalletError(e));
+                            }
+                            Err(SyncStatusError::NoSyncData) => {
+                                panic!("sync data must exist!");
+                            }
+                        };
+                        wallet_guard
+                            .set_save_flag()
+                            .map_err(SyncError::WalletError)?;
+                        drop(wallet_guard);
+                        sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+                        tracing::info!("Sync successfully shutdown.");
+
+                        return Ok(SyncResult {
+                            sync_start_height: sync_status.sync_start_height,
+                            sync_end_height: (sync_status
+                                .scan_ranges
+                                .last()
+                                .expect("should be non-empty after syncing")
+                                .block_range()
+                                .end
+                                - 1),
+                            blocks_scanned: sync_status.session_blocks_scanned,
+                            sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
+                            orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+                            percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
+                        });
                     }
                     SyncMode::Running => (),
                     SyncMode::NotRunning => {
