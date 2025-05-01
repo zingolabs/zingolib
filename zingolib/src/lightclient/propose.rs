@@ -173,10 +173,12 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
+    use pepper_sync::sync::SyncConfig;
+
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::LightClient,
-        wallet::{LightWallet, WalletBase, error::ProposeShieldError},
+        wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {
@@ -186,6 +188,12 @@ mod shielding {
                 config.chain,
                 WalletBase::MnemonicPhrase(testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()),
                 0.into(),
+                WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery:
+                            pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                    },
+                },
             )
             .unwrap(),
             config,

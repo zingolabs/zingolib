@@ -2,10 +2,12 @@
 
 use std::cmp;
 use std::collections::{BTreeMap, HashMap};
+use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use tokio::sync::{Mutex, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
@@ -18,9 +20,9 @@ use zcash_client_backend::{
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{self, BlockHeight};
 
-use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
@@ -161,6 +163,139 @@ impl From<SyncResult> for json::JsonValue {
     }
 }
 
+/// Sync configuration.
+#[derive(Default, Debug, Clone)]
+pub struct SyncConfig {
+    /// Transparent address discovery configuration.
+    pub transparent_address_discovery: TransparentAddressDiscovery,
+}
+
+impl SyncConfig {
+    fn serialized_version() -> u8 {
+        0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let gap_limit = reader.read_u8()?;
+        let scopes = reader.read_u8()?;
+        Ok(Self {
+            transparent_address_discovery: TransparentAddressDiscovery {
+                gap_limit,
+                scopes: TransparentAddressDiscoveryScopes {
+                    external: scopes & 0b1 != 0,
+                    internal: scopes & 0b10 != 0,
+                    refund: scopes & 0b100 != 0,
+                },
+            },
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u8(self.transparent_address_discovery.gap_limit)?;
+        let mut scopes = 0;
+        if self.transparent_address_discovery.scopes.external {
+            scopes |= 0b1;
+        };
+        if self.transparent_address_discovery.scopes.internal {
+            scopes |= 0b10;
+        };
+        if self.transparent_address_discovery.scopes.refund {
+            scopes |= 0b100;
+        };
+        writer.write_u8(scopes)?;
+
+        Ok(())
+    }
+}
+
+/// Transparent address configuration.
+///
+/// Sets which `scopes` will be searched for addresses in use, scanning relevant transactions, up to a given `gap_limit`.
+#[derive(Debug, Clone)]
+pub struct TransparentAddressDiscovery {
+    /// Sets the gap limit for transparent address discovery.
+    pub gap_limit: u8,
+    /// Sets the scopes for transparent address discovery.
+    pub scopes: TransparentAddressDiscoveryScopes,
+}
+
+impl Default for TransparentAddressDiscovery {
+    fn default() -> Self {
+        Self {
+            gap_limit: 10,
+            scopes: TransparentAddressDiscoveryScopes::default(),
+        }
+    }
+}
+
+impl TransparentAddressDiscovery {
+    /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
+    pub fn minimal() -> Self {
+        Self {
+            gap_limit: 1,
+            scopes: TransparentAddressDiscoveryScopes::default(),
+        }
+    }
+
+    /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
+    pub fn recovery() -> Self {
+        Self {
+            gap_limit: 20,
+            scopes: TransparentAddressDiscoveryScopes::recovery(),
+        }
+    }
+
+    /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
+    /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
+    pub fn disabled() -> Self {
+        Self {
+            gap_limit: 0,
+            scopes: TransparentAddressDiscoveryScopes {
+                external: false,
+                internal: false,
+                refund: false,
+            },
+        }
+    }
+}
+
+/// Sets the active scopes for transparent address recovery.
+#[derive(Debug, Clone)]
+pub struct TransparentAddressDiscoveryScopes {
+    /// External.
+    pub external: bool,
+    /// Internal.
+    pub internal: bool,
+    /// Refund.
+    pub refund: bool,
+}
+
+impl Default for TransparentAddressDiscoveryScopes {
+    fn default() -> Self {
+        Self {
+            external: true,
+            internal: false,
+            refund: true,
+        }
+    }
+}
+
+impl TransparentAddressDiscoveryScopes {
+    /// Constructor with all all scopes active.
+    pub fn recovery() -> Self {
+        Self {
+            external: true,
+            internal: true,
+            refund: true,
+        }
+    }
+}
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -181,7 +316,7 @@ pub async fn sync<P, W>(
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
     sync_mode: Arc<AtomicU8>,
-    transparent_address_discovery: bool,
+    config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -240,17 +375,16 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    if transparent_address_discovery {
-        transparent::update_addresses_and_locators(
-            consensus_parameters,
-            &mut *wallet_guard,
-            fetch_request_sender.clone(),
-            &ufvks,
-            wallet_height,
-            chain_height,
-        )
-        .await?;
-    }
+    transparent::update_addresses_and_locators(
+        consensus_parameters,
+        &mut *wallet_guard,
+        fetch_request_sender.clone(),
+        &ufvks,
+        wallet_height,
+        chain_height,
+        config.transparent_address_discovery,
+    )
+    .await?;
 
     #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(

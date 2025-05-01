@@ -1,3 +1,4 @@
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{
@@ -9,7 +10,7 @@ use zingolib::{
         lightclient::from_inputs::{self},
         scenarios,
     },
-    wallet::{LightWallet, WalletBase},
+    wallet::{LightWallet, WalletBase, WalletSettings},
 };
 
 #[ignore = "temporary mainnet test for sync development"]
@@ -27,6 +28,11 @@ async fn sync_mainnet_test() {
         uri.clone(),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -34,6 +40,7 @@ async fn sync_mainnet_test() {
             config.chain,
             WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
             2_650_318.into(),
+            config.wallet_settings.clone(),
         )
         .unwrap(),
         config,
@@ -41,7 +48,7 @@ async fn sync_mainnet_test() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(true).await.unwrap();
+    lightclient.sync_and_await().await.unwrap();
 
     let wallet = lightclient.wallet.lock().await;
     // dbg!(&wallet.wallet_blocks);
@@ -64,6 +71,11 @@ async fn sync_status() {
         uri.clone(),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -71,6 +83,7 @@ async fn sync_status() {
             config.chain,
             WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
             2_496_152.into(),
+            config.wallet_settings.clone(),
         )
         .unwrap(),
         config,
@@ -78,7 +91,7 @@ async fn sync_status() {
     )
     .unwrap();
 
-    lightclient.sync_and_await(true).await.unwrap();
+    lightclient.sync_and_await().await.unwrap();
 }
 
 // temporary test for sync development

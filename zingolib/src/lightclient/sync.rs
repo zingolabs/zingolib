@@ -20,10 +20,7 @@ impl LightClient {
     /// Launches a task for syncing the wallet to the latest state of the block chain, storing the handle in the
     /// `sync_handle` field.
     // TODO: add realtime sync updates to zingo-cli when it can handle printing during user input
-    pub async fn sync(
-        &mut self,
-        transparent_address_discovery: bool,
-    ) -> Result<(), LightClientError> {
+    pub async fn sync(&mut self) -> Result<(), LightClientError> {
         if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,
@@ -33,18 +30,14 @@ impl LightClient {
         let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
             .get_client()
             .await?;
-        let network = self.wallet.lock().await.network;
+        let wallet_guard = self.wallet.lock().await;
+        let network = wallet_guard.network;
+        let sync_config = wallet_guard.wallet_settings.sync_config.clone();
+        drop(wallet_guard);
         let wallet = self.wallet.clone();
         let sync_mode = self.sync_mode.clone();
         let sync_handle = tokio::spawn(async move {
-            pepper_sync::sync(
-                client,
-                &network,
-                wallet,
-                sync_mode,
-                transparent_address_discovery,
-            )
-            .await
+            pepper_sync::sync(client, &network, wallet, sync_mode, sync_config).await
         });
         self.sync_handle = Some(sync_handle);
 
@@ -54,10 +47,7 @@ impl LightClient {
     /// Clear the wallet data obtained from the blockchain and launch sync from wallet birthday.
     ///
     /// If sync is already running, stops sync and waits for it to shutdown before clearing the wallet and rescanning.
-    pub async fn rescan(
-        &mut self,
-        transparent_address_discovery: bool,
-    ) -> Result<(), LightClientError> {
+    pub async fn rescan(&mut self) -> Result<(), LightClientError> {
         if self.sync_mode() != SyncMode::NotRunning {
             self.stop_sync().expect("infallible in this scope");
 
@@ -69,7 +59,7 @@ impl LightClient {
             }
         }
         self.wallet.lock().await.clear_all();
-        self.sync(transparent_address_discovery).await
+        self.sync().await
     }
 
     /// Returns the lightclient's sync mode in non-atomic (enum) form.
@@ -144,20 +134,14 @@ impl LightClient {
     }
 
     /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
-    pub async fn sync_and_await(
-        &mut self,
-        transparent_address_discovery: bool,
-    ) -> Result<SyncResult, LightClientError> {
-        self.sync(transparent_address_discovery).await?;
+    pub async fn sync_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        self.sync().await?;
         self.await_sync().await
     }
 
     /// Calls [`crate::lightclient::LightClient::rescan`] and then [`crate::lightclient::LightClient::await_sync`].
-    pub async fn rescan_and_await(
-        &mut self,
-        transparent_address_discovery: bool,
-    ) -> Result<SyncResult, LightClientError> {
-        self.rescan(transparent_address_discovery).await?;
+    pub async fn rescan_and_await(&mut self) -> Result<SyncResult, LightClientError> {
+        self.rescan().await?;
         self.await_sync().await
     }
 }
@@ -179,7 +163,7 @@ pub mod test {
 
         let mut lc = wallet_case.load_example_wallet_with_client().await;
 
-        let sync_result = lc.sync_and_await(true).await.unwrap();
+        let sync_result = lc.sync_and_await().await.unwrap();
         println!("{}", sync_result);
         println!("{:?}", lc.do_balance().await);
         lc
