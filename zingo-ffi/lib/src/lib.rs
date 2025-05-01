@@ -18,7 +18,9 @@ use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
+use zingolib::wallet::WalletSettings;
 use pepper_sync::wallet::SyncMode;
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -48,7 +50,16 @@ fn construct_uri_load_config(
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let mut config =
-        match zingolib::config::load_clientconfig(lightwalletd_uri.clone(), None, chaintype) {
+        match zingolib::config::load_clientconfig(
+            lightwalletd_uri.clone(), 
+            None, 
+            chaintype,
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            },
+        ) {
             Ok(c) => c,
             Err(e) => {
                 return Err(format!("Error: Config load: {}", e));
@@ -115,6 +126,11 @@ pub fn init_from_seed(
         config.chain,
         WalletBase::MnemonicPhrase(seed),
         BlockHeight::from_u32(birthday as u32),
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     ) {
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
@@ -145,6 +161,11 @@ pub fn init_from_ufvk(
         config.chain,
         WalletBase::Ufvk(ufvk),
         BlockHeight::from_u32(birthday as u32),
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     ) {
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
@@ -303,7 +324,7 @@ pub fn run_sync() -> String {
             "Resuming sync task...".to_string()
         } else {
             zingolib::commands::RT.block_on(async move {
-                match lightclient.sync(true).await {
+                match lightclient.sync().await {
                     Ok(_) => "Launching sync task...".to_string(),
                     Err(e) => format!("Error: {e}"),
                 }
@@ -352,7 +373,7 @@ pub fn status_sync() -> String {
 pub fn run_rescan() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
-            match lightclient.rescan(true).await {
+            match lightclient.rescan().await {
                 Ok(_) => "Launching rescan...".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
