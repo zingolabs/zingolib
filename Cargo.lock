@@ -306,7 +306,7 @@ dependencies = [
  "log",
  "num_cpus",
  "pairing",
- "rand_core",
+ "rand_core 0.6.4",
  "rayon",
  "subtle",
 ]
@@ -342,7 +342,7 @@ checksum = "568b6890865156d9043af490d4c4081c385dd68ea10acd6ca15733d511e6b51c"
 dependencies = [
  "hmac 0.12.1",
  "pbkdf2",
- "rand",
+ "rand 0.8.5",
  "sha2 0.10.9",
  "unicode-normalization",
  "zeroize",
@@ -356,7 +356,7 @@ checksum = "143f5327f23168716be068f8e1014ba2ea16a6c91e8777bc8927da7b51e1df1f"
 dependencies = [
  "bs58",
  "hmac 0.13.0-pre.4",
- "rand_core",
+ "rand_core 0.6.4",
  "ripemd 0.2.0-pre.4",
  "secp256k1",
  "sha2 0.11.0-pre.4",
@@ -452,7 +452,7 @@ dependencies = [
  "ff",
  "group",
  "pairing",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -960,7 +960,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "bitvec",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -1156,7 +1156,7 @@ checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
  "ff",
  "memuse",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -1193,7 +1193,7 @@ dependencies = [
  "halo2_proofs",
  "lazy_static",
  "pasta_curves",
- "rand",
+ "rand 0.8.5",
  "sinsemilla",
  "subtle",
  "uint",
@@ -1229,7 +1229,7 @@ dependencies = [
  "halo2_legacy_pdqsort",
  "maybe-rayon",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.4",
  "tracing",
 ]
 
@@ -1456,8 +1456,8 @@ checksum = "30821f91f0fa8660edca547918dc59812893b497d07c1144f326f07fdd94aba9"
 dependencies = [
  "either",
  "proptest",
- "rand",
- "rand_core",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -1506,15 +1506,6 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -1570,7 +1561,7 @@ dependencies = [
  "bls12_381",
  "ff",
  "group",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -1635,7 +1626,7 @@ name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
  "bip0039",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "json",
  "pepper-sync",
  "proptest",
@@ -1716,12 +1707,12 @@ dependencies = [
  "log-mdc",
  "once_cell",
  "parking_lot",
- "rand",
+ "rand 0.8.5",
  "serde",
  "serde-value",
  "serde_json",
  "serde_yaml",
- "thiserror",
+ "thiserror 1.0.69",
  "thread-id",
  "typemap-ors",
  "winapi",
@@ -1939,7 +1930,7 @@ dependencies = [
  "memuse",
  "nonempty",
  "pasta_curves",
- "rand",
+ "rand 0.8.5",
  "reddsa",
  "serde",
  "sinsemilla",
@@ -2005,7 +1996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
 dependencies = [
  "base64ct",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -2019,7 +2010,7 @@ dependencies = [
  "ff",
  "group",
  "lazy_static",
- "rand",
+ "rand 0.8.5",
  "static_assertions",
  "subtle",
 ]
@@ -2051,7 +2042,7 @@ dependencies = [
  "sapling-crypto",
  "shardtree",
  "subtle",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tracing",
@@ -2134,7 +2125,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
 dependencies = [
- "rand",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -2204,8 +2195,8 @@ dependencies = [
  "bitflags 2.9.0",
  "lazy_static",
  "num-traits",
- "rand",
- "rand_chacha",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rand_xorshift",
  "regex-syntax",
  "rusty-fork",
@@ -2309,8 +2300,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
- "rand_chacha",
- "rand_core",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
+dependencies = [
+ "rand_chacha 0.9.0",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -2320,7 +2321,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -2333,12 +2344,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
+dependencies = [
+ "getrandom 0.3.2",
+]
+
+[[package]]
 name = "rand_xorshift"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
- "rand_core",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -2373,9 +2393,9 @@ dependencies = [
  "hex",
  "jubjub",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.4",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -2385,9 +2405,9 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89b0ac1bc6bb3696d2c6f52cff8fba57238b81da8c0214ee6cd146eb8fde364e"
 dependencies = [
- "rand_core",
+ "rand_core 0.6.4",
  "reddsa",
- "thiserror",
+ "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -2408,7 +2428,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2533,9 +2553,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.5"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
+checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
 dependencies = [
  "bitflags 2.9.0",
  "errno",
@@ -2678,8 +2698,8 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "memuse",
- "rand",
- "rand_core",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
  "redjubjub",
  "subtle",
  "tracing",
@@ -2985,7 +3005,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.2",
  "once_cell",
- "rustix 1.0.5",
+ "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]
 
@@ -3002,7 +3022,16 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+dependencies = [
+ "thiserror-impl 2.0.12",
 ]
 
 [[package]]
@@ -3010,6 +3039,17 @@ name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3192,7 +3232,7 @@ dependencies = [
  "indexmap 1.9.3",
  "pin-project",
  "pin-project-lite",
- "rand",
+ "rand 0.8.5",
  "slab",
  "tokio",
  "tokio-util",
@@ -3858,7 +3898,7 @@ dependencies = [
  "pasta_curves",
  "percent-encoding",
  "prost",
- "rand_core",
+ "rand_core 0.6.4",
  "rayon",
  "sapling-crypto",
  "secrecy",
@@ -3908,7 +3948,7 @@ dependencies = [
  "memuse",
  "nonempty",
  "orchard",
- "rand_core",
+ "rand_core 0.6.4",
  "sapling-crypto",
  "secrecy",
  "subtle",
@@ -3929,7 +3969,7 @@ dependencies = [
  "chacha20",
  "chacha20poly1305",
  "cipher",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -3955,8 +3995,8 @@ dependencies = [
  "memuse",
  "nonempty",
  "orchard",
- "rand",
- "rand_core",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
  "redjubjub",
  "ripemd 0.1.3",
  "sapling-crypto",
@@ -3988,7 +4028,7 @@ dependencies = [
  "jubjub",
  "known-folders",
  "lazy_static",
- "rand_core",
+ "rand_core 0.6.4",
  "redjubjub",
  "sapling-crypto",
  "tracing",
@@ -4100,7 +4140,7 @@ dependencies = [
 name = "zingo-memo"
 version = "0.1.0"
 dependencies = [
- "rand",
+ "rand 0.9.1",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -4120,7 +4160,7 @@ dependencies = [
  "hyper-util",
  "prost",
  "rustls-pemfile",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio-rustls",
  "tonic",
  "tower 0.5.2",
@@ -4166,7 +4206,7 @@ dependencies = [
  "pepper-sync",
  "portpicker",
  "prost",
- "rand",
+ "rand 0.9.1",
  "ring",
  "rust-embed",
  "rustls",
@@ -4178,7 +4218,7 @@ dependencies = [
  "shardtree",
  "tempfile",
  "testvectors",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tracing-subscriber",
