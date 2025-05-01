@@ -1512,15 +1512,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1635,7 +1626,7 @@ name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
  "bip0039",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "json",
  "pepper-sync",
  "proptest",
@@ -1721,7 +1712,7 @@ dependencies = [
  "serde-value",
  "serde_json",
  "serde_yaml",
- "thiserror",
+ "thiserror 1.0.69",
  "thread-id",
  "typemap-ors",
  "winapi",
@@ -2051,7 +2042,7 @@ dependencies = [
  "sapling-crypto",
  "shardtree",
  "subtle",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tracing",
@@ -2375,7 +2366,7 @@ dependencies = [
  "pasta_curves",
  "rand_core",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -2387,7 +2378,7 @@ checksum = "89b0ac1bc6bb3696d2c6f52cff8fba57238b81da8c0214ee6cd146eb8fde364e"
 dependencies = [
  "rand_core",
  "reddsa",
- "thiserror",
+ "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -2408,7 +2399,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2533,9 +2524,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.5"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
+checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
 dependencies = [
  "bitflags 2.9.0",
  "errno",
@@ -2985,7 +2976,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.2",
  "once_cell",
- "rustix 1.0.5",
+ "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]
 
@@ -3002,7 +2993,16 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+dependencies = [
+ "thiserror-impl 2.0.12",
 ]
 
 [[package]]
@@ -3010,6 +3010,17 @@ name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4120,7 +4131,7 @@ dependencies = [
  "hyper-util",
  "prost",
  "rustls-pemfile",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio-rustls",
  "tonic",
  "tower 0.5.2",
@@ -4178,7 +4189,7 @@ dependencies = [
  "shardtree",
  "tempfile",
  "testvectors",
- "thiserror",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tracing-subscriber",
