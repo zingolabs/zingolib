@@ -16,7 +16,7 @@ use {
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
-const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
+const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 8;
 
 /// Required data for updating [`shardtree::ShardTree`]
 #[derive(Debug)]
@@ -104,10 +104,10 @@ pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
 ) -> Result<(), ServerError>
 where
     S: ShardStore<
-        H: incrementalmerkletree::Hashable + Clone + PartialEq + FromBytes,
-        CheckpointId: Clone + Ord + std::fmt::Debug,
-        Error = std::convert::Infallible,
-    >,
+            H: incrementalmerkletree::Hashable + Clone + PartialEq + FromBytes,
+            CheckpointId: Clone + Ord + std::fmt::Debug,
+            Error = std::convert::Infallible,
+        >,
 {
     for (index, tree_root) in subtree_roots.into_iter().enumerate() {
         let node = <S::H as FromBytes>::from_bytes(

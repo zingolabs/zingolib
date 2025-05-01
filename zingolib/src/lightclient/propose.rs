@@ -2,19 +2,18 @@
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use zcash_protocol::value::Zatoshis;
 
 use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
-use crate::data::receivers::transaction_request_from_receivers;
 use crate::data::receivers::Receiver;
+use crate::data::receivers::transaction_request_from_receivers;
 use crate::lightclient::LightClient;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
@@ -28,7 +27,7 @@ impl LightClient {
         };
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
-            NonNegativeAmount::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
+            Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
             None,
         );
         receivers.push(dev_donation_receiver);
@@ -67,7 +66,7 @@ impl LightClient {
         let spendable_balance = self
             .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
             .await?;
-        if spendable_balance == NonNegativeAmount::ZERO {
+        if spendable_balance == Zatoshis::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
         }
         let mut receivers = vec![Receiver::new(address, spendable_balance, memo)];
@@ -102,52 +101,62 @@ impl LightClient {
         &self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
-    ) -> Result<NonNegativeAmount, ProposeSendError> {
+    ) -> Result<Zatoshis, ProposeSendError> {
         let mut wallet = self.wallet.lock().await;
-        let confirmed_shielded_balance = wallet.confirmed_shielded_balance_excluding_dust().await?;
-        let mut receivers = vec![Receiver::new(
-            address.clone(),
-            confirmed_shielded_balance,
-            None,
-        )];
-        if zennies_for_zingo {
-            self.append_zingo_zenny_receiver(&mut receivers);
-        }
-        let request = transaction_request_from_receivers(receivers)?;
-        let failing_proposal = wallet.create_send_proposal(request).await;
-        drop(wallet);
+        let confirmed_balance = wallet.confirmed_shielded_balance_excluding_dust().await?;
+        let mut spendable_balance = confirmed_balance;
 
-        let shortfall = match failing_proposal {
-            Err(ProposeSendError::Proposal(
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available,
-                    required,
-                },
-            )) => {
-                if let Some(shortfall) = required - confirmed_shielded_balance {
-                    Ok(shortfall)
-                } else {
-                    // bugged underflow case, required should always be larger than available balance to cause
-                    // insufficient funds error. would suggest discrepancy between `available` and `confirmed_shielded_balance`
-                    // returns insufficient funds error with same values from original error for debugging
-                    Err(ProposeSendError::Proposal(
-                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                            available,
-                            required,
-                        },
-                    ))
+        loop {
+            let mut receivers = vec![Receiver::new(address.clone(), spendable_balance, None)];
+            if zennies_for_zingo {
+                self.append_zingo_zenny_receiver(&mut receivers);
+            }
+            let request = transaction_request_from_receivers(receivers)?;
+            let trial_proposal = wallet.create_send_proposal(request).await;
+
+            match trial_proposal {
+                Err(ProposeSendError::Proposal(
+                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                        available,
+                        required,
+                    },
+                )) => {
+                    if let Some(shortfall) = required - confirmed_balance {
+                        match spendable_balance - shortfall {
+                            Some(updated_spendable) => {
+                                spendable_balance = updated_spendable;
+                            }
+                            None => {
+                                return Err(ProposeSendError::Proposal(
+                                zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                                    available: confirmed_balance,
+                                    required,
+                                },
+                            ));
+                            }
+                        }
+                    } else {
+                        // bugged underflow case, required should always be larger than confirmed shielded balance to cause
+                        // insufficient funds error.
+                        // returns insufficient funds error with same values from original error for debugging
+                        return Err(ProposeSendError::Proposal(
+                            zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                                available,
+                                required,
+                            },
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+                Ok(_) => {
+                    break;
                 }
             }
-            Err(e) => Err(e),
-            Ok(_) => Ok(NonNegativeAmount::ZERO), // in the case there is zero fee and the proposal is successful
-        }?;
+        }
 
-        (confirmed_shielded_balance - shortfall).ok_or(ProposeSendError::Proposal(
-            zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                available: confirmed_shielded_balance,
-                required: shortfall,
-            },
-        ))
+        Ok(spendable_balance)
     }
 
     /// Creates and stores a proposal for shielding all transparent funds..
@@ -164,10 +173,12 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
+    use pepper_sync::sync::SyncConfig;
+
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::LightClient,
-        wallet::{error::ProposeShieldError, LightWallet, WalletBase},
+        wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {
@@ -177,6 +188,12 @@ mod shielding {
                 config.chain,
                 WalletBase::MnemonicPhrase(testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()),
                 0.into(),
+                WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery:
+                            pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                    },
+                },
             )
             .unwrap(),
             config,

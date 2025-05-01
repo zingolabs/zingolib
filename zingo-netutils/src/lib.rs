@@ -7,14 +7,14 @@
 use std::sync::Arc;
 
 use client::client_from_connector;
-use http::{uri::PathAndQuery, Uri};
+use http::{Uri, uri::PathAndQuery};
 use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::connect::HttpConnector;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
-use tower::util::BoxCloneService;
 use tower::ServiceExt;
+use tower::util::BoxCloneService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// ?
@@ -38,7 +38,7 @@ pub enum GetClientError {
 /// ?
 pub mod client {
     use http_body::Body;
-    use hyper_util::client::legacy::{connect::Connect, Client};
+    use hyper_util::client::legacy::{Client, connect::Connect};
     /// a utility used in multiple places
     pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
     where

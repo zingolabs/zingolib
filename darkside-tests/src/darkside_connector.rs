@@ -1,6 +1,6 @@
 use super::darkside_types::{
-    darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
-    DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
+    DarksideBlock, DarksideBlocksUrl, DarksideEmptyBlocks, DarksideHeight, DarksideMetaState,
+    Empty, RawTransaction, TreeState, darkside_streamer_client::DarksideStreamerClient,
 };
 
 use hyper::Uri;

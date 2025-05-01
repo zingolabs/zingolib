@@ -7,10 +7,10 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
-use incrementalmerkletree::{witness::IncrementalWitness, Address, Hashable, Level, Position};
+use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
 use shardtree::{
-    store::{memory::MemoryShardStore, Checkpoint, ShardStore as _},
     LocatedPrunableTree, ShardTree,
+    store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
 use zcash_client_backend::{
     proto::compact_formats::CompactBlock, serialization::shardtree::read_shard,
@@ -19,7 +19,7 @@ use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
-    merkle_tree::{read_commitment_tree, read_incremental_witness, HashSer},
+    merkle_tree::{HashSer, read_commitment_tree, read_incremental_witness},
     transaction::TxId,
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -90,7 +90,7 @@ pub struct TxMap {
 impl TxMap {
     /// TODO: Doc-comment!
     pub fn serialized_version() -> u64 {
-        22
+        23
     }
 
     /// TODO: Doc-comment!
@@ -465,6 +465,8 @@ pub struct TransparentOutput {
     pub value: u64,
     /// whether, where, and when it was spent
     spend: Option<(TxId, ConfirmationStatus)>,
+    /// Output is from a coinbase transaction
+    pub is_coinbase: bool,
 }
 
 impl TransparentOutput {
@@ -530,6 +532,12 @@ impl TransparentOutput {
         let spend =
             spent_tuple.map(|(txid, height)| (txid, ConfirmationStatus::Confirmed(height.into())));
 
+        let is_coinbase = if version >= 5 {
+            reader.read_u8()? != 0
+        } else {
+            false
+        };
+
         Ok(TransparentOutput {
             address,
             txid: transaction_id,
@@ -537,6 +545,7 @@ impl TransparentOutput {
             script,
             value,
             spend,
+            is_coinbase,
         })
     }
 }
@@ -1019,7 +1028,16 @@ fn read_shardtree<
         let index = r.read_u64::<LittleEndian>()?;
         let root_addr = Address::from_parts(level, index);
         let shard = read_shard(r)?;
-        Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+
+        LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "parent node in root has level 0 relative to root address: {:?}",
+                    addr
+                ),
+            )
+        })
     })?;
     let mut store = MemoryShardStore::empty();
     for shard in shards {
@@ -1036,7 +1054,7 @@ fn read_shardtree<
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("error reading TreeState: expected boolean value, found {otherwise}"),
-                ))
+                ));
             }
         };
         let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
@@ -1103,5 +1121,131 @@ impl ReadableWriteable for ConfirmationStatus {
 
     fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
         unimplemented!()
+    }
+}
+
+/// TODO: Add Doc Comment Here!
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoDownloadOption {
+    /// TODO: Add Doc Comment Here!
+    NoMemos,
+    /// TODO: Add Doc Comment Here!
+    WalletMemos,
+    /// TODO: Add Doc Comment Here!
+    AllMemos,
+}
+
+/// TODO: Add Doc Comment Here!
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct WalletOptions {
+    pub(crate) download_memos: MemoDownloadOption,
+    /// TODO: Add Doc Comment Here!
+    pub transaction_size_filter: Option<u32>,
+}
+
+/// TODO: Add Doc Comment Here!
+pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
+
+impl Default for WalletOptions {
+    fn default() -> Self {
+        WalletOptions {
+            download_memos: MemoDownloadOption::WalletMemos,
+            transaction_size_filter: Some(MAX_TRANSACTION_SIZE_DEFAULT),
+        }
+    }
+}
+
+impl WalletOptions {
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let external_version = reader.read_u64::<LittleEndian>()?;
+
+        let download_memos = match reader.read_u8()? {
+            0 => MemoDownloadOption::NoMemos,
+            1 => MemoDownloadOption::WalletMemos,
+            2 => MemoDownloadOption::AllMemos,
+            v => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Bad download option {}", v),
+                ));
+            }
+        };
+
+        let transaction_size_filter = if external_version > 1 {
+            Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
+        } else {
+            Some(500)
+        };
+
+        Ok(Self {
+            download_memos,
+            transaction_size_filter,
+        })
+    }
+}
+
+/// Struct that tracks the latest and historical price of ZEC in the wallet
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct WalletZecPriceInfo {
+    /// Latest price of ZEC and when it was fetched
+    pub zec_price: Option<(u64, f64)>,
+
+    /// Wallet's currency. All the prices are in this currency
+    pub currency: String,
+
+    /// When the last time historical prices were fetched
+    pub last_historical_prices_fetched_at: Option<u64>,
+
+    /// Historical prices retry count
+    pub historical_prices_retry_count: u64,
+}
+
+impl Default for WalletZecPriceInfo {
+    fn default() -> Self {
+        Self {
+            zec_price: None,
+            currency: "USD".to_string(), // Only USD is supported right now.
+            last_historical_prices_fetched_at: None,
+            historical_prices_retry_count: 0,
+        }
+    }
+}
+
+impl WalletZecPriceInfo {
+    /// TODO: Add Doc Comment Here!
+    pub fn serialized_version() -> u64 {
+        20
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        if version > Self::serialized_version() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Can't read ZecPriceInfo because of incorrect version",
+            ));
+        }
+
+        // The "current" zec price is not persisted, since it is almost certainly outdated
+        let zec_price = None;
+
+        // Currency is only USD for now
+        let currency = "USD".to_string();
+
+        let last_historical_prices_fetched_at =
+            Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+        let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
+
+        Ok(Self {
+            zec_price,
+            currency,
+            last_historical_prices_fetched_at,
+            historical_prices_retry_count,
+        })
     }
 }

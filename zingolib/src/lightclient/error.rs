@@ -1,7 +1,15 @@
 //! Errors assoicated with [`crate::lightclient::LightClient`].
 
-use crate::wallet::error::{
-    CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError, WalletError,
+use std::convert::Infallible;
+
+use pepper_sync::error::SyncModeError;
+
+use crate::wallet::{
+    error::{
+        CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError,
+        WalletError,
+    },
+    output::OutputRef,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -12,6 +20,9 @@ pub enum LightClientError {
     /// Sync error.
     #[error("Sync error. {0}")]
     SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
+    /// Sync mode error.
+    #[error("sync mode error. {0}")]
+    SyncModeError(#[from] SyncModeError),
     /// gPRC client error
     #[error("gRPC client error. {0}")]
     ClientError(#[from] zingo_netutils::GetClientError),
@@ -26,8 +37,10 @@ pub enum LightClientError {
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
-    #[error("The transaction could not be calculated. {0}")]
-    CalculateTransactionError(#[from] CalculateTransactionError),
+    #[error("The sending transaction could not be calculated. {0}")]
+    CalculateSendError(CalculateTransactionError<OutputRef>),
+    #[error("The shieldng transaction could not be calculated. {0}")]
+    CalculateShieldError(CalculateTransactionError<Infallible>),
     #[error("Transmission failed. {0}")]
     TransmissionError(#[from] TransmissionError),
     #[error("No proposal found.")]

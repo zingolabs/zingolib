@@ -1,32 +1,26 @@
 //! This mod contains write and read functionality of impl LightWallet
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
-use log::info;
-use pepper_sync::{
-    keys::transparent::{self, TransparentAddressId, TransparentScope},
-    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
-};
-use zcash_keys::keys::UnifiedSpendingKey;
-use zip32::AccountId;
 
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
-    sync::Arc,
 };
 
-use tokio::sync::RwLock;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use log::info;
 
 use bip0039::Mnemonic;
 
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
+use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_primitives::{legacy::keys::NonHardenedChildIndex, transaction::TxId};
+use zcash_protocol::consensus::{self, BlockHeight};
+use zip32::AccountId;
 
-use zcash_primitives::{
-    consensus::{self, BlockHeight},
-    transaction::TxId,
-};
-
+use super::LightWallet;
+use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
+use crate::wallet::{SendProgress, WalletSettings, legacy::WalletZecPriceInfo, utils};
+use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
     config::ChainType,
     wallet::{
@@ -34,20 +28,17 @@ use crate::{
         legacy::{BlockData, TxMap},
     },
 };
-
-use crate::wallet::traits::ReadableWriteable;
-use crate::wallet::WalletOptions;
-use crate::wallet::{utils, SendProgress};
-
-use super::data::WalletZecPriceInfo;
-use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use super::LightWallet;
+use pepper_sync::{
+    keys::transparent::{self, TransparentAddressId, TransparentScope},
+    sync::{SyncConfig, TransparentAddressDiscovery},
+    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
+};
 
 impl LightWallet {
     /// Changes in version 32:
     /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        32
+        33
     }
 
     /// Serialize into `writer`
@@ -92,7 +83,7 @@ impl LightWallet {
             |w, address_id| {
                 w.write_u32::<LittleEndian>(address_id.account_id().into())?;
                 w.write_u8(address_id.scope() as u8)?;
-                w.write_u32::<LittleEndian>(address_id.address_index())
+                w.write_u32::<LittleEndian>(address_id.address_index().index())
             },
         )?;
 
@@ -110,7 +101,7 @@ impl LightWallet {
         Vector::write(
             &mut writer,
             &self.outpoint_map.iter().collect::<Vec<_>>(),
-            |w, (&output_id, &locator)| {
+            |w, &(&output_id, &locator)| {
                 output_id.txid().write(&mut *w)?;
                 w.write_u16::<LittleEndian>(output_id.output_index())?;
                 w.write_u32::<LittleEndian>(locator.0.into())?;
@@ -120,8 +111,9 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
 
-        self.wallet_options.read().await.write(&mut writer)?;
-        self.price.read().await.write(&mut writer)
+        self.wallet_settings.sync_config.write(&mut writer)?;
+
+        Ok(())
     }
 
     /// Deserialize into `reader`
@@ -131,7 +123,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32 => Self::read_v32(reader, network),
+            32..=33 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -162,7 +154,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version <= 23 {
+        let _wallet_options = if version <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -193,7 +185,7 @@ impl LightWallet {
             })?
         };
 
-        let price = if version <= 13 {
+        let _price = if version <= 13 {
             WalletZecPriceInfo::default()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -316,11 +308,9 @@ impl LightWallet {
 
         let lw = Self {
             mnemonic,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
-            price: Arc::new(RwLock::new(price)),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -331,12 +321,17 @@ impl LightWallet {
             unified_addresses,
             network,
             save_required: false,
+            wallet_settings: WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            },
         };
 
         Ok(lw)
     }
 
-    fn read_v32<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+    fn read_v32<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
         let saved_network = utils::read_string(&mut reader)?;
         if saved_network != network.to_string() {
             return Err(Error::new(
@@ -387,7 +382,12 @@ impl LightWallet {
             let address_index = r.read_u32::<LittleEndian>()?;
 
             Ok((
-                TransparentAddressId::new(account_id, scope, address_index),
+                TransparentAddressId::new(
+                    account_id,
+                    scope,
+                    NonHardenedChildIndex::from_index(address_index)
+                        .expect("only non-hardened child indexes should be written"),
+                ),
                 transparent::encode_address(
                     &network,
                     unified_key_store
@@ -425,8 +425,17 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
-        let wallet_options = WalletOptions::read(&mut reader)?;
-        let price = WalletZecPriceInfo::read(&mut reader)?;
+        let wallet_settings = if version >= 33 {
+            WalletSettings {
+                sync_config: SyncConfig::read(&mut reader)?,
+            }
+        } else {
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            }
+        };
 
         Ok(Self {
             network,
@@ -441,10 +450,9 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
-            price: Arc::new(RwLock::new(price)),
             send_progress: SendProgress::new(0),
             save_required: false,
+            wallet_settings,
         })
     }
 }

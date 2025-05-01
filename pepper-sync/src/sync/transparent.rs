@@ -4,19 +4,18 @@ use std::ops::Range;
 use tokio::sync::mpsc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{self, BlockHeight};
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_transparent::keys::NonHardenedChildIndex;
 
 use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
-use crate::wallet::traits::SyncWallet;
 use crate::wallet::Locator;
+use crate::wallet::traits::SyncWallet;
 
-use super::MAX_VERIFICATION_WINDOW;
-
-const ADDRESS_GAP_LIMIT: usize = 20;
+use super::{MAX_VERIFICATION_WINDOW, TransparentAddressDiscovery};
 
 /// Discovers all addresses in use by the wallet and returns locators for any new relevant transactions to scan transparent
 /// bundles.
@@ -28,7 +27,12 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet_height: BlockHeight,
     chain_height: BlockHeight,
+    config: TransparentAddressDiscovery,
 ) -> Result<(), SyncError<W::Error>> {
+    if !config.scopes.external && !config.scopes.internal && !config.scopes.refund {
+        return Ok(());
+    }
+
     let wallet_addresses = wallet
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
@@ -70,30 +74,42 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         });
     }
 
+    let mut scopes = Vec::new();
+    if config.scopes.external {
+        scopes.push(TransparentScope::External);
+    }
+    if config.scopes.internal {
+        scopes.push(TransparentScope::Internal);
+    }
+    if config.scopes.refund {
+        scopes.push(TransparentScope::Refund);
+    }
+
     // discover new addresses and find locators for relevant transactions
     for (account_id, ufvk) in ufvks {
         if let Some(account_pubkey) = ufvk.transparent() {
-            for scope in [
-                TransparentScope::External,
-                TransparentScope::Internal,
-                TransparentScope::Refund,
-            ] {
+            for scope in scopes.iter() {
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
                     .iter()
                     .map(|(id, _)| id)
-                    .filter(|id| id.account_id() == *account_id && id.scope() == scope)
+                    .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
                     .next_back()
                 {
-                    id.address_index() + 1
+                    id.address_index().index() + 1
                 } else {
                     0
                 };
                 let mut unused_address_count: usize = 0;
                 let mut addresses: Vec<(TransparentAddressId, String)> = Vec::new();
 
-                while unused_address_count < ADDRESS_GAP_LIMIT {
-                    let address_id = TransparentAddressId::new(*account_id, scope, address_index);
+                while unused_address_count < config.gap_limit as usize {
+                    let address_id = TransparentAddressId::new(
+                        *account_id,
+                        *scope,
+                        NonHardenedChildIndex::from_index(address_index)
+                            .expect("all non-hardened addresses in use!"),
+                    );
                     let address = keys::transparent::derive_address(
                         consensus_parameters,
                         account_pubkey,
@@ -122,7 +138,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                     address_index += 1;
                 }
 
-                addresses.truncate(addresses.len() - ADDRESS_GAP_LIMIT);
+                addresses.truncate(addresses.len() - config.gap_limit as usize);
                 addresses.into_iter().for_each(|(id, address)| {
                     wallet_addresses.insert(id, address);
                 });

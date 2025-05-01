@@ -2,7 +2,7 @@
 name = "zingo-netutils"
 version = "0.1.0"
 authors = ["zingo@zingolabs.org"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 http-body-util.workspace = true

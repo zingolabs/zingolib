@@ -2,9 +2,8 @@
 //! simply plug in a mock server as a chain conductor and provide some values
 
 use pepper_sync::wallet::SaplingNote;
-use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::chain_generics::with_assertions;
@@ -37,6 +36,7 @@ where
     println!("client is ready to send");
 
     let mut recipient = environment.create_client();
+    dbg!("TEST 1");
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
@@ -61,37 +61,44 @@ where
 
     assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 3);
 
-    assert!(sender
-        .sorted_value_transfers(false)
-        .await
-        .unwrap()
-        .iter()
-        .any(|vt| { vt.kind() == ValueTransferKind::Received }));
+    assert!(
+        sender
+            .sorted_value_transfers(false)
+            .await
+            .unwrap()
+            .iter()
+            .any(|vt| { vt.kind() == ValueTransferKind::Received })
+    );
 
-    assert!(sender
-        .sorted_value_transfers(false)
-        .await
-        .unwrap()
-        .iter()
-        .any(|vt| { vt.kind() == ValueTransferKind::Sent(SentValueTransfer::Send) }));
+    assert!(
+        sender
+            .sorted_value_transfers(false)
+            .await
+            .unwrap()
+            .iter()
+            .any(|vt| { vt.kind() == ValueTransferKind::Sent(SentValueTransfer::Send) })
+    );
 
-    assert!(sender
-        .sorted_value_transfers(false)
-        .await
-        .unwrap()
-        .iter()
-        .any(|vt| {
-            vt.kind()
-                == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
-                    SelfSendValueTransfer::MemoToSelf,
-                ))
-        }));
+    assert!(
+        sender
+            .sorted_value_transfers(false)
+            .await
+            .unwrap()
+            .iter()
+            .any(|vt| {
+                vt.kind()
+                    == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
+                        SelfSendValueTransfer::MemoToSelf,
+                    ))
+            })
+    );
 
     assert_eq!(
         recipient.sorted_value_transfers(true).await.unwrap().len(),
         1
     );
 
+    dbg!("TEST 2");
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
@@ -440,7 +447,7 @@ where
     let mut secondary = environment.create_client();
     let tertiary = environment.create_client();
 
-    secondary.sync_and_await(true).await.unwrap();
+    secondary.sync_and_await().await.unwrap();
 
     let expected_fee = fee_tables::one_to_one(None, pool, true);
 

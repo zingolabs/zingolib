@@ -4,15 +4,13 @@ use std::{
     fs::File,
     io::BufReader,
     sync::{
-        atomic::{AtomicBool, AtomicU8},
         Arc,
+        atomic::{AtomicBool, AtomicU8},
     },
 };
 
-use json::{array, JsonValue};
-use log::error;
+use json::{JsonValue, array};
 use serde::Serialize;
-use serde_json::Value;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
@@ -22,7 +20,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{error::WalletError, keys::unified::ReceiverSelection, LightWallet, WalletBase},
+    wallet::{LightWallet, WalletBase, error::WalletError, keys::unified::ReceiverSelection},
 };
 use error::LightClientError;
 
@@ -161,7 +159,12 @@ impl LightClient {
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         Self::create_from_wallet(
-            LightWallet::new(config.chain, WalletBase::FreshEntropy, chain_height)?,
+            LightWallet::new(
+                config.chain,
+                WalletBase::FreshEntropy,
+                chain_height,
+                config.wallet_settings.clone(),
+            )?,
             config,
             overwrite,
         )
@@ -176,11 +179,13 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && dbg!(config.wallet_path_exists()) {
+            if !overwrite && config.wallet_path_exists() {
                 return Err(LightClientError::FileError(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
-                    format!("Cannot save to given data directory as a wallet file already exists at:\n{}",
-                    config.get_wallet_pathbuf().to_string_lossy())
+                    format!(
+                        "Cannot save to given data directory as a wallet file already exists at:\n{}",
+                        config.get_wallet_pathbuf().to_string_lossy()
+                    ),
                 )));
             }
         }
@@ -211,7 +216,7 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, false)
+        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 
     /// TODO: Add Doc Comment Here!
@@ -242,118 +247,6 @@ impl LightClient {
     pub fn set_server(&self, server: http::Uri) {
         *self.config.lightwalletd_uri.write().unwrap() = server
     }
-
-    pub(crate) async fn update_current_price(&self) -> String {
-        // Get the zec price from the server
-        match get_recent_median_price_from_gemini().await {
-            Ok(price) => {
-                self.wallet.lock().await.set_latest_zec_price(price).await;
-                price.to_string()
-            }
-            Err(s) => {
-                error!("Error fetching latest price: {}", s);
-                s.to_string()
-            }
-        }
-    }
-}
-
-// TODO: derive error and move to lightclient error module
-enum PriceFetchError {
-    ReqwestError(String),
-    NotJson,
-    NoElements,
-    PriceReprError(PriceReprError),
-    NanValue,
-}
-
-impl std::fmt::Display for PriceFetchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceFetchError::*;
-        f.write_str(&match self {
-            ReqwestError(e) => format!("ReqwestError: {}", e),
-            NotJson => "NotJson".to_string(),
-            NoElements => "NoElements".to_string(),
-            PriceReprError(e) => format!("PriceReprError: {}", e),
-            NanValue => "NanValue".to_string(),
-        })
-    }
-}
-
-// TODO: derive error and move to lightclient error module
-enum PriceReprError {
-    NoValue,
-    NoAsStrValue,
-    NotParseable,
-}
-
-impl std::fmt::Display for PriceReprError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceReprError::*;
-        fmt.write_str(match self {
-            NoValue => "NoValue",
-            NoAsStrValue => "NoAsStrValue",
-            NotParseable => "NotParseable",
-        })
-    }
-}
-
-fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
-    if let Some(value) = from_gemini.get("price") {
-        if let Some(stringable) = value.as_str() {
-            if let Ok(parsed) = stringable.parse::<f64>() {
-                Ok(parsed)
-            } else {
-                Err(PriceReprError::NotParseable)
-            }
-        } else {
-            Err(PriceReprError::NoAsStrValue)
-        }
-    } else {
-        Err(PriceReprError::NoValue)
-    }
-}
-
-async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
-    let httpget =
-        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
-            Ok(httpresponse) => httpresponse,
-            Err(e) => {
-                return Err(PriceFetchError::ReqwestError(e.to_string()));
-            }
-        };
-    let serialized = match httpget.json::<Value>().await {
-        Ok(asjson) => asjson,
-        Err(_) => {
-            return Err(PriceFetchError::NotJson);
-        }
-    };
-    let elements = match serialized.as_array() {
-        Some(elements) => elements,
-        None => {
-            return Err(PriceFetchError::NoElements);
-        }
-    };
-    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
-        Ok(trades) => trades,
-        Err(e) => {
-            return Err(PriceFetchError::PriceReprError(e));
-        }
-    };
-    if trades.iter().any(|x| x.is_nan()) {
-        return Err(PriceFetchError::NanValue);
-    }
-    // NOTE:  This code will panic if a value is received that:
-    // 1. was parsed from a string to an f64
-    // 2. is not a NaN
-    // 3. cannot be compared to an f64
-    // TODO:  Show that this is impossible, or write code to handle
-    // that case.
-    trades.sort_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("a and b are non-nan f64, I think that makes them comparable")
-    });
-    Ok(trades[5])
 }
 
 #[cfg(test)]
@@ -380,6 +273,7 @@ mod tests {
                 config.chain,
                 WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
                 0.into(),
+                config.wallet_settings.clone(),
             )
             .unwrap(),
             config.clone(),
@@ -395,6 +289,7 @@ mod tests {
                 config.chain,
                 WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
                 0.into(),
+                config.wallet_settings.clone(),
             )
             .unwrap(),
             config,

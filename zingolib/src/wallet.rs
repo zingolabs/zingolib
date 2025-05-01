@@ -2,16 +2,15 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use error::WalletError;
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use send::SendProgress;
 use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-use log::{info, warn};
-use rand::rngs::OsRng;
 use rand::Rng;
+use rand::rngs::OsRng;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::ShardTrees;
@@ -22,17 +21,9 @@ use pepper_sync::{
 
 use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
-use std::{
-    io::{self, Read, Write},
-    sync::Arc,
-    time::SystemTime,
-};
-use tokio::sync::RwLock;
+use std::time::SystemTime;
 
 use crate::config::ChainType;
-use zcash_encoding::Optional;
-
-use self::data::WalletZecPriceInfo;
 
 pub mod data;
 pub mod error;
@@ -59,84 +50,6 @@ pub fn now() -> u32 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("should never fail when comparing with an instant so far in the past")
         .as_secs() as u32
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemoDownloadOption {
-    /// TODO: Add Doc Comment Here!
-    NoMemos = 0,
-    /// TODO: Add Doc Comment Here!
-    WalletMemos,
-    /// TODO: Add Doc Comment Here!
-    AllMemos,
-}
-
-/// TODO: Add Doc Comment Here!
-// FIXME: zingo2 re-implement options
-#[derive(Debug, Clone, Copy)]
-pub struct WalletOptions {
-    pub(crate) download_memos: MemoDownloadOption,
-    /// TODO: Add Doc Comment Here!
-    pub transaction_size_filter: Option<u32>,
-}
-
-/// TODO: Add Doc Comment Here!
-pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
-
-impl Default for WalletOptions {
-    fn default() -> Self {
-        WalletOptions {
-            download_memos: MemoDownloadOption::WalletMemos,
-            transaction_size_filter: Some(MAX_TRANSACTION_SIZE_DEFAULT),
-        }
-    }
-}
-
-impl WalletOptions {
-    /// TODO: Add Doc Comment Here!
-    pub const fn serialized_version() -> u64 {
-        2
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let external_version = reader.read_u64::<LittleEndian>()?;
-
-        let download_memos = match reader.read_u8()? {
-            0 => MemoDownloadOption::NoMemos,
-            1 => MemoDownloadOption::WalletMemos,
-            2 => MemoDownloadOption::AllMemos,
-            v => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Bad download option {}", v),
-                ));
-            }
-        };
-
-        let transaction_size_filter = if external_version > 1 {
-            Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
-        } else {
-            Some(500)
-        };
-
-        Ok(Self {
-            download_memos,
-            transaction_size_filter,
-        })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Write the version
-        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-
-        writer.write_u8(self.download_memos as u8)?;
-        Optional::write(writer, self.transaction_size_filter, |mut w, filter| {
-            w.write_u32::<LittleEndian>(filter)
-        })
-    }
 }
 
 /// Data used to initialize new instance of LightWallet
@@ -215,14 +128,12 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Wallet options
-    pub wallet_options: Arc<RwLock<WalletOptions>>, // TODO: revisit options
-    /// The current price of ZEC. (time_fetched, price in USD)
-    pub price: Arc<RwLock<WalletZecPriceInfo>>,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
 }
 
 impl LightWallet {
@@ -243,6 +154,7 @@ impl LightWallet {
         network: ChainType,
         wallet_base: WalletBase,
         birthday: BlockHeight,
+        wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
         let (unified_key_store, mnemonic) = match wallet_base {
             WalletBase::FreshEntropy => {
@@ -250,13 +162,19 @@ impl LightWallet {
                 // Create a random seed.
                 let mut system_rng = OsRng;
                 system_rng.fill(&mut seed_bytes);
-                return Self::new(network, WalletBase::SeedBytes(seed_bytes), birthday);
+                return Self::new(
+                    network,
+                    WalletBase::SeedBytes(seed_bytes),
+                    birthday,
+                    wallet_settings,
+                );
             }
             WalletBase::SeedBytes(seed_bytes) => {
                 return Self::new(
                     network,
                     WalletBase::SeedBytesAndAccount(seed_bytes, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::SeedBytesAndAccount(seed_bytes, account_index) => {
@@ -265,6 +183,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicPhrase(phrase) => {
@@ -272,6 +191,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicPhraseAndAccount(phrase, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicPhraseAndAccount(phrase, account_index) => {
@@ -280,6 +200,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::Mnemonic(mnemonic) => {
@@ -287,6 +208,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicAndAccount(mnemonic, account_index) => {
@@ -327,7 +249,7 @@ impl LightWallet {
                 TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::External,
-                    first_address_index,
+                    NonHardenedChildIndex::from_index(first_address_index).expect("infallible"),
                 ),
                 transparent::encode_address(&network, *transparent_address),
             );
@@ -335,11 +257,9 @@ impl LightWallet {
 
         Ok(Self {
             mnemonic,
-            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
             send_progress: SendProgress::new(0),
-            price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -350,23 +270,8 @@ impl LightWallet {
             unified_addresses,
             network,
             save_required: true,
+            wallet_settings,
         })
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_download_memo(&self, value: MemoDownloadOption) {
-        self.wallet_options.write().await.download_memos = value;
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub async fn set_latest_zec_price(&self, price: f64) {
-        if price <= 0 as f64 {
-            warn!("Tried to set a bad current zec price {}", price);
-            return;
-        }
-
-        self.price.write().await.zec_price = Some((now() as u64, price));
-        info!("Set current ZEC Price to USD {}", price);
     }
 
     // Set the previous send's result as a JSON string.
@@ -392,6 +297,13 @@ impl LightWallet {
             Ok(None)
         }
     }
+}
+
+/// Wallet settings.
+#[derive(Debug, Clone)]
+pub struct WalletSettings {
+    /// Sync configuration.
+    pub sync_config: pepper_sync::sync::SyncConfig,
 }
 
 #[cfg(test)]

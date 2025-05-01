@@ -5,14 +5,15 @@
 #![warn(missing_docs)]
 
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use log::{error, info};
 
 use clap::{self, Arg};
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
-use zingolib::wallet::{LightWallet, WalletBase};
+use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
@@ -191,7 +192,9 @@ fn start_interactive(
             .unwrap();
 
         match send_command("sync".to_string(), vec!["poll".to_string()]) {
-            poll if poll.starts_with("Error:") => eprintln!("{poll}"),
+            poll if poll.starts_with("Error:") => {
+                eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.")
+            }
             poll if poll.starts_with("Sync completed succesfully:") => println!("{poll}"),
             _ => (),
         }
@@ -404,7 +407,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
             return Err(format!(
                 "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-                server ));
+                server
+            ));
         }
 
         let sync = !matches.get_flag("nosync");
@@ -445,6 +449,11 @@ pub fn startup(
         filled_template.server.clone(),
         Some(data_dir),
         filled_template.chaintype,
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
@@ -455,6 +464,7 @@ pub fn startup(
                 config.chain,
                 WalletBase::from_string(phrase),
                 (filled_template.birthday as u32).into(),
+                config.wallet_settings.clone(),
             )
             .map_err(|e| {
                 std::io::Error::new(

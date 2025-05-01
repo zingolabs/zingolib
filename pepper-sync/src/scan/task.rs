@@ -2,8 +2,8 @@ use std::{
     borrow::BorrowMut,
     collections::{BTreeSet, HashMap},
     sync::{
-        atomic::{self, AtomicBool},
         Arc,
+        atomic::{self, AtomicBool},
     },
 };
 
@@ -18,25 +18,22 @@ use zcash_client_backend::{
     proto::compact_formats::CompactBlock,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::{
-    consensus::{self, BlockHeight},
-    transaction::TxId,
-    zip32::AccountId,
-};
+use zcash_primitives::{transaction::TxId, zip32::AccountId};
+use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
+    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     sync,
     wallet::{
-        traits::{SyncBlocks, SyncWallet},
         Locator, WalletBlock,
+        traits::{SyncBlocks, SyncWallet},
     },
-    MAX_BATCH_OUTPUTS,
 };
 
-use super::{scan, ScanResults};
+use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 
@@ -51,7 +48,7 @@ impl ScannerState {
         *self = ScannerState::Scan
     }
 
-    fn scan_completed(&mut self) {
+    fn shutdown(&mut self) {
         *self = ScannerState::Shutdown
     }
 }
@@ -251,15 +248,6 @@ where
             }
         }
 
-        if !wallet
-            .get_sync_state()
-            .map_err(SyncError::WalletError)?
-            .scan_complete()
-            && self.worker_poolsize() == 0
-        {
-            panic!("worker pool should not be empty with unscanned ranges!")
-        }
-
         Ok(())
     }
 
@@ -291,7 +279,7 @@ where
             {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
-                self.state.scan_completed();
+                self.state.shutdown();
             }
         }
 
@@ -412,10 +400,7 @@ where
                             )
                             .await?;
 
-                        batch_sender
-                            .send(full_batch)
-                            .await
-                            .expect("receiver should never be dropped before sender!");
+                        let _ignore_error = batch_sender.send(full_batch).await;
 
                         scan_task = new_batch;
                         sapling_output_count = 0;
@@ -425,10 +410,7 @@ where
                     scan_task.compact_blocks.push(compact_block);
                 }
 
-                batch_sender
-                    .send(scan_task)
-                    .await
-                    .expect("receiver should never be dropped before sender!");
+                let _ignore_error = batch_sender.send(scan_task).await;
 
                 is_batching.store(false, atomic::Ordering::Release);
             }
@@ -487,6 +469,9 @@ where
         tracing::debug!("Shutting down batcher");
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
+        }
+        if let Some(receiver) = self.batch_receiver.take() {
+            drop(receiver);
         }
         let handle = self
             .handle
@@ -554,9 +539,7 @@ where
                 )
                 .await;
 
-                scan_results_sender
-                    .send((scan_range, scan_results))
-                    .expect("receiver should never be dropped before sender!");
+                let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
                 is_scanning.store(false, atomic::Ordering::Release);
             }

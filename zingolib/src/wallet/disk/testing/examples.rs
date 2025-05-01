@@ -1,11 +1,12 @@
 use bytes::Buf;
-use zcash_client_backend::PoolType;
-use zcash_client_backend::ShieldedProtocol;
 
-use crate::config::ChainType;
-use crate::lightclient::LightClient;
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::super::LightWallet;
+use crate::config::ChainType;
+use crate::lightclient::LightClient;
+use crate::wallet::WalletSettings;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
@@ -279,6 +280,11 @@ impl NetworkSeedVersion {
                     crate::config::ChainType::Regtest(
                         crate::config::RegtestNetwork::all_upgrades_active(),
                     ),
+                    WalletSettings {
+                        sync_config: SyncConfig {
+                            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        },
+                    },
                 )
                 .unwrap()
             }

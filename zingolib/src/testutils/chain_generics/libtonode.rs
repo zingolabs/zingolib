@@ -1,8 +1,6 @@
 //! libtonode tests use zcashd regtest mode to mock a chain
 
-use zcash_client_backend::PoolType;
-
-use zcash_client_backend::ShieldedProtocol::Sapling;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::config::RegtestNetwork;
 use crate::lightclient::LightClient;
@@ -25,7 +23,7 @@ impl ConductChain for LibtonodeEnvironment {
         timestamped_test_log("starting mock libtonode network");
         let regtest_network = RegtestNetwork::all_upgrades_active();
         let scenario_builder = ScenarioBuilder::build_configure_launch(
-            Some(PoolType::Shielded(Sapling)),
+            Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             None,
             None,
             &regtest_network,

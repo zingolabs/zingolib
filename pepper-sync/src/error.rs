@@ -3,8 +3,8 @@
 use std::{array::TryFromSliceError, convert::Infallible};
 
 use shardtree::error::ShardTreeError;
-use zcash_client_backend::PoolType;
 use zcash_primitives::{block::BlockHash, consensus::BlockHeight, transaction::TxId};
+use zcash_protocol::PoolType;
 
 use crate::wallet::OutputId;
 
@@ -40,6 +40,20 @@ where
     WalletError(E),
 }
 
+/// Sync status errors.
+#[derive(Debug, thiserror::Error)]
+pub enum SyncStatusError<E>
+where
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    /// No sync data. Wallet has never been synced with the block chain.
+    #[error("No sync data. Wallet has never been synced with the block chain.")]
+    NoSyncData,
+    /// Wallet error.
+    #[error("wallet error. {0}")]
+    WalletError(E),
+}
+
 /// Mempool errors.
 #[derive(Debug, thiserror::Error)]
 pub enum MempoolError {
@@ -47,7 +61,9 @@ pub enum MempoolError {
     #[error("server error. {0}")]
     ServerError(#[from] ServerError),
     /// Timed out fetching mempool stream during shutdown.
-    #[error("timed out fetching mempool stream during shutdown.\nNON-CRITICAL: sync completed successfully but may not have scanned transactions in the mempool.")]
+    #[error(
+        "timed out fetching mempool stream during shutdown.\nNON-CRITICAL: sync completed successfully but may not have scanned transactions in the mempool."
+    )]
     ShutdownWithoutStream,
 }
 
@@ -81,7 +97,9 @@ pub enum ScanError {
     #[error("invalid orchard action")]
     InvalidOrchardAction,
     /// Incorrect tree size
-    #[error("incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}")]
+    #[error(
+        "incorrect tree size. {shielded_protocol} tree size recorded in block metadata {block_metadata_size} does not match calculated size {calculated_size}"
+    )]
     IncorrectTreeSize {
         /// Shielded protocol
         shielded_protocol: PoolType,
@@ -91,7 +109,9 @@ pub enum ScanError {
         calculated_size: u32,
     },
     /// Txid of transaction returned by the server does not match requested txid.
-    #[error("txid of transaction returned by the server does not match requested txid.\ntxid requested: {txid_requested}\ntxid returned: {txid_returned}")]
+    #[error(
+        "txid of transaction returned by the server does not match requested txid.\ntxid requested: {txid_requested}\ntxid returned: {txid_returned}"
+    )]
     IncorrectTxid {
         /// Txid requested
         txid_requested: TxId,
@@ -113,7 +133,9 @@ pub enum ScanError {
 #[derive(Debug, thiserror::Error)]
 pub enum ContinuityError {
     /// Height discontinuity.
-    #[error("height discontinuity. block with height {height} is not continuous with previous block height {previous_block_height}")]
+    #[error(
+        "height discontinuity. block with height {height} is not continuous with previous block height {previous_block_height}"
+    )]
     HeightDiscontinuity {
         /// Block height
         height: BlockHeight,
@@ -121,7 +143,9 @@ pub enum ContinuityError {
         previous_block_height: BlockHeight,
     },
     /// Hash discontinuity.
-    #[error("hash discontinuity. block prev_hash {prev_hash} with height {height} does not match previous block hash {previous_block_hash}")]
+    #[error(
+        "hash discontinuity. block prev_hash {prev_hash} with height {height} does not match previous block hash {previous_block_hash}"
+    )]
     HashDiscontinuity {
         /// Block height
         height: BlockHeight,

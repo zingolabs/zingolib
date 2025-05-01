@@ -4,16 +4,18 @@
 use crate::config::ZingoConfig;
 use pepper_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
 use sapling_crypto::{
-    zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
     PaymentAddress,
+    zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
 };
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{
-    consensus::NetworkConstants, legacy::TransparentAddress, zip32::ChildIndex,
+    consensus::NetworkConstants,
+    legacy::{TransparentAddress, keys::NonHardenedChildIndex},
+    zip32::ChildIndex,
 };
 
-use super::{error::KeyError, LightWallet};
+use super::{LightWallet, error::KeyError};
 
 pub mod legacy;
 pub mod unified;
@@ -43,7 +45,8 @@ impl LightWallet {
                 TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::External,
-                    unified_address_index,
+                    NonHardenedChildIndex::from_index(unified_address_index)
+                        .expect("all non-hardened addresses in use!"),
                 ),
                 transparent::encode_address(&self.network, *transparent_address),
             );
@@ -76,7 +79,8 @@ impl LightWallet {
                 let transparent_address_id = TransparentAddressId::new(
                     zip32::AccountId::ZERO,
                     TransparentScope::Refund,
-                    address_index as u32,
+                    NonHardenedChildIndex::from_index(address_index as u32)
+                        .expect("all non-hardened addresses in use!"),
                 );
                 let refund_address = self.unified_key_store.generate_transparent_address(
                     address_index as u32,

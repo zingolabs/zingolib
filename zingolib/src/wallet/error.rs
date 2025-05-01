@@ -3,9 +3,11 @@
 use std::convert::Infallible;
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
-use zcash_client_backend::PoolType;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_protocol::PoolType;
+
+use super::output::OutputRef;
 
 /// Top level wallet errors
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +20,7 @@ pub enum WalletError {
     MnemonicError(#[from] bip0039::Error),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
-    InvalidValue(#[from] zcash_primitives::transaction::components::amount::BalanceError),
+    InvalidValue(#[from] zcash_protocol::value::BalanceError),
     /// Failed to write transaction.
     #[error("Failed to write transaction. {0:?}")]
     TransactionWrite(#[from] std::io::Error),
@@ -32,8 +34,11 @@ pub enum WalletError {
     #[error("Failed to scan calculated transaction.")]
     CalculatedTxScanError(#[from] ScanError),
     /// Address parse error
-    #[error("address parse error. {0}")]
+    #[error("Address parse error. {0}")]
     ParseError(#[from] zcash_address::ParseError),
+    /// No sync data. Wallet has never been synced with the block chain.
+    #[error("No sync data. Wallet has never been synced with the block chain.")]
+    NoSyncData,
 }
 
 /// Removal error
@@ -68,7 +73,7 @@ pub enum FeeError {
     /// Transparent spend not found in wallet
     SpendNotFound { txid: TxId, spend: String },
     /// Balance error
-    BalanceError(zcash_primitives::transaction::components::amount::BalanceError),
+    BalanceError(zcash_protocol::value::BalanceError),
 }
 
 impl std::error::Error for FeeError {}
@@ -87,8 +92,8 @@ impl std::fmt::Display for FeeError {
     }
 }
 
-impl From<zcash_primitives::transaction::components::amount::BalanceError> for FeeError {
-    fn from(value: zcash_primitives::transaction::components::amount::BalanceError) -> Self {
+impl From<zcash_protocol::value::BalanceError> for FeeError {
+    fn from(value: zcash_protocol::value::BalanceError) -> Self {
         Self::BalanceError(value)
     }
 }
@@ -97,7 +102,9 @@ impl From<zcash_primitives::transaction::components::amount::BalanceError> for F
 #[derive(Debug, thiserror::Error)]
 pub enum SpendError {
     /// Transaction spends not found in wallet
-    #[error("spend not found for transaction id {txid}. is the wallet fully synced?\nmissing spend: {spend}")]
+    #[error(
+        "spend not found for transaction id {txid}. is the wallet fully synced?\nmissing spend: {spend}"
+    )]
     SpendNotFound {
         pool: PoolType,
         txid: TxId,
@@ -187,7 +194,9 @@ pub enum TransmissionError {
     #[error("No view capability")]
     NoViewCapability,
     /// Txid reported by server does not match calculated txid.
-    #[error("Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}")]
+    #[error(
+        "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
+    )]
     IncorrectTxidFromServer(TxId, TxId),
     /// Failed to scan transmitted transaction..
     #[error("Failed to scan transmitted transaction. {0}")]
@@ -196,7 +205,7 @@ pub enum TransmissionError {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum CalculateTransactionError {
+pub enum CalculateTransactionError<NoteRef> {
     #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
     NoSpendCapability,
     #[error("Could not load sapling_params: {0}")]
@@ -205,12 +214,13 @@ pub enum CalculateTransactionError {
     UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
-        #[from]
         zcash_client_backend::data_api::error::Error<
             WalletError,
-            std::convert::Infallible,
-            std::convert::Infallible,
+            Infallible,
+            Infallible,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            NoteRef,
         >,
     ),
     #[error("Only tex multistep transactions are supported!")]
@@ -226,11 +236,10 @@ pub enum ProposeSendError {
         zcash_client_backend::data_api::error::Error<
             WalletError,
             WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                zcash_client_backend::wallet::NoteId,
-            >,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            OutputRef,
         >,
     ),
     /// failed to construct a transaction request
@@ -257,11 +266,10 @@ pub enum ProposeShieldError {
         zcash_client_backend::data_api::error::Error<
             WalletError,
             WalletError,
-            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError<
-                zcash_primitives::transaction::fees::zip317::FeeError,
-                Infallible,
-            >,
+            zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError,
             zcash_primitives::transaction::fees::zip317::FeeError,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            Infallible,
         >,
     ),
     #[error("not enough transparent funds to shield.")]

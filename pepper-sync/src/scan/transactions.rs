@@ -1,34 +1,37 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use tokio::sync::mpsc;
+
 use incrementalmerkletree::Position;
 use orchard::{
+    Action,
     keys::Scope,
     note_encryption::OrchardDomain,
     primitives::redpallas::{Signature, SpendAuth},
-    Action,
 };
 use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use tokio::sync::mpsc;
-
-use zcash_client_backend::ShieldedProtocol;
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_note_encryption::{BatchDomain, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
 use zcash_primitives::{
-    consensus::{self, BlockHeight, NetworkConstants},
     memo::Memo,
     transaction::{Transaction, TxId},
     zip32::AccountId,
 };
+use zcash_protocol::{
+    ShieldedProtocol,
+    consensus::{self, BlockHeight, NetworkConstants},
+};
+
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::{self, FetchRequest},
     error::ScanError,
-    keys::{self, transparent::TransparentAddressId, KeyId},
+    keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
         Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
         OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
@@ -330,7 +333,7 @@ fn scan_incoming_coins<P: consensus::Parameters>(
     transparent_coins: &mut Vec<TransparentCoin>,
     txid: TxId,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
-    transparent_outputs: &[zcash_primitives::transaction::components::TxOut],
+    transparent_outputs: &[zcash_transparent::bundle::TxOut],
 ) {
     for (output_index, output) in transparent_outputs.iter().enumerate() {
         if let Some(address) = output.recipient_address() {

@@ -2,7 +2,7 @@
 name = "zingolib"
 version = "0.2.0"
 authors = ["zingo@zingolabs.org>"]
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,9 +26,10 @@ zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
-zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_transparent = { workspace = true }
 zip32.workspace = true
 
 bip0039.workspace = true
@@ -36,17 +37,11 @@ bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 bs58 = { workspace = true, features = ["check"] }
 
 append-only-vec = { workspace = true }
-base58 = { workspace = true }
-base64 = { workspace = true }
-bls12_381 = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 dirs.workspace = true
-enum_dispatch = { workspace = true }
-ff = { workspace = true }
 futures = { workspace = true }
-group = { workspace = true }
 hex = { workspace = true }
 http.workspace = true
 indoc = { workspace = true }
@@ -57,10 +52,8 @@ log = { workspace = true }
 log4rs.workspace = true
 nonempty.workspace = true
 portpicker = { workspace = true, optional = true }
-proptest = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
 ring = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 rustls.workspace = true
@@ -69,10 +62,7 @@ secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
-subtle = { workspace = true }
 tempfile = {workspace = true, optional = true }
-test-case = { workspace = true }
 thiserror = { workspace = true }
 tokio =  { workspace = true, features = ["full"] }
 tonic = { workspace = true }

@@ -1,13 +1,15 @@
 //! Module containing utility functions for the commands interface
 
+use json::JsonValue;
+
+use zcash_address::ZcashAddress;
+use zcash_primitives::memo::MemoBytes;
+use zcash_protocol::value::Zatoshis;
+
 use crate::commands::error::CommandError;
 use crate::data::receivers::Receivers;
 use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
 use crate::wallet;
-use json::JsonValue;
-use zcash_address::ZcashAddress;
-use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
@@ -185,7 +187,8 @@ fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
         )),
     }
 }
-fn zatoshis_from_json(json_array: &JsonValue) -> Result<NonNegativeAmount, CommandError> {
+
+fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> {
     if !json_array.has_key("amount") {
         return Err(CommandError::MissingKey("amount".to_string()));
     }
@@ -318,8 +321,7 @@ mod tests {
             }
             #[test]
             fn invalid_memo() {
-                let arg_contents =
-                    "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
+                let arg_contents = "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
                 let long_513_byte_memo = &"a".repeat(513);
                 let long_memo_args =
                     arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
@@ -336,7 +338,10 @@ mod tests {
 
             #[test]
             fn two_args_wrong_amount() {
-                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "foo"];
+                let args = [
+                    "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                    "foo",
+                ];
                 assert!(matches!(
                     parse_send_args(&args),
                     Err(CommandError::ParseIntFromString(_))
@@ -344,7 +349,12 @@ mod tests {
             }
             #[test]
             fn wrong_number_of_args() {
-                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", "3", "4"];
+                let args = [
+                    "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                    "123",
+                    "3",
+                    "4",
+                ];
                 assert!(matches!(
                     parse_send_args(&args),
                     Err(CommandError::InvalidArguments)
@@ -353,7 +363,11 @@ mod tests {
             #[test]
             fn invalid_memo() {
                 let long_513_byte_memo = &"a".repeat(513);
-                let args = ["zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p", "123", long_513_byte_memo];
+                let args = [
+                    "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                    "123",
+                    long_513_byte_memo,
+                ];
 
                 assert!(matches!(
                     parse_send_args(&args),
@@ -371,19 +385,21 @@ mod tests {
         let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
 
         // JSON single receiver
-        let single_receiver =
-            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+        let single_receiver = &[
+            "{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                  \"memo\":\"test memo\", \
-                 \"zennies_for_zingo\":false}"];
+                 \"zennies_for_zingo\":false}",
+        ];
         assert_eq!(
             super::parse_send_all_args(single_receiver).unwrap(),
             (address.clone(), false, Some(memo.clone()))
         );
         // NonBool Zenny Flag
-        let nb_zenny =
-            &["{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
+        let nb_zenny = &[
+            "{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                  \"memo\":\"test memo\", \
-                 \"zennies_for_zingo\":\"false\"}"];
+                 \"zennies_for_zingo\":\"false\"}",
+        ];
         assert!(matches!(
             super::parse_send_all_args(nb_zenny),
             Err(CommandError::ZenniesFlagNonBool(_))

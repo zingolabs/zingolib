@@ -8,7 +8,7 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{read_dataset, read_lines, DarksideHandler},
+    utils::{DarksideHandler, read_dataset, read_lines},
 };
 
 use tokio::time::sleep;
@@ -42,7 +42,7 @@ async fn reorg_changes_incoming_tx_height() {
             RegtestNetwork::all_upgrades_active(),
         );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -70,7 +70,7 @@ async fn reorg_changes_incoming_tx_height() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(false).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -197,7 +197,7 @@ async fn reorg_changes_incoming_tx_index() {
             RegtestNetwork::all_upgrades_active(),
         );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -225,7 +225,7 @@ async fn reorg_changes_incoming_tx_index() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(false).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -352,7 +352,7 @@ async fn reorg_expires_incoming_tx() {
             RegtestNetwork::all_upgrades_active(),
         );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -380,7 +380,7 @@ async fn reorg_expires_incoming_tx() {
         .await
         .unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(false).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -529,7 +529,7 @@ async fn reorg_changes_outgoing_tx_height() {
             RegtestNetwork::all_upgrades_active(),
         );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -578,7 +578,7 @@ async fn reorg_changes_outgoing_tx_height() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -640,7 +640,7 @@ async fn reorg_changes_outgoing_tx_height() {
     // temp hack as pepper sync needs tree state of latest block for sync status
     connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 211, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(false).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -787,7 +787,7 @@ async fn reorg_expires_outgoing_tx_height() {
         transparent_balance: Some(0),
     };
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(light_client.do_balance().await, expected_initial_balance);
 
     let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
@@ -816,7 +816,7 @@ async fn reorg_expires_outgoing_tx_height() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -874,7 +874,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // temp hack as pepper sync needs tree state of latest block for sync status
     connector.add_tree_state(TreeState { network: "regtest".to_string(), height: 245, hash: "015265800472a8aaf96c7891cf7bd63ee1468bb6f3747714a6bd76c40ec9298b".to_string(), time: 1694454562, sapling_tree: "000000".to_string(), orchard_tree: "01532c96c5d6a36ae79a9cad00ef7053e11b738c84c1022f80d8b0afcd2aedea23001f000001346fd8af3d66b14feaa60685fa189ca55cbd7f952fc25cdc971c310122b2402a01085516881012d2729492ba29b11522d3a45f0b70e2a7ab62a4243ec9a67c2a1100015fe60f3e71ba24797be5421c6c702e0a50c3a2178291a7d3dbd9543f5815cb0400000000000000000000000000000000000000000000000000".to_string() }).await.unwrap();
 
-    let reorg_sync_result = light_client.sync_and_await(false).await;
+    let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
         Ok(value) => println!("{}", value),
@@ -963,7 +963,7 @@ async fn reorg_changes_outgoing_tx_index() {
             RegtestNetwork::all_upgrades_active(),
         );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -1012,7 +1012,7 @@ async fn reorg_changes_outgoing_tx_index() {
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_send_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -1086,7 +1086,7 @@ async fn reorg_changes_outgoing_tx_index() {
 
     _ = connector.apply_staged(312).await;
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     let expected_after_reorg_balance = PoolBalances {
         sapling_balance: Some(0),
@@ -1172,5 +1172,8 @@ async fn test_read_tree_state_from_file() {
     );
     assert_eq!(tree_state.time, 1694454196);
     assert_eq!(tree_state.sapling_tree, "000000");
-    assert_eq!(tree_state.orchard_tree, "01136febe0db97210efb679e378d3b3a49d6ac72d0161ae478b1faaa9bd26a2118012246dd85ba2d9510caa03c40f0b75f7b02cb0cfac88ec1c4b9193d58bb6d44201f000001f0328e13a28669f9a5bd2a1c5301549ea28ccb7237347b9c76c05276952ad135016be8aefe4f98825b5539a2b47b90a8057e52c1e1badc725d67c06b4cc2a32e24000000000000000000000000000000000000000000000000000000");
+    assert_eq!(
+        tree_state.orchard_tree,
+        "01136febe0db97210efb679e378d3b3a49d6ac72d0161ae478b1faaa9bd26a2118012246dd85ba2d9510caa03c40f0b75f7b02cb0cfac88ec1c4b9193d58bb6d44201f000001f0328e13a28669f9a5bd2a1c5301549ea28ccb7237347b9c76c05276952ad135016be8aefe4f98825b5539a2b47b90a8057e52c1e1badc725d67c06b4cc2a32e24000000000000000000000000000000000000000000000000000000"
+    );
 }
