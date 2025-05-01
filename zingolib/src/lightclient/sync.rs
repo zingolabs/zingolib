@@ -2,6 +2,7 @@
 
 use std::borrow::BorrowMut;
 use std::sync::atomic;
+use std::time::Duration;
 
 use futures::FutureExt;
 use pepper_sync::error::SyncError;
@@ -23,7 +24,7 @@ impl LightClient {
         &mut self,
         transparent_address_discovery: bool,
     ) -> Result<(), LightClientError> {
-        if SyncMode::from_atomic_u8(self.sync_mode.clone())? != SyncMode::NotRunning {
+        if self.sync_mode() != SyncMode::NotRunning {
             return Err(LightClientError::SyncModeError(
                 SyncModeError::SyncAlreadyRunning,
             ));
@@ -51,14 +52,21 @@ impl LightClient {
     }
 
     /// Clear the wallet data obtained from the blockchain and launch sync from wallet birthday.
+    ///
+    /// If sync is already running, stops sync and waits for it to shutdown before clearing the wallet and rescanning.
     pub async fn rescan(
         &mut self,
         transparent_address_discovery: bool,
     ) -> Result<(), LightClientError> {
-        if SyncMode::from_atomic_u8(self.sync_mode.clone())? != SyncMode::NotRunning {
-            return Err(LightClientError::SyncModeError(
-                SyncModeError::SyncAlreadyRunning,
-            ));
+        if self.sync_mode() != SyncMode::NotRunning {
+            self.stop_sync().expect("infallible in this scope");
+
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await;
+            while matches!(self.poll_sync(), PollReport::NotReady) {
+                interval.tick().await;
+            }
         }
         self.wallet.lock().await.clear_all();
         self.sync(transparent_address_discovery).await
