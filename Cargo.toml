@@ -104,9 +104,5 @@ zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
-[profile.release]
-debug = false
-
 [profile.test]
 opt-level = 3
-debug = false
