@@ -60,7 +60,7 @@ hyper-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27", features = ["http2"] }
 indoc = "2"
-itertools = "0.13"
+itertools = "0.14"
 json = "0.12"
 jubjub = "0.10"
 lazy_static = "1"
