@@ -48,7 +48,7 @@ impl ScannerState {
         *self = ScannerState::Scan
     }
 
-    pub(crate) fn shutdown(&mut self) {
+    fn shutdown(&mut self) {
         *self = ScannerState::Shutdown
     }
 }
