@@ -28,6 +28,7 @@ mod config_templaters;
 pub mod setup {
     use std::path::PathBuf;
 
+    use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
     use tokio::time::sleep;
 
     use zcash_protocol::{PoolType, ShieldedProtocol};
@@ -36,7 +37,7 @@ pub mod setup {
     use crate::testutils::paths::get_regtest_dir;
     use crate::testutils::poll_server_height;
     use crate::testutils::regtest::ChildProcessHandler;
-    use crate::wallet::LightWallet;
+    use crate::wallet::{LightWallet, WalletSettings};
     use crate::{lightclient::LightClient, wallet::WalletBase};
     use testvectors::{
         BASE_HEIGHT, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
@@ -216,6 +217,11 @@ pub mod setup {
                 self.server_id.clone(),
                 Some(conf_path),
                 crate::config::ChainType::Regtest(regtest_network),
+                WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    },
+                },
             )
             .unwrap()
         }
@@ -249,6 +255,7 @@ pub mod setup {
                     config.chain,
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     (birthday as u32).into(),
+                    config.wallet_settings.clone(),
                 )
                 .unwrap(),
                 config,
@@ -405,7 +412,7 @@ pub async fn faucet(
     )
     .await;
     let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-    faucet.sync_and_await(true).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     (
         sb.regtest_manager,
         sb.child_process_handler.unwrap(),
@@ -444,7 +451,7 @@ pub async fn faucet_recipient(
     )
     .await;
     let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-    faucet.sync_and_await(true).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
 
     let recipient = sb.client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
@@ -548,7 +555,7 @@ pub async fn faucet_funded_recipient(
     increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
         .unwrap();
-    faucet.sync_and_await(true).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     (
         regtest_manager,
         child_process_handler,
@@ -665,7 +672,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
         false,
         regtest_network,
     );
-    faucet.sync_and_await(true).await.unwrap();
+    faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
@@ -969,7 +976,7 @@ pub mod chainload {
         let mut sb =
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
         let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-        faucet.sync_and_await(true).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
         let recipient = sb.client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,

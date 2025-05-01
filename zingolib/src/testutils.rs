@@ -9,6 +9,7 @@ use std::{io::Read, string::String, time::Duration};
 
 use json::JsonValue;
 
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zcash_address::unified::Fvk;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
@@ -21,7 +22,7 @@ use crate::wallet::data::summaries::{
 };
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
-use crate::wallet::{LightWallet, WalletBase};
+use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 use lightclient::get_base_address;
 use regtest::RegtestManager;
 
@@ -65,7 +66,17 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         &zcash_protocol::consensus::NetworkType::Regtest,
     );
     LightClient::create_from_wallet(
-        LightWallet::new(config.chain, WalletBase::Ufvk(ufvk), 0.into()).unwrap(),
+        LightWallet::new(
+            config.chain,
+            WalletBase::Ufvk(ufvk),
+            0.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            },
+        )
+        .unwrap(),
         config,
         false,
     )
@@ -250,7 +261,7 @@ pub async fn send_value_between_clients_and_sync(
     .await
     .unwrap();
     increase_height_and_wait_for_client(manager, sender, 1).await?;
-    recipient.sync_and_await(true).await?;
+    recipient.sync_and_await().await?;
     Ok(txid.first().to_string())
 }
 
@@ -292,7 +303,7 @@ pub async fn sync_to_target_height(
     target_block_height: u32,
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
-    client.sync_and_await(true).await?;
+    client.sync_and_await().await?;
     while u32::from(
         client
             .wallet
@@ -304,7 +315,7 @@ pub async fn sync_to_target_height(
     ) < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        client.sync_and_await(true).await?;
+        client.sync_and_await().await?;
     }
     Ok(())
 }

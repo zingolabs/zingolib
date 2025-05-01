@@ -128,6 +128,8 @@ pub struct LightWallet {
     pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
 }
 
 impl LightWallet {
@@ -148,6 +150,7 @@ impl LightWallet {
         network: ChainType,
         wallet_base: WalletBase,
         birthday: BlockHeight,
+        wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
         let (unified_key_store, mnemonic) = match wallet_base {
             WalletBase::FreshEntropy => {
@@ -155,13 +158,19 @@ impl LightWallet {
                 // Create a random seed.
                 let mut system_rng = OsRng;
                 system_rng.fill(&mut seed_bytes);
-                return Self::new(network, WalletBase::SeedBytes(seed_bytes), birthday);
+                return Self::new(
+                    network,
+                    WalletBase::SeedBytes(seed_bytes),
+                    birthday,
+                    wallet_settings,
+                );
             }
             WalletBase::SeedBytes(seed_bytes) => {
                 return Self::new(
                     network,
                     WalletBase::SeedBytesAndAccount(seed_bytes, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::SeedBytesAndAccount(seed_bytes, account_index) => {
@@ -170,6 +179,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicPhrase(phrase) => {
@@ -177,6 +187,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicPhraseAndAccount(phrase, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicPhraseAndAccount(phrase, account_index) => {
@@ -185,6 +196,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, account_index),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::Mnemonic(mnemonic) => {
@@ -192,6 +204,7 @@ impl LightWallet {
                     network,
                     WalletBase::MnemonicAndAccount(mnemonic, 0),
                     birthday,
+                    wallet_settings,
                 );
             }
             WalletBase::MnemonicAndAccount(mnemonic, account_index) => {
@@ -252,6 +265,7 @@ impl LightWallet {
             unified_addresses,
             network,
             save_required: true,
+            wallet_settings,
         })
     }
 
@@ -278,6 +292,13 @@ impl LightWallet {
             Ok(None)
         }
     }
+}
+
+/// Wallet settings.
+#[derive(Debug, Clone)]
+pub struct WalletSettings {
+    /// Sync configuration.
+    pub sync_config: pepper_sync::sync::SyncConfig,
 }
 
 #[cfg(test)]

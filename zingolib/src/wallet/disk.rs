@@ -19,7 +19,7 @@ use zip32::AccountId;
 
 use super::LightWallet;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use crate::wallet::{SendProgress, legacy::WalletZecPriceInfo, utils};
+use crate::wallet::{SendProgress, WalletSettings, legacy::WalletZecPriceInfo, utils};
 use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
     config::ChainType,
@@ -30,6 +30,7 @@ use crate::{
 };
 use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
+    sync::{SyncConfig, TransparentAddressDiscovery},
     wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
 };
 
@@ -37,7 +38,7 @@ impl LightWallet {
     /// Changes in version 32:
     /// - Wallet restructure due to integration of new sync engine
     pub const fn serialized_version() -> u64 {
-        32
+        33
     }
 
     /// Serialize into `writer`
@@ -110,6 +111,8 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
 
+        self.wallet_settings.sync_config.write(&mut writer)?;
+
         Ok(())
     }
 
@@ -120,7 +123,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32 => Self::read_v32(reader, network),
+            32..=33 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -318,12 +321,17 @@ impl LightWallet {
             unified_addresses,
             network,
             save_required: false,
+            wallet_settings: WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            },
         };
 
         Ok(lw)
     }
 
-    fn read_v32<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+    fn read_v32<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
         let saved_network = utils::read_string(&mut reader)?;
         if saved_network != network.to_string() {
             return Err(Error::new(
@@ -417,6 +425,18 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
+        let wallet_settings = if version >= 33 {
+            WalletSettings {
+                sync_config: SyncConfig::read(&mut reader)?,
+            }
+        } else {
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            }
+        };
+
         Ok(Self {
             network,
             mnemonic,
@@ -432,6 +452,7 @@ impl LightWallet {
             sync_state,
             send_progress: SendProgress::new(0),
             save_required: false,
+            wallet_settings,
         })
     }
 }

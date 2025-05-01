@@ -4100,6 +4100,7 @@ dependencies = [
  "http",
  "json",
  "log",
+ "pepper-sync",
  "rustls",
  "rustyline",
  "shellwords",

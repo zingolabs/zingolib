@@ -75,6 +75,7 @@ pub(crate) mod conduct_chain {
                     config.chain,
                     WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
                     0.into(),
+                    config.wallet_settings.clone(),
                 )
                 .unwrap(),
                 config,

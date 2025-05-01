@@ -26,6 +26,8 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
+use crate::wallet::WalletSettings;
+
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
 /// TODO: Add Doc Comment Here!
@@ -43,11 +45,12 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
-/// Same as load_clientconfig but doesn't panic when the server can't be reached
+/// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
     chain: ChainType,
+    wallet_settings: WalletSettings,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -80,6 +83,7 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        wallet_settings,
     };
 
     Ok(config)
@@ -128,16 +132,18 @@ pub struct ZingoConfigBuilder {
     pub wallet_name: Option<PathBuf>,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: Option<PathBuf>,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
 }
 
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
+// TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
+// lightclient or lightwallet if it needs to retained in memory.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     /// TODO: Add Doc Comment Here!
-    // TODO: remove during sync integration
     pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
     /// TODO: Add Doc Comment Here!
-    // TODO: remove during sync integration
     pub chain: ChainType,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     pub wallet_dir: Option<PathBuf>,
@@ -145,6 +151,8 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
 }
 
 impl ZingoConfigBuilder {
@@ -190,6 +198,12 @@ impl ZingoConfigBuilder {
     }
 
     /// TODO: Add Doc Comment Here!
+    pub fn set_wallet_settings(&mut self, wallet_settings: WalletSettings) -> &mut Self {
+        self.wallet_settings = wallet_settings;
+        self
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
         let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
@@ -198,6 +212,7 @@ impl ZingoConfigBuilder {
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            wallet_settings: self.wallet_settings.clone(),
         }
     }
 }
@@ -212,6 +227,12 @@ impl Default for ZingoConfigBuilder {
             wallet_name: None,
             logfile_name: None,
             chain: ChainType::Mainnet,
+            wallet_settings: WalletSettings {
+                sync_config: pepper_sync::sync::SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                },
+            },
         }
     }
 }
@@ -639,7 +660,10 @@ impl ActivationHeights {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use crate::wallet::WalletSettings;
+
     /// Validate that the load_clientconfig function creates a valid config from an empty uri
     #[tokio::test]
     async fn test_load_clientconfig() {
@@ -658,6 +682,12 @@ mod tests {
             valid_uri.clone(),
             Some(temp_path),
             crate::config::ChainType::Mainnet,
+            WalletSettings {
+                sync_config: pepper_sync::sync::SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                },
+            },
         );
 
         assert_eq!(valid_config.is_ok(), true);
@@ -683,6 +713,12 @@ mod tests {
             valid_uri.clone(),
             Some(temp_path),
             crate::config::ChainType::Mainnet,
+            WalletSettings {
+                sync_config: pepper_sync::sync::SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                },
+            },
         )
         .unwrap();
 
