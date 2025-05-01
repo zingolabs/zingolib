@@ -164,18 +164,10 @@ impl From<SyncResult> for json::JsonValue {
 }
 
 /// Sync configuration.
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct SyncConfig {
     /// Transparent address discovery configuration.
     pub transparent_address_discovery: TransparentAddressDiscovery,
-}
-
-impl Default for SyncConfig {
-    fn default() -> Self {
-        Self {
-            transparent_address_discovery: TransparentAddressDiscovery::default(),
-        }
-    }
 }
 
 impl SyncConfig {
