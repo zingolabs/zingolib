@@ -35,7 +35,7 @@ fn check_expected_balance_with_fvks(
                 assert_eq!(balance.unverified_orchard_balance.unwrap(), o_expect);
             }
             Fvk::P2pkh(_) => {
-                assert_eq!(balance.transparent_balance.unwrap(), t_expect);
+                assert_eq!(balance.confirmed_transparent_balance.unwrap(), t_expect);
             }
             _ => panic!(),
         }
@@ -101,11 +101,11 @@ fn check_view_capability_bounds(
     }
     if !fvks.contains(&transparent_fvk) {
         assert!(ufvk.transparent().is_none());
-        assert_eq!(balance.transparent_balance, None);
+        assert_eq!(balance.confirmed_transparent_balance, None);
         assert_eq!(transparent_coins.len(), 0);
     } else {
         assert!(ufvk.transparent().is_some());
-        assert_eq!(balance.transparent_balance, sent_t_value);
+        assert_eq!(balance.confirmed_transparent_balance, sent_t_value);
         assert_eq!(transparent_coins.len(), 1);
     }
 }
@@ -1023,7 +1023,8 @@ mod fast {
                 verified_orchard_balance: Some(15000),
                 spendable_orchard_balance: Some(15000),
                 unverified_orchard_balance: Some(0),
-                transparent_balance: Some(0)
+                confirmed_transparent_balance: Some(0),
+                unconfirmed_transparent_balance: Some(0)
             }
         );
     }
@@ -1657,7 +1658,9 @@ mod slow {
         .await
         .unwrap();
         let original_recipient_balance = original_recipient.do_balance().await;
-        let sent_t_value = original_recipient_balance.transparent_balance.unwrap();
+        let sent_t_value = original_recipient_balance
+            .confirmed_transparent_balance
+            .unwrap();
         let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
         let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
         assert_eq!(sent_t_value, 10_000u64);

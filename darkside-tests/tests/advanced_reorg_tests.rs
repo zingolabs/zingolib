@@ -54,7 +54,8 @@ async fn reorg_changes_incoming_tx_height() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -89,7 +90,8 @@ async fn reorg_changes_incoming_tx_height() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -209,7 +211,8 @@ async fn reorg_changes_incoming_tx_index() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -244,7 +247,8 @@ async fn reorg_changes_incoming_tx_index() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -364,7 +368,8 @@ async fn reorg_expires_incoming_tx() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -399,7 +404,8 @@ async fn reorg_expires_incoming_tx() {
             verified_orchard_balance: Some(0),
             spendable_orchard_balance: Some(0),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -541,7 +547,8 @@ async fn reorg_changes_outgoing_tx_height() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -589,7 +596,8 @@ async fn reorg_changes_outgoing_tx_height() {
         verified_orchard_balance: Some(0),
         spendable_orchard_balance: Some(0),
         unverified_orchard_balance: Some(99890000),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     assert_eq!(light_client.do_balance().await, expected_after_send_balance);
@@ -656,7 +664,8 @@ async fn reorg_changes_outgoing_tx_height() {
         verified_orchard_balance: Some(99890000),
         spendable_orchard_balance: Some(99890000),
         unverified_orchard_balance: Some(0),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     // Assert that balance holds
@@ -784,7 +793,8 @@ async fn reorg_expires_outgoing_tx_height() {
         verified_orchard_balance: Some(100000000),
         spendable_orchard_balance: Some(100000000),
         unverified_orchard_balance: Some(0),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     light_client.sync_and_await().await.unwrap();
@@ -827,7 +837,8 @@ async fn reorg_expires_outgoing_tx_height() {
         verified_orchard_balance: Some(0),
         spendable_orchard_balance: Some(0),
         unverified_orchard_balance: Some(99890000),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     assert_eq!(light_client.do_balance().await, expected_after_send_balance);
@@ -975,7 +986,8 @@ async fn reorg_changes_outgoing_tx_index() {
             verified_orchard_balance: Some(100_000_000),
             spendable_orchard_balance: Some(100_000_000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 
@@ -1023,7 +1035,8 @@ async fn reorg_changes_outgoing_tx_index() {
         verified_orchard_balance: Some(0),
         spendable_orchard_balance: Some(0),
         unverified_orchard_balance: Some(99_890_000),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     assert_eq!(light_client.do_balance().await, expected_after_send_balance);
@@ -1097,7 +1110,8 @@ async fn reorg_changes_outgoing_tx_index() {
         verified_orchard_balance: Some(99_890_000),
         spendable_orchard_balance: Some(99_890_000),
         unverified_orchard_balance: Some(0),
-        transparent_balance: Some(0),
+        confirmed_transparent_balance: Some(0),
+        unconfirmed_transparent_balance: Some(0),
     };
 
     // Assert that balance holds

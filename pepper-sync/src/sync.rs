@@ -13,10 +13,9 @@ use tokio::sync::{Mutex, mpsc};
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::service::{RawTransaction, compact_tx_streamer_client::CompactTxStreamerClient},
-};
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::proto::service::RawTransaction;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_primitives::zip32::AccountId;
@@ -40,10 +39,10 @@ use crate::wallet::traits::{
 use crate::wallet::{
     Locator, NullifierMap, OutputId, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
+use crate::witness::LocatedTreeData;
 
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
-use crate::witness::LocatedTreeData;
 
 pub(crate) mod spend;
 pub(crate) mod state;
@@ -302,15 +301,7 @@ impl TransparentAddressDiscoveryScopes {
 /// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` and `NotRunning`
 /// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
 /// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
-/// scanning when the wallet guard is next available. Setting `sync_mode` to `Shutdown` will stop the sync process after
-/// the next scan range is scanned.
-///
-/// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
-/// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
-/// above the in-use address with the highest address index for each scope and account is determined by
-/// the address gap limit. If `transparent_address_discovery` is disabled, only transactions
-/// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
-// TODO: setting sync_mode to `NotRunning` should stop the sync task.
+/// scanning when the wallet guard is next available. Setting `sync_mode` to `Shutdown` will stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,

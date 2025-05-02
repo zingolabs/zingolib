@@ -48,7 +48,8 @@ async fn simple_sync() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 }
@@ -85,7 +86,8 @@ async fn reorg_receipt_sync_generic() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
     prepare_darksidewalletd(server_id.clone(), false)
@@ -103,7 +105,8 @@ async fn reorg_receipt_sync_generic() {
             verified_orchard_balance: Some(0),
             spendable_orchard_balance: Some(0),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 }
@@ -145,7 +148,8 @@ async fn sent_transaction_reorged_into_mempool() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
     let one_txid = from_inputs::quick_send(
