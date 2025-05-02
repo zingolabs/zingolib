@@ -50,10 +50,10 @@ macro_rules! check_client_balances {
             $sapling
         );
         assert_eq!(
-            balance.transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap(),
             $transparent,
             "\nt_balance: {} expectation: {} ",
-            balance.transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap(),
             $transparent
         );
         let summaries = $client.transaction_summaries().await.unwrap();
@@ -68,7 +68,7 @@ macro_rules! check_client_balances {
         assert_eq!(
             (balance.orchard_balance.unwrap()
                 + balance.sapling_balance.unwrap()
-                + balance.transparent_balance.unwrap()) as i64,
+                + balance.confirmed_transparent_balance.unwrap()) as i64,
             summaries_balance,
             "transaction_summaries: {}",
             summaries

@@ -6,7 +6,6 @@ use zingolib::{
     get_base_address_macro,
     lightclient::LightClient,
     testutils::{
-        increase_height_and_wait_for_client,
         lightclient::from_inputs::{self},
         scenarios,
     },
@@ -96,6 +95,7 @@ async fn sync_status() {
 
 // temporary test for sync development
 #[ignore = "sync development only"]
+#[allow(unused_mut, unused_variables)]
 #[tokio::test]
 async fn sync_test() {
     tracing_subscriber::fmt().init();
