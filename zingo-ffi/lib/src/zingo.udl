@@ -32,6 +32,7 @@ namespace zingo {
 
   string save_to_b64();
   string get_latest_block_server(string serveruri);
+  string get_latest_block_wallet();
   string get_developer_donation_address();
   string get_zennies_for_zingo_donation_address();
   string get_transaction_summaries();

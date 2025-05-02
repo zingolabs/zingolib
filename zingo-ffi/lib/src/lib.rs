@@ -21,6 +21,7 @@ use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::
 use zingolib::wallet::WalletSettings;
 use pepper_sync::wallet::SyncMode;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use json::object;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -254,6 +255,16 @@ pub fn get_latest_block_server(server_uri: String) -> String {
     }
 }
 
+pub fn get_latest_block_wallet() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
 pub fn get_developer_donation_address() -> String {
     zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
 }
@@ -382,3 +393,4 @@ pub fn run_rescan() -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
