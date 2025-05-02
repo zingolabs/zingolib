@@ -14,6 +14,7 @@ use base64::Engine;
 use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::sync::Mutex;
+use std::str::FromStr;
 use zcash_primitives::consensus::BlockHeight;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
@@ -22,6 +23,7 @@ use zingolib::wallet::WalletSettings;
 use pepper_sync::wallet::SyncMode;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use json::object;
+use zcash_keys::keys::UnifiedFullViewingKey;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -394,3 +396,61 @@ pub fn run_rescan() -> String {
     }
 }
 
+pub fn info_server() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move { lightclient.do_info().await })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_seed() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.do_seed_phrase().await {
+                Ok(m) => serde_json::to_string_pretty(&m).expect("infallible"),
+                Err(e) => object! { "error" => e }.pretty(2),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_ufvk() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            let wallet = lightclient.wallet.lock().await;
+            let ufvk: UnifiedFullViewingKey = match (&wallet.unified_key_store).try_into() {
+                Ok(ufvk) => ufvk,
+                Err(e) => return e.to_string(),
+            };
+            object! {
+                "ufvk" => ufvk.encode(&wallet.network),
+                "birthday" => u32::from(wallet.birthday)
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn change_server(server_uri: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        if server_uri.is_empty() {
+            lightclient.set_server(http::Uri::default());
+            "server set (default)".to_string()
+        } else {
+            match http::Uri::from_str(&server_uri) {
+                Ok(uri) => {
+                    lightclient.set_server(uri);
+                    "server set".to_string()
+                }
+                Err(_) => "invalid server uri".to_string(),
+            }
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}

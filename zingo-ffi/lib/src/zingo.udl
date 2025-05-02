@@ -44,4 +44,8 @@ namespace zingo {
   string stop_sync();
   string status_sync();
   string run_rescan();
+  string info_server();
+  string get_seed();
+  string get_ufvk();
+  string change_server(string serveruri);
 };

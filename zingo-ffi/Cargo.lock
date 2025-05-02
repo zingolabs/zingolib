@@ -4693,9 +4693,11 @@ dependencies = [
  "log",
  "pepper-sync",
  "rustls",
+ "serde_json",
  "tokio",
  "uniffi",
  "uniffi_build",
+ "zcash_keys",
  "zcash_primitives",
  "zingolib",
 ]
