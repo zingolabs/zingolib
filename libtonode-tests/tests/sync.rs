@@ -100,28 +100,36 @@ async fn sync_status() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (regtest_manager, _cph, _faucet, mut recipient, _txid) =
+    let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-    let recipient_ua = get_base_address_macro!(&recipient, "unified");
-    from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &recipient_ua,
-            100_000,
-            None,
-            // Some("send to self test"),
-        )],
-    )
-    .await
-    .unwrap();
-
-    increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+    // let recipient_ua = get_base_address_macro!(&recipient, "unified");
+    let recipient_taddr = get_base_address_macro!(&recipient, "transparent");
+    from_inputs::quick_send(&mut faucet, vec![(&recipient_taddr, 100_000, None)])
         .await
         .unwrap();
 
+    recipient.sync_and_await().await.unwrap();
+
+    // increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+
     // println!("{}", recipient.transaction_summaries().await.unwrap());
-    // println!("{}", recipient.value_transfers().await.unwrap());
-    let wallet = recipient.wallet.lock().await;
-    dbg!(wallet.wallet_blocks.len());
+    println!("{}", recipient.value_transfers().await.unwrap());
+    println!("{}", recipient.do_balance().await);
+    println!("{:?}", recipient.propose_shield().await);
+
+    // println!(
+    //     "{:?}",
+    //     recipient
+    //         .get_spendable_shielded_balance(
+    //             zcash_address::ZcashAddress::try_from_encoded(&recipient_ua).unwrap(),
+    //             false
+    //         )
+    //         .await
+    //         .unwrap()
+    // );
+    // let wallet = recipient.wallet.lock().await;
+    // dbg!(wallet.wallet_blocks.len());
 }
