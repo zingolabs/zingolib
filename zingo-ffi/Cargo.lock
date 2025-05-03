@@ -4697,8 +4697,11 @@ dependencies = [
  "tokio",
  "uniffi",
  "uniffi_build",
+ "zcash_address",
+ "zcash_client_backend",
  "zcash_keys",
  "zcash_primitives",
+ "zcash_protocol",
  "zingolib",
 ]
 

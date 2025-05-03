@@ -49,4 +49,6 @@ namespace zingo {
   string get_ufvk();
   string change_server(string serveruri);
   string wallet_kind();
+  string parse_address(string serveruri);
+  string parse_ufvk(string serveruri);
 };

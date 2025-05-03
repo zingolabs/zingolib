@@ -25,6 +25,9 @@ use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use json::object;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
+use zcash_address::unified::{Container, Encoding, Ufvk};
+use zcash_protocol::consensus::NetworkType;
+use zcash_keys::address::Address;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -494,5 +497,137 @@ pub fn wallet_kind() -> String {
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn parse_address(address: String) -> String {
+    if address.is_empty() {
+        "Error: The address is empty".to_string()
+    } else {
+        fn make_decoded_chain_pair(
+            address: &str,
+        ) -> Option<(
+            zcash_client_backend::address::Address,
+            ChainType,
+        )> {
+            [
+                ChainType::Mainnet,
+                ChainType::Testnet,
+                ChainType::Regtest(
+                    RegtestNetwork::all_upgrades_active(),
+                ),
+            ]
+            .iter()
+            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+        }
+        if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(&address) {
+            let chain_name_string = match chain_name {
+                ChainType::Mainnet => "main",
+                ChainType::Testnet => "test",
+                ChainType::Regtest(_) => "regtest",
+            };
+            match recipient_address {
+                Address::Sapling(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "sapling",
+                }
+                .to_string(),
+                Address::Transparent(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "transparent",
+                }
+                .to_string(),
+                Address::Tex(_) => object! {
+                    "status" => "success",
+                    "chain_name" => chain_name_string,
+                    "address_kind" => "tex",
+                }
+                .to_string(),
+                Address::Unified(ua) => {
+                    let mut receivers_available = vec![];
+                    if ua.sapling().is_some() {
+                        receivers_available.push("sapling")
+                    }
+                    if ua.transparent().is_some() {
+                        receivers_available.push("transparent")
+                    }
+                    if ua.orchard().is_some() {
+                        receivers_available.push("orchard");
+                        object! {
+                            "status" => "success",
+                            "chain_name" => chain_name_string,
+                            "address_kind" => "unified",
+                            "receivers_available" => receivers_available,
+                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                        }
+                        .to_string()
+                    } else {
+                        object! {
+                            "status" => "success",
+                            "chain_name" => chain_name_string,
+                            "address_kind" => "unified",
+                            "receivers_available" => receivers_available,
+                        }
+                        .to_string()
+                    }
+                }
+            }
+        } else {
+            object! {
+                "status" => "Invalid address",
+                "chain_name" => json::JsonValue::Null,
+                "address_kind" => json::JsonValue::Null,
+            }
+            .to_string()
+        }
+    }
+}
+
+pub fn parse_ufvk(ufvk: String) -> String {
+    if ufvk.is_empty() {
+        "Error: The ufvk is empty".to_string()
+    } else {
+        json::stringify_pretty(
+            match Ufvk::decode(&ufvk) {
+                Ok((network, ufvk)) => {
+                    let mut pools_available = vec![];
+                    for fvk in ufvk.items_as_parsed() {
+                        match fvk {
+                        zcash_address::unified::Fvk::Orchard(_) => {
+                            pools_available.push("orchard")
+                        }
+                        zcash_address::unified::Fvk::Sapling(_) => {
+                            pools_available.push("sapling")
+                        }
+                        zcash_address::unified::Fvk::P2pkh(_) => {
+                            pools_available.push("transparent")
+                        }
+                        zcash_address::unified::Fvk::Unknown { .. } => pools_available
+                            .push("Error: Unknown future protocol. Perhaps you're using old software"),
+                    }
+                    }
+                    object! {
+                        "status" => "success",
+                        "chain_name" => match network {
+                            NetworkType::Main => "main",
+                            NetworkType::Test => "test",
+                            NetworkType::Regtest => "regtest",
+                        },
+                        "address_kind" => "ufvk",
+                        "pools_available" => pools_available,
+                    }
+                }
+                Err(_) => {
+                    object! {
+                        "status" => "Invalid viewkey",
+                        "chain_name" => json::JsonValue::Null,
+                        "address_kind" => json::JsonValue::Null
+                    }
+                }
+            },
+            4
+        )
     }
 }
