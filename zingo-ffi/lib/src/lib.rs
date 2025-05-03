@@ -631,3 +631,7 @@ pub fn parse_ufvk(ufvk: String) -> String {
         )
     }
 }
+
+pub fn get_version() -> String {
+    zingolib::git_description().to_string()
+}
