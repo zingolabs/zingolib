@@ -24,6 +24,7 @@ use pepper_sync::wallet::SyncMode;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use json::object;
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zingolib::wallet::keys::unified::UnifiedKeyStore;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -450,6 +451,47 @@ pub fn change_server(server_uri: String) -> String {
                 Err(_) => "invalid server uri".to_string(),
             }
         }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn wallet_kind() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            if lightclient.do_seed_phrase().await.is_ok() {
+                object! {"kind" => "Loaded from seed phrase",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                }
+                .pretty(4)
+            } else {
+                match &lightclient.wallet.lock().await.unified_key_store {
+                    UnifiedKeyStore::Spend(_) => object! {
+                        "kind" => "Loaded from unified spending key",
+                        "transparent" => true,
+                        "sapling" => true,
+                        "orchard" => true,
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::View(ufvk) => object! {
+                        "kind" => "Loaded from unified full viewing key",
+                        "transparent" => ufvk.transparent().is_some(),
+                        "sapling" => ufvk.sapling().is_some(),
+                        "orchard" => ufvk.orchard().is_some(),
+                    }
+                    .pretty(4),
+                    UnifiedKeyStore::Empty => object! {
+                        "kind" => "No keys found",
+                        "transparent" => false,
+                        "sapling" => false,
+                        "orchard" => false,
+                    }
+                    .pretty(4),
+                }
+            }
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
