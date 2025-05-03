@@ -676,3 +676,42 @@ pub fn get_addresses(receivers: String) -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn get_total_memobytes_to_address() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.do_total_memobytes_to_address().await {
+                Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_total_value_to_address() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.do_total_value_to_address().await {
+                Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_total_spends_to_address() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.do_total_spends_to_address().await {
+                Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}

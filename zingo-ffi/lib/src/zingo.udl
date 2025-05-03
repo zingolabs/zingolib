@@ -55,4 +55,7 @@ namespace zingo {
   string get_messages(string address);
   string get_balance();
   string get_addresses(string receivers);
+  string get_total_memobytes_to_address();
+  string get_total_value_to_address();
+  string get_total_spends_to_address();
 };
