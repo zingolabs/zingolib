@@ -306,7 +306,6 @@ impl LightWallet {
 
     /// Provides a list of transaction summaries related to this wallet in order of blockheight
     // TODO: move to summary
-    // TODO: should have outgoing coins
     pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
         let mut transaction_summaries = self
             .wallet_transactions
