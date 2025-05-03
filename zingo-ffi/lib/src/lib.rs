@@ -652,7 +652,9 @@ pub fn get_messages(address: String) -> String {
 
 pub fn get_balance() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.do_balance().await.to_string() })
+        zingolib::commands::RT.block_on(async move {
+            serde_json::to_string_pretty(&lightclient.do_balance().await).expect("infallible")
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
