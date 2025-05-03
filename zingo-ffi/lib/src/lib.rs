@@ -28,6 +28,7 @@ use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_protocol::consensus::NetworkType;
 use zcash_keys::address::Address;
+use zingolib::lightclient::describe::UAReceivers;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -652,6 +653,23 @@ pub fn get_messages(address: String) -> String {
 pub fn get_balance() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move { lightclient.do_balance().await.to_string() })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_addresses(receivers: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        let receiver_type = match receivers.as_str() {
+            "" => UAReceivers::All,
+            "shielded" => UAReceivers::Shielded,
+            "orchard" => UAReceivers::Orchard,
+            _ => return "Error: unknown receivers".to_string(),
+        };
+
+        zingolib::commands::RT.block_on(async move {
+            lightclient.do_addresses(receiver_type).await.pretty(2)
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }

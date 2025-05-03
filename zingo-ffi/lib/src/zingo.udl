@@ -54,4 +54,5 @@ namespace zingo {
   string get_version();
   string get_messages(string address);
   string get_balance();
+  string get_addresses(string receivers);
 };
