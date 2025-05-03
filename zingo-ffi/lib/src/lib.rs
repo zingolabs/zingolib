@@ -635,3 +635,24 @@ pub fn parse_ufvk(ufvk: String) -> String {
 pub fn get_version() -> String {
     zingolib::git_description().to_string()
 }
+
+pub fn get_messages(address: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.messages_containing(Some(address.as_str())).await {
+                Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_balance() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move { lightclient.do_balance().await.to_string() })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
