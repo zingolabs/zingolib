@@ -529,7 +529,7 @@ impl LightWallet {
                     // if recipient_ua is available it overrides recipient_address
                     value_transfers.append(&mut self.create_send_value_transfers(transaction)?);
 
-                    // create 1 memo-to-self if a sending transaction receives any number of memos
+                    // create 1 memo-to-self if any number of memos are received in the sending transaction
                     if transaction
                         .orchard_notes()
                         .iter()
@@ -846,12 +846,12 @@ impl LightWallet {
                     .is_sapling_send_to_self(&address)
                     .expect("should have sapling view capability in this scope"),
                 zcash_keys::address::Address::Transparent(address) => {
-                    self.is_transparent_send_to_self(&address).is_none()
+                    !self.is_transparent_send_to_self(&address).is_none()
                 }
                 zcash_keys::address::Address::Unified(address) => {
                     address
                         .transparent()
-                        .is_none_or(|addr| self.is_transparent_send_to_self(addr).is_none())
+                        .is_none_or(|addr| !self.is_transparent_send_to_self(addr).is_none())
                         && address.sapling().is_none_or(|addr| {
                             !self
                                 .is_sapling_send_to_self(addr)

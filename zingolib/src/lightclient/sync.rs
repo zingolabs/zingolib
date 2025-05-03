@@ -111,6 +111,8 @@ impl LightClient {
     pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<WalletError>> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
+                self.sync_mode
+                    .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
                 PollReport::Ready(sync_result.expect("task panicked"))
             } else {
                 self.sync_handle = Some(sync_handle);
