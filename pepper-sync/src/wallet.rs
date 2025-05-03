@@ -437,7 +437,7 @@ impl WalletTransaction {
     }
 
     /// Transparent coins mutable
-    pub(crate) fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
         self.transparent_coins.iter_mut().collect()
     }
 
