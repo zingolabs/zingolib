@@ -184,7 +184,7 @@ pub mod send_with_proposal {
                     &mut client,
                     vec![(&client_addr, 10_000, None)],
                     vec![],
-                    false,
+                    true,
                 )
                 .await
                 .unwrap();
