@@ -181,7 +181,7 @@ pub mod send_with_proposal {
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 20_000, None)],
@@ -205,7 +205,7 @@ pub mod send_with_proposal {
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
 
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 20_000, None)],
@@ -230,7 +230,7 @@ pub mod send_with_proposal {
                 let client_addr = get_base_address(&client, PoolType::Transparent).await;
 
                 let environment = &mut NetworkedTestEnvironment::setup().await;
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
                     vec![(&client_addr, 100_001, None)],
@@ -261,7 +261,7 @@ pub mod send_with_proposal {
 
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 14_000, None)],
@@ -273,7 +273,7 @@ pub mod send_with_proposal {
 
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 15_000, None)],
@@ -284,7 +284,7 @@ pub mod send_with_proposal {
                 .unwrap();
 
                 let client_addr = get_base_address(&client, PoolType::Transparent).await;
-                with_assertions::propose_send_bump_sync_all_recipients(
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
                     vec![(&client_addr, 100_000, None)],

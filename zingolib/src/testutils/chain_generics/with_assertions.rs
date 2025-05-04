@@ -43,7 +43,7 @@ pub async fn to_clients_proposal(
 /// test_mempool can be enabled when the test harness supports it
 /// returns Ok(total_fee, total_received, total_change)
 /// transparent address discovery is disabled due to generic test framework needing to be darkside compatible
-pub async fn propose_send_bump_sync_all_recipients<CC>(
+pub async fn assure_propose_send_bump_sync_all_recipients<CC>(
     environment: &mut CC,
     sender: &mut LightClient,
     payments: Vec<(&str, u64, Option<&str>)>,
@@ -61,7 +61,7 @@ where
         .unwrap();
     timestamped_test_log(format!("proposed the following payments: {payments:?}").as_str());
     let txids = sender.send_stored_proposal().await.unwrap();
-    timestamped_test_log("sent.");
+    timestamped_test_log("Transmitted send.");
 
     follow_proposal(
         environment,
@@ -86,9 +86,14 @@ pub async fn assure_propose_shield_bump_sync<ChainConductor>(
 where
     ChainConductor: ConductChain,
 {
+    timestamped_test_log("started integration-test shield.");
+    client.sync_and_await().await.unwrap();
+    timestamped_test_log("syncked.");
     let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
+    timestamped_test_log(format!("proposed a shield: {proposal:#?}").as_str());
 
     let txids = client.send_stored_proposal().await.unwrap();
+    timestamped_test_log("Transmitted shield.");
 
     let (total_fee, _, s_shielded) =
         follow_proposal(environment, client, vec![], &proposal, txids, test_mempool).await?;

@@ -16,12 +16,14 @@ pub struct NetworkedTestEnvironment {
 
 impl NetworkedTestEnvironment {
     async fn update_server_height(&mut self) {
-        self.latest_known_server_height = Some(BlockHeight::from(
-            crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
-                .await
-                .unwrap()
-                .height as u32,
-        ))
+        let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+            .await
+            .unwrap()
+            .height as u32;
+        self.latest_known_server_height = Some(BlockHeight::from(latest));
+        crate::testutils::timestamped_test_log(
+            format!("Networked Test Chain is now at height {latest}").as_str(),
+        );
     }
 }
 
