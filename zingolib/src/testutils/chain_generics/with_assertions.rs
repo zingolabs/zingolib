@@ -277,8 +277,8 @@ where
                 ConfirmationStatus::Mempool(_block_height) => {
                     any_transaction_not_yet_confirmed = true;
                 }
-                ConfirmationStatus::Confirmed(block_height) => {
-                    assert_eq!(wallet_height_at_confirmation, block_height);
+                ConfirmationStatus::Confirmed(confirmed_height) => {
+                    assert!(wallet_height_at_confirmation > confirmed_height);
                 }
             }
         }

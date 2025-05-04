@@ -167,6 +167,7 @@ pub mod send_with_proposal {
 
             use super::*;
 
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
@@ -176,6 +177,7 @@ pub mod send_with_proposal {
                 );
 
                 let mut client = sync_example_wallet(case).await;
+
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
@@ -189,6 +191,7 @@ pub mod send_with_proposal {
                 .await
                 .unwrap();
             }
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
@@ -198,6 +201,7 @@ pub mod send_with_proposal {
                 );
 
                 let mut client = sync_example_wallet(case).await;
+
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
 
@@ -211,6 +215,7 @@ pub mod send_with_proposal {
                 .await
                 .unwrap();
             }
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
@@ -221,9 +226,64 @@ pub mod send_with_proposal {
                 );
 
                 let mut client = sync_example_wallet(case).await;
+
                 let client_addr = get_base_address(&client, PoolType::Transparent).await;
 
                 let environment = &mut NetworkedTestEnvironment::setup().await;
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    environment,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let _ = with_assertions::assure_propose_shield_bump_sync(
+                    environment,
+                    &mut client,
+                    true,
+                )
+                .await
+                .unwrap();
+            }
+            #[tokio::test]
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            async fn testnet_send_to_self_all_pools_glory_goddess() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
+                );
+
+                let mut client = sync_example_wallet(case).await;
+                let environment = &mut NetworkedTestEnvironment::setup().await;
+
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let client_addr = get_base_address(&client, PoolType::Transparent).await;
                 with_assertions::propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
