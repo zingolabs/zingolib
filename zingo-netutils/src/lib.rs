@@ -186,7 +186,7 @@ fn add_test_cert_to_roots(roots: &mut RootCertStore) {
         .filter_map(Result::ok)
         .collect();
     let certs: Vec<CertificateDer<'_>> =
-        certs_bytes.into_iter().map(CertificateDer::from).collect();
+        certs_bytes.into_iter().collect();
 
     roots.add_parsable_certificates(certs);
 }

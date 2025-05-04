@@ -782,7 +782,7 @@ mod fast {
                 .unwrap();
 
             let taddr_bytes = match taddr {
-                TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes.clone(),
+                TransparentAddress::PublicKeyHash(taddr_bytes) => *taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
             let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
