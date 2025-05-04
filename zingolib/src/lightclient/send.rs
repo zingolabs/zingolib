@@ -158,6 +158,7 @@ pub mod send_with_proposal {
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
+        /// depends on
         /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
         mod testnet {
             use zcash_protocol::{PoolType, ShieldedProtocol};
@@ -169,7 +170,7 @@ pub mod send_with_proposal {
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: networked send waits 2 minutes for confirmation. expect 3min runtime
+            /// note: networked send waits 2.5 minutes for confirmation. expect 3.5 minute runtime
             async fn testnet_send_to_self_orchard_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
@@ -192,7 +193,7 @@ pub mod send_with_proposal {
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: networked send waits 2 minutes for confirmation. expect 3min runtime
+            /// note: networked send waits 2.5 minutes for confirmation. expect 3.5 minute runtime
             async fn testnet_send_to_self_sapling_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
@@ -207,6 +208,37 @@ pub mod send_with_proposal {
                     &mut client,
                     vec![(&client_addr, 10_000, None)],
                     vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+            }
+            #[tokio::test]
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            /// note: networked send waits 2.5 minutes for confirmation. this test contains 2 networked sends
+            async fn testnet_send_to_self_transparent_and_then_shield_glory_goddess() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
+                );
+
+                let mut client = sync_example_wallet(case).await;
+                let client_addr = get_base_address(&client, PoolType::Transparent).await;
+
+                let environment = &mut NetworkedTestEnvironment::setup().await;
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    environment,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let _ = with_assertions::assure_propose_shield_bump_sync(
+                    environment,
+                    &mut client,
                     true,
                 )
                 .await

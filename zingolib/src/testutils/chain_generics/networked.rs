@@ -22,7 +22,7 @@ impl ConductChain for NetworkedTestEnvironment {
     }
 
     async fn bump_chain(&mut self) {
-        // average block time is 75 seconds. we do this twice here to insist on a new block
+        // average block time is 75 seconds. we add an order of binary magnitude and hope that at-least one block has been added.
         tokio::time::sleep(std::time::Duration::from_secs(150)).await;
     }
 
