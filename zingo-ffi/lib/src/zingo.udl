@@ -59,4 +59,6 @@ namespace zingo {
   string get_total_value_to_address();
   string get_total_spends_to_address();
   string zec_price();
+  string resend_transaction(string txid);
+  string remove_transaction(string txid);
 };

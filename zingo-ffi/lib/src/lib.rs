@@ -723,3 +723,44 @@ pub fn zec_price() -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn resend_transaction(txid: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        let txid_ok = match txid_from_hex_encoded_str(&txid) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.resend(txid_ok).await {
+                Ok(_) => "Successfully resent transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn remove_transaction(txid: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        let txid_ok = match txid_from_hex_encoded_str(&txid) {
+            Ok(txid) => txid,
+            Err(e) => return format!("Error: {e}"),
+        };
+
+        zingolib::commands::RT.block_on(async move {
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .remove_unconfirmed_transaction(txid_ok)
+            {
+                Ok(_) => "Successfully removed transaction.".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
