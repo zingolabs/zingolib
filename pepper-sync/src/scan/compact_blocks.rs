@@ -34,7 +34,7 @@ use super::{DecryptedNoteData, InitialScanData, ScanData};
 
 mod runners;
 
-const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
+const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 8;
 
 pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,

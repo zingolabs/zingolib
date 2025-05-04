@@ -40,6 +40,20 @@ where
     WalletError(E),
 }
 
+/// Sync status errors.
+#[derive(Debug, thiserror::Error)]
+pub enum SyncStatusError<E>
+where
+    E: std::fmt::Debug + std::fmt::Display,
+{
+    /// No sync data. Wallet has never been synced with the block chain.
+    #[error("No sync data. Wallet has never been synced with the block chain.")]
+    NoSyncData,
+    /// Wallet error.
+    #[error("wallet error. {0}")]
+    WalletError(E),
+}
+
 /// Mempool errors.
 #[derive(Debug, thiserror::Error)]
 pub enum MempoolError {

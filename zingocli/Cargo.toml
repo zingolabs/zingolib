@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 zingolib = { workspace = true, features = [ "test-elevation" ] }
+pepper-sync = { workspace = true }
 
 clap = { workspace = true }
 http = { workspace = true }
@@ -15,3 +16,5 @@ rustyline = { workspace = true }
 shellwords = { workspace = true }
 
 rustls.workspace = true
+
+tracing-subscriber.workspace = true

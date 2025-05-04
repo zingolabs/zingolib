@@ -16,7 +16,7 @@ use {
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
-const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 16;
+const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 8;
 
 /// Required data for updating [`shardtree::ShardTree`]
 #[derive(Debug)]

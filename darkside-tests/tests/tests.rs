@@ -31,12 +31,12 @@ async fn simple_sync() {
     let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
         .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
 
-    let result = light_client.sync_and_await(false).await.unwrap();
+    let result = light_client.sync_and_await().await.unwrap();
 
     println!("{}", result);
 
     assert_eq!(result.sync_end_height, 3.into());
-    assert_eq!(result.scanned_blocks, 3);
+    assert_eq!(result.blocks_scanned, 3);
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -48,7 +48,8 @@ async fn simple_sync() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 }
@@ -72,7 +73,7 @@ async fn reorg_receipt_sync_generic() {
         darkside_handler.darkside_dir.clone(),
     )
     .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
         light_client.do_balance().await,
@@ -85,13 +86,14 @@ async fn reorg_receipt_sync_generic() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
     prepare_darksidewalletd(server_id.clone(), false)
         .await
         .unwrap();
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -103,7 +105,8 @@ async fn reorg_receipt_sync_generic() {
             verified_orchard_balance: Some(0),
             spendable_orchard_balance: Some(0),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
 }
@@ -133,7 +136,7 @@ async fn sent_transaction_reorged_into_mempool() {
         regtest_network,
     );
 
-    light_client.sync_and_await(false).await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
         PoolBalances {
@@ -145,7 +148,8 @@ async fn sent_transaction_reorged_into_mempool() {
             verified_orchard_balance: Some(100000000),
             spendable_orchard_balance: Some(100000000),
             unverified_orchard_balance: Some(0),
-            transparent_balance: Some(0)
+            confirmed_transparent_balance: Some(0),
+            unconfirmed_transparent_balance: Some(0)
         }
     );
     let one_txid = from_inputs::quick_send(
@@ -155,7 +159,7 @@ async fn sent_transaction_reorged_into_mempool() {
     .await
     .unwrap();
     println!("{}", one_txid.first());
-    recipient.sync_and_await(false).await.unwrap();
+    recipient.sync_and_await().await.unwrap();
 
     let connector = DarksideConnector(server_id.clone());
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
@@ -171,7 +175,7 @@ async fn sent_transaction_reorged_into_mempool() {
     connector.apply_staged(4).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    recipient.sync_and_await(false).await.unwrap();
+    recipient.sync_and_await().await.unwrap();
     //  light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient pre-reorg: {}",
@@ -190,8 +194,8 @@ async fn sent_transaction_reorged_into_mempool() {
     connector.apply_staged(105).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    recipient.sync_and_await(false).await.unwrap();
-    light_client.sync_and_await(false).await.unwrap();
+    recipient.sync_and_await().await.unwrap();
+    light_client.sync_and_await().await.unwrap();
     println!(
         "Recipient post-reorg: {}",
         serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
@@ -204,7 +208,7 @@ async fn sent_transaction_reorged_into_mempool() {
         zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
             .await
             .unwrap();
-    loaded_client.sync_and_await(false).await.unwrap();
+    loaded_client.sync_and_await().await.unwrap();
     assert_eq!(
         loaded_client.do_balance().await.orchard_balance,
         Some(100000000)

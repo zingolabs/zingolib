@@ -114,13 +114,15 @@ pub mod send_with_proposal {
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
+        use pepper_sync::sync::SyncConfig;
+
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
                 conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
                 with_assertions,
             },
-            wallet::{LightWallet, WalletBase, disk::testing::examples},
+            wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
         };
 
         #[tokio::test]
@@ -137,6 +139,12 @@ pub mod send_with_proposal {
                     config.chain,
                     WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
                     1.into(),
+                    WalletSettings {
+                        sync_config: SyncConfig {
+                            transparent_address_discovery:
+                                pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                        },
+                    },
                 )
                 .unwrap(),
                 config,

@@ -2,6 +2,8 @@
 
 use std::convert::Infallible;
 
+use pepper_sync::error::SyncModeError;
+
 use crate::wallet::{
     error::{
         CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError,
@@ -18,6 +20,9 @@ pub enum LightClientError {
     /// Sync error.
     #[error("Sync error. {0}")]
     SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
+    /// Sync mode error.
+    #[error("sync mode error. {0}")]
+    SyncModeError(#[from] SyncModeError),
     /// gPRC client error
     #[error("gRPC client error. {0}")]
     ClientError(#[from] zingo_netutils::GetClientError),

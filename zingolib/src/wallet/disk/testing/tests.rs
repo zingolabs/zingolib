@@ -206,7 +206,7 @@ async fn loaded_wallet_assert(
         )
         .await
         .unwrap();
-        lightclient.sync_and_await(true).await.unwrap();
+        lightclient.sync_and_await().await.unwrap();
         let transparent_address = crate::get_base_address_macro!(lightclient, "transparent");
         crate::testutils::lightclient::from_inputs::quick_send(
             &mut lightclient,
@@ -293,6 +293,7 @@ async fn reload_wallet_from_buffer() {
         wallet.network,
         ufvk_base,
         wallet.birthday.try_into().expect("should never overflow"),
+        wallet.wallet_settings.clone(),
     )
     .unwrap();
     let UnifiedKeyStore::View(v_ufvk) = &view_wallet.unified_key_store else {
