@@ -189,6 +189,29 @@ pub mod send_with_proposal {
                 .await
                 .unwrap();
             }
+            #[tokio::test]
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            /// note: networked send waits 2 minutes for confirmation. expect 3min runtime
+            async fn testnet_send_to_self_sapling_glory_goddess() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
+                );
+
+                let mut client = sync_example_wallet(case).await;
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+
+                with_assertions::propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 10_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+            }
         }
     }
 }
