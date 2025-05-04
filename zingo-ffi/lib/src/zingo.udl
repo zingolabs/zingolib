@@ -62,4 +62,6 @@ namespace zingo {
   string resend_transaction(string txid);
   string remove_transaction(string txid);
   string get_spendable_balance(string address, string zennies_for_zingo);
+  string set_option_wallet();
+  string get_option_wallet();
 };

@@ -793,3 +793,11 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn set_option_wallet() -> String {
+    "Error unimplemented".to_string()
+}
+
+pub fn get_option_wallet() -> String {
+    "Error unimplemented".to_string()
+}
