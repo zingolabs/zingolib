@@ -30,6 +30,9 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_keys::address::Address;
 use zingolib::lightclient::describe::UAReceivers;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
+use zcash_address::ZcashAddress;
+use zingolib::utils::conversion::address_from_str;
+
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -756,6 +759,35 @@ pub fn remove_transaction(txid: String) -> String {
                 Ok(_) => "Successfully removed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_spendable_balance(address: String, zennies: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        let address_zcash: ZcashAddress;
+        if let Ok(addr) = address_from_str(&address) {
+            address_zcash = addr;
+        } else {
+            return "Error: unknown address format".to_string();
+        }
+       zingolib::commands::RT.block_on(async move {
+            match lightclient
+                .get_spendable_shielded_balance(address_zcash, zennies.parse().unwrap_or(false))
+                .await
+            {
+                Ok(bal) => {
+                    object! {
+                        "balance" => bal.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
