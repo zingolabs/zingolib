@@ -49,7 +49,7 @@ impl ConductChain for LibtonodeEnvironment {
             .make_unique_data_dir_and_load_config(self.regtest_network)
     }
 
-    async fn bump_chain(&mut self) {
+    async fn increase_chain_height(&mut self) {
         let start_height = self
             .scenario_builder
             .regtest_manager

@@ -225,7 +225,7 @@ where
 
     timestamped_test_log("cross-checked mempool records.");
 
-    environment.bump_chain().await;
+    environment.increase_chain_height().await;
     timestamped_test_log("syncking transaction confirmation.");
     // chain scan shows the same
     sender.sync_and_await().await.unwrap();

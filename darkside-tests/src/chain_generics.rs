@@ -89,7 +89,7 @@ pub(crate) mod conduct_chain {
                 .make_unique_data_dir_and_load_config(self.regtest_network)
         }
 
-        async fn bump_chain(&mut self) {
+        async fn increase_chain_height(&mut self) {
             let height_before =
                 zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
                     .await

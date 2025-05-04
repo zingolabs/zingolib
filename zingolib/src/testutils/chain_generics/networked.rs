@@ -1,16 +1,37 @@
 //! implementation of conduct chain for live chains
 
+use http::Uri;
+use zcash_protocol::consensus::BlockHeight;
+
 use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
 
 use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
 /// allows using existing ChainGeneric functions with TestNet wallets
-pub struct NetworkedTestEnvironment;
+pub struct NetworkedTestEnvironment {
+    indexer_uri: Uri,
+    latest_known_server_height: Option<BlockHeight>,
+}
+
+impl NetworkedTestEnvironment {
+    async fn update_server_height(&mut self) {
+        self.latest_known_server_height = Some(BlockHeight::from(
+            crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+                .await
+                .unwrap()
+                .height as u32,
+        ))
+    }
+}
 
 impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
-        Self {}
+        Self {
+            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
+                .unwrap(),
+            latest_known_server_height: None,
+        }
     }
 
     async fn create_faucet(&mut self) -> LightClient {
@@ -21,15 +42,19 @@ impl ConductChain for NetworkedTestEnvironment {
         todo!()
     }
 
-    async fn bump_chain(&mut self) {
-        // average block time is 75 seconds. we add an order of binary magnitude and hope that at-least one block has been added.
-        tokio::time::sleep(std::time::Duration::from_secs(150)).await;
+    async fn increase_chain_height(&mut self) {
+        let before_height = self.latest_known_server_height;
+        // loop until the server height increases
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            self.update_server_height().await;
+            if self.latest_known_server_height != before_height {
+                break;
+            }
+        }
     }
 
-    fn lightserver_uri(&self) -> Option<http::Uri> {
-        Some(
-            <http::Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                .unwrap(),
-        )
+    fn lightserver_uri(&self) -> Option<Uri> {
+        Some(self.indexer_uri.clone())
     }
 }
