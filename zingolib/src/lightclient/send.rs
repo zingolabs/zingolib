@@ -233,7 +233,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
-                    vec![(&client_addr, 10_001, None)],
+                    vec![(&client_addr, 100_001, None)],
                     vec![],
                     true,
                 )
