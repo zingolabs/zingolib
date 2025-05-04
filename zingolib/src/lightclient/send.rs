@@ -158,8 +158,8 @@ pub mod send_with_proposal {
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
-        /// depends on
-        /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// waits up to five blocks for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// as of now, average block time is supposedly about 75 seconds
         mod testnet {
             use zcash_protocol::{PoolType, ShieldedProtocol};
 
@@ -170,7 +170,6 @@ pub mod send_with_proposal {
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: networked send waits 2.5 minutes for confirmation. expect 3.5 minute runtime
             async fn testnet_send_to_self_orchard_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
@@ -193,7 +192,6 @@ pub mod send_with_proposal {
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: networked send waits 2.5 minutes for confirmation. expect 3.5 minute runtime
             async fn testnet_send_to_self_sapling_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
@@ -216,7 +214,7 @@ pub mod send_with_proposal {
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: networked send waits 2.5 minutes for confirmation. this test contains 2 networked sends
+            /// about 273 seconds
             async fn testnet_send_to_self_transparent_and_then_shield_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
