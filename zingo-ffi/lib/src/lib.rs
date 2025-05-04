@@ -29,6 +29,7 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_protocol::consensus::NetworkType;
 use zcash_keys::address::Address;
 use zingolib::lightclient::describe::UAReceivers;
+use zingolib::utils::conversion::txid_from_hex_encoded_str;
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -717,11 +718,7 @@ pub fn get_total_spends_to_address() -> String {
 }
 
 pub fn zec_price() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        "Error unimplemented".to_string()
-    } else {
-        "Error: Lightclient is not initialized".to_string()
-    }
+    "Error unimplemented".to_string()
 }
 
 pub fn resend_transaction(txid: String) -> String {
