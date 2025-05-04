@@ -58,17 +58,6 @@ pub(crate) fn build_located_trees<H>(
 where
     H: Copy + PartialEq + incrementalmerkletree::Hashable + Sync + Send,
 {
-    //TODO: Play with numbers. Is it more efficient to
-    // build larger trees to allow for more pruning to
-    // happen in parallel before insertion?
-    // Is it better to build smaller trees so that more
-    // trees can be built in parallel at the same time?
-    // Is inserting trees more efficient if trees are
-    // a power of 2 size? Is it more efficient if they
-    // are 'aligned' so that the initial_position is
-    // a multiple of tree size? All unanswered questions
-    // that want to be benchmarked.
-
     let (sender, receiver) = crossbeam_channel::unbounded();
     rayon::scope_fifo(|scope| {
         for (i, chunk) in leaves_and_retentions.chunks(LOCATED_TREE_SIZE).enumerate() {

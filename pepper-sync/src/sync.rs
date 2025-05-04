@@ -298,10 +298,13 @@ impl TransparentAddressDiscoveryScopes {
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
-/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` and `NotRunning`
-/// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
-/// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
-/// scanning when the wallet guard is next available. Setting `sync_mode` to `Shutdown` will stop the sync process.
+/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` at the start of sync.
+/// However, the consumer is required to set the `sync_mode` back to `NotRunning` when sync is succussful or returns an
+/// error. This allows more flexibility and safety with sync task handles etc.
+/// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
+/// times in quick sucession without the sync engine interrupting.
+/// Setting `sync_mode` back to `Running` will resume scanning.
+/// Setting `sync_mode` to `Shutdown` will stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
@@ -490,7 +493,6 @@ where
                             .set_save_flag()
                             .map_err(SyncError::WalletError)?;
                         drop(wallet_guard);
-                        sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
                         tracing::info!("Sync successfully shutdown.");
 
                         return Ok(SyncResult {
@@ -553,7 +555,6 @@ where
         Err(e) => return Err(e.into()),
     }
     fetcher_handle.await.expect("task panicked");
-    sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
 
     Ok(SyncResult {
         sync_start_height: sync_status.sync_start_height,

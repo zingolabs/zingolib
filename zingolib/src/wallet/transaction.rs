@@ -106,21 +106,29 @@ impl LightWallet {
         // TODO: could be added as an API to pepper-sync
         self.wallet_transactions
             .values_mut()
-            .flat_map(|tx| tx.sapling_notes_mut())
-            .filter(|note| (note.spending_transaction() == Some(txid)))
-            .for_each(|note| {
-                note.set_spending_transaction(None);
+            .flat_map(|transaction| transaction.transparent_coins_mut())
+            .filter(|output| (output.spending_transaction() == Some(txid)))
+            .for_each(|output| {
+                output.set_spending_transaction(None);
             });
         self.wallet_transactions
             .values_mut()
-            .flat_map(|tx| tx.orchard_notes_mut())
-            .filter(|note| (note.spending_transaction() == Some(txid)))
-            .for_each(|note| {
-                note.set_spending_transaction(None);
+            .flat_map(|transaction| transaction.sapling_notes_mut())
+            .filter(|output| (output.spending_transaction() == Some(txid)))
+            .for_each(|output| {
+                output.set_spending_transaction(None);
+            });
+        self.wallet_transactions
+            .values_mut()
+            .flat_map(|transaction| transaction.orchard_notes_mut())
+            .filter(|output| (output.spending_transaction() == Some(txid)))
+            .for_each(|output| {
+                output.set_spending_transaction(None);
             });
         self.wallet_transactions
             .remove(&txid)
             .expect("transaction checked to exist");
+        self.save_required = true;
 
         Ok(())
     }

@@ -437,7 +437,7 @@ impl WalletTransaction {
     }
 
     /// Transparent coins mutable
-    pub(crate) fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
         self.transparent_coins.iter_mut().collect()
     }
 
@@ -518,18 +518,24 @@ impl WalletTransaction {
 impl WalletTransaction {
     /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
     pub fn total_value_sent(&self) -> u64 {
-        let transparent_value_sent = self.transaction.transparent_bundle().map_or(0, |bundle| {
-            bundle
-                .vout
-                .iter()
-                .map(|output| output.value.into_u64())
-                .sum()
-        }) - self.total_output_value::<TransparentCoin>();
+        let transparent_value_sent = self
+            .transaction
+            .transparent_bundle()
+            .map_or(0, |bundle| {
+                bundle
+                    .vout
+                    .iter()
+                    .map(|output| output.value.into_u64())
+                    .sum()
+            })
+            .saturating_sub(self.total_output_value::<TransparentCoin>());
 
-        let sapling_value_sent = self.total_outgoing_note_value::<OutgoingSaplingNote>()
-            - self.total_output_value::<SaplingNote>();
-        let orchard_value_sent = self.total_outgoing_note_value::<OutgoingOrchardNote>()
-            - self.total_output_value::<OrchardNote>();
+        let sapling_value_sent = self
+            .total_outgoing_note_value::<OutgoingSaplingNote>()
+            .saturating_sub(self.total_output_value::<SaplingNote>());
+        let orchard_value_sent = self
+            .total_outgoing_note_value::<OutgoingOrchardNote>()
+            .saturating_sub(self.total_output_value::<OrchardNote>());
 
         transparent_value_sent + sapling_value_sent + orchard_value_sent
     }
