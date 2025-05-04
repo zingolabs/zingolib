@@ -715,3 +715,11 @@ pub fn get_total_spends_to_address() -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn zec_price() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        "Error unimplemented".to_string()
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
