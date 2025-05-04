@@ -56,8 +56,10 @@ where
     timestamped_test_log("started integration-test send.");
     sender.sync_and_await().await.unwrap();
     timestamped_test_log("syncked.");
-    let proposal = from_inputs::propose(sender, payments).await.unwrap();
-    timestamped_test_log("proposed.");
+    let proposal = from_inputs::propose(sender, payments.clone())
+        .await
+        .unwrap();
+    timestamped_test_log(format!("proposed the following payments: {payments:?}").as_str());
     let txids = sender.send_stored_proposal().await.unwrap();
     timestamped_test_log("sent.");
 

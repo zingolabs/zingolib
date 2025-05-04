@@ -184,7 +184,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 20_000, None)],
                     vec![],
                     true,
                 )
@@ -208,7 +208,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 20_000, None)],
                     vec![],
                     true,
                 )
@@ -233,7 +233,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 10_001, None)],
                     vec![],
                     true,
                 )
@@ -264,7 +264,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 14_000, None)],
                     vec![],
                     true,
                 )
@@ -276,7 +276,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 15_000, None)],
                     vec![],
                     true,
                 )
@@ -287,7 +287,7 @@ pub mod send_with_proposal {
                 with_assertions::propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
-                    vec![(&client_addr, 10_000, None)],
+                    vec![(&client_addr, 100_000, None)],
                     vec![],
                     true,
                 )

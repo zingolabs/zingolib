@@ -59,6 +59,6 @@ impl ConductChain for NetworkedTestEnvironment {
     }
 
     fn confirmation_patience_blocks(&self) -> usize {
-        5
+        10
     }
 }
