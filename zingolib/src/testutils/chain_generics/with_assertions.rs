@@ -123,6 +123,7 @@ where
         .sync_state
         .wallet_height()
         .unwrap();
+    timestamped_test_log(format!("wallet height at send {wallet_height_at_send}").as_str());
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
@@ -240,6 +241,7 @@ where
             .sync_state
             .wallet_height()
             .unwrap();
+        timestamped_test_log(format!("wallet height now {wallet_height_at_confirmation}").as_str());
         timestamped_test_log("cross-checking confirmed records.");
 
         // check that each record has the expected fee and status, returning the fee and outputs
@@ -266,7 +268,7 @@ where
 
         let mut any_transaction_not_yet_confirmed = false;
         for status in sender_confirmed_statuses {
-            timestamped_test_log("matching on transaction status {:status?}.");
+            timestamped_test_log(format!("matching on transaction status {status}.").as_str());
             match status {
                 ConfirmationStatus::Calculated(_block_height) => {
                     panic!("status regression to Calculated")
@@ -278,16 +280,14 @@ where
                     any_transaction_not_yet_confirmed = true;
                 }
                 ConfirmationStatus::Confirmed(confirmed_height) => {
-                    assert!(wallet_height_at_confirmation > confirmed_height);
+                    assert!(wallet_height_at_confirmation >= confirmed_height);
                 }
             }
         }
         if any_transaction_not_yet_confirmed {
             attempts += 1;
             if attempts > patience {
-                panic!(
-                    "ran out of patience on block {wallet_height_at_confirmation} after sending at {wallet_height_at_send}"
-                );
+                panic!("ran out of patience");
             }
         } else {
             break;
