@@ -144,9 +144,10 @@ where
     for status in sender_recorded_statuses {
         if !matches!(
             status,
-            ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == wallet_height_at_send
+            ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == wallet_height_at_send + 1
         ) {
             dbg!(status);
+            dbg!(wallet_height_at_send);
             panic!();
         }
     }
