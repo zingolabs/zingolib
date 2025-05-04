@@ -185,8 +185,7 @@ fn add_test_cert_to_roots(roots: &mut RootCertStore) {
     let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
         .filter_map(Result::ok)
         .collect();
-    let certs: Vec<CertificateDer<'_>> =
-        certs_bytes.into_iter().collect();
+    let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
 
     roots.add_parsable_certificates(certs);
 }
