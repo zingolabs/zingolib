@@ -663,7 +663,7 @@ pub fn get_balance() -> String {
 pub fn get_addresses(receivers: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         let receiver_type = match receivers.as_str() {
-            "" => UAReceivers::All,
+            "full" => UAReceivers::All,
             "shielded" => UAReceivers::Shielded,
             "orchard" => UAReceivers::Orchard,
             _ => return "Error: unknown receivers".to_string(),
