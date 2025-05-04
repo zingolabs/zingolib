@@ -57,4 +57,8 @@ impl ConductChain for NetworkedTestEnvironment {
     fn lightserver_uri(&self) -> Option<Uri> {
         Some(self.indexer_uri.clone())
     }
+
+    fn confirmation_patience_blocks(&self) -> usize {
+        5
+    }
 }

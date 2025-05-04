@@ -76,13 +76,13 @@ where
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
 /// returns Ok(total_fee, total_shielded)
-pub async fn assure_propose_shield_bump_sync<CC>(
-    environment: &mut CC,
+pub async fn assure_propose_shield_bump_sync<ChainConductor>(
+    environment: &mut ChainConductor,
     client: &mut LightClient,
     test_mempool: bool,
 ) -> Result<(u64, u64), String>
 where
-    CC: ConductChain,
+    ChainConductor: ConductChain,
 {
     let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
 
@@ -95,8 +95,8 @@ where
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
 /// returns Ok(total_fee, total_received, total_change)
-pub async fn follow_proposal<CC, NoteRef>(
-    environment: &mut CC,
+pub async fn follow_proposal<ChainConductor, NoteRef>(
+    environment: &mut ChainConductor,
     sender: &mut LightClient,
     mut recipients: Vec<&mut LightClient>,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
@@ -104,8 +104,10 @@ pub async fn follow_proposal<CC, NoteRef>(
     test_mempool: bool,
 ) -> Result<(u64, u64, u64), String>
 where
-    CC: ConductChain,
+    ChainConductor: ConductChain,
 {
+    let patience = environment.confirmation_patience_blocks();
+
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
     let server_height_at_send = BlockHeight::from(
@@ -225,38 +227,71 @@ where
 
     timestamped_test_log("cross-checked mempool records.");
 
-    environment.increase_chain_height().await;
-    timestamped_test_log("syncking transaction confirmation.");
-    // chain scan shows the same
-    sender.sync_and_await().await.unwrap();
-    timestamped_test_log("cross-checking confirmed records.");
+    let mut attempts = 0;
+    loop {
+        environment.increase_chain_height().await;
+        timestamped_test_log("syncking transaction confirmation.");
+        // chain scan shows the same
+        sender.sync_and_await().await.unwrap();
+        let wallet_height_at_confirmation = sender
+            .wallet
+            .lock()
+            .await
+            .sync_state
+            .wallet_height()
+            .unwrap();
+        timestamped_test_log("cross-checking confirmed records.");
 
-    // check that each record has the expected fee and status, returning the fee and outputs
-    let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
-        Vec<u64>,
-        (Vec<u64>, Vec<ConfirmationStatus>),
-    ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
-        (
-            compare_fee(wallet, transaction, step),
-            (transaction.total_value_received(), transaction.status()),
-        )
-    })
-    .await
-    .into_iter()
-    .map(|stepwise_result| {
-        stepwise_result
-            .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
-            .unwrap()
-    })
-    .unzip();
+        // check that each record has the expected fee and status, returning the fee and outputs
+        let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
+            Vec<u64>,
+            (Vec<u64>, Vec<ConfirmationStatus>),
+        ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
+            (
+                compare_fee(wallet, transaction, step),
+                (transaction.total_value_received(), transaction.status()),
+            )
+        })
+        .await
+        .into_iter()
+        .map(|stepwise_result| {
+            stepwise_result
+                .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+                .unwrap()
+        })
+        .unzip();
 
-    assert_eq!(sender_confirmed_fees, sender_recorded_fees);
-    assert_eq!(sender_confirmed_outputs, sender_recorded_outputs);
-    for status in sender_confirmed_statuses {
-        assert_eq!(
-            status,
-            ConfirmationStatus::Confirmed(server_height_at_send + 1)
-        );
+        assert_eq!(sender_confirmed_fees, sender_recorded_fees);
+        assert_eq!(sender_confirmed_outputs, sender_recorded_outputs);
+
+        let mut any_transaction_not_yet_confirmed = false;
+        for status in sender_confirmed_statuses {
+            timestamped_test_log("matching on transaction status {:status?}.");
+            match status {
+                ConfirmationStatus::Calculated(_block_height) => {
+                    panic!("status regression to Calculated")
+                }
+                ConfirmationStatus::Transmitted(_block_height) => {
+                    panic!("status regression to Transmitted")
+                }
+                ConfirmationStatus::Mempool(_block_height) => {
+                    any_transaction_not_yet_confirmed = true;
+                }
+                ConfirmationStatus::Confirmed(block_height) => {
+                    assert_eq!(wallet_height_at_confirmation, block_height);
+                }
+            }
+        }
+        if any_transaction_not_yet_confirmed {
+            attempts += 1;
+            if attempts > patience {
+                panic!(
+                    "ran out of patience on block {wallet_height_at_confirmation} after sending at {wallet_height_at_send}"
+                );
+            }
+        } else {
+            break;
+        }
     }
 
     let mut recipients_confirmed_outputs = vec![];
@@ -294,8 +329,8 @@ where
     });
 
     Ok((
-        sender_confirmed_fees.iter().sum(),
+        sender_recorded_fees.iter().sum(),
         recipients_confirmed_outputs.into_iter().flatten().sum(),
-        sender_confirmed_outputs.iter().sum(), // this construction will be problematic when 2-step transactions mean some value is received and respent.
+        sender_recorded_outputs.iter().sum(), // this construction will be problematic when 2-step transactions mean some value is received and respent.
     ))
 }

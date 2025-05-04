@@ -71,4 +71,7 @@ pub trait ConductChain {
 
         recipient
     }
+
+    /// how many blocks of leeway to allow the chain to Confirm a transaction
+    fn confirmation_patience_blocks(&self) -> usize;
 }

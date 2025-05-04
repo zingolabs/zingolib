@@ -71,4 +71,8 @@ impl ConductChain for LibtonodeEnvironment {
     fn lightserver_uri(&self) -> Option<http::Uri> {
         Some(self.scenario_builder.client_builder.server_id.clone())
     }
+
+    fn confirmation_patience_blocks(&self) -> usize {
+        1
+    }
 }

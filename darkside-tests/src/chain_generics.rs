@@ -203,5 +203,9 @@ pub(crate) mod conduct_chain {
                 .await
                 .unwrap();
         }
+
+        fn confirmation_patience_blocks(&self) -> usize {
+            1
+        }
     }
 }
