@@ -44,7 +44,7 @@ lazy_static! {
 fn lock_client_return_seed(lightclient: LightClient) -> String {
     LIGHTCLIENT.lock().unwrap().replace(lightclient);
 
-    execute_command("seed".to_string(), "".to_string())
+    get_seed()
 }
 
 fn construct_uri_load_config(
