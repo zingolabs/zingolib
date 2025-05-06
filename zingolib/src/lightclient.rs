@@ -54,7 +54,9 @@ pub struct PoolBalances {
     pub spendable_orchard_balance: Option<u64>,
 
     /// TODO: Add Doc Comment Here!
-    pub transparent_balance: Option<u64>,
+    pub confirmed_transparent_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub unconfirmed_transparent_balance: Option<u64>,
 }
 
 // TODO: underscore every 3 digits instead of 4
@@ -102,7 +104,8 @@ impl std::fmt::Display for PoolBalances {
     spendable_orchard_balance: {}
     unverified_orchard_balance: {}
 
-    transparent_balance: {}
+    confirmed_transparent_balance: {}
+    unconfirmed_transparent_balance: {}
 ]",
             format_option_zatoshis(&self.sapling_balance),
             format_option_zatoshis(&self.verified_sapling_balance),
@@ -112,7 +115,8 @@ impl std::fmt::Display for PoolBalances {
             format_option_zatoshis(&self.verified_orchard_balance),
             format_option_zatoshis(&self.spendable_orchard_balance),
             format_option_zatoshis(&self.unverified_orchard_balance),
-            format_option_zatoshis(&self.transparent_balance),
+            format_option_zatoshis(&self.confirmed_transparent_balance),
+            format_option_zatoshis(&self.unconfirmed_transparent_balance),
         )
     }
 }

@@ -137,15 +137,6 @@ pub struct LightWallet {
 }
 
 impl LightWallet {
-    /// Clears all wallet data obtained from the block chain including the sync state.
-    pub fn clear_all(&mut self) {
-        self.wallet_blocks.clear();
-        self.wallet_transactions.clear();
-        self.nullifier_map.clear();
-        self.outpoint_map.clear();
-        self.sync_state = SyncState::new();
-    }
-
     /// Create a new in-memory wallet.
     ///
     /// For wallets from fresh entropy, it is worth considering setting `birthday` to 100 blocks below current height
@@ -296,6 +287,35 @@ impl LightWallet {
         } else {
             Ok(None)
         }
+    }
+
+    /// Clears all wallet data obtained from the block chain including the sync state.
+    ///
+    /// Adds locators to the new sync state to prioritise scanning relevant parts of the chain on rescan.
+    /// Addresses are not cleared.
+    pub fn clear_all(&mut self) {
+        self.sync_state = SyncState::new();
+        pepper_sync::add_scan_targets(
+            &mut self.sync_state,
+            &self
+                .wallet_transactions
+                .values()
+                .filter_map(|transaction| {
+                    transaction
+                        .status()
+                        .get_confirmed_height()
+                        .map(|height| (height, transaction.txid()))
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        self.wallet_blocks.clear();
+        self.wallet_transactions.clear();
+        self.nullifier_map.clear();
+        self.outpoint_map.clear();
+        self.shard_trees = ShardTrees::new();
+
+        self.save_required = true;
     }
 }
 

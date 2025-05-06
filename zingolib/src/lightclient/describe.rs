@@ -38,7 +38,8 @@ impl LightClient {
     pub async fn do_balance(&self) -> PoolBalances {
         let wallet = self.wallet.lock().await;
 
-        let transparent_balance = wallet.confirmed_balance::<TransparentCoin>().await;
+        let confirmed_transparent_balance = wallet.confirmed_balance::<TransparentCoin>().await;
+        let unconfirmed_transparent_balance = wallet.pending_balance::<TransparentCoin>().await;
 
         let verified_sapling_balance = wallet.confirmed_balance::<SaplingNote>().await;
         let unverified_sapling_balance = wallet.pending_balance::<SaplingNote>().await;
@@ -61,7 +62,8 @@ impl LightClient {
             spendable_orchard_balance,
             unverified_orchard_balance,
 
-            transparent_balance,
+            confirmed_transparent_balance,
+            unconfirmed_transparent_balance,
         }
     }
 

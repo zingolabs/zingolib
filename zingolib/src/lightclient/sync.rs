@@ -111,6 +111,8 @@ impl LightClient {
     pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<WalletError>> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
+                self.sync_mode
+                    .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
                 PollReport::Ready(sync_result.expect("task panicked"))
             } else {
                 self.sync_handle = Some(sync_handle);
@@ -121,16 +123,20 @@ impl LightClient {
         }
     }
 
-    /// Awaits until sync has completed
+    /// Awaits until sync has successfully completed or failed.
     /// Returns [`pepper_sync::sync::SyncResult`] if successful.
     /// Returns [`crate::lightclient::error::LightClientError`] on failure.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        Ok(self
-            .sync_handle
-            .take()
-            .ok_or(LightClientError::SyncNotRunning)?
-            .await
-            .expect("task panicked")?)
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            match self.poll_sync() {
+                PollReport::NoHandle => return Err(LightClientError::SyncNotRunning),
+                PollReport::NotReady => (),
+                PollReport::Ready(result) => return result.map_err(LightClientError::SyncError),
+            }
+        }
     }
 
     /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
