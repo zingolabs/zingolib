@@ -11,7 +11,6 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
-use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
