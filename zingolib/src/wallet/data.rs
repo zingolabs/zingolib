@@ -1046,4 +1046,51 @@ pub mod summaries {
             Ok(())
         }
     }
+
+    /// Outgoing coin summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of the outgoing note in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct OutgoingCoinSummary {
+        pub value: u64,
+        pub recipient: String,
+        pub output_index: u16,
+    }
+
+    impl std::fmt::Display for OutgoingCoinSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "\t{{
+            value: {}
+            recipient: {}
+            output index: {}
+        }}",
+                self.value, self.recipient, self.output_index,
+            )
+        }
+    }
+
+    impl From<OutgoingCoinSummary> for JsonValue {
+        fn from(note: OutgoingCoinSummary) -> Self {
+            json::object! {
+                "value" => note.value,
+                "recipient" => note.recipient,
+                "output_index" => note.output_index,
+            }
+        }
+    }
+
+    /// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
+    pub struct OutgoingCoinSummaries(Vec<OutgoingCoinSummary>);
+
+    impl std::fmt::Display for OutgoingCoinSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for coin in &self.0 {
+                write!(f, "\n{}", coin)?;
+            }
+            Ok(())
+        }
+    }
 }
