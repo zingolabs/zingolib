@@ -125,6 +125,7 @@ mod fast {
         lightclient::describe::UAReceivers,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
+            increase_server_height,
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
@@ -431,6 +432,33 @@ mod fast {
     //             .unwrap()
     //     )
     // }
+
+    #[tokio::test]
+    async fn send_not_fully_synced() {
+        let (regtest_manager, _cph, _faucet, mut recipient, _, _, _) =
+            scenarios::faucet_funded_recipient(
+                Some(200_000),
+                Some(100_000),
+                None,
+                PoolType::Shielded(ShieldedProtocol::Orchard),
+                RegtestNetwork::all_upgrades_active(),
+                true,
+            )
+            .await;
+
+        increase_server_height(&regtest_manager, 5).await;
+
+        recipient
+            .propose_send_all(
+                address_from_str(&get_base_address_macro!(&recipient, "sapling")).unwrap(),
+                false,
+                None,
+            )
+            .await
+            .unwrap();
+
+        recipient.send_stored_proposal().await.unwrap();
+    }
 
     #[tokio::test]
     async fn create_send_to_self_with_zfz_active() {

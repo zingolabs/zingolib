@@ -11,6 +11,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
@@ -532,6 +533,12 @@ pub fn startup(
 
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
     println!("{}", update);
+
+    // TODO: remove debugging after shard tree send bug is fixed
+    // let wallet = lightclient.wallet.clone();
+    // RT.block_on(async move {
+    //     dbg!(&wallet.lock().await.shard_trees.sapling);
+    // });
 
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);

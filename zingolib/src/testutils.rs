@@ -97,10 +97,8 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
-    let mut count = 0;
     while poll_server_height(manager).as_fixed_point_u64(2).unwrap() < target {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        count = dbg!(count + 1);
     }
 }
 
