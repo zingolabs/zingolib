@@ -935,7 +935,7 @@ impl LightWallet {
         encoded_address: &str,
         note_scope: Option<&summary::Scope>,
     ) -> std::io::Result<bool> {
-        Ok(match decode_address(&self.network, &encoded_address)? {
+        Ok(match decode_address(&self.network, encoded_address)? {
             zcash_keys::address::Address::Transparent(address) => {
                 self.is_transparent_send_to_self(&address).is_some()
             }
@@ -947,18 +947,20 @@ impl LightWallet {
                         == summary::Scope::Internal
             }
             zcash_keys::address::Address::Unified(address) => {
-                address.transparent().map_or(false, |addr| {
-                    self.is_transparent_send_to_self(addr).is_some()
-                }) || address.sapling().map_or(false, |addr| {
-                    self.is_sapling_external_send_to_self(addr)
-                        .expect("should have sapling view capability in this scope")
-                        || *note_scope.expect(
-                            "note scope must be provided for addresses with sapling receivers!",
-                        ) == summary::Scope::Internal
-                }) || address.orchard().map_or(false, |addr| {
-                    self.is_orchard_send_to_self(addr)
-                        .expect("should have sapling view capability in this scope")
-                })
+                address
+                    .transparent()
+                    .is_some_and(|addr| self.is_transparent_send_to_self(addr).is_some())
+                    || address.sapling().is_some_and(|addr| {
+                        self.is_sapling_external_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                            || *note_scope.expect(
+                                "note scope must be provided for addresses with sapling receivers!",
+                            ) == summary::Scope::Internal
+                    })
+                    || address.orchard().is_some_and(|addr| {
+                        self.is_orchard_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                    })
             }
             zcash_keys::address::Address::Tex(_) => false,
         })
