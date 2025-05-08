@@ -350,19 +350,8 @@ impl LightWallet {
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
                 Ordering::Equal => {
-                    // FIXME: test which outgoing outputs contain tex address
-                    let starts_with_tex = |summary: &TransactionSummary| {
-                        summary
-                            .outgoing_sapling_notes()
-                            .iter()
-                            .chain(summary.outgoing_orchard_notes().iter())
-                            .any(|outgoing_note| outgoing_note.recipient.starts_with("tex"))
-                    };
-                    match (starts_with_tex(summary_a), starts_with_tex(summary_b)) {
-                        (true, false) => Ordering::Greater,
-                        (false, true) => Ordering::Less,
-                        (false, false) | (true, true) => summary_a.txid().cmp(&summary_b.txid()),
-                    }
+                    // TODO: order tex transactions correctly by checking inputs / outputs are the wallet's refund addresses
+                    summary_a.txid().cmp(&summary_b.txid())
                 }
                 otherwise => otherwise,
             }
