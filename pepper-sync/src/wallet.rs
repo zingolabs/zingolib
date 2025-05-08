@@ -530,6 +530,8 @@ impl WalletTransaction {
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
 
+        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
+        // to this fix to zcash client backend
         let sapling_value_sent = self
             .total_outgoing_note_value::<OutgoingSaplingNote>()
             .saturating_sub(self.total_output_value::<SaplingNote>());
