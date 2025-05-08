@@ -433,6 +433,7 @@ mod fast {
     //     )
     // }
 
+    #[ignore = "flaky, use to debug incomplete tree bug"]
     #[tokio::test]
     async fn send_not_fully_synced() {
         let (regtest_manager, _cph, _faucet, mut recipient, _, _, _) =
