@@ -1,7 +1,7 @@
 use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
 
 use secrecy::SecretVec;
-use shardtree::{ShardTree, error::ShardTreeError};
+use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
@@ -181,9 +181,22 @@ impl WalletRead for LightWallet {
             return Ok(None);
         };
 
+        let max_checkpoint_height = self
+            .shard_trees
+            .sapling
+            .store()
+            .max_checkpoint_id()
+            .expect("infallible")
+            .expect("should be at least 1 checkpoint");
+
+        let anchor_height = std::cmp::min(
+            max_checkpoint_height,
+            target_height - min_confirmations.get(),
+        );
+
         Ok(Some((
             target_height,
-            std::cmp::max(1.into(), target_height - min_confirmations.get()),
+            std::cmp::max(1.into(), anchor_height),
         )))
     }
 

@@ -19,6 +19,7 @@ use zcash_protocol::value::Zatoshis;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
+use super::data::summaries::OutgoingCoinSummary;
 use super::data::summaries::OutgoingNoteSummary;
 use super::data::summaries::SelfSendValueTransfer;
 use super::data::summaries::SentValueTransfer;
@@ -322,6 +323,7 @@ impl LightWallet {
                     transparent_coins,
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
+                    outgoing_transparent_coins,
                 ) = self.basic_transaction_summary_parts(transaction)?;
 
                 Ok(TransactionSummaryBuilder::new()
@@ -333,11 +335,12 @@ impl LightWallet {
                     .fee(fee)
                     .status(transaction.status())
                     .zec_price(None) // FIXME: zingo2, re-implement price correctly
-                    .transparent_coins(transparent_coins)
-                    .sapling_notes(sapling_notes)
                     .orchard_notes(orchard_notes)
-                    .outgoing_sapling_notes(outgoing_sapling_notes)
+                    .sapling_notes(sapling_notes)
+                    .transparent_coins(transparent_coins)
                     .outgoing_orchard_notes(outgoing_orchard_notes)
+                    .outgoing_sapling_notes(outgoing_sapling_notes)
+                    .outgoing_transparent_coins(outgoing_transparent_coins)
                     .build()
                     .expect("all fields should be populated"))
             })
@@ -346,18 +349,8 @@ impl LightWallet {
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.blockheight().cmp(&summary_b.blockheight()) {
                 Ordering::Equal => {
-                    let starts_with_tex = |summary: &TransactionSummary| {
-                        summary
-                            .outgoing_sapling_notes()
-                            .iter()
-                            .chain(summary.outgoing_orchard_notes().iter())
-                            .any(|outgoing_note| outgoing_note.recipient.starts_with("tex"))
-                    };
-                    match (starts_with_tex(summary_a), starts_with_tex(summary_b)) {
-                        (true, false) => Ordering::Greater,
-                        (false, true) => Ordering::Less,
-                        (false, false) | (true, true) => summary_a.txid().cmp(&summary_b.txid()),
-                    }
+                    // TODO: order tex transactions correctly by checking inputs / outputs are the wallet's refund addresses
+                    summary_a.txid().cmp(&summary_b.txid())
                 }
                 otherwise => otherwise,
             }
@@ -391,6 +384,7 @@ impl LightWallet {
             Vec<BasicCoinSummary>,
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingNoteSummary>,
+            Vec<OutgoingCoinSummary>,
         ),
         SummaryError,
     > {
@@ -504,6 +498,29 @@ impl LightWallet {
                 }
             })
             .collect::<Vec<_>>();
+        let outgoing_transparent_coin = if kind == TransactionKind::Received {
+            Vec::new()
+        } else {
+            transaction
+                .transaction()
+                .transparent_bundle()
+                .map_or(Vec::new(), |bundle| {
+                    bundle
+                        .vout
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(output_index, transparent_output)| {
+                            transparent_output.recipient_address().map(|address| {
+                                OutgoingCoinSummary {
+                                    value: transparent_output.value.into_u64(),
+                                    recipient: transparent::encode_address(&self.network, address),
+                                    output_index: output_index as u16,
+                                }
+                            })
+                        })
+                        .collect()
+                })
+        };
 
         Ok((
             kind,
@@ -514,6 +531,7 @@ impl LightWallet {
             transparent_coins,
             outgoing_orchard_notes,
             outgoing_sapling_notes,
+            outgoing_transparent_coin,
         ))
     }
 
@@ -833,7 +851,8 @@ impl LightWallet {
             .iter()
             .chain(transaction_summary.outgoing_sapling_notes().iter())
             .collect::<Vec<_>>();
-        let mut addresses = HashMap::with_capacity(outgoing_notes.len());
+        let outgoing_coins = transaction_summary.outgoing_transparent_coins();
+        let mut addresses = HashMap::new();
 
         outgoing_notes.iter().try_for_each(|&note| {
             let encoded_address = if let Some(ua) = note.recipient_unified_address.clone() {
@@ -842,39 +861,17 @@ impl LightWallet {
                 note.recipient.clone()
             };
 
-            let send_to_external_recipient = match decode_address(&self.network, &encoded_address)?
-            {
-                zcash_keys::address::Address::Transparent(address) => {
-                    self.is_transparent_send_to_self(&address).is_none()
-                }
-                zcash_keys::address::Address::Sapling(address) => {
-                    !self
-                        .is_sapling_external_send_to_self(&address)
-                        .expect("should have sapling view capability in this scope")
-                        && note.scope == summary::Scope::External
-                }
-                zcash_keys::address::Address::Unified(address) => {
-                    address
-                        .transparent()
-                        .is_none_or(|addr| self.is_transparent_send_to_self(addr).is_none())
-                        && address.sapling().is_none_or(|addr| {
-                            !self
-                                .is_sapling_external_send_to_self(addr)
-                                .expect("should have sapling view capability in this scope")
-                                && note.scope == summary::Scope::External
-                        })
-                        && address.orchard().is_none_or(|addr| {
-                            !self
-                                .is_orchard_send_to_self(addr)
-                                .expect("should have sapling view capability in this scope")
-                        })
-                }
-                zcash_keys::address::Address::Tex(_) => true,
-            };
-
-            if send_to_external_recipient {
+            if !self.is_send_to_self(&encoded_address, Some(&note.scope))? {
                 // hash map is used to create unique list of addresses as duplicates are not inserted twice
                 addresses.insert(encoded_address, note.output_index);
+            }
+
+            Ok::<(), std::io::Error>(())
+        })?;
+        outgoing_coins.iter().try_for_each(|coin| {
+            if !self.is_send_to_self(&coin.recipient, None)? {
+                // hash map is used to create unique list of addresses as duplicates are not inserted twice
+                addresses.insert(coin.recipient.clone(), coin.output_index);
             }
 
             Ok::<(), std::io::Error>(())
@@ -894,9 +891,14 @@ impl LightWallet {
                 })
                 .cloned()
                 .collect();
+            let outgoing_coins_to_address: Vec<&OutgoingCoinSummary> = outgoing_coins
+                .iter()
+                .filter(|&coin| coin.recipient.clone() == *address)
+                .collect();
             let value: u64 = outgoing_notes_to_address
                 .iter()
                 .map(|&note| note.value)
+                .chain(outgoing_coins_to_address.iter().map(|&coin| coin.value))
                 .sum();
             let memos: Vec<String> = outgoing_notes_to_address
                 .iter()
@@ -921,6 +923,47 @@ impl LightWallet {
         });
 
         Ok(value_transfers)
+    }
+
+    /// Determines whether the `encoded_address` is derived by the wallet's keys.
+    ///
+    /// `note_scope` must be provided when the address could be decoded into a sapling address or a unified address
+    /// with a sapling receiver. This is to circumvent a bug with sapling_crypto::zip32::DiversableFullViewingKey::decrpyt_diversifier
+    /// https://github.com/zcash/sapling-crypto/issues/160.
+    fn is_send_to_self(
+        &self,
+        encoded_address: &str,
+        note_scope: Option<&summary::Scope>,
+    ) -> std::io::Result<bool> {
+        Ok(match decode_address(&self.network, encoded_address)? {
+            zcash_keys::address::Address::Transparent(address) => {
+                self.is_transparent_send_to_self(&address).is_some()
+            }
+            zcash_keys::address::Address::Sapling(address) => {
+                self.is_sapling_external_send_to_self(&address)
+                    .expect("should have sapling view capability in this scope")
+                    || *note_scope
+                        .expect("note scope must be provided for addresses with sapling receivers!")
+                        == summary::Scope::Internal
+            }
+            zcash_keys::address::Address::Unified(address) => {
+                address
+                    .transparent()
+                    .is_some_and(|addr| self.is_transparent_send_to_self(addr).is_some())
+                    || address.sapling().is_some_and(|addr| {
+                        self.is_sapling_external_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                            || *note_scope.expect(
+                                "note scope must be provided for addresses with sapling receivers!",
+                            ) == summary::Scope::Internal
+                    })
+                    || address.orchard().is_some_and(|addr| {
+                        self.is_orchard_send_to_self(addr)
+                            .expect("should have sapling view capability in this scope")
+                    })
+            }
+            zcash_keys::address::Address::Tex(_) => false,
+        })
     }
 
     fn is_transparent_send_to_self(
