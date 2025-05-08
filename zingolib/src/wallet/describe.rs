@@ -12,7 +12,6 @@ use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
-use zcash_primitives::transaction::fees::transparent::OutputView;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
