@@ -314,7 +314,13 @@ pub async fn sync<P, W>(
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     P: consensus::Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
     if sync_mode_enum == SyncMode::NotRunning {
@@ -804,7 +810,13 @@ async fn process_scan_results<W>(
     initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     match scan_results {
         Ok(results) => {
@@ -819,13 +831,15 @@ where
             update_wallet_data(
                 consensus_parameters,
                 wallet,
+                fetch_request_sender.clone(),
                 &scan_range,
                 nullifiers,
                 outpoints,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-            )?;
+            )
+            .await?;
             spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
             spend::update_shielded_spends(
                 consensus_parameters,
@@ -990,9 +1004,10 @@ where
 
 /// Updates the wallet with data from `scan_results`
 #[allow(clippy::too_many_arguments)]
-fn update_wallet_data<W>(
+async fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     scan_range: &ScanRange,
     nullifiers: NullifierMap,
     mut outpoints: BTreeMap<OutputId, Locator>,
@@ -1001,7 +1016,7 @@ fn update_wallet_data<W>(
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
 {
     let sync_state = wallet
         .get_sync_state_mut()
@@ -1033,12 +1048,15 @@ where
     wallet
         .append_outpoints(&mut outpoints)
         .map_err(SyncError::WalletError)?;
-    wallet.update_shard_trees(
-        scan_range,
-        wallet_height,
-        sapling_located_trees,
-        orchard_located_trees,
-    )?;
+    wallet
+        .update_shard_trees(
+            fetch_request_sender,
+            scan_range,
+            wallet_height,
+            sapling_located_trees,
+            orchard_located_trees,
+        )
+        .await?;
 
     Ok(())
 }

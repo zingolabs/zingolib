@@ -35,7 +35,7 @@ pub(crate) mod fetch;
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
 #[derive(Debug)]
-pub(crate) enum FetchRequest {
+pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
     /// Gets  a compact block of the given block height.
