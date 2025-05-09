@@ -381,17 +381,14 @@ where
         } else {
             let frontiers =
                 client::get_frontiers(fetch_request_sender.clone(), checkpoint_height - 1).await?;
-            match D::SHIELDED_PROTOCOL {
-                ShieldedProtocol::Sapling => {
-                    TreeState::AtPosition(incrementalmerkletree::Position::from(
-                        frontiers.final_sapling_tree().tree_size().saturating_sub(1),
-                    ))
-                }
-                ShieldedProtocol::Orchard => {
-                    TreeState::AtPosition(incrementalmerkletree::Position::from(
-                        frontiers.final_orchard_tree().tree_size().saturating_sub(1),
-                    ))
-                }
+            let tree_size = match D::SHIELDED_PROTOCOL {
+                ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
+                ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),
+            };
+            if tree_size == 0 {
+                TreeState::Empty
+            } else {
+                TreeState::AtPosition(incrementalmerkletree::Position::from(tree_size - 1))
             }
         };
 

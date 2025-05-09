@@ -1944,6 +1944,7 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![])
             .outgoing_sapling_notes(vec![])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
 
@@ -2003,6 +2004,7 @@ mod slow {
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
              }])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
 
@@ -2036,6 +2038,7 @@ mod slow {
                  scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
 
@@ -2111,6 +2114,7 @@ mod slow {
             .transparent_coins(vec![])
             .outgoing_orchard_notes(vec![])
             .outgoing_sapling_notes(vec![])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
         from_inputs::quick_send(
@@ -2162,6 +2166,7 @@ mod slow {
                  scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
         from_inputs::quick_send(
@@ -2212,6 +2217,7 @@ mod slow {
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
             }])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
         from_inputs::quick_send(
@@ -2261,6 +2267,7 @@ mod slow {
                  scope: summary::Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![])
+            .outgoing_transparent_coins(vec![])
             .build()
             .unwrap();
         from_inputs::quick_send(
