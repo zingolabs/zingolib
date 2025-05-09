@@ -384,12 +384,12 @@ where
             match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => {
                     TreeState::AtPosition(incrementalmerkletree::Position::from(
-                        frontiers.final_sapling_tree().tree_size() - 1,
+                        frontiers.final_sapling_tree().tree_size().saturating_sub(1),
                     ))
                 }
                 ShieldedProtocol::Orchard => {
                     TreeState::AtPosition(incrementalmerkletree::Position::from(
-                        frontiers.final_orchard_tree().tree_size() - 1,
+                        frontiers.final_orchard_tree().tree_size().saturating_sub(1),
                     ))
                 }
             }
