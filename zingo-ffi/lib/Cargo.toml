@@ -1,6 +1,6 @@
 [package]
 name = "zingo"
-version = "1.0.1"
+version = "2.0.0"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
 
