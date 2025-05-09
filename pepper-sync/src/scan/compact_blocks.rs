@@ -66,14 +66,13 @@ where
     let mut orchard_initial_tree_size;
     let mut sapling_final_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_final_tree_size = initial_scan_data.orchard_initial_tree_size;
-    for block in &compact_blocks {
+    for block in compact_blocks.iter() {
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
         let block_height = block.height();
 
-        let mut transactions = block.vtx.iter().peekable();
-        while let Some(transaction) = transactions.next() {
+        for transaction in block.vtx.iter() {
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners
                 .sapling
@@ -97,16 +96,12 @@ where
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
                     &transaction.outputs,
-                    block.height(),
-                    transactions.peek().is_none(),
                     &incoming_sapling_outputs,
                 )?,
             );
             witness_data.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
-                    block.height(),
-                    transactions.peek().is_none(),
                     &incoming_orchard_outputs,
                 )?,
             );
@@ -129,6 +124,15 @@ where
             orchard_final_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
+
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.sapling_leaves_and_retentions,
+        );
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.orchard_leaves_and_retentions,
+        );
 
         let wallet_block = WalletBlock {
             block_height: block.height(),
@@ -331,8 +335,6 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
 /// Calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_sapling_leaves_and_retentions<D: Domain>(
     outputs: &[CompactSaplingOutput],
-    block_height: BlockHeight,
-    last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -344,8 +346,6 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     if outputs.is_empty() {
         Ok(Vec::new())
     } else {
-        let last_output_index = outputs.len() - 1;
-
         let leaves_and_retentions = outputs
             .iter()
             .enumerate()
@@ -354,21 +354,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                     .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
-
-                let last_output_in_block: bool =
-                    last_outputs_in_block && output_index == last_output_index;
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
-                let retention = match (decrypted, last_output_in_block) {
-                    (decrypted, true) => Retention::Checkpoint {
-                        id: block_height,
-                        marking: if decrypted {
-                            Marking::Marked
-                        } else {
-                            Marking::None
-                        },
-                    },
-                    (true, false) => Retention::Marked,
-                    (false, false) => Retention::Ephemeral,
+                let retention = if decrypted {
+                    Retention::Marked
+                } else {
+                    Retention::Ephemeral
                 };
 
                 Ok((leaf, retention))
@@ -378,11 +368,10 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
         Ok(leaves_and_retentions)
     }
 }
+
 // calculates the orchard note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_orchard_leaves_and_retentions<D: Domain>(
     actions: &[CompactOrchardAction],
-    block_height: BlockHeight,
-    last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -394,8 +383,6 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     if actions.is_empty() {
         Ok(Vec::new())
     } else {
-        let last_output_index = actions.len() - 1;
-
         let leaves_and_retentions = actions
             .iter()
             .enumerate()
@@ -404,21 +391,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                     .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
-
-                let last_output_in_block: bool =
-                    last_outputs_in_block && output_index == last_output_index;
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
-                let retention = match (decrypted, last_output_in_block) {
-                    (is_marked, true) => Retention::Checkpoint {
-                        id: block_height,
-                        marking: if is_marked {
-                            Marking::Marked
-                        } else {
-                            Marking::None
-                        },
-                    },
-                    (true, false) => Retention::Marked,
-                    (false, false) => Retention::Ephemeral,
+                let retention = if decrypted {
+                    Retention::Marked
+                } else {
+                    Retention::Ephemeral
                 };
 
                 Ok((leaf, retention))
@@ -528,4 +505,27 @@ pub(crate) async fn calculate_block_tree_bounds(
         orchard_initial_tree_size: orchard_final_tree_size.saturating_sub(orchard_output_count),
         orchard_final_tree_size,
     })
+}
+
+fn set_checkpoint_retentions<L>(
+    block_height: BlockHeight,
+    leaves_and_retentions: &mut [(L, Retention<BlockHeight>)],
+) {
+    if let Some((_leaf, retention)) = leaves_and_retentions.last_mut() {
+        match retention {
+            Retention::Marked => {
+                *retention = Retention::Checkpoint {
+                    id: block_height,
+                    marking: Marking::Marked,
+                };
+            }
+            Retention::Ephemeral => {
+                *retention = Retention::Checkpoint {
+                    id: block_height,
+                    marking: Marking::None,
+                };
+            }
+            _ => (),
+        }
+    }
 }
