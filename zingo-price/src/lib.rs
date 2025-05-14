@@ -5,7 +5,10 @@
 //! Currently only supports USD.
 //! Prices are fetched using the CoinCap API. A CoinCap API key is needed via registration.
 
-use std::io::{Read, Write};
+use std::{
+    collections::HashSet,
+    io::{Read, Write},
+};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::Deserialize;
@@ -125,6 +128,26 @@ impl PriceList {
         self.time_last_updated = Some(self.current_price.expect("should be non-empty").time);
 
         Ok(())
+    }
+
+    /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
+    ///
+    /// Will not remove prices above or equal to the `prune_below` threshold.
+    pub fn prune(&mut self, transaction_times: Vec<u32>, prune_below: u32) {
+        let mut relevant_days = HashSet::new();
+
+        for transaction_time in transaction_times.into_iter() {
+            for daily_price in self.daily_prices() {
+                if daily_price.time > transaction_time {
+                    assert!(daily_price.time - transaction_time < 86_400);
+                    relevant_days.insert(daily_price.time);
+                    break;
+                }
+            }
+        }
+
+        self.daily_prices
+            .retain(|price| relevant_days.contains(&price.time) || price.time >= prune_below)
     }
 
     fn serialized_version() -> u8 {

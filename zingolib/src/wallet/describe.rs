@@ -529,6 +529,7 @@ impl LightWallet {
         let mut price = None;
         for daily_price in self.price_list.daily_prices() {
             if daily_price.time > transaction.datetime() {
+                assert!(daily_price.time - transaction.datetime() < 86_400);
                 price = Some(daily_price.price_usd);
                 break;
             }

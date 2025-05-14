@@ -304,6 +304,7 @@ impl LightWallet {
             self.price_list.set_start_time(birthday_block.time());
         }
         self.price_list.update().await?;
+        self.prune_price_list();
         self.save_required = true;
 
         Ok(())
@@ -314,6 +315,33 @@ impl LightWallet {
         self.update_price().await?;
 
         Ok(self.price_list.current_price().map(|price| price.price_usd))
+    }
+
+    /// Prunes historical prices to days containing transactions in the wallet.
+    ///
+    /// Avoids pruning above fully scanned height.
+    pub fn prune_price_list(&mut self) {
+        let Some(fully_scanned_height) = self.sync_state.fully_scanned_height() else {
+            return;
+        };
+        let transaction_times = self
+            .wallet_transactions
+            .values()
+            .filter(|transaction| {
+                transaction
+                    .status()
+                    .get_confirmed_height()
+                    .is_some_and(|height| height <= fully_scanned_height)
+            })
+            .map(|transaction| transaction.datetime())
+            .collect();
+
+        let prune_below = self
+            .wallet_blocks
+            .get(&fully_scanned_height)
+            .expect("fully scanned height should always be on a scan range boundary")
+            .time();
+        self.price_list.prune(transaction_times, prune_below);
     }
 
     /// Sets the API key for updating the price list.
