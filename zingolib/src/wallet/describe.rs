@@ -527,8 +527,7 @@ impl LightWallet {
         // add price to transaction summary
         // takes price from the day of transaction's datetime. otherwise, current price.
         let mut price = None;
-        let mut daily_prices = self.price_list.daily_prices().iter();
-        while let Some(daily_price) = daily_prices.next() {
+        for daily_price in self.price_list.daily_prices() {
             if daily_price.time > transaction.datetime() {
                 price = Some(daily_price.price_usd);
                 break;
