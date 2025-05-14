@@ -679,8 +679,7 @@ impl Command for SetPriceApiKeyCommand {
                 .wallet
                 .lock()
                 .await
-                .price_list
-                .set_api_key(args[0].to_string());
+                .set_price_api_key(args[0].to_string());
         });
 
         "Successfully set API key".to_string()

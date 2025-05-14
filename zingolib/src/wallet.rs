@@ -303,8 +303,10 @@ impl LightWallet {
             };
             self.price_list.set_start_time(birthday_block.time());
         }
+        self.price_list.update().await?;
+        self.save_required = true;
 
-        Ok(self.price_list.update().await?)
+        Ok(())
     }
 
     /// Updates price list and returns current price of ZEC.
@@ -312,6 +314,12 @@ impl LightWallet {
         self.update_price().await?;
 
         Ok(self.price_list.current_price().map(|price| price.price_usd))
+    }
+
+    /// Sets the API key for updating the price list.
+    pub fn set_price_api_key(&mut self, api_key: String) {
+        self.price_list.set_api_key(api_key);
+        self.save_required = true;
     }
 
     /// Clears all wallet data obtained from the block chain including the sync state.

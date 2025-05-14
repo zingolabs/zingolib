@@ -457,10 +457,10 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
+            wallet_settings,
             price_list,
             send_progress: SendProgress::new(0),
             save_required: false,
-            wallet_settings,
         })
     }
 }
