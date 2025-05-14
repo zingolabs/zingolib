@@ -38,7 +38,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         .map_err(SyncError::WalletError)?;
     let mut locators: BTreeSet<Locator> = BTreeSet::new();
     let block_range = Range {
-        start: wallet_height + 1 - MAX_VERIFICATION_WINDOW,
+        start: wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1,
         end: chain_height + 1,
     };
 
