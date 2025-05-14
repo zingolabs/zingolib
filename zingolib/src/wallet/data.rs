@@ -455,6 +455,8 @@ pub mod summaries {
         fn outgoing_orchard_notes(&self) -> &[OutgoingNoteSummary];
         /// Gets slice of outgoing sapling notes
         fn outgoing_sapling_notes(&self) -> &[OutgoingNoteSummary];
+        /// Gets slice of outgoing transparent coins
+        fn outgoing_transparent_coins(&self) -> &[OutgoingCoinSummary];
         /// Depending on the relationship of this capability to the
         /// receiver capability, assign polarity to value transferred.
         /// Returns None if fields expecting Some(_) are None
@@ -482,6 +484,7 @@ pub mod summaries {
             BasicCoinSummaries,
             OutgoingNoteSummaries,
             OutgoingNoteSummaries,
+            OutgoingCoinSummaries,
         ) {
             let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime() as i64, 0) {
                 format!("{}", dt)
@@ -505,6 +508,8 @@ pub mod summaries {
                 OutgoingNoteSummaries(self.outgoing_orchard_notes().to_vec());
             let outgoing_sapling_notes =
                 OutgoingNoteSummaries(self.outgoing_sapling_notes().to_vec());
+            let outgoing_transparent_coins =
+                OutgoingCoinSummaries(self.outgoing_transparent_coins().to_vec());
 
             (
                 datetime,
@@ -515,6 +520,7 @@ pub mod summaries {
                 transparent_coins,
                 outgoing_orchard_notes,
                 outgoing_sapling_notes,
+                outgoing_transparent_coins,
             )
         }
     }
@@ -538,6 +544,7 @@ pub mod summaries {
         transparent_coins: Vec<BasicCoinSummary>,
         outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
         outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
+        outgoing_transparent_coins: Vec<OutgoingCoinSummary>,
     }
 
     impl TransactionSummaryInterface for TransactionSummary {
@@ -580,6 +587,9 @@ pub mod summaries {
         fn outgoing_sapling_notes(&self) -> &[OutgoingNoteSummary] {
             &self.outgoing_sapling_notes
         }
+        fn outgoing_transparent_coins(&self) -> &[OutgoingCoinSummary] {
+            &self.outgoing_transparent_coins
+        }
     }
 
     impl std::fmt::Display for TransactionSummary {
@@ -593,6 +603,7 @@ pub mod summaries {
                 transparent_coins,
                 outgoing_orchard_notes,
                 outgoing_sapling_notes,
+                outgoing_transparent_coins,
             ) = self.prepare_for_display();
             write!(
                 f,
@@ -610,6 +621,7 @@ pub mod summaries {
     transparent coins: {}
     outgoing orchard notes: {}
     outgoing sapling notes: {}
+    outgoing transparent coins: {}
 }}",
                 self.txid,
                 datetime,
@@ -624,6 +636,7 @@ pub mod summaries {
                 transparent_coins,
                 outgoing_orchard_notes,
                 outgoing_sapling_notes,
+                outgoing_transparent_coins,
             )
         }
     }
@@ -644,6 +657,7 @@ pub mod summaries {
                 "transparent_coins" => JsonValue::from(transaction.transparent_coins),
                 "outgoing_orchard_notes" => JsonValue::from(transaction.outgoing_orchard_notes),
                 "outgoing_sapling_notes" => JsonValue::from(transaction.outgoing_sapling_notes),
+                "outgoing_transparent_coins" => JsonValue::from(transaction.outgoing_transparent_coins),
             }
         }
     }
@@ -718,6 +732,7 @@ pub mod summaries {
         transparent_coins: Option<Vec<BasicCoinSummary>>,
         outgoing_orchard_notes: Option<Vec<OutgoingNoteSummary>>,
         outgoing_sapling_notes: Option<Vec<OutgoingNoteSummary>>,
+        outgoing_transparent_coins: Option<Vec<OutgoingCoinSummary>>,
     }
 
     impl TransactionSummaryBuilder {
@@ -737,6 +752,7 @@ pub mod summaries {
                 transparent_coins: None,
                 outgoing_orchard_notes: None,
                 outgoing_sapling_notes: None,
+                outgoing_transparent_coins: None,
             }
         }
 
@@ -753,6 +769,7 @@ pub mod summaries {
         build_method!(transparent_coins, Vec<BasicCoinSummary>);
         build_method!(outgoing_orchard_notes, Vec<OutgoingNoteSummary>);
         build_method!(outgoing_sapling_notes, Vec<OutgoingNoteSummary>);
+        build_method!(outgoing_transparent_coins, Vec<OutgoingCoinSummary>);
 
         /// Builds a TransactionSummary from builder
         pub fn build(&self) -> Result<TransactionSummary, BuildError> {
@@ -794,10 +811,13 @@ pub mod summaries {
                     .clone()
                     .ok_or(BuildError::MissingField("transparent_coins".to_string()))?,
                 outgoing_orchard_notes: self.outgoing_orchard_notes.clone().ok_or(
-                    BuildError::MissingField("orchard_outgoing_notes".to_string()),
+                    BuildError::MissingField("outgoing_orchard_notes".to_string()),
                 )?,
                 outgoing_sapling_notes: self.outgoing_sapling_notes.clone().ok_or(
-                    BuildError::MissingField("sapling_outgoing_notes".to_string()),
+                    BuildError::MissingField("outgoing_sapling_notes".to_string()),
+                )?,
+                outgoing_transparent_coins: self.outgoing_transparent_coins.clone().ok_or(
+                    BuildError::MissingField("outgoing_transparent_coins".to_string()),
                 )?,
             })
         }
@@ -1042,6 +1062,53 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for note in &self.0 {
                 write!(f, "\n{}", note)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// Outgoing coin summary.
+    /// A struct designed for conveniently displaying information to the user or converting to JSON to pass through an FFI.
+    /// A "snapshot" of the state of the outgoing note in the wallet at the time the summary was constructed.
+    /// Not to be used for internal logic in the system.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct OutgoingCoinSummary {
+        pub value: u64,
+        pub recipient: String,
+        pub output_index: u16,
+    }
+
+    impl std::fmt::Display for OutgoingCoinSummary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "\t{{
+            value: {}
+            recipient: {}
+            output index: {}
+        }}",
+                self.value, self.recipient, self.output_index,
+            )
+        }
+    }
+
+    impl From<OutgoingCoinSummary> for JsonValue {
+        fn from(note: OutgoingCoinSummary) -> Self {
+            json::object! {
+                "value" => note.value,
+                "recipient" => note.recipient,
+                "output_index" => note.output_index,
+            }
+        }
+    }
+
+    /// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
+    pub struct OutgoingCoinSummaries(Vec<OutgoingCoinSummary>);
+
+    impl std::fmt::Display for OutgoingCoinSummaries {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for coin in &self.0 {
+                write!(f, "\n{}", coin)?;
             }
             Ok(())
         }

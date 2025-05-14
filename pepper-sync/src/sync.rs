@@ -2,30 +2,32 @@
 
 use std::cmp;
 use std::collections::{BTreeMap, HashMap};
+use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use tokio::sync::{Mutex, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::service::{RawTransaction, compact_tx_streamer_client::CompactTxStreamerClient},
-};
+use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
+use zcash_client_backend::proto::service::RawTransaction;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{self, BlockHeight};
 
-use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
+    SyncStatusError,
 };
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
@@ -37,10 +39,10 @@ use crate::wallet::traits::{
 use crate::wallet::{
     Locator, NullifierMap, OutputId, SyncMode, SyncState, WalletBlock, WalletTransaction,
 };
+use crate::witness::LocatedTreeData;
 
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
-use crate::witness::LocatedTreeData;
 
 pub(crate) mod spend;
 pub(crate) mod state;
@@ -52,19 +54,22 @@ pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
 /// `percentage_outputs_scanned` is a much more accurate indicator of sync completion than `percentage_blocks_scanned`.
+/// `percentage_total_outputs_scanned` is the percentage of outputs scanned from birthday to chain height.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub sync_start_height: BlockHeight,
-    pub scanned_blocks: u32,
-    pub unscanned_blocks: u32,
-    pub percentage_blocks_scanned: f32,
-    pub scanned_sapling_outputs: u32,
-    pub unscanned_sapling_outputs: u32,
-    pub scanned_orchard_outputs: u32,
-    pub unscanned_orchard_outputs: u32,
-    pub percentage_outputs_scanned: f32,
+    pub session_blocks_scanned: u32,
+    pub total_blocks_scanned: u32,
+    pub percentage_session_blocks_scanned: f32,
+    pub percentage_total_blocks_scanned: f32,
+    pub session_sapling_outputs_scanned: u32,
+    pub total_sapling_outputs_scanned: u32,
+    pub session_orchard_outputs_scanned: u32,
+    pub total_orchard_outputs_scanned: u32,
+    pub percentage_session_outputs_scanned: f32,
+    pub percentage_total_outputs_scanned: f32,
 }
 
 // TODO: complete display, scan ranges in raw form are too verbose
@@ -72,11 +77,8 @@ impl std::fmt::Display for SyncStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{
-                scanned blocks: {}
-                percentage complete: {}
-            }}",
-            self.scanned_blocks, self.percentage_outputs_scanned
+            "percentage complete: {}",
+            self.percentage_total_outputs_scanned
         )
     }
 }
@@ -98,14 +100,16 @@ impl From<SyncStatus> for json::JsonValue {
         json::object! {
             "scan_ranges" => scan_ranges,
             "sync_start_height" => u32::from(value.sync_start_height),
-            "scanned_blocks" => value.scanned_blocks,
-            "unscanned_blocks" => value.unscanned_blocks,
-            "percentage_blocks_scanned" => value.percentage_blocks_scanned,
-            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
-            "unscanned_sapling_outputs" => value.unscanned_sapling_outputs,
-            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
-            "unscanned_orchard_outputs" => value.unscanned_orchard_outputs,
-            "percentage_outputs_scanned" => value.percentage_outputs_scanned,
+            "session_blocks_scanned" => value.session_blocks_scanned,
+            "total_blocks_scanned" => value.total_blocks_scanned,
+            "percentage_session_blocks_scanned" => value.percentage_session_blocks_scanned,
+            "percentage_total_blocks_scanned" => value.percentage_total_blocks_scanned,
+            "session_sapling_outputs_scanned" => value.session_sapling_outputs_scanned,
+            "total_sapling_outputs_scanned" => value.total_sapling_outputs_scanned,
+            "session_orchard_outputs_scanned" => value.session_orchard_outputs_scanned,
+            "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
+            "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
+            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
         }
     }
 }
@@ -116,9 +120,10 @@ impl From<SyncStatus> for json::JsonValue {
 pub struct SyncResult {
     pub sync_start_height: BlockHeight,
     pub sync_end_height: BlockHeight,
-    pub scanned_blocks: u32,
-    pub scanned_sapling_outputs: u32,
-    pub scanned_orchard_outputs: u32,
+    pub blocks_scanned: u32,
+    pub sapling_outputs_scanned: u32,
+    pub orchard_outputs_scanned: u32,
+    pub percentage_total_outputs_scanned: f32,
 }
 
 impl std::fmt::Display for SyncResult {
@@ -129,15 +134,17 @@ impl std::fmt::Display for SyncResult {
 {{
     sync start height: {}
     sync end height: {}
-    scanned blocks: {}
-    scanned sapling outputs: {}
-    scanned orchard outputs: {}
+    blocks scanned: {}
+    sapling outputs scanned: {}
+    orchard outputs scanned: {}
+    percentage total outputs scanned: {}
 }}",
             self.sync_start_height,
             self.sync_end_height,
-            self.scanned_blocks,
-            self.scanned_sapling_outputs,
-            self.scanned_orchard_outputs
+            self.blocks_scanned,
+            self.sapling_outputs_scanned,
+            self.orchard_outputs_scanned,
+            self.percentage_total_outputs_scanned,
         )
     }
 }
@@ -147,9 +154,143 @@ impl From<SyncResult> for json::JsonValue {
         json::object! {
             "sync_start_height" => u32::from(value.sync_start_height),
             "sync_end_height" => u32::from(value.sync_end_height),
-            "scanned_blocks" => value.scanned_blocks,
-            "scanned_sapling_outputs" => value.scanned_sapling_outputs,
-            "scanned_orchard_outputs" => value.scanned_orchard_outputs,
+            "blocks_scanned" => value.blocks_scanned,
+            "sapling_outputs_scanned" => value.sapling_outputs_scanned,
+            "orchard_outputs_scanned" => value.orchard_outputs_scanned,
+            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
+        }
+    }
+}
+
+/// Sync configuration.
+#[derive(Default, Debug, Clone)]
+pub struct SyncConfig {
+    /// Transparent address discovery configuration.
+    pub transparent_address_discovery: TransparentAddressDiscovery,
+}
+
+impl SyncConfig {
+    fn serialized_version() -> u8 {
+        0
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let _version = reader.read_u8()?;
+
+        let gap_limit = reader.read_u8()?;
+        let scopes = reader.read_u8()?;
+        Ok(Self {
+            transparent_address_discovery: TransparentAddressDiscovery {
+                gap_limit,
+                scopes: TransparentAddressDiscoveryScopes {
+                    external: scopes & 0b1 != 0,
+                    internal: scopes & 0b10 != 0,
+                    refund: scopes & 0b100 != 0,
+                },
+            },
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u8(self.transparent_address_discovery.gap_limit)?;
+        let mut scopes = 0;
+        if self.transparent_address_discovery.scopes.external {
+            scopes |= 0b1;
+        };
+        if self.transparent_address_discovery.scopes.internal {
+            scopes |= 0b10;
+        };
+        if self.transparent_address_discovery.scopes.refund {
+            scopes |= 0b100;
+        };
+        writer.write_u8(scopes)?;
+
+        Ok(())
+    }
+}
+
+/// Transparent address configuration.
+///
+/// Sets which `scopes` will be searched for addresses in use, scanning relevant transactions, up to a given `gap_limit`.
+#[derive(Debug, Clone)]
+pub struct TransparentAddressDiscovery {
+    /// Sets the gap limit for transparent address discovery.
+    pub gap_limit: u8,
+    /// Sets the scopes for transparent address discovery.
+    pub scopes: TransparentAddressDiscoveryScopes,
+}
+
+impl Default for TransparentAddressDiscovery {
+    fn default() -> Self {
+        Self {
+            gap_limit: 10,
+            scopes: TransparentAddressDiscoveryScopes::default(),
+        }
+    }
+}
+
+impl TransparentAddressDiscovery {
+    /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
+    pub fn minimal() -> Self {
+        Self {
+            gap_limit: 1,
+            scopes: TransparentAddressDiscoveryScopes::default(),
+        }
+    }
+
+    /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
+    pub fn recovery() -> Self {
+        Self {
+            gap_limit: 20,
+            scopes: TransparentAddressDiscoveryScopes::recovery(),
+        }
+    }
+
+    /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
+    /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
+    pub fn disabled() -> Self {
+        Self {
+            gap_limit: 0,
+            scopes: TransparentAddressDiscoveryScopes {
+                external: false,
+                internal: false,
+                refund: false,
+            },
+        }
+    }
+}
+
+/// Sets the active scopes for transparent address recovery.
+#[derive(Debug, Clone)]
+pub struct TransparentAddressDiscoveryScopes {
+    /// External.
+    pub external: bool,
+    /// Internal.
+    pub internal: bool,
+    /// Refund.
+    pub refund: bool,
+}
+
+impl Default for TransparentAddressDiscoveryScopes {
+    fn default() -> Self {
+        Self {
+            external: true,
+            internal: false,
+            refund: true,
+        }
+    }
+}
+
+impl TransparentAddressDiscoveryScopes {
+    /// Constructor with all all scopes active.
+    pub fn recovery() -> Self {
+        Self {
+            external: true,
+            internal: true,
+            refund: true,
         }
     }
 }
@@ -157,27 +298,29 @@ impl From<SyncResult> for json::JsonValue {
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
-/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` or `NotRunning`
-/// at the start and finish of sync, respectively. `sync_mode` may also be set to `Paused` externally to drop the wallet
-/// lock after the next batch is completed and pause scanning. Setting `sync_mode` back to `Running` will resume
-/// scanning when the wallet guard is next available.
-///
-/// If `transparent_address_discovery` is enabled, all transactions with relevant transparent input and/or outputs will
-/// be scanned, with the in-use transparent addresses added to the wallet. The number of unused transparent addresses
-/// above the in-use address with the highest address index for each scope and account is determined by
-/// the address gap limit. If `transparent_address_discovery` is disabled, only transactions
-/// with relevant shielded inputs/outputs will be scanned with the transparent addresses currently in the wallet.
-// TODO: setting sync_mode to `NotRunning` should stop the sync task.
+/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` at the start of sync.
+/// However, the consumer is required to set the `sync_mode` back to `NotRunning` when sync is succussful or returns an
+/// error. This allows more flexibility and safety with sync task handles etc.
+/// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
+/// times in quick sucession without the sync engine interrupting.
+/// Setting `sync_mode` back to `Running` will resume scanning.
+/// Setting `sync_mode` to `Shutdown` will stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<Mutex<W>>,
     sync_mode: Arc<AtomicU8>,
-    transparent_address_discovery: bool,
+    config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     P: consensus::Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
     if sync_mode_enum == SyncMode::NotRunning {
@@ -232,17 +375,16 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    if transparent_address_discovery {
-        transparent::update_addresses_and_locators(
-            consensus_parameters,
-            &mut *wallet_guard,
-            fetch_request_sender.clone(),
-            &ufvks,
-            wallet_height,
-            chain_height,
-        )
-        .await?;
-    }
+    transparent::update_addresses_and_locators(
+        consensus_parameters,
+        &mut *wallet_guard,
+        fetch_request_sender.clone(),
+        &ufvks,
+        wallet_height,
+        chain_height,
+        config.transparent_address_discovery,
+    )
+    .await?;
 
     #[cfg(not(feature = "darkside_test"))]
     update_subtree_roots(
@@ -277,7 +419,12 @@ where
     )
     .await?;
 
-    remove_irrelevant_blocks(&mut *wallet_guard).map_err(SyncError::WalletError)?;
+    let initial_verification_height = wallet_guard
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .highest_scanned_height()
+        .expect("scan ranges must be non-empty")
+        + 1;
 
     drop(wallet_guard);
 
@@ -293,18 +440,12 @@ where
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
-    let mut wallet_guard = wallet.lock().await;
-    let initial_verification_height = wallet_guard
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .highest_scanned_height()
-        .expect("scan ranges must be non-empty")
-        + 1;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
+                let mut wallet_guard = wallet.lock().await;
                 process_scan_results(
                     consensus_parameters,
                     &mut *wallet_guard,
@@ -316,25 +457,11 @@ where
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
-
-                // allow tasks outside the sync engine access to the wallet data
                 drop(wallet_guard);
-
-                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                if sync_mode_enum == SyncMode::Paused {
-                    let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
-                    pause_interval.tick().await;
-                    while sync_mode_enum != SyncMode::Running {
-                        pause_interval.tick().await;
-                        sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
-                    }
-
-                }
-
-                wallet_guard = wallet.lock().await;
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
+                let mut wallet_guard = wallet.lock().await;
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
@@ -343,18 +470,66 @@ where
                 )
                 .await?;
                 unprocessed_mempool_transactions_count.fetch_sub(1, atomic::Ordering::Release);
+                drop(wallet_guard);
             }
 
             _update_scanner = interval.tick() => {
-                scanner.update(&mut *wallet_guard, shutdown_mempool.clone()).await?;
+                sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                match sync_mode_enum {
+                    SyncMode::Paused => {
+                        let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
+                        pause_interval.tick().await;
+                        while sync_mode_enum == SyncMode::Paused {
+                            pause_interval.tick().await;
+                            sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
+                        }
+                    },
+                    SyncMode::Shutdown => {
+                        let mut wallet_guard = wallet.lock().await;
+                        let sync_status = match sync_status(&*wallet_guard).await {
+                            Ok(status) => status,
+                            Err(SyncStatusError::WalletError(e)) => {
+                                return Err(SyncError::WalletError(e));
+                            }
+                            Err(SyncStatusError::NoSyncData) => {
+                                panic!("sync data must exist!");
+                            }
+                        };
+                        wallet_guard
+                            .set_save_flag()
+                            .map_err(SyncError::WalletError)?;
+                        drop(wallet_guard);
+                        tracing::info!("Sync successfully shutdown.");
+
+                        return Ok(SyncResult {
+                            sync_start_height: sync_status.sync_start_height,
+                            sync_end_height: (sync_status
+                                .scan_ranges
+                                .last()
+                                .expect("should be non-empty after syncing")
+                                .block_range()
+                                .end
+                                - 1),
+                            blocks_scanned: sync_status.session_blocks_scanned,
+                            sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
+                            orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+                            percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
+                        });
+                    }
+                    SyncMode::Running => (),
+                    SyncMode::NotRunning => {
+                        panic!("sync mode should not be manually set to NotRunning!");
+                    },
+                }
+
+                scanner.update(&mut *wallet.lock().await, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sync_complete(&scanner, unprocessed_mempool_transactions_count.clone(), &*wallet_guard)
-                        .map_err(SyncError::WalletError)?
+                    if is_shutdown(&scanner, unprocessed_mempool_transactions_count.clone())
                     {
-                        tracing::info!("Sync complete.");
+                        tracing::info!("Sync successfully shutdown.");
                         break;
                     }
                 }
@@ -362,9 +537,16 @@ where
         }
     }
 
-    let sync_status = sync_status(&*wallet_guard)
-        .await
-        .map_err(SyncError::WalletError)?;
+    let mut wallet_guard = wallet.lock().await;
+    let sync_status = match sync_status(&*wallet_guard).await {
+        Ok(status) => status,
+        Err(SyncStatusError::WalletError(e)) => {
+            return Err(SyncError::WalletError(e));
+        }
+        Err(SyncStatusError::NoSyncData) => {
+            panic!("sync data must exist!");
+        }
+    };
     wallet_guard
         .set_save_flag()
         .map_err(SyncError::WalletError)?;
@@ -379,7 +561,6 @@ where
         Err(e) => return Err(e.into()),
     }
     fetcher_handle.await.expect("task panicked");
-    sync_mode.store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
 
     Ok(SyncResult {
         sync_start_height: sync_status.sync_start_height,
@@ -390,63 +571,112 @@ where
             .block_range()
             .end
             - 1),
-        scanned_blocks: sync_status.scanned_blocks,
-        scanned_sapling_outputs: sync_status.scanned_sapling_outputs,
-        scanned_orchard_outputs: sync_status.scanned_orchard_outputs,
+        blocks_scanned: sync_status.session_blocks_scanned,
+        sapling_outputs_scanned: sync_status.session_sapling_outputs_scanned,
+        orchard_outputs_scanned: sync_status.session_orchard_outputs_scanned,
+        percentage_total_outputs_scanned: sync_status.percentage_total_outputs_scanned,
     })
 }
 
-/// Creates a [`self::SyncStatus`] from the wallet's current
-/// [`crate::wallet::SyncState`].
+/// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
-/// Designed to be called during the sync process with minimal interruption.
-pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, W::Error>
+/// Intended to be called while [self::sync] is running in a separate task.
+pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
 {
-    let sync_state = wallet.get_sync_state()?.clone();
+    let (total_sapling_outputs_scanned, total_orchard_outputs_scanned) =
+        state::calculate_scanned_outputs(wallet).map_err(SyncStatusError::WalletError)?;
+    let total_outputs_scanned = total_sapling_outputs_scanned + total_orchard_outputs_scanned;
 
-    let unscanned_blocks = sync_state
-        .scan_ranges()
-        .iter()
-        .filter(|scan_range| scan_range.priority() != ScanPriority::Scanned)
-        .map(|scan_range| scan_range.block_range())
-        .fold(0, |acc, block_range| {
-            acc + (block_range.end - block_range.start)
+    let sync_state = wallet
+        .get_sync_state()
+        .map_err(SyncStatusError::WalletError)?;
+    if sync_state.initial_sync_state.sync_start_height == 0.into() {
+        return Ok(SyncStatus {
+            scan_ranges: sync_state.scan_ranges.clone(),
+            sync_start_height: 0.into(),
+            session_blocks_scanned: 0,
+            total_blocks_scanned: 0,
+            percentage_session_blocks_scanned: 0.0,
+            percentage_total_blocks_scanned: 0.0,
+            session_sapling_outputs_scanned: 0,
+            session_orchard_outputs_scanned: 0,
+            total_sapling_outputs_scanned: 0,
+            total_orchard_outputs_scanned: 0,
+            percentage_session_outputs_scanned: 0.0,
+            percentage_total_outputs_scanned: 0.0,
         });
-    let scanned_blocks = sync_state
-        .initial_sync_state
-        .total_blocks_to_scan
-        .saturating_sub(unscanned_blocks);
-    let percentage_blocks_scanned =
-        (scanned_blocks as f32 / sync_state.initial_sync_state.total_blocks_to_scan as f32) * 100.0;
+    }
+    let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
-    let (unscanned_sapling_outputs, unscanned_orchard_outputs) =
-        state::calculate_unscanned_outputs(wallet)?;
-    let scanned_sapling_outputs = sync_state
+    let birthday = sync_state
+        .wallet_birthday()
+        .ok_or(SyncStatusError::NoSyncData)?;
+    let wallet_height = sync_state
+        .wallet_height()
+        .ok_or(SyncStatusError::NoSyncData)?;
+    let total_blocks = wallet_height - birthday + 1;
+    let total_sapling_outputs = sync_state
         .initial_sync_state
-        .total_sapling_outputs_to_scan
-        .saturating_sub(unscanned_sapling_outputs);
-    let scanned_orchard_outputs = sync_state
+        .wallet_tree_bounds
+        .sapling_final_tree_size
+        - sync_state
+            .initial_sync_state
+            .wallet_tree_bounds
+            .sapling_initial_tree_size;
+    let total_orchard_outputs = sync_state
         .initial_sync_state
-        .total_orchard_outputs_to_scan
-        .saturating_sub(unscanned_orchard_outputs);
-    let percentage_outputs_scanned = ((scanned_sapling_outputs + scanned_orchard_outputs) as f32
-        / (sync_state.initial_sync_state.total_sapling_outputs_to_scan
-            + sync_state.initial_sync_state.total_orchard_outputs_to_scan) as f32)
+        .wallet_tree_bounds
+        .orchard_final_tree_size
+        - sync_state
+            .initial_sync_state
+            .wallet_tree_bounds
+            .orchard_initial_tree_size;
+    let total_outputs = total_sapling_outputs + total_orchard_outputs;
+
+    let session_blocks_scanned =
+        total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
+    let percentage_session_blocks_scanned = (session_blocks_scanned as f32
+        / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
         * 100.0;
+    let percentage_total_blocks_scanned =
+        (total_blocks_scanned as f32 / total_blocks as f32) * 100.0;
+
+    let session_sapling_outputs_scanned = total_sapling_outputs_scanned
+        - sync_state
+            .initial_sync_state
+            .previously_scanned_sapling_outputs;
+    let session_orchard_outputs_scanned = total_orchard_outputs_scanned
+        - sync_state
+            .initial_sync_state
+            .previously_scanned_orchard_outputs;
+    let session_outputs_scanned = session_sapling_outputs_scanned + session_orchard_outputs_scanned;
+    let previously_scanned_outputs = sync_state
+        .initial_sync_state
+        .previously_scanned_sapling_outputs
+        + sync_state
+            .initial_sync_state
+            .previously_scanned_orchard_outputs;
+    let percentage_session_outputs_scanned = (session_outputs_scanned as f32
+        / (total_outputs - previously_scanned_outputs) as f32)
+        * 100.0;
+    let percentage_total_outputs_scanned =
+        (total_outputs_scanned as f32 / total_outputs as f32) * 100.0;
 
     Ok(SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
         sync_start_height: sync_state.initial_sync_state.sync_start_height,
-        scanned_blocks,
-        unscanned_blocks,
-        percentage_blocks_scanned,
-        scanned_sapling_outputs,
-        unscanned_sapling_outputs,
-        scanned_orchard_outputs,
-        unscanned_orchard_outputs,
-        percentage_outputs_scanned,
+        session_blocks_scanned,
+        total_blocks_scanned,
+        percentage_session_blocks_scanned,
+        percentage_total_blocks_scanned,
+        session_sapling_outputs_scanned,
+        total_sapling_outputs_scanned,
+        session_orchard_outputs_scanned,
+        total_orchard_outputs_scanned,
+        percentage_session_outputs_scanned,
+        percentage_total_outputs_scanned,
     })
 }
 
@@ -557,24 +787,16 @@ pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[Locator]) {
     }
 }
 
-/// Returns true if sync is complete.
-///
-/// Sync is complete when:
-/// - all scan workers have been shutdown
-/// - there is no unprocessed mempool transactions
-/// - all scan ranges have `Scanned` priority
-fn sync_complete<P, W>(
+/// Returns true if the scanner and mempool are shutdown.
+fn is_shutdown<P>(
     scanner: &Scanner<P>,
     mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-    wallet: &W,
-) -> Result<bool, W::Error>
+) -> bool
 where
     P: consensus::Parameters + Sync + Send + 'static,
-    W: SyncWallet,
 {
-    Ok(scanner.worker_poolsize() == 0
+    scanner.worker_poolsize() == 0
         && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
-        && wallet.get_sync_state()?.scan_complete())
 }
 
 /// Scan post-processing
@@ -588,7 +810,13 @@ async fn process_scan_results<W>(
     initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     match scan_results {
         Ok(results) => {
@@ -603,13 +831,15 @@ where
             update_wallet_data(
                 consensus_parameters,
                 wallet,
+                fetch_request_sender.clone(),
                 &scan_range,
                 nullifiers,
                 outpoints,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-            )?;
+            )
+            .await?;
             spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
             spend::update_shielded_spends(
                 consensus_parameters,
@@ -626,6 +856,12 @@ where
                     .get_sync_state_mut()
                     .map_err(SyncError::WalletError)?,
                 scan_range.block_range().clone(),
+            );
+            state::merge_scan_ranges(
+                wallet
+                    .get_sync_state_mut()
+                    .map_err(SyncError::WalletError)?,
+                ScanPriority::Scanned,
             );
             remove_irrelevant_data(wallet).map_err(SyncError::WalletError)?;
             tracing::debug!("Scan results processed.");
@@ -655,7 +891,7 @@ where
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
                 );
-                state::merge_verification_ranges(sync_state);
+                state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
                 truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)?;
 
@@ -768,9 +1004,10 @@ where
 
 /// Updates the wallet with data from `scan_results`
 #[allow(clippy::too_many_arguments)]
-fn update_wallet_data<W>(
+async fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     scan_range: &ScanRange,
     nullifiers: NullifierMap,
     mut outpoints: BTreeMap<OutputId, Locator>,
@@ -779,7 +1016,7 @@ fn update_wallet_data<W>(
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
 {
     let sync_state = wallet
         .get_sync_state_mut()
@@ -811,12 +1048,15 @@ where
     wallet
         .append_outpoints(&mut outpoints)
         .map_err(SyncError::WalletError)?;
-    wallet.update_shard_trees(
-        scan_range,
-        wallet_height,
-        sapling_located_trees,
-        orchard_located_trees,
-    )?;
+    wallet
+        .update_shard_trees(
+            fetch_request_sender,
+            scan_range,
+            wallet_height,
+            sapling_located_trees,
+            orchard_located_trees,
+        )
+        .await?;
 
     Ok(())
 }
@@ -845,6 +1085,7 @@ where
         .get_sync_state_mut()?
         .locators
         .retain(|(height, _)| *height > fully_scanned_height);
+    remove_irrelevant_blocks(wallet)?;
 
     Ok(())
 }
@@ -854,13 +1095,23 @@ where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
     let sync_state = wallet.get_sync_state()?;
-    let fully_scanned_height = sync_state
-        .fully_scanned_height()
-        .expect("scan ranges must be non-empty");
     let birthday = sync_state
         .wallet_birthday()
         .expect("scan ranges must be non-empty");
-
+    let highest_scanned_height = sync_state
+        .highest_scanned_height()
+        .expect("should be non-empty");
+    let scanned_range_bounds = sync_state
+        .scan_ranges()
+        .iter()
+        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .flat_map(|scanned_range| {
+            vec![
+                scanned_range.block_range().start,
+                scanned_range.block_range().end - 1,
+            ]
+        })
+        .collect::<Vec<_>>();
     let wallet_transaction_heights = wallet
         .get_wallet_transactions()?
         .values()
@@ -868,7 +1119,8 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= fully_scanned_height - MAX_VERIFICATION_WINDOW
+        *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+            || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
             || *height == birthday
     });

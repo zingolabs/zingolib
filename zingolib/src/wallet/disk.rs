@@ -20,7 +20,7 @@ use zip32::AccountId;
 
 use super::LightWallet;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
-use crate::wallet::{SendProgress, legacy::WalletZecPriceInfo, utils};
+use crate::wallet::{SendProgress, WalletSettings, legacy::WalletZecPriceInfo, utils};
 use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
     config::ChainType,
@@ -31,14 +31,15 @@ use crate::{
 };
 use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
+    sync::{SyncConfig, TransparentAddressDiscovery},
     wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
 };
 
 impl LightWallet {
-    /// Changes in version 33:
+    /// Changes in version 34:
     /// - New price list
     pub const fn serialized_version() -> u64 {
-        33
+        34
     }
 
     /// Serialize into `writer`
@@ -110,6 +111,8 @@ impl LightWallet {
         )?;
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
+
+        self.wallet_settings.sync_config.write(&mut writer)?;
         self.price_list.write(&mut writer)
     }
 
@@ -319,6 +322,11 @@ impl LightWallet {
             unified_addresses,
             network,
             save_required: false,
+            wallet_settings: WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            },
         };
 
         Ok(lw)
@@ -418,7 +426,19 @@ impl LightWallet {
         let shard_trees = ShardTrees::read(&mut reader)?;
         let sync_state = SyncState::read(&mut reader)?;
 
-        let price_list = if version >= 33 {
+        let wallet_settings = if version >= 33 {
+            WalletSettings {
+                sync_config: SyncConfig::read(&mut reader)?,
+            }
+        } else {
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                },
+            }
+        };
+
+        let price_list = if version >= 34 {
             PriceList::read(&mut reader)?
         } else {
             PriceList::new()
@@ -440,6 +460,7 @@ impl LightWallet {
             price_list,
             send_progress: SendProgress::new(0),
             save_required: false,
+            wallet_settings,
         })
     }
 }

@@ -10,26 +10,21 @@ chain_generic_tests = []
 [dependencies]
 zingolib = { workspace = true, features = ["darkside_tests"] }
 zingo-netutils = { workspace = true }
-zingo-status = { workspace = true }
 testvectors = { workspace = true }
 
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
 incrementalmerkletree = { workspace = true }
-zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 
 tokio = { workspace = true, features = ["full"] }
-json = { workspace = true }
 http = { workspace = true }
-http-body-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 tower = { workspace = true }
-http-body = { workspace = true }
 hex = { workspace = true }
 tempfile = { workspace = true }
 portpicker = { workspace = true }

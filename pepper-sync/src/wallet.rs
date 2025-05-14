@@ -62,15 +62,18 @@ pub type Locator = (BlockHeight, TxId);
 #[derive(Debug, Clone)]
 pub struct InitialSyncState {
     /// One block above the fully scanned wallet height at start of sync session.
+    ///
+    /// If chain height is not larger than fully scanned height when sync is called, this value will be set to chain
+    /// height instead.
     pub(crate) sync_start_height: BlockHeight,
     /// The tree sizes of the fully scanned height and chain tip at start of sync session.
-    pub(crate) sync_tree_bounds: TreeBounds,
-    /// Total number of blocks to scan.
-    pub(crate) total_blocks_to_scan: u32,
-    /// Total number of sapling outputs to scan.
-    pub(crate) total_sapling_outputs_to_scan: u32,
-    /// Total number of orchard outputs to scan.
-    pub(crate) total_orchard_outputs_to_scan: u32,
+    pub(crate) wallet_tree_bounds: TreeBounds,
+    /// Total number of blocks scanned in previous sync sessions.
+    pub(crate) previously_scanned_blocks: u32,
+    /// Total number of sapling outputs to scanned in previous sync sessions.
+    pub(crate) previously_scanned_sapling_outputs: u32,
+    /// Total number of orchard outputs to scanned in previous sync sessions.
+    pub(crate) previously_scanned_orchard_outputs: u32,
 }
 
 impl InitialSyncState {
@@ -78,15 +81,15 @@ impl InitialSyncState {
     pub fn new() -> Self {
         InitialSyncState {
             sync_start_height: 0.into(),
-            sync_tree_bounds: TreeBounds {
+            wallet_tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 0,
                 sapling_final_tree_size: 0,
                 orchard_initial_tree_size: 0,
                 orchard_final_tree_size: 0,
             },
-            total_blocks_to_scan: 0,
-            total_sapling_outputs_to_scan: 0,
-            total_orchard_outputs_to_scan: 0,
+            previously_scanned_blocks: 0,
+            previously_scanned_sapling_outputs: 0,
+            previously_scanned_orchard_outputs: 0,
         }
     }
 }
@@ -207,6 +210,8 @@ pub enum SyncMode {
     Paused,
     /// Sync is running.
     Running,
+    /// Sync is shutting down.
+    Shutdown,
 }
 
 impl SyncMode {
@@ -218,6 +223,7 @@ impl SyncMode {
             0 => Ok(Self::NotRunning),
             1 => Ok(Self::Paused),
             2 => Ok(Self::Running),
+            3 => Ok(Self::Shutdown),
             _ => Err(SyncModeError::InvalidSyncMode(mode)),
         }
     }
@@ -431,7 +437,7 @@ impl WalletTransaction {
     }
 
     /// Transparent coins mutable
-    pub(crate) fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
+    pub fn transparent_coins_mut(&mut self) -> Vec<&mut TransparentCoin> {
         self.transparent_coins.iter_mut().collect()
     }
 
@@ -512,18 +518,26 @@ impl WalletTransaction {
 impl WalletTransaction {
     /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
     pub fn total_value_sent(&self) -> u64 {
-        let transparent_value_sent = self.transaction.transparent_bundle().map_or(0, |bundle| {
-            bundle
-                .vout
-                .iter()
-                .map(|output| output.value.into_u64())
-                .sum()
-        }) - self.total_output_value::<TransparentCoin>();
+        let transparent_value_sent = self
+            .transaction
+            .transparent_bundle()
+            .map_or(0, |bundle| {
+                bundle
+                    .vout
+                    .iter()
+                    .map(|output| output.value.into_u64())
+                    .sum()
+            })
+            .saturating_sub(self.total_output_value::<TransparentCoin>());
 
-        let sapling_value_sent = self.total_outgoing_note_value::<OutgoingSaplingNote>()
-            - self.total_output_value::<SaplingNote>();
-        let orchard_value_sent = self.total_outgoing_note_value::<OutgoingOrchardNote>()
-            - self.total_output_value::<OrchardNote>();
+        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
+        // to this fix to zcash client backend
+        let sapling_value_sent = self
+            .total_outgoing_note_value::<OutgoingSaplingNote>()
+            .saturating_sub(self.total_output_value::<SaplingNote>());
+        let orchard_value_sent = self
+            .total_outgoing_note_value::<OutgoingOrchardNote>()
+            .saturating_sub(self.total_output_value::<OrchardNote>());
 
         transparent_value_sent + sapling_value_sent + orchard_value_sent
     }

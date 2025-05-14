@@ -58,4 +58,22 @@ pub use sync::scan_pending_transaction;
 pub use sync::sync;
 pub use sync::sync_status;
 
-pub(crate) const MAX_BATCH_OUTPUTS: usize = 16_384; // 2^14
+use zcash_protocol::ShieldedProtocol;
+
+pub(crate) const MAX_BATCH_OUTPUTS: usize = 2usize.pow(12);
+
+pub(crate) trait SyncDomain {
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+}
+
+pub(crate) struct Sapling;
+
+impl SyncDomain for Sapling {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+}
+
+pub(crate) struct Orchard;
+
+impl SyncDomain for Orchard {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+}

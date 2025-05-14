@@ -255,14 +255,15 @@ impl LightWallet {
     ) -> Vec<&'a TransparentCoin> {
         self.wallet_transactions
             .values()
+            .filter(|&transaction| transaction.status().is_confirmed())
             .flat_map(|transaction| {
-                if self.sync_state.wallet_height().unwrap_or(self.birthday)
-                    - transaction
-                        .status()
-                        .get_confirmed_height()
-                        .expect("output must be confirmed in this scope")
-                    + 1
-                    < min_confirmations.get()
+                if transaction
+                    .status()
+                    .get_confirmed_height()
+                    .expect("transaction must be confirmed in this scope")
+                    > self.sync_state.wallet_height().unwrap_or(self.birthday)
+                        - min_confirmations.get()
+                        + 1
                 {
                     return Vec::new();
                 }

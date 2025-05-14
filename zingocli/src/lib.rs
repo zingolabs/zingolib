@@ -10,9 +10,10 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use log::{error, info};
 
 use clap::{self, Arg};
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
-use zingolib::wallet::{LightWallet, WalletBase};
+use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
@@ -448,6 +449,11 @@ pub fn startup(
         filled_template.server.clone(),
         Some(data_dir),
         filled_template.chaintype,
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            },
+        },
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
@@ -458,6 +464,7 @@ pub fn startup(
                 config.chain,
                 WalletBase::from_string(phrase),
                 (filled_template.birthday as u32).into(),
+                config.wallet_settings.clone(),
             )
             .map_err(|e| {
                 std::io::Error::new(

@@ -34,8 +34,11 @@ pub enum WalletError {
     #[error("Failed to scan calculated transaction.")]
     CalculatedTxScanError(#[from] ScanError),
     /// Address parse error
-    #[error("address parse error. {0}")]
+    #[error("Address parse error. {0}")]
     ParseError(#[from] zcash_address::ParseError),
+    /// No sync data. Wallet has never been synced with the block chain.
+    #[error("No sync data. Wallet has never been synced with the block chain.")]
+    NoSyncData,
 }
 
 /// Price error
