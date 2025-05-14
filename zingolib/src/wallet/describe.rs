@@ -324,6 +324,7 @@ impl LightWallet {
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
                     outgoing_transparent_coins,
+                    price,
                 ) = self.basic_transaction_summary_parts(transaction)?;
 
                 Ok(TransactionSummaryBuilder::new()
@@ -334,7 +335,7 @@ impl LightWallet {
                     .value(value)
                     .fee(fee)
                     .status(transaction.status())
-                    .zec_price(None) // FIXME: zingo2, re-implement price correctly
+                    .zec_price(price)
                     .orchard_notes(orchard_notes)
                     .sapling_notes(sapling_notes)
                     .transparent_coins(transparent_coins)
@@ -385,6 +386,7 @@ impl LightWallet {
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingCoinSummary>,
+            Option<f32>,
         ),
         SummaryError,
     > {
@@ -522,6 +524,20 @@ impl LightWallet {
                 })
         };
 
+        // add price to transaction summary
+        // takes price from the day of transaction's datetime. otherwise, current price.
+        let mut price = None;
+        let mut daily_prices = self.price_list.daily_prices().iter();
+        while let Some(daily_price) = daily_prices.next() {
+            if daily_price.time > transaction.datetime() {
+                price = Some(daily_price.price_usd);
+                break;
+            }
+        }
+        if price.is_none() {
+            price = self.price_list.current_price().map(|price| price.price_usd);
+        }
+
         Ok((
             kind,
             value,
@@ -532,6 +548,7 @@ impl LightWallet {
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coin,
+            price,
         ))
     }
 

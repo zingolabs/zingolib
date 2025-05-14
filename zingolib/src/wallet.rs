@@ -124,14 +124,14 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
-    /// Wallet settings.
-    pub wallet_settings: WalletSettings,
 }
 
 impl LightWallet {
@@ -244,22 +244,22 @@ impl LightWallet {
         }
 
         Ok(Self {
+            network,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
-            send_progress: SendProgress::new(0),
-            price_list: PriceList::new(),
+            unified_addresses,
+            transparent_addresses,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
             shard_trees: ShardTrees::new(),
             sync_state: SyncState::new(),
-            transparent_addresses,
-            unified_addresses,
-            network,
-            save_required: true,
             wallet_settings,
+            price_list: PriceList::new(),
+            save_required: true,
+            send_progress: SendProgress::new(0),
         })
     }
 
