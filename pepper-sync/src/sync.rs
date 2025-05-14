@@ -1095,9 +1095,6 @@ where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
     let sync_state = wallet.get_sync_state()?;
-    let birthday = sync_state
-        .wallet_birthday()
-        .expect("scan ranges must be non-empty");
     let highest_scanned_height = sync_state
         .highest_scanned_height()
         .expect("should be non-empty");
@@ -1122,7 +1119,6 @@ where
         *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
-            || *height == birthday
     });
 
     Ok(())

@@ -243,8 +243,6 @@ async fn get_current_price(api_key: &str) -> Result<Price, PriceError> {
 }
 
 /// Get daily prices in USD from `start` to `end` time in milliseconds.
-///
-/// Prices taken at 00.00 UTC.
 async fn get_daily_prices(start: u128, end: u128, api_key: &str) -> Result<Vec<Price>, PriceError> {
     let url = format!(
         "https://rest.coincap.io/v3/assets/zcash/history?interval=d1&start={}&end={}",
@@ -297,29 +295,4 @@ fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
 fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
     writer.write_u64::<LittleEndian>(str.len() as u64)?;
     writer.write_all(str.as_bytes())
-}
-
-#[cfg(test)]
-mod test {
-    use crate::get_daily_prices;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[tokio::test]
-    async fn price_test() {
-        let start: u128 = 1744870230000;
-        let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
-
-        let prices = get_daily_prices(
-            start,
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-            api_key,
-        )
-        .await
-        .unwrap();
-
-        dbg!(prices);
-    }
 }
