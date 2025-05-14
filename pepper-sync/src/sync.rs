@@ -1117,7 +1117,7 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
@@ -1145,7 +1145,7 @@ where
         .collect::<Vec<_>>();
 
     scanned_blocks.retain(|height, _| {
-        *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
             || *height == scan_range.block_range().start
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
