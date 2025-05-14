@@ -53,6 +53,12 @@ pub struct PriceList {
     daily_prices: Vec<Price>,
 }
 
+impl Default for PriceList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
     pub fn new() -> Self {
@@ -62,6 +68,11 @@ impl PriceList {
             current_price: None,
             daily_prices: Vec::new(),
         }
+    }
+
+    /// Returns the CoinCap api key for fetching prices.
+    pub fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
     }
 
     /// Returns time price list was last updated.
@@ -93,16 +104,10 @@ impl PriceList {
 
     /// Updates price list.
     pub async fn update(&mut self) -> Result<(), PriceError> {
-        // // FIXME: move to secret or user specified
-        // let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
         let api_key = self.api_key.as_ref().ok_or(PriceError::NoApiKey)?.as_str();
 
         self.current_price = Some(get_current_price(api_key).await?);
-        let current_time = self
-            .current_price
-            .clone()
-            .expect("should be non-empty")
-            .time;
+        let current_time = self.current_price.expect("should be non-empty").time;
 
         if let Some(time_last_updated) = self.time_last_updated {
             self.daily_prices.append(
@@ -117,12 +122,7 @@ impl PriceList {
             return Err(PriceError::PriceListNotInitialized);
         }
 
-        self.time_last_updated = Some(
-            self.current_price
-                .clone()
-                .expect("should be non-empty")
-                .time,
-        );
+        self.time_last_updated = Some(self.current_price.expect("should be non-empty").time);
 
         Ok(())
     }
@@ -135,6 +135,7 @@ impl PriceList {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
+        let api_key = Optional::read(&mut reader, read_string)?;
         let time_last_updated = Optional::read(&mut reader, |r| r.read_u32::<LittleEndian>())?;
         let current_price = Optional::read(&mut reader, |r| {
             Ok(Price {
@@ -150,6 +151,7 @@ impl PriceList {
         })?;
 
         Ok(Self {
+            api_key,
             time_last_updated,
             current_price,
             daily_prices,
@@ -160,6 +162,9 @@ impl PriceList {
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
 
+        Optional::write(&mut writer, self.api_key(), |w, api_key| {
+            write_string(w, api_key)
+        })?;
         Optional::write(&mut writer, self.time_last_updated(), |w, time| {
             w.write_u32::<LittleEndian>(time)
         })?;
@@ -167,7 +172,7 @@ impl PriceList {
             w.write_u32::<LittleEndian>(price.time)?;
             w.write_f32::<LittleEndian>(price.price_usd)
         })?;
-        Vector::write(&mut writer, &self.daily_prices(), |w, price| {
+        Vector::write(&mut writer, self.daily_prices(), |w, price| {
             w.write_u32::<LittleEndian>(price.time)?;
             w.write_f32::<LittleEndian>(price.price_usd)
         })
