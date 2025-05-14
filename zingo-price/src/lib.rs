@@ -1,6 +1,9 @@
 #![warn(missing_docs)]
 
-//! Crate for fetching historical and live ZEC prices
+//! Crate for fetching historical and live ZEC prices.
+//!
+//! Currently only supports USD.
+//! Prices are fetched using the CoinCap API. A CoinCap API key is needed via registration.
 
 use std::io::{Read, Write};
 
@@ -40,6 +43,8 @@ pub struct Price {
 /// Price list for wallets to maintain an updated list of daily ZEC prices.
 #[derive(Debug)]
 pub struct PriceList {
+    /// CoinCap API key.
+    api_key: Option<String>,
     /// Time of last price update in seconds.
     time_last_updated: Option<u32>,
     /// Current price.
@@ -52,6 +57,7 @@ impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
     pub fn new() -> Self {
         PriceList {
+            api_key: None,
             time_last_updated: None,
             current_price: None,
             daily_prices: Vec::new(),
@@ -73,6 +79,11 @@ impl PriceList {
         &self.daily_prices
     }
 
+    /// Sets CoinCap API key.
+    pub fn set_api_key(&mut self, api_key: String) {
+        self.api_key = Some(api_key);
+    }
+
     /// Price list requires a start time before it can be updated.
     ///
     /// Recommended start time is the time the wallet's birthday block height was mined.
@@ -82,17 +93,17 @@ impl PriceList {
 
     /// Updates price list.
     pub async fn update(&mut self) -> Result<(), PriceError> {
-        // FIXME: move to secret or user specified
-        let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
+        // // FIXME: move to secret or user specified
+        // let api_key = "4bce48cf8766d5c55ecdd83622cbba676fdc23745b7176916fd517b40e5ee6d0";
+        let api_key = self.api_key.as_ref().ok_or(PriceError::NoApiKey)?.as_str();
 
-        self.current_price = Some(get_current_price(&api_key).await?);
+        self.current_price = Some(get_current_price(api_key).await?);
         let current_time = self
             .current_price
             .clone()
             .expect("should be non-empty")
             .time;
 
-        // TODO: test no overlap / duplicates
         if let Some(time_last_updated) = self.time_last_updated {
             self.daily_prices.append(
                 &mut get_daily_prices(
@@ -181,6 +192,9 @@ pub enum PriceError {
     /// Price list start time not set. Call `PriceList::set_start_time`.
     #[error("price list start time not set. call `PriceList::set_start_time`.")]
     PriceListNotInitialized,
+    /// API key has not been set. Call `PriceList::set_api_key`.
+    #[error("API key has not been set. Call `PriceList::set_api_key`.")]
+    NoApiKey,
 }
 
 /// Get current price of ZEC in USD.
@@ -264,6 +278,20 @@ async fn get_daily_prices(start: u128, end: u128, api_key: &str) -> Result<Vec<P
             })
         })
         .collect::<Result<Vec<Price>, std::num::ParseFloatError>>()?)
+}
+
+fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
+    let str_len = reader.read_u64::<LittleEndian>()?;
+    let mut str_bytes = vec![0; str_len as usize];
+    reader.read_exact(&mut str_bytes)?;
+
+    String::from_utf8(str_bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
+    writer.write_u64::<LittleEndian>(str.len() as u64)?;
+    writer.write_all(str.as_bytes())
 }
 
 #[cfg(test)]

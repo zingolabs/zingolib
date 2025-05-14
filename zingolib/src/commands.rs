@@ -617,6 +617,34 @@ impl Command for UpdatePriceCommand {
     }
 }
 
+struct CurrentPriceCommand {}
+impl Command for CurrentPriceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Updates price list and returns current price of zec.
+            Currently only supports USD.
+
+            Usage:
+            current_price
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Updates price list and returns current price of zec."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let mut wallet_lock = lightclient.wallet.lock().await;
+            match wallet_lock.update_price().await {
+                Ok(_) => "prices successfully updated".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
 /// assumed by consumers to be JSON
 struct BalanceCommand {}
 impl Command for BalanceCommand {

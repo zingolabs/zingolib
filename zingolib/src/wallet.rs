@@ -287,6 +287,9 @@ impl LightWallet {
         }
     }
 
+    /// Updates historical daily price list and current price of ZEC.
+    ///
+    /// Currently only USD is supported.
     pub async fn update_price(&mut self) -> Result<(), PriceError> {
         if self.price_list.time_last_updated().is_none() {
             let Some(birthday) = self.sync_state.wallet_birthday() else {
@@ -302,6 +305,13 @@ impl LightWallet {
         }
 
         Ok(self.price_list.update().await?)
+    }
+
+    /// Updates price list and returns current price of ZEC.
+    pub async fn current_price(&mut self) -> Result<Option<f32>, PriceError> {
+        self.update_price().await?;
+
+        Ok(self.price_list.current_price().map(|price| price.price_usd))
     }
 
     /// Clears all wallet data obtained from the block chain including the sync state.
