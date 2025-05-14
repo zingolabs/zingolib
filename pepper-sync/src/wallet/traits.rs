@@ -259,8 +259,10 @@ pub trait SyncShardTrees: SyncWallet {
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
             let checkpoint_range = match (
-                scan_range.block_range().start > wallet_height - MAX_VERIFICATION_WINDOW,
-                scan_range.block_range().end - 1 > wallet_height - MAX_VERIFICATION_WINDOW,
+                scan_range.block_range().start
+                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
+                scan_range.block_range().end - 1
+                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
             ) {
                 (true, _) => scan_range.block_range().clone(),
                 (false, true) => {
