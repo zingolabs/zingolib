@@ -74,7 +74,7 @@ pub mod summaries {
         status: ConfirmationStatus,
         blockheight: BlockHeight,
         transaction_fee: Option<u64>,
-        zec_price: Option<f64>,
+        zec_price: Option<f32>,
         kind: ValueTransferKind,
         value: u64,
         recipient_address: Option<String>,
@@ -104,7 +104,7 @@ pub mod summaries {
             self.transaction_fee
         }
         /// Gets zec price in USD
-        pub fn zec_price(&self) -> Option<f64> {
+        pub fn zec_price(&self) -> Option<f32> {
             self.zec_price
         }
         /// Gets value transfer kind
@@ -291,7 +291,7 @@ pub mod summaries {
         status: Option<ConfirmationStatus>,
         blockheight: Option<BlockHeight>,
         transaction_fee: Option<Option<u64>>,
-        zec_price: Option<Option<f64>>,
+        zec_price: Option<Option<f32>>,
         kind: Option<ValueTransferKind>,
         value: Option<u64>,
         recipient_address: Option<Option<String>>,
@@ -322,7 +322,7 @@ pub mod summaries {
         build_method!(status, ConfirmationStatus);
         build_method!(blockheight, BlockHeight);
         build_method!(transaction_fee, Option<u64>);
-        build_method!(zec_price, Option<f64>);
+        build_method!(zec_price, Option<f32>);
         build_method!(kind, ValueTransferKind);
         build_method!(value, u64);
         build_method!(recipient_address, Option<String>);
@@ -444,7 +444,7 @@ pub mod summaries {
         /// Gets fee
         fn fee(&self) -> Option<u64>;
         /// Gets zec price in USD
-        fn zec_price(&self) -> Option<f64>;
+        fn zec_price(&self) -> Option<f32>;
         /// Gets slice of orchard note summaries
         fn orchard_notes(&self) -> &[BasicNoteSummary];
         /// Gets slice of sapling note summaries
@@ -538,7 +538,7 @@ pub mod summaries {
         kind: TransactionKind,
         value: u64,
         fee: Option<u64>,
-        zec_price: Option<f64>,
+        zec_price: Option<f32>,
         orchard_notes: Vec<BasicNoteSummary>,
         sapling_notes: Vec<BasicNoteSummary>,
         transparent_coins: Vec<BasicCoinSummary>,
@@ -569,7 +569,7 @@ pub mod summaries {
         fn fee(&self) -> Option<u64> {
             self.fee
         }
-        fn zec_price(&self) -> Option<f64> {
+        fn zec_price(&self) -> Option<f32> {
             self.zec_price
         }
         fn orchard_notes(&self) -> &[BasicNoteSummary] {
@@ -726,7 +726,7 @@ pub mod summaries {
         kind: Option<TransactionKind>,
         value: Option<u64>,
         fee: Option<Option<u64>>,
-        zec_price: Option<Option<f64>>,
+        zec_price: Option<Option<f32>>,
         orchard_notes: Option<Vec<BasicNoteSummary>>,
         sapling_notes: Option<Vec<BasicNoteSummary>>,
         transparent_coins: Option<Vec<BasicCoinSummary>>,
@@ -763,7 +763,7 @@ pub mod summaries {
         build_method!(kind, TransactionKind);
         build_method!(value, u64);
         build_method!(fee, Option<u64>);
-        build_method!(zec_price, Option<f64>);
+        build_method!(zec_price, Option<f32>);
         build_method!(orchard_notes, Vec<BasicNoteSummary>);
         build_method!(sapling_notes, Vec<BasicNoteSummary>);
         build_method!(transparent_coins, Vec<BasicCoinSummary>);

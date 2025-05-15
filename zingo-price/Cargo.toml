@@ -1,0 +1,15 @@
+[package]
+name = "zingo-price"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { workspace = true }
+serde = { workspace = true, features = [ "derive" ] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+byteorder = { workspace = true }
+zcash_encoding = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "full" ] }

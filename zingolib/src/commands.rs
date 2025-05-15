@@ -589,26 +589,100 @@ impl Command for InfoCommand {
     }
 }
 
-struct UpdateCurrentPriceCommand {}
-impl Command for UpdateCurrentPriceCommand {
+struct UpdatePriceCommand {}
+impl Command for UpdatePriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the latest ZEC price from Gemini exchange's API.
-            Currently using USD.
+            Updates current zec price and historical prices for wallet transactions.
+            Currently only supports USD.
+
+            Type `help set_price_api_key` for setting up an API key for price fetching.
+
             Usage:
-            zecprice
+            update_price
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get the latest ZEC price in the wallet's currency (USD)"
+        "Updates current zec price and historic prices for wallet transactions."
     }
 
-    fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        // NOTE: re-implemented in following PR
-        // RT.block_on(async move { lightclient.update_current_price().await })
-        "Error: unimplemented".to_string()
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            match lightclient.wallet.lock().await.update_price().await {
+                Ok(_) => "prices successfully updated".to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
+    }
+}
+
+struct CurrentPriceCommand {}
+impl Command for CurrentPriceCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Updates price list and returns current price of zec.
+            Currently only supports USD.
+
+            Usage:
+            current_price
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Updates price list and returns current price of zec."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            match lightclient.wallet.lock().await.current_price().await {
+                Ok(price) => object! { "current_price" => price },
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct SetPriceApiKeyCommand {}
+impl Command for SetPriceApiKeyCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Sets the API key for fetching zec prices. Register with CoinCap for a free API key.
+            https://pro.coincap.io/signup
+
+            Currently only CoinCap is supported.
+
+            Usage:
+            set_price_api_key <api_key>
+
+            Example:
+            set_price_api_key 4bce48cf8766d5c55ecdd83622cbba676fdc23745c7176916fd518b40e5ee6f1
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Sets the API key for fetching zec prices. Register with CoinCap for a free API key."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return "Error: incorrect number of parameters\nTry 'help set_price_api_key' for correct usage and examples.".to_string();
+        }
+        RT.block_on(async move {
+            lightclient
+                .wallet
+                .lock()
+                .await
+                .set_price_api_key(args[0].to_string());
+        });
+
+        "Successfully set API key".to_string()
     }
 }
 
@@ -1843,7 +1917,7 @@ impl Command for QuitCommand {
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
-        (("version"), Box::new(GetVersionCommand {})),
+        ("version", Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
@@ -1867,7 +1941,9 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
-        ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
+        ("update_price", Box::new(UpdatePriceCommand {})),
+        ("current_price", Box::new(CurrentPriceCommand {})),
+        ("set_price_api_key", Box::new(SetPriceApiKeyCommand {})),
         ("send", Box::new(SendCommand {})),
         ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),

@@ -15,6 +15,7 @@ use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::{legacy::keys::NonHardenedChildIndex, transaction::TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_price::PriceList;
 use zip32::AccountId;
 
 use super::LightWallet;
@@ -35,14 +36,14 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 32:
-    /// - Wallet restructure due to integration of new sync engine
+    /// Changes in version 34:
+    /// - New price list
     pub const fn serialized_version() -> u64 {
-        33
+        34
     }
 
     /// Serialize into `writer`
-    // TODO: remove arc mutex on price and options and make sync fn
+    // TODO: make sync fn
     pub async fn write<W: Write>(
         &mut self,
         mut writer: W,
@@ -112,8 +113,7 @@ impl LightWallet {
         self.sync_state.write(&mut writer)?;
 
         self.wallet_settings.sync_config.write(&mut writer)?;
-
-        Ok(())
+        self.price_list.write(&mut writer)
     }
 
     /// Deserialize into `reader`
@@ -123,7 +123,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=33 => Self::read_v32(reader, network, version),
+            32..=34 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -311,6 +311,7 @@ impl LightWallet {
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
+            price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -437,6 +438,12 @@ impl LightWallet {
             }
         };
 
+        let price_list = if version >= 34 {
+            PriceList::read(&mut reader)?
+        } else {
+            PriceList::new()
+        };
+
         Ok(Self {
             network,
             mnemonic,
@@ -450,9 +457,10 @@ impl LightWallet {
             outpoint_map,
             shard_trees,
             sync_state,
+            wallet_settings,
+            price_list,
             send_progress: SendProgress::new(0),
             save_required: false,
-            wallet_settings,
         })
     }
 }

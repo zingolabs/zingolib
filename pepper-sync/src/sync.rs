@@ -1094,12 +1094,11 @@ fn remove_irrelevant_blocks<W>(wallet: &mut W) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
-    let highest_scanned_height = wallet
-        .get_sync_state()?
+    let sync_state = wallet.get_sync_state()?;
+    let highest_scanned_height = sync_state
         .highest_scanned_height()
         .expect("should be non-empty");
-    let scanned_range_bounds = wallet
-        .get_sync_state()?
+    let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
         .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
