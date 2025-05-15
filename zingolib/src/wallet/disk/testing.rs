@@ -39,7 +39,11 @@ pub async fn assert_wallet_capability_matches_seed(
     .unwrap();
 
     // Compare USK
-    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("Expected Unified Spending Key");
     };
     assert_eq!(

@@ -32,6 +32,7 @@ async fn sync_mainnet_test() {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
         },
+        1.try_into().unwrap(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -75,6 +76,7 @@ async fn sync_status() {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
         },
+        1.try_into().unwrap(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(

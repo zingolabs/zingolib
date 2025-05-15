@@ -586,21 +586,27 @@ mod fast {
             .wallet
             .lock()
             .await
-            .generate_unified_address(ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
+            .generate_unified_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                zip32::AccountId::ZERO,
+            )
             .unwrap();
         let charlie = faucet
             .wallet
             .lock()
             .await
-            .generate_unified_address(ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
+            .generate_unified_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                zip32::AccountId::ZERO,
+            )
             .unwrap();
 
         // messages
@@ -1657,6 +1663,7 @@ mod slow {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
             },
+            1.try_into().unwrap(),
         )
         .unwrap();
 

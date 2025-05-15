@@ -259,7 +259,11 @@ async fn reload_wallet_from_buffer() {
     )
     .unwrap();
 
-    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be spending key!")
     };
     let UnifiedKeyStore::Spend(expected_usk) = &expected_keys else {
@@ -296,7 +300,11 @@ async fn reload_wallet_from_buffer() {
         wallet.wallet_settings.clone(),
     )
     .unwrap();
-    let UnifiedKeyStore::View(v_ufvk) = &view_wallet.unified_key_store else {
+    let UnifiedKeyStore::View(v_ufvk) = &view_wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be viewing key!");
     };
     let v_ufvk_string = v_ufvk.encode(&view_wallet.network);

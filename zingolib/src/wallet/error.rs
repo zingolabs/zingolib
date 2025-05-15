@@ -41,6 +41,17 @@ pub enum WalletError {
     NoSyncData,
 }
 
+/// Price error
+#[derive(Debug, thiserror::Error)]
+pub enum PriceError {
+    /// Price error
+    #[error("price error. {0}")]
+    PriceError(#[from] zingo_price::PriceError),
+    /// Price list not initialised
+    #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
+    NotInitialised,
+}
+
 /// Removal error
 #[derive(Debug, thiserror::Error)]
 pub enum RemovalError {
@@ -135,6 +146,9 @@ pub enum KeyError {
     /// Invalid account ID
     #[error("Account ID should be at most 31 bits")]
     InvalidAccountId(#[from] zip32::TryFromIntError),
+    /// Invalid account ID
+    #[error("No keys found for the given account id. Try adding the account.")]
+    NoAccountKeys,
     /// Key derivation failed
     #[error("Key derivation failed")]
     KeyDerivationError(#[from] DerivationError),

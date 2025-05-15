@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use bip0039::Mnemonic;
 use json::JsonValue;
 
+use pepper_sync::wallet::KeyIdInterface;
 use zcash_address::ZcashAddress;
 use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants as _;
@@ -105,45 +106,59 @@ impl LightWallet {
     /// Returns the total balance of the all outputs of a given pool type in the wallet matching the output and transaction
     /// criteria specified by the `filter_function`.
     /// Returns `None` if the wallet does not have viewing capability for the given pool type.
-    pub async fn get_filtered_balance<Op, F>(&self, filter_function: F) -> Option<u64>
+    pub async fn get_filtered_balance<Op, F>(
+        &self,
+        filter_function: F,
+        account_id: zip32::AccountId,
+    ) -> Result<Option<u64>, KeyError>
     where
         Op: OutputInterface,
         F: Fn(&Op, &WalletTransaction) -> bool,
     {
-        match &self.unified_key_store {
+        match &self
+            .unified_key_store
+            .get(&account_id)
+            .ok_or(KeyError::NoAccountKeys)?
+        {
             UnifiedKeyStore::Spend(_) => (),
             UnifiedKeyStore::View(ufvk) => match Op::POOL_TYPE {
                 PoolType::Transparent => {
-                    ufvk.transparent()?;
+                    if ufvk.transparent().is_none() {
+                        return Ok(None);
+                    };
                 }
                 PoolType::Shielded(ShieldedProtocol::Sapling) => {
-                    ufvk.sapling()?;
+                    if ufvk.sapling().is_none() {
+                        return Ok(None);
+                    };
                 }
                 PoolType::Shielded(ShieldedProtocol::Orchard) => {
-                    ufvk.orchard()?;
+                    if ufvk.orchard().is_none() {
+                        return Ok(None);
+                    };
                 }
             },
-            UnifiedKeyStore::Empty => return None,
+            UnifiedKeyStore::Empty => return Ok(None),
         }
 
-        Some(
-            self.wallet_transactions
-                .values()
-                .fold(0, |acc, transaction| {
-                    acc + Op::transaction_outputs(transaction)
-                        .iter()
-                        .filter(|&note| {
-                            filter_function(note, transaction)
-                                && note.spending_transaction().is_none()
-                        })
-                        .map(|output| output.value())
-                        .sum::<u64>()
-                }),
-        )
+        Ok(Some(self.wallet_transactions.values().fold(
+            0,
+            |acc, transaction| {
+                acc + Op::transaction_outputs(transaction)
+                    .iter()
+                    .filter(|&output| {
+                        filter_function(output, transaction)
+                            && output.spending_transaction().is_none()
+                            && output.key_id().account_id() == account_id
+                    })
+                    .map(|output| output.value())
+                    .sum::<u64>()
+            },
+        )))
     }
 
     /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool.
-    pub async fn confirmed_balance<Op>(&self) -> Option<u64>
+    pub async fn confirmed_balance<Op>(&self, account_id: zip32::AccountId) -> Option<u64>
     where
         Op: OutputInterface,
     {
@@ -324,6 +339,7 @@ impl LightWallet {
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
                     outgoing_transparent_coins,
+                    price,
                 ) = self.basic_transaction_summary_parts(transaction)?;
 
                 Ok(TransactionSummaryBuilder::new()
@@ -334,7 +350,7 @@ impl LightWallet {
                     .value(value)
                     .fee(fee)
                     .status(transaction.status())
-                    .zec_price(None) // FIXME: zingo2, re-implement price correctly
+                    .zec_price(price)
                     .orchard_notes(orchard_notes)
                     .sapling_notes(sapling_notes)
                     .transparent_coins(transparent_coins)
@@ -385,6 +401,7 @@ impl LightWallet {
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingNoteSummary>,
             Vec<OutgoingCoinSummary>,
+            Option<f32>,
         ),
         SummaryError,
     > {
@@ -522,6 +539,20 @@ impl LightWallet {
                 })
         };
 
+        // add price to transaction summary
+        // takes price from the day of transaction's datetime. otherwise, current price.
+        let mut price = None;
+        for daily_price in self.price_list.daily_prices() {
+            if daily_price.time > transaction.datetime() {
+                assert!(daily_price.time - transaction.datetime() < 86_400);
+                price = Some(daily_price.price_usd);
+                break;
+            }
+        }
+        if price.is_none() {
+            price = self.price_list.current_price().map(|price| price.price_usd);
+        }
+
         Ok((
             kind,
             value,
@@ -532,6 +563,7 @@ impl LightWallet {
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coin,
+            price,
         ))
     }
 

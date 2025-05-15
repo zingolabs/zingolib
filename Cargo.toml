@@ -12,6 +12,7 @@ members = [
     "zingo-memo",
     "pepper-sync",
     "testvectors",
+    "zingo-price",
 ]
 resolver = "2"
 
@@ -66,6 +67,7 @@ portpicker = "0.1"
 proptest = "1"
 prost = "0.13"
 rand = "0.8"
+reqwest = "0.12.15"
 ring = "0.17"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
@@ -100,6 +102,7 @@ rayon = "1"
 testvectors = { path = "testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }
+zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }

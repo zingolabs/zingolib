@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use self::runners::{BatchRunners, DecryptedOutput};
 

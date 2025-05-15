@@ -454,6 +454,7 @@ pub fn startup(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
         },
+        1.try_into().unwrap(),
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);

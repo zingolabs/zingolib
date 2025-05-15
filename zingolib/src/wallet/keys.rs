@@ -21,29 +21,29 @@ pub mod legacy;
 pub mod unified;
 
 impl LightWallet {
-    /// Returns a new unified address for the given `receivers`.
+    /// Returns a new unified address for the given `receivers` and `account_id`.
     /// Also adds this new unified address to the wallet.
     /// If the unified address contains a transparent receiver, this is also added to transparent addresses.
     pub fn generate_unified_address(
         &mut self,
         receivers: ReceiverSelection,
+        account_id: zip32::AccountId,
     ) -> Result<UnifiedAddress, KeyError> {
-        // filter as preparation for multi-account support
         let unified_address_index = self
             .unified_addresses
             .keys()
-            .filter(|&address_id| address_id.account_id == zip32::AccountId::ZERO)
+            .filter(|&address_id| address_id.account_id == account_id)
             .count() as u32;
-        let unified_address = self.unified_key_store.generate_unified_address(
-            unified_address_index,
-            receivers,
-            false,
-        )?;
+        let unified_address = self
+            .unified_key_store
+            .get(&account_id)
+            .ok_or(KeyError::NoAccountKeys)?
+            .generate_unified_address(unified_address_index, receivers, false)?;
 
         if let Some(transparent_address) = unified_address.transparent() {
             self.transparent_addresses.insert(
                 TransparentAddressId::new(
-                    zip32::AccountId::ZERO,
+                    account_id,
                     TransparentScope::External,
                     NonHardenedChildIndex::from_index(unified_address_index)
                         .expect("all non-hardened addresses in use!"),
@@ -54,11 +54,12 @@ impl LightWallet {
 
         self.unified_addresses.insert(
             UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
+                account_id,
                 address_index: unified_address_index,
             },
             unified_address.clone(),
         );
+        self.save_required = true;
 
         Ok(unified_address)
     }
@@ -67,26 +68,34 @@ impl LightWallet {
     pub fn generate_refund_addresses(
         &mut self,
         n: usize,
+        account_id: zip32::AccountId,
     ) -> Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError> {
         let refund_address_count = self
             .transparent_addresses
             .keys()
-            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
+            .filter(|&address_id| {
+                address_id.scope() == TransparentScope::Refund
+                    && address_id.account_id() == account_id
+            })
             .count();
 
-        (refund_address_count..(refund_address_count + n))
+        let refund_addresses = (refund_address_count..(refund_address_count + n))
             .map(|address_index| {
                 let transparent_address_id = TransparentAddressId::new(
-                    zip32::AccountId::ZERO,
+                    account_id,
                     TransparentScope::Refund,
                     NonHardenedChildIndex::from_index(address_index as u32)
                         .expect("all non-hardened addresses in use!"),
                 );
-                let refund_address = self.unified_key_store.generate_transparent_address(
-                    address_index as u32,
-                    TransparentScope::Refund,
-                    false,
-                )?;
+                let refund_address = self
+                    .unified_key_store
+                    .get(&account_id)
+                    .ok_or(KeyError::NoAccountKeys)?
+                    .generate_transparent_address(
+                        address_index as u32,
+                        TransparentScope::Refund,
+                        false,
+                    )?;
 
                 self.transparent_addresses.insert(
                     transparent_address_id,
@@ -95,7 +104,10 @@ impl LightWallet {
 
                 Ok((transparent_address_id, refund_address))
             })
-            .collect()
+            .collect::<Result<Vec<(TransparentAddressId, TransparentAddress)>, KeyError>>()?;
+        self.save_required = true;
+
+        Ok(refund_addresses)
     }
 }
 

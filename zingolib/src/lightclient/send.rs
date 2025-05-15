@@ -114,6 +114,7 @@ pub mod send_with_proposal {
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
+        use bip0039::Mnemonic;
         use pepper_sync::sync::SyncConfig;
 
         use crate::{
@@ -136,7 +137,10 @@ pub mod send_with_proposal {
             let mut lc = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
-                    WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                    WalletBase::Mnemonic {
+                        mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
+                        no_of_accounts: 1.try_into().unwrap(),
+                    },
                     1.into(),
                     WalletSettings {
                         sync_config: SyncConfig {

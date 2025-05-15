@@ -165,7 +165,9 @@ impl LightClient {
         Self::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::FreshEntropy,
+                WalletBase::FreshEntropy {
+                    no_of_accounts: config.no_of_accounts,
+                },
                 chain_height,
                 config.wallet_settings.clone(),
             )?,
@@ -229,20 +231,20 @@ impl LightClient {
     }
 
     /// Generates a new unified address from the given `addr_type`.
-    // TODO: move to wallet
+    // TODO: remove?
     pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
-        //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
             orchard: addr_type.contains('o'),
             transparent: addr_type.contains('t'),
         };
 
-        let mut wallet = self.wallet.lock().await;
-        let new_address = wallet
-            .generate_unified_address(desired_receivers)
+        let new_address = self
+            .wallet
+            .lock()
+            .await
+            .generate_unified_address(desired_receivers, zip32::AccountId::ZERO)
             .map_err(|e| e.to_string())?;
-        wallet.save_required = true;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -260,6 +262,7 @@ mod tests {
         lightclient::{describe::UAReceivers, error::LightClientError},
         wallet::LightWallet,
     };
+    use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
@@ -275,7 +278,10 @@ mod tests {
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
                 0.into(),
                 config.wallet_settings.clone(),
             )
@@ -291,7 +297,10 @@ mod tests {
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
                 0.into(),
                 config.wallet_settings.clone(),
             )

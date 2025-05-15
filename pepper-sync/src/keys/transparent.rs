@@ -12,6 +12,8 @@ use zcash_primitives::{
 };
 use zcash_protocol::consensus;
 
+use crate::wallet::KeyIdInterface;
+
 /// Unique ID for transparent addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TransparentAddressId {
@@ -34,19 +36,20 @@ impl TransparentAddressId {
         }
     }
 
-    /// Gets address account ID
-    pub fn account_id(&self) -> AccountId {
-        self.account_id
+    /// Gets address index
+    pub fn address_index(&self) -> NonHardenedChildIndex {
+        self.address_index
     }
 
     /// Gets address scope
     pub fn scope(&self) -> TransparentScope {
         self.scope
     }
+}
 
-    /// Gets address index
-    pub fn address_index(&self) -> NonHardenedChildIndex {
-        self.address_index
+impl KeyIdInterface for TransparentAddressId {
+    fn account_id(&self) -> AccountId {
+        self.account_id
     }
 }
 

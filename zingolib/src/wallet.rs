@@ -1,10 +1,11 @@
-//! In all cases in this file "external_version" refers to a serialization version that is interpreted
-//! from a source outside of the code-base e.g. a wallet-file.
-//! TODO: Add Mod Description Here
+//! Core module, containing `crate::wallet::LightWallet` with methods for all wallet functionality.
 
-use error::{KeyError, WalletError};
-use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use send::SendProgress;
+use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroU32;
+use std::time::SystemTime;
+
+use bip0039::Mnemonic;
+
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -15,13 +16,12 @@ use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
-
-use bip0039::Mnemonic;
-use std::collections::{BTreeMap, HashMap};
-use std::num::NonZeroU32;
-use std::time::SystemTime;
+use zingo_price::PriceList;
 
 use crate::config::ChainType;
+use error::{KeyError, PriceError, WalletError};
+use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
+use send::SendProgress;
 
 pub mod data;
 pub mod error;
@@ -104,12 +104,14 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
+    /// The current and historical daily price of zec.
+    pub price_list: PriceList,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
-    /// Wallet settings.
-    pub wallet_settings: WalletSettings,
 }
 
 impl LightWallet {
@@ -203,21 +205,22 @@ impl LightWallet {
         }
 
         Ok(Self {
+            network,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
-            send_progress: SendProgress::new(0),
+            unified_addresses,
+            transparent_addresses,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
             shard_trees: ShardTrees::new(),
             sync_state: SyncState::new(),
-            transparent_addresses,
-            unified_addresses,
-            network,
-            save_required: true,
             wallet_settings,
+            price_list: PriceList::new(),
+            save_required: true,
+            send_progress: SendProgress::new(0),
         })
     }
 
@@ -243,6 +246,69 @@ impl LightWallet {
         } else {
             Ok(None)
         }
+    }
+
+    /// Updates historical daily price list and current price of ZEC.
+    ///
+    /// Currently only USD is supported.
+    pub async fn update_price(&mut self) -> Result<(), PriceError> {
+        if self.price_list.time_last_updated().is_none() {
+            let Some(birthday) = self.sync_state.wallet_birthday() else {
+                return Err(PriceError::NotInitialised);
+            };
+            let birthday_block = match self.wallet_blocks.get(&birthday) {
+                Some(block) => block.clone(),
+                None => {
+                    return Err(PriceError::NotInitialised);
+                }
+            };
+            self.price_list.set_start_time(birthday_block.time());
+        }
+        self.price_list.update().await?;
+        self.prune_price_list();
+        self.save_required = true;
+
+        Ok(())
+    }
+
+    /// Updates price list and returns current price of ZEC.
+    pub async fn current_price(&mut self) -> Result<Option<f32>, PriceError> {
+        self.update_price().await?;
+
+        Ok(self.price_list.current_price().map(|price| price.price_usd))
+    }
+
+    /// Prunes historical prices to days containing transactions in the wallet.
+    ///
+    /// Avoids pruning above fully scanned height.
+    pub fn prune_price_list(&mut self) {
+        let Some(fully_scanned_height) = self.sync_state.fully_scanned_height() else {
+            return;
+        };
+        let transaction_times = self
+            .wallet_transactions
+            .values()
+            .filter(|transaction| {
+                transaction
+                    .status()
+                    .get_confirmed_height()
+                    .is_some_and(|height| height <= fully_scanned_height)
+            })
+            .map(|transaction| transaction.datetime())
+            .collect();
+
+        let prune_below = self
+            .wallet_blocks
+            .get(&fully_scanned_height)
+            .expect("fully scanned height should always be on a scan range boundary")
+            .time();
+        self.price_list.prune(transaction_times, prune_below);
+    }
+
+    /// Sets the API key for updating the price list.
+    pub fn set_price_api_key(&mut self, api_key: String) {
+        self.price_list.set_api_key(api_key);
+        self.save_required = true;
     }
 
     /// Clears all wallet data obtained from the block chain including the sync state.

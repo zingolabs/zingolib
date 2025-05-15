@@ -41,9 +41,10 @@ use crate::{
 };
 
 use super::{
-    InitialSyncState, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
-    OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface, SaplingNote, ShardTrees,
-    SyncState, TransparentCoin, TreeBounds, WalletBlock, WalletNote, WalletTransaction,
+    InitialSyncState, KeyIdInterface, NullifierMap, OrchardNote, OutgoingNote,
+    OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface,
+    SaplingNote, ShardTrees, SyncState, TransparentCoin, TreeBounds, WalletBlock, WalletNote,
+    WalletTransaction,
 };
 
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
