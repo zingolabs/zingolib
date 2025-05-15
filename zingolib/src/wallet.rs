@@ -2,15 +2,12 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 //! TODO: Add Mod Description Here
 
-use error::WalletError;
+use error::{KeyError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use send::SendProgress;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-
-use rand::Rng;
-use rand::rngs::OsRng;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::ShardTrees;
@@ -21,6 +18,7 @@ use pepper_sync::{
 
 use bip0039::Mnemonic;
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroU32;
 use std::time::SystemTime;
 
 use crate::config::ChainType;
@@ -54,35 +52,19 @@ pub fn now() -> u32 {
 
 /// Data used to initialize new instance of LightWallet
 pub enum WalletBase {
-    /// Generate a wallet with a new seed.
-    FreshEntropy,
-    /// Generate a wallet from a seed (account index = 0).
-    SeedBytes([u8; 32]),
-    /// Generate a wallet from a mnemonic phrase (account index = 0).
-    MnemonicPhrase(String),
-    /// Generate a wallet from a mnemonic (account index = 0).
-    Mnemonic(Mnemonic),
-    /// Generate a wallet from a seed and account index.
-    SeedBytesAndAccount([u8; 32], u32),
-    /// Generate a wallet from a mnemonic phrase and account index.
-    MnemonicPhraseAndAccount(String, u32),
-    /// Generate a wallet from a mnemonic and account index.
-    MnemonicAndAccount(Mnemonic, u32),
+    /// Generate a wallet with a new seed for a number of accounts.
+    FreshEntropy { no_of_accounts: NonZeroU32 },
+    /// Generate a wallet from a mnemonic (phrase or entropy) for a number of accounts.
+    Mnemonic {
+        mnemonic: Mnemonic,
+        no_of_accounts: NonZeroU32,
+    },
     /// Generate a wallet from a unified full viewing key.
+    // TODO: take concrete UFVK type
     Ufvk(String),
     /// Generate a wallet from a unified spending key.
+    // TODO: take concrete USK type
     Usk(Vec<u8>),
-}
-
-impl WalletBase {
-    /// TODO: Add Doc Comment Here!
-    pub fn from_string(base: String) -> WalletBase {
-        if (&base[0..5]) == "uview" {
-            WalletBase::Ufvk(base)
-        } else {
-            WalletBase::MnemonicPhrase(base)
-        }
-    }
 }
 
 /// In-memory wallet data struct
@@ -101,13 +83,11 @@ pub struct LightWallet {
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
-    // TODO: we seem to support generating keys for a single account of choice which is stored here, this should be
-    // reworked to support multiple accounts during sync integration
-    mnemonic: Option<(Mnemonic, u32)>,
+    pub mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
     pub birthday: BlockHeight,
     /// Unified key store
-    pub unified_key_store: UnifiedKeyStore,
+    pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// Unified_addresses
     pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
@@ -144,82 +124,63 @@ impl LightWallet {
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
         let (unified_key_store, mnemonic) = match wallet_base {
-            WalletBase::FreshEntropy => {
-                let mut seed_bytes = [0u8; 32];
-                // Create a random seed.
-                let mut system_rng = OsRng;
-                system_rng.fill(&mut seed_bytes);
+            WalletBase::FreshEntropy { no_of_accounts } => {
                 return Self::new(
                     network,
-                    WalletBase::SeedBytes(seed_bytes),
+                    WalletBase::Mnemonic {
+                        mnemonic: Mnemonic::generate(bip0039::Count::Words24),
+                        no_of_accounts,
+                    },
                     birthday,
                     wallet_settings,
                 );
             }
-            WalletBase::SeedBytes(seed_bytes) => {
-                return Self::new(
-                    network,
-                    WalletBase::SeedBytesAndAccount(seed_bytes, 0),
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::SeedBytesAndAccount(seed_bytes, account_index) => {
-                let mnemonic = Mnemonic::from_entropy(seed_bytes)?;
-                return Self::new(
-                    network,
-                    WalletBase::MnemonicAndAccount(mnemonic, account_index),
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::MnemonicPhrase(phrase) => {
-                return Self::new(
-                    network,
-                    WalletBase::MnemonicPhraseAndAccount(phrase, 0),
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::MnemonicPhraseAndAccount(phrase, account_index) => {
-                let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase)?;
-                return Self::new(
-                    network,
-                    WalletBase::MnemonicAndAccount(mnemonic, account_index),
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::Mnemonic(mnemonic) => {
-                return Self::new(
-                    network,
-                    WalletBase::MnemonicAndAccount(mnemonic, 0),
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::MnemonicAndAccount(mnemonic, account_index) => {
-                let unified_key_store =
-                    UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_index)?;
-                (unified_key_store, Some((mnemonic, account_index)))
+            WalletBase::Mnemonic {
+                mnemonic,
+                no_of_accounts,
+            } => {
+                let no_of_accounts = u32::from(no_of_accounts);
+                let unified_key_store = (0..no_of_accounts)
+                    .into_iter()
+                    .map(|account_index| {
+                        Ok((
+                            zip32::AccountId::try_from(account_index)?,
+                            UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_index)?,
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
+                (unified_key_store, Some(mnemonic))
             }
             WalletBase::Ufvk(ufvk_encoded) => {
-                let unified_key_store = UnifiedKeyStore::new_from_ufvk(&network, ufvk_encoded)?;
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_ufvk(&network, ufvk_encoded)?,
+                );
                 (unified_key_store, None)
             }
             WalletBase::Usk(unified_spending_key) => {
-                let unified_key_store =
-                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?;
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
+                );
                 (unified_key_store, None)
             }
         };
 
         let first_address_index = 0;
-        let first_unified_address = unified_key_store.generate_unified_address(
-            first_address_index,
-            unified_key_store.can_view(),
-            false,
-        )?;
+        let first_unified_address = unified_key_store
+            .get(&zip32::AccountId::ZERO)
+            .expect("key store always non-empty")
+            .generate_unified_address(
+                first_address_index,
+                unified_key_store
+                    .get(&zip32::AccountId::ZERO)
+                    .expect("key store always non-empty")
+                    .can_view(),
+                false,
+            )?;
         let mut unified_addresses = BTreeMap::new();
         unified_addresses.insert(
             UnifiedAddressId {
