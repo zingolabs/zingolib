@@ -611,6 +611,7 @@ pub trait OutputInterface: Sized {
     fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>);
 
     /// Note value..
+    // TODO: change to Zatoshis checked type
     fn value(&self) -> u64;
 
     /// Returns the type used to link with transaction inputs for spend detection.

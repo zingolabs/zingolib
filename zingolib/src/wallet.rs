@@ -25,14 +25,15 @@ use send::SendProgress;
 
 pub mod data;
 pub mod error;
-pub mod keys;
 pub(crate) mod legacy;
 pub mod traits;
 pub mod utils;
 
-//these mods contain pieces of the impl LightWallet
+// these mods contain pieces of the impl LightWallet
+pub mod balance;
 pub mod describe;
 pub mod disk;
+pub mod keys;
 pub mod output;
 pub mod propose;
 pub mod send;

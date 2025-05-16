@@ -693,46 +693,31 @@ impl Command for SetPriceApiKeyCommand {
     }
 }
 
-/// assumed by consumers to be JSON
 struct BalanceCommand {}
 impl Command for BalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Return the current ZEC balance in the wallet as a JSON object.
-
-            Transparent and Shielded balances, along with the addresses they belong to are displayed
+            Return the wallet ZEC balance for each pool (account 0).
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Return the current ZEC balance in the wallet"
+        "Return the wallet ZEC balance for each pool (account 0)."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).expect("infallible")
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+            {
+                Ok(bal) => bal.to_string(),
+                Err(e) => format!("Error: {e}"),
+            }
         })
-    }
-}
-
-struct PrintBalanceCommand {}
-impl Command for PrintBalanceCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Show the current ZEC balance in the wallet
-            Usage:
-            balance
-
-            Transparent and Shielded balances, along with the addresses they belong to are displayed
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Show the current ZEC balance in the wallet"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.do_balance().await.to_string() })
     }
 }
 
@@ -1938,7 +1923,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("clear", Box::new(ClearCommand {})),
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
-        ("print_balance", Box::new(PrintBalanceCommand {})),
         ("addresses", Box::new(AddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),

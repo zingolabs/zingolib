@@ -129,12 +129,15 @@ pub enum SpendError {
 /// Errors associated with balance calculation
 #[derive(Debug, thiserror::Error)]
 pub enum BalanceError {
-    /// failed to retrieve full viewing key
-    #[error("failed to retrieve full viewing key.")]
-    NoFullViewingKey,
-    /// conversion failed
+    /// Key error
+    #[error("key error. {0}")]
+    KeyError(#[from] KeyError),
+    /// Conversion failed
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
+    /// Summation overflow
+    #[error("overflow occured during summation")]
+    Overflow,
 }
 
 /// Errors associated with key and address derivation

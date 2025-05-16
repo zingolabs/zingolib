@@ -2085,12 +2085,16 @@ mod slow {
         {
             let recipient_wallet = recipient.wallet.lock().await;
             assert_eq!(
-                recipient_wallet.pending_balance::<OrchardNote>().await,
+                recipient_wallet
+                    .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .await,
                 Some(expected_funds)
             );
             //  (2) The balance is not yet verified
             assert_eq!(
-                recipient_wallet.confirmed_balance::<OrchardNote>().await,
+                recipient_wallet
+                    .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .await,
                 Some(0)
             );
         }
@@ -4388,7 +4392,7 @@ mod send_all {
                 .wallet
                 .lock()
                 .await
-                .confirmed_balance_excluding_dust::<SaplingNote>()
+                .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
                 .await,
             Some(0)
         );
@@ -4397,7 +4401,7 @@ mod send_all {
                 .wallet
                 .lock()
                 .await
-                .confirmed_balance_excluding_dust::<OrchardNote>()
+                .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
                 .await,
             Some(0)
         );
