@@ -64,4 +64,6 @@ namespace zingo {
   string get_spendable_balance(string address, string zennies);
   string set_option_wallet();
   string get_option_wallet();
+  string zec_price();
+  string zec_price_api_key(string key);
 };

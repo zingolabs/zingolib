@@ -721,8 +721,36 @@ pub fn get_total_spends_to_address() -> String {
 }
 
 pub fn zec_price() -> String {
-    "Error unimplemented".to_string()
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.wallet.lock().await.current_price().await {
+                Ok(price) => object! { "current_price" => price },
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
+
+pub fn zec_price_api_key(key: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            lightclient
+                .wallet
+                .lock()
+                .await
+                .set_price_api_key(key.to_string());
+        });
+        "Successfully set API key".to_string()
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
 
 pub fn resend_transaction(txid: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
