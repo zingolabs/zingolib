@@ -26,6 +26,7 @@ impl LightWallet {
     pub(crate) async fn create_send_proposal(
         &mut self,
         request: TransactionRequest,
+        account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
         let refund_address_count = self
             .transparent_addresses
@@ -54,11 +55,13 @@ impl LightWallet {
         >(
             self,
             &network,
-            zcash_primitives::zip32::AccountId::ZERO,
+            account_id,
             &input_selector,
             &change_strategy,
             request,
             NonZeroU32::MIN,
+            // TODO: update anchor height selection
+            // NonZeroU32::try_from(3).expect("hard coded non-zero integer"),
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -191,7 +194,7 @@ mod test {
             .expect("actually all of this logic oughta be internal to propose");
 
         wallet
-            .create_send_proposal(request)
+            .create_send_proposal(request, zip32::AccountId::ZERO)
             .await
             .expect("can propose from existing data");
     }

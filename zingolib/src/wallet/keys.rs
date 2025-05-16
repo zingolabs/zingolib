@@ -2,7 +2,10 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::config::ZingoConfig;
-use pepper_sync::keys::transparent::{self, TransparentAddressId, TransparentScope};
+use pepper_sync::{
+    keys::transparent::{self, TransparentAddressId, TransparentScope},
+    wallet::KeyIdInterface,
+};
 use sapling_crypto::{
     PaymentAddress,
     zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},

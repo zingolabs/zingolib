@@ -453,6 +453,7 @@ mod fast {
                 address_from_str(&get_base_address_macro!(&recipient, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -470,6 +471,7 @@ mod fast {
                 address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
                 true,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -571,7 +573,10 @@ mod fast {
         macro_rules! send_and_sync {
             ($client:ident, $message:ident) => {
                 // Propose sending the message
-                $client.propose_send($message.clone()).await.unwrap();
+                $client
+                    .propose_send($message.clone(), zip32::AccountId::ZERO)
+                    .await
+                    .unwrap();
                 // Complete and broadcast the stored proposal
                 $client.send_stored_proposal().await.unwrap();
                 // Increase the height and wait for the client
@@ -836,7 +841,10 @@ mod fast {
 
             let transaction_request = TransactionRequest::new(payment).unwrap();
 
-            let proposal = sender.propose_send(transaction_request).await.unwrap();
+            let proposal = sender
+                .propose_send(transaction_request, zip32::AccountId::ZERO)
+                .await
+                .unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
             let _sent_txids_according_to_broadcast = sender.send_stored_proposal().await.unwrap();
             let _txids = sender
@@ -4319,7 +4327,7 @@ mod send_all {
             Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
             recipient
-                .get_spendable_shielded_balance(external_uaddress, true)
+                .get_spendable_shielded_balance(external_uaddress, true, zip32::AccountId::ZERO)
                 .await
                 .unwrap(),
             expected_balance
@@ -4378,6 +4386,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -4417,6 +4426,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await;
 
@@ -4444,6 +4454,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await;
 

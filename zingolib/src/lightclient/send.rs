@@ -91,12 +91,13 @@ pub mod send_with_proposal {
         pub async fn quick_send(
             &mut self,
             request: TransactionRequest,
+            account_id: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
                 .wallet
                 .lock()
                 .await
-                .create_send_proposal(request)
+                .create_send_proposal(request, account_id)
                 .await?;
 
             Ok(self.send(&proposal).await?)

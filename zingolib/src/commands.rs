@@ -757,7 +757,7 @@ impl Command for SpendableBalanceCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .get_spendable_shielded_balance(address, zennies_for_zingo)
+                .get_spendable_shielded_balance(address, zennies_for_zingo, zip32::AccountId::ZERO)
                 .await
             {
                 Ok(bal) => {
@@ -897,7 +897,10 @@ impl Command for SendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.propose_send(request).await {
+            match lightclient
+                .propose_send(request, zip32::AccountId::ZERO)
+                .await
+            {
                 Ok(proposal) => {
                     let fee = match crate::data::proposal::total_fee(&proposal) {
                         Ok(fee) => fee,
@@ -953,7 +956,7 @@ impl Command for SendAllCommand {
         };
         RT.block_on(async move {
             match lightclient
-                .propose_send_all(address, zennies_for_zingo, memo)
+                .propose_send_all(address, zennies_for_zingo, memo, zip32::AccountId::ZERO)
                 .await
             {
                 Ok(proposal) => {
@@ -1021,7 +1024,7 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request).await {
+            match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
                 }

@@ -35,8 +35,8 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::{self, TransparentScope},
     wallet::{
-        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
-        SaplingShardStore, traits::SyncWallet,
+        KeyIdInterface, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
+        OutputInterface, SaplingNote, SaplingShardStore, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -427,11 +427,11 @@ impl WalletWrite for LightWallet {
 
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
-        _account_id: Self::AccountId,
+        account_id: Self::AccountId,
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
         Ok(self
-            .generate_refund_addresses(n)?
+            .generate_refund_addresses(n, account_id)?
             .into_iter()
             .map(|(address_id, address)| {
                 (
@@ -550,7 +550,7 @@ impl InputSource for LightWallet {
 
     fn select_spendable_notes(
         &self,
-        _account: Self::AccountId,
+        account: Self::AccountId,
         target_value: Zatoshis,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
@@ -573,6 +573,7 @@ impl InputSource for LightWallet {
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_sapling,
+                account,
             )?
         } else {
             Vec::new()
@@ -582,6 +583,7 @@ impl InputSource for LightWallet {
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_orchard,
+                account,
             )?
         } else {
             Vec::new()
@@ -687,7 +689,6 @@ impl InputSource for LightWallet {
         Ok(self
             .spendable_transparent_coins(
                 target_height,
-                &[],
                 NonZeroU32::new(min_confirmations).ok_or(WalletError::MinimumConfirmationError)?,
             )
             .into_iter()

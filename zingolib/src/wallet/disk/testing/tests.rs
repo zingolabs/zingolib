@@ -195,8 +195,17 @@ async fn loaded_wallet_assert(
             assert!(addr.transparent().is_some());
         }
 
-        let balance = lightclient.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(expected_balance));
+        let balance = lightclient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            balance.total_orchard_balance,
+            Some(expected_balance.try_into().unwrap())
+        );
     }
     if expected_balance > 0 {
         let sapling_address = crate::get_base_address_macro!(lightclient, "sapling");
