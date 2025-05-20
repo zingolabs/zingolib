@@ -11,28 +11,27 @@ use log::Level;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use json::object;
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::wallet::SyncMode;
 use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
-use std::sync::Mutex;
 use std::str::FromStr;
+use std::sync::Mutex;
+use zcash_address::unified::{Container, Encoding, Ufvk};
+use zcash_address::ZcashAddress;
+use zcash_keys::address::Address;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::NetworkType;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
-use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
-use zingolib::wallet::WalletSettings;
-use pepper_sync::wallet::SyncMode;
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
-use json::object;
-use zcash_keys::keys::UnifiedFullViewingKey;
-use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_protocol::consensus::NetworkType;
-use zcash_keys::address::Address;
 use zingolib::lightclient::describe::UAReceivers;
-use zingolib::utils::conversion::txid_from_hex_encoded_str;
-use zcash_address::ZcashAddress;
 use zingolib::utils::conversion::address_from_str;
-
+use zingolib::utils::conversion::txid_from_hex_encoded_str;
+use zingolib::wallet::keys::unified::UnifiedKeyStore;
+use zingolib::wallet::WalletSettings;
+use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -61,22 +60,21 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
-    let mut config =
-        match zingolib::config::load_clientconfig(
-            lightwalletd_uri.clone(), 
-            None, 
-            chaintype,
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                },
+    let mut config = match zingolib::config::load_clientconfig(
+        lightwalletd_uri.clone(),
+        None,
+        chaintype,
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                return Err(format!("Error: Config load: {}", e));
-            }
-        };
+        },
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            return Err(format!("Error: Config load: {}", e));
+        }
+    };
     config.set_data_dir(data_dir);
 
     Ok((config, lightwalletd_uri))
@@ -511,16 +509,11 @@ pub fn parse_address(address: String) -> String {
     } else {
         fn make_decoded_chain_pair(
             address: &str,
-        ) -> Option<(
-            zcash_client_backend::address::Address,
-            ChainType,
-        )> {
+        ) -> Option<(zcash_client_backend::address::Address, ChainType)> {
             [
                 ChainType::Mainnet,
                 ChainType::Testnet,
-                ChainType::Regtest(
-                    RegtestNetwork::all_upgrades_active(),
-                ),
+                ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -600,18 +593,19 @@ pub fn parse_ufvk(ufvk: String) -> String {
                     let mut pools_available = vec![];
                     for fvk in ufvk.items_as_parsed() {
                         match fvk {
-                        zcash_address::unified::Fvk::Orchard(_) => {
-                            pools_available.push("orchard")
+                            zcash_address::unified::Fvk::Orchard(_) => {
+                                pools_available.push("orchard")
+                            }
+                            zcash_address::unified::Fvk::Sapling(_) => {
+                                pools_available.push("sapling")
+                            }
+                            zcash_address::unified::Fvk::P2pkh(_) => {
+                                pools_available.push("transparent")
+                            }
+                            zcash_address::unified::Fvk::Unknown { .. } => pools_available.push(
+                                "Error: Unknown future protocol. Perhaps you're using old software",
+                            ),
                         }
-                        zcash_address::unified::Fvk::Sapling(_) => {
-                            pools_available.push("sapling")
-                        }
-                        zcash_address::unified::Fvk::P2pkh(_) => {
-                            pools_available.push("transparent")
-                        }
-                        zcash_address::unified::Fvk::Unknown { .. } => pools_available
-                            .push("Error: Unknown future protocol. Perhaps you're using old software"),
-                    }
                     }
                     object! {
                         "status" => "success",
@@ -632,7 +626,7 @@ pub fn parse_ufvk(ufvk: String) -> String {
                     }
                 }
             },
-            4
+            4,
         )
     }
 }
@@ -644,7 +638,10 @@ pub fn get_version() -> String {
 pub fn get_messages(address: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
-            match lightclient.messages_containing(Some(address.as_str())).await {
+            match lightclient
+                .messages_containing(Some(address.as_str()))
+                .await
+            {
                 Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
@@ -673,9 +670,8 @@ pub fn get_addresses(receivers: String) -> String {
             _ => return "Error: unknown receivers".to_string(),
         };
 
-        zingolib::commands::RT.block_on(async move {
-            lightclient.do_addresses(receiver_type).await.pretty(2)
-        })
+        zingolib::commands::RT
+            .block_on(async move { lightclient.do_addresses(receiver_type).await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -751,7 +747,6 @@ pub fn zec_price_api_key(key: String) -> String {
     }
 }
 
-
 pub fn resend_transaction(txid: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         let txid_ok = match txid_from_hex_encoded_str(&txid) {
@@ -801,7 +796,7 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
         } else {
             return "Error: unknown address format".to_string();
         }
-       zingolib::commands::RT.block_on(async move {
+        zingolib::commands::RT.block_on(async move {
             match lightclient
                 .get_spendable_shielded_balance(address_zcash, zennies.parse().unwrap_or(false))
                 .await
