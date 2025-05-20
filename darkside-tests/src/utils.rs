@@ -104,7 +104,7 @@ pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (String, 
     let darkside_grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
     let darkside_dir = tempfile::TempDir::with_prefix("zingo_darkside_test")
         .unwrap()
-        .into_path();
+        .keep();
     (darkside_grpc_port, darkside_dir)
 }
 
