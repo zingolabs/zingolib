@@ -72,7 +72,7 @@ fn construct_uri_load_config(
     ) {
         Ok(c) => c,
         Err(e) => {
-            return Err(format!("Error: Config load: {}", e));
+            return Err(format!("Error: Config load: {e}"));
         }
     };
     config.set_data_dir(data_dir);
@@ -113,7 +113,7 @@ pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> Str
     ) {
         Ok(l) => l,
         Err(e) => {
-            return format!("Error: {}", e);
+            return format!("Error: {e}");
         }
     };
     lock_client_return_seed(lightclient)
@@ -234,7 +234,7 @@ pub fn save_to_b64() -> String {
             match lightclient.wallet.lock().await.save().await {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
-                Ok(None) => format!("Error: No need to save the wallet file"),
+                Ok(None) => "Error: No need to save the wallet file".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
