@@ -941,7 +941,10 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // shield transparent
-    recipient.quick_shield().await.unwrap();
+    recipient
+        .quick_shield(zip32::AccountId::ZERO)
+        .await
+        .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();

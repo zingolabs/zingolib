@@ -84,7 +84,10 @@ pub async fn assure_propose_shield_bump_sync<CC>(
 where
     CC: ConductChain,
 {
-    let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
+    let proposal = client
+        .propose_shield(zip32::AccountId::ZERO)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let txids = client.send_stored_proposal().await.unwrap();
 

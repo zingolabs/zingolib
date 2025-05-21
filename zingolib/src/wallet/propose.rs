@@ -76,6 +76,7 @@ impl LightWallet {
     /// can be consumed without costing more in zip317 fees than is being transferred.
     pub(crate) async fn create_shield_proposal(
         &mut self,
+        account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
@@ -102,7 +103,7 @@ impl LightWallet {
             &change_strategy,
             Zatoshis::const_from_u64(10_000),
             &self.get_transparent_addresses()?,
-            zip32::AccountId::ZERO,
+            account_id,
             1,
         )
         .map_err(ProposeShieldError::Component)?;

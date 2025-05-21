@@ -223,12 +223,10 @@ pub enum TransmissionError {
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
-    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-    NoSpendCapability,
-    #[error("Could not load sapling_params: {0}")]
+    #[error("No unified spending key found for this account. {0}")]
+    NoSpendingKey(#[from] crate::wallet::error::KeyError),
+    #[error("Failed to load sapling paramaters. {0}")]
     SaplingParams(String),
-    #[error("Could not find UnifiedSpendKey: {0}")]
-    UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
         zcash_client_backend::data_api::error::Error<

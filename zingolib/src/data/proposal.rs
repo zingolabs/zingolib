@@ -10,9 +10,9 @@ use crate::wallet::output::OutputRef;
 
 /// A proposed send to addresses.
 /// Identifies the notes to spend by txid, pool, and output_index.
-/// This type alias, specifies the ZIP317 "Proportional Transfer Fee Mechanism"structure
+/// This type alias, specifies the ZIP317 "Proportional Transfer Fee Mechanism" structure
 /// <https://zips.z.cash/zip-0317>
-/// as the fee structure for a transaction series.  This innovation was created in response
+/// as the fee structure for a transaction series. This innovation was created in response
 /// "Binance Constraint" that t-addresses that only receive from t-addresses be supported.
 /// <https://zips.z.cash/zip-0320>
 pub(crate) type ProportionalFeeProposal = Proposal<zip317::FeeRule, OutputRef>;
@@ -26,12 +26,16 @@ pub(crate) type ProportionalFeeShieldProposal = Proposal<zip317::FeeRule, Infall
 /// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Debug, Clone)]
 pub(crate) enum ZingoProposal {
-    /// Destination somewhere else.
-    /// Can propose any valid recipient.
-    Transfer(ProportionalFeeProposal),
-    /// For now this is constrained by lrz zcash_client_backend transaction construction
-    /// to send to the proposing capability's receiver for its fanciest shielded pool
-    Shield(ProportionalFeeShieldProposal),
+    /// Send proposal.
+    Send {
+        proposal: ProportionalFeeProposal,
+        sending_account: zip32::AccountId,
+    },
+    /// Shield proposal.
+    Shield {
+        proposal: ProportionalFeeShieldProposal,
+        shielding_account: zip32::AccountId,
+    },
 }
 
 /// total sum of all transaction request payment amounts in a proposal

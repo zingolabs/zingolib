@@ -51,6 +51,39 @@ pub fn now() -> u32 {
         .as_secs() as u32
 }
 
+/// Wallet settings.
+#[derive(Debug, Clone)]
+pub struct WalletSettings {
+    /// Sync configuration.
+    pub sync_config: pepper_sync::sync::SyncConfig,
+}
+
+/// Provides necessary information to recover the wallet without the wallet file.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RecoveryInfo {
+    /// 24-word mnemonic phrase.
+    pub seed_phrase: String,
+    /// Block height wallet was created.
+    pub birthday: u64,
+    /// Number of accounts in use.
+    pub no_of_accounts: u32,
+}
+
+impl std::fmt::Display for RecoveryInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Wallet backup info:
+{{
+    seed phrase: {}
+    birthday: {}
+    no_of_accounts: {}
+}}",
+            self.seed_phrase, self.birthday, self.no_of_accounts,
+        )
+    }
+}
+
 /// Data used to initialize new instance of LightWallet
 pub enum WalletBase {
     /// Generate a wallet with a new seed for a number of accounts.
@@ -225,6 +258,25 @@ impl LightWallet {
         })
     }
 
+    /// Returns the wallet's mnemonic (seed and phrase).
+    pub fn mnemonic(&self) -> Option<&Mnemonic> {
+        self.mnemonic.as_ref()
+    }
+
+    /// Returns the wallet's mnemonic phrase.
+    pub fn mnemonic_phrase(&self) -> Option<String> {
+        self.mnemonic()
+            .map(|mnemonic| mnemonic.phrase().to_string())
+    }
+
+    pub fn recovery_info(&self) -> Option<RecoveryInfo> {
+        Some(RecoveryInfo {
+            seed_phrase: self.mnemonic_phrase()?,
+            birthday: self.birthday.into(),
+            no_of_accounts: self.unified_key_store.len() as u32,
+        })
+    }
+
     // Set the previous send's result as a JSON string.
     pub(super) fn set_send_result(&mut self, result: String) {
         self.send_progress.is_send_in_progress = false;
@@ -340,13 +392,6 @@ impl LightWallet {
 
         self.save_required = true;
     }
-}
-
-/// Wallet settings.
-#[derive(Debug, Clone)]
-pub struct WalletSettings {
-    /// Sync configuration.
-    pub sync_config: pepper_sync::sync::SyncConfig,
 }
 
 #[cfg(test)]

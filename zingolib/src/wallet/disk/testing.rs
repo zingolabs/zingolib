@@ -23,7 +23,7 @@ pub async fn assert_wallet_capability_matches_seed(
     wallet: &LightWallet,
     expected_seed_phrase: String,
 ) {
-    let actual_seed_phrase = wallet.get_seed_phrase().await.unwrap();
+    let actual_seed_phrase = wallet.mnemonic_phrase().unwrap();
     assert_eq!(expected_seed_phrase, actual_seed_phrase);
 
     let expected_mnemonic = (

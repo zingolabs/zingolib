@@ -3,9 +3,8 @@
 use std::collections::HashMap;
 
 use json::{JsonValue, object};
-use tokio::runtime::Runtime;
 
-use crate::lightclient::{AccountBackupInfo, LightClient};
+use crate::lightclient::LightClient;
 use crate::wallet::data::{
     finsight,
     summaries::{SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers},
@@ -116,28 +115,6 @@ impl LightClient {
             .await
             .transaction_summaries_json_string()
             .await
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: move to wallet
-    pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
-        let wallet = self.wallet.lock().await;
-        match wallet.mnemonic() {
-            Some(m) => Ok(AccountBackupInfo {
-                seed_phrase: m.0.phrase().to_string(),
-                birthday: wallet.birthday.into(),
-                account_index: m.1,
-            }),
-            None => Err("This wallet is watch-only or was created without a mnemonic."),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: remove, consumers should handle their own runtimes
-    pub fn do_seed_phrase_sync(&self) -> Result<AccountBackupInfo, &str> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_seed_phrase().await })
     }
 
     /// TODO: Add Doc Comment Here!

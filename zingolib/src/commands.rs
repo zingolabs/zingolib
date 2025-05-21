@@ -146,18 +146,16 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            if lightclient.do_seed_phrase().await.is_ok() {
-                object! {"kind" => "Loaded from seed phrase",
+            let wallet = lightclient.wallet.lock().await;
+            if wallet.mnemonic().is_some() {
+                object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                         "transparent" => true,
                         "sapling" => true,
                         "orchard" => true,
                 }
                 .pretty(4)
             } else {
-                match &lightclient
-                    .wallet
-                    .lock()
-                    .await
+                match wallet
                     .unified_key_store
                     .get(&zip32::AccountId::ZERO)
                     .expect("account 0 must always exist")
@@ -1067,7 +1065,7 @@ impl Command for ShieldCommand {
         }
 
         RT.block_on(async move {
-            match lightclient.propose_shield().await {
+            match lightclient.propose_shield(zip32::AccountId::ZERO).await {
                 Ok(proposal) => {
                     if proposal.steps().len() != 1 {
                         return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
@@ -1124,7 +1122,7 @@ impl Command for QuickShieldCommand {
 
         RT.block_on(async move {
             match lightclient
-                .quick_shield()
+                .quick_shield(zip32::AccountId::ZERO)
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
@@ -1260,28 +1258,29 @@ impl Command for DeleteCommand {
     }
 }
 
-struct SeedCommand {}
-impl Command for SeedCommand {
+struct RecoveryInfoCommand {}
+impl Command for RecoveryInfoCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Show the wallet's seed phrase
-            Usage:
-            seed
+            Display the wallet's seed phrase, birthday and number of accounts in use.
 
-            Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone
+            Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone.
+
+            Usage:
+            recovery_info
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Display the seed phrase"
+        "Display the wallet's seed phrase, birthday and number of accounts in use."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.do_seed_phrase().await {
-                Ok(m) => serde_json::to_string_pretty(&m).expect("infallible"),
-                Err(e) => object! { "error" => e }.pretty(2),
+            match lightclient.wallet.lock().await.recovery_info() {
+                Some(backup_info) => backup_info.to_string(),
+                None => "error: no mnemonic found. wallet loaded from key.".to_string(),
             }
         })
     }
@@ -1951,7 +1950,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),
         ("new", Box::new(NewAddressCommand {})),
-        ("seed", Box::new(SeedCommand {})),
+        ("recovery_info", Box::new(RecoveryInfoCommand {})),
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),

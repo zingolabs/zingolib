@@ -34,7 +34,7 @@ impl LightClient {
     }
 
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
-    /// This field must be populated in order to then send a transaction.
+    /// This field must be populated in order to then create and transmit a transaction.
     async fn store_proposal(&mut self, proposal: ZingoProposal) {
         self.latest_proposal = Some(proposal);
     }
@@ -51,8 +51,11 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .await?;
-        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-            .await;
+        self.store_proposal(ZingoProposal::Send {
+            proposal: proposal.clone(),
+            sending_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
@@ -83,8 +86,11 @@ impl LightClient {
             .await
             .create_send_proposal(request, account_id)
             .await?;
-        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-            .await;
+        self.store_proposal(ZingoProposal::Send {
+            proposal: proposal.clone(),
+            sending_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
@@ -167,10 +173,19 @@ impl LightClient {
     /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
         &mut self,
+        account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let proposal = self.wallet.lock().await.create_shield_proposal().await?;
-        self.store_proposal(ZingoProposal::Shield(proposal.clone()))
-            .await;
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_shield_proposal(account_id)
+            .await?;
+        self.store_proposal(ZingoProposal::Shield {
+            proposal: proposal.clone(),
+            shielding_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
@@ -220,7 +235,7 @@ mod shielding {
             .wallet
             .lock()
             .await
-            .create_shield_proposal()
+            .create_shield_proposal(zip32::AccountId::ZERO)
             .await;
         match propose_shield_result {
             Err(ProposeShieldError::Component(

@@ -51,7 +51,7 @@ impl Account for ZingoAccount {
     }
 
     fn name(&self) -> Option<&str> {
-        Some("Account 0")
+        None
     }
 
     fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
@@ -73,7 +73,7 @@ impl WalletRead for LightWallet {
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(vec![(Self::AccountId::ZERO)])
+        Ok(self.unified_key_store.keys().cloned().collect())
     }
 
     fn get_account(
@@ -110,7 +110,17 @@ impl WalletRead for LightWallet {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(Some(ZingoAccount(Self::AccountId::ZERO, ufvk.clone())))
+        let Some((account_id, unified_key)) =
+            self.unified_key_store.iter().find(|(_, unified_key)| {
+                UnifiedFullViewingKey::try_from(*unified_key).is_ok_and(|account_ufvk| {
+                    account_ufvk.encode(&self.network) == *ufvk.encode(&self.network)
+                })
+            })
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(ZingoAccount(*account_id, unified_key.try_into()?)))
     }
 
     fn list_addresses(

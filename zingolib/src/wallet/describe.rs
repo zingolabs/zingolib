@@ -3,20 +3,16 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use bip0039::Mnemonic;
 use json::JsonValue;
 
-use pepper_sync::wallet::KeyIdInterface;
 use zcash_address::ZcashAddress;
 use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
-use zcash_protocol::value::Zatoshis;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
@@ -35,7 +31,6 @@ use super::data::summaries::ValueTransfers;
 use super::error::KeyError;
 use super::error::SpendError;
 use super::error::SummaryError;
-use super::keys::unified::UnifiedKeyStore;
 use super::summary;
 use super::summary::SendType;
 use super::summary::TransactionKind;
@@ -44,9 +39,7 @@ use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::lightclient::describe::UAReceivers;
-use crate::utils;
 use crate::wallet::LightWallet;
-use crate::wallet::error::BalanceError;
 use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
 use pepper_sync::keys::transparent::TransparentScope;
@@ -94,18 +87,6 @@ impl LightWallet {
             )
         }
         JsonValue::Array(objectified_addresses)
-    }
-
-    /// returns Some seed phrase for the wallet.
-    /// if wallet does not have a seed phrase, returns None
-    pub async fn get_seed_phrase(&self) -> Option<String> {
-        self.mnemonic()
-            .map(|(mnemonic, _)| mnemonic.phrase().to_string())
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
-        self.mnemonic.as_ref()
     }
 
     /// Lists the transparent addresses known by the wallet.
@@ -887,26 +868,35 @@ impl LightWallet {
             .map(|(address_id, _)| address_id.scope())
     }
 
-    /// Checks if the given `address` is derived from the wallet's sapling FVKs. External scope only. For internal, query
-    /// outgoing sapling note scope.
+    /// Checks if the given `address` is derived from the wallet's sapling FVKs. External scope only.
     fn is_sapling_external_send_to_self(
         &self,
         address: &sapling_crypto::PaymentAddress,
     ) -> Result<bool, KeyError> {
-        Ok(
-            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&self.unified_key_store)?
+        for unified_key in self.unified_key_store.values() {
+            if sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)?
                 .decrypt_diversifier(address)
-                .is_some(),
-        )
+                .is_some()
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Checks if the given `address` is derived from the wallet's orchard FVKs.
     fn is_orchard_send_to_self(&self, address: &orchard::Address) -> Result<bool, KeyError> {
-        Ok(
-            orchard::keys::FullViewingKey::try_from(&self.unified_key_store)?
+        for unified_key in self.unified_key_store.values() {
+            if orchard::keys::FullViewingKey::try_from(unified_key)?
                 .scope_for_address(address)
-                .is_some(),
-        )
+                .is_some()
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }
 

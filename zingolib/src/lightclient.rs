@@ -10,7 +10,6 @@ use std::{
 };
 
 use json::{JsonValue, array};
-use serde::Serialize;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
@@ -30,19 +29,6 @@ pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
-
-/// TODO: Add Doc Comment Here!
-// TODO: move seed fns to wallet and move this struct also
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct AccountBackupInfo {
-    /// TODO: Add Doc Comment Here!
-    #[serde(rename = "seed")]
-    pub seed_phrase: String,
-    /// TODO: Add Doc Comment Here!
-    pub birthday: u64,
-    /// TODO: Add Doc Comment Here!
-    pub account_index: u32,
-}
 
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
