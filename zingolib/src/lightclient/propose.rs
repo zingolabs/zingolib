@@ -60,7 +60,7 @@ impl LightClient {
         Ok(proposal)
     }
 
-    /// Creates and stores a proposal for sending all shielded funds from a speicfied account to a given `address`.
+    /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
