@@ -259,9 +259,13 @@ impl LightClient {
     /// Creates a tor client for current price updates.
     ///
     /// If `tor_dir` is `None` it will be set to the wallet's data directory.
-    pub async fn create_tor_client(&mut self, tor_dir: Option<PathBuf>) -> Result<(), tor::Error> {
+    pub async fn create_tor_client(
+        &mut self,
+        tor_dir: Option<PathBuf>,
+    ) -> Result<(), LightClientError> {
         let tor_dir =
             tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
+        tokio::fs::create_dir_all(tor_dir.as_path()).await?;
         self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
 
         Ok(())
