@@ -305,7 +305,7 @@ async fn reload_wallet_from_buffer() {
     let view_wallet = LightWallet::new(
         wallet.network,
         ufvk_base,
-        wallet.birthday.try_into().expect("should never overflow"),
+        wallet.birthday,
         wallet.wallet_settings.clone(),
     )
     .unwrap();

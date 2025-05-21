@@ -706,7 +706,7 @@ mod tests {
             1.try_into().unwrap(),
         );
 
-        assert_eq!(valid_config.is_ok(), true);
+        assert!(valid_config.is_ok());
     }
 
     #[tokio::test]
