@@ -279,8 +279,7 @@ pub mod setup {
             let zcashd_rpcservice_port = TestEnvironmentGenerator::pick_unused_port_to_string(None);
             let lightwalletd_rpcservice_port =
                 TestEnvironmentGenerator::pick_unused_port_to_string(set_lightwalletd_port);
-            let regtest_manager =
-                RegtestManager::new(tempfile::TempDir::new().unwrap().into_path());
+            let regtest_manager = RegtestManager::new(tempfile::TempDir::new().unwrap().keep());
             let server_uri = crate::config::construct_lightwalletd_uri(Some(format!(
                 "http://127.0.0.1:{lightwalletd_rpcservice_port}"
             )));
