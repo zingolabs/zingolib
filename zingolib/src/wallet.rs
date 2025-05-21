@@ -9,6 +9,7 @@ use bip0039::Mnemonic;
 use rand::Rng;
 use rand::rngs::OsRng;
 
+use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
@@ -287,11 +288,20 @@ impl LightWallet {
         }
     }
 
-    /// Updates historical daily price list and current price of ZEC.
+    /// Updates historical daily price list.
+    /// Prunes any unused price data in the wallet after it's been updated.
+    /// If this is the first time update has been called, initialises the price list from the wallet data.
     ///
+    /// Warning: historical price fetch not currently over tor but does not leak any wallet data.
     /// Currently only USD is supported.
-    pub async fn update_price(&mut self) -> Result<(), PriceError> {
-        if self.price_list.time_last_updated().is_none() {
+    ///
+    /// Returns an error if no API key is found.
+    pub async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
+        if self
+            .price_list
+            .time_historical_prices_last_updated()
+            .is_none()
+        {
             let Some(birthday) = self.sync_state.wallet_birthday() else {
                 return Err(PriceError::NotInitialised);
             };
@@ -303,18 +313,26 @@ impl LightWallet {
             };
             self.price_list.set_start_time(birthday_block.time());
         }
-        self.price_list.update().await?;
+        self.price_list.update_historical_price_list().await?;
         self.prune_price_list();
         self.save_required = true;
 
         Ok(())
     }
 
-    /// Updates price list and returns current price of ZEC.
-    pub async fn current_price(&mut self) -> Result<Option<f32>, PriceError> {
-        self.update_price().await?;
+    /// Updates and returns current price of ZEC over tor.
+    pub async fn update_current_price(
+        &mut self,
+        tor_client: &tor::Client,
+    ) -> Result<f32, PriceError> {
+        let current_price = self
+            .price_list
+            .update_current_price(tor_client)
+            .await?
+            .price_usd;
+        self.save_required = true;
 
-        Ok(self.price_list.current_price().map(|price| price.price_usd))
+        Ok(current_price)
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.
@@ -344,7 +362,7 @@ impl LightWallet {
         self.price_list.prune(transaction_times, prune_below);
     }
 
-    /// Sets the API key for updating the price list.
+    /// Sets the CoinCap API key for updating the historical daily price list.
     pub fn set_price_api_key(&mut self, api_key: String) {
         self.price_list.set_api_key(api_key);
         self.save_required = true;
@@ -375,6 +393,7 @@ impl LightWallet {
         self.nullifier_map.clear();
         self.outpoint_map.clear();
         self.shard_trees = ShardTrees::new();
+        self.price_list = PriceList::new();
 
         self.save_required = true;
     }

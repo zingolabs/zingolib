@@ -11,6 +11,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
@@ -523,6 +524,13 @@ pub fn startup(
             config.get_lightwalletd_uri()
         );
     }
+
+    let mut lightclient = RT.block_on(async move {
+        if let Err(e) = lightclient.create_tor_client(None).await {
+            eprintln!("error: failed to create tor client. price updates disabled. {e}")
+        }
+        lightclient
+    });
 
     // At startup, run a sync.
     if filled_template.sync {

@@ -19,6 +19,7 @@ use zcash_protocol::value::Zatoshis;
 use crate::data::{PollReport, proposal};
 use crate::lightclient::LightClient;
 use crate::utils::conversion::txid_from_hex_encoded_str;
+use crate::wallet::error::PriceError;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use pepper_sync::wallet::{OrchardNote, SaplingNote, SyncMode};
 
@@ -593,10 +594,13 @@ struct UpdatePriceCommand {}
 impl Command for UpdatePriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Updates current zec price and historical prices for wallet transactions.
+            Updates current price of ZEC via tor.
+            If an API key is set, also updates historical daily prices for wallet transactions.
+            Type `help set_price_api_key` for setting an API key (requires registration).
+            Historical price fetching does not currently connect via tor but does not leak any wallet data.
             Currently only supports USD.
 
-            Type `help set_price_api_key` for setting up an API key for price fetching.
+            WARNING: The use of tor may be illegal in some countries.
 
             Usage:
             update_price
@@ -605,14 +609,26 @@ impl Command for UpdatePriceCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Updates current zec price and historic prices for wallet transactions."
+        "Updates current ZEC price and historical prices for wallet transactions."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.update_price().await {
-                Ok(_) => "prices successfully updated".to_string(),
-                Err(e) => format!("Error: {e}"),
+            let Some(tor_client) = lightclient.tor_client.as_ref() else {
+                return "error: no client found. please try restarting.".to_string();
+            };
+
+            let mut wallet = lightclient.wallet.lock().await;
+            match wallet.update_current_price(tor_client).await {
+                Ok(_) => (),
+                Err(e) => return format!("error: {e}"),
+            }
+            match wallet.update_historical_prices().await {
+                Ok(_) => "current and historical prices successfully updated.".to_string(),
+                Err(PriceError::PriceError(zingo_price::PriceError::NoApiKey)) => {
+                    "current price successfully updated.".to_string()
+                }
+                Err(e) => format!("error: {e}"),
             }
         })
     }
@@ -622,8 +638,10 @@ struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Updates price list and returns current price of zec.
+            Updates and returns current price of ZEC via tor.
             Currently only supports USD.
+
+            WARNING: The use of tor may be illegal in some countries.
 
             Usage:
             current_price
@@ -632,18 +650,25 @@ impl Command for CurrentPriceCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Updates price list and returns current price of zec."
+        "Updates and returns current price of ZEC via tor."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.current_price().await {
-                Ok(price) => object! { "current_price" => price },
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+            let Some(tor_client) = lightclient.tor_client.as_ref() else {
+                return "error: no client found. please try restarting.".to_string();
+            };
+
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .update_current_price(tor_client)
+                .await
+            {
+                Ok(price) => format!("current price: {price}"),
+                Err(e) => format!("error: {e}"),
             }
-            .pretty(2)
         })
     }
 }
@@ -652,7 +677,7 @@ struct SetPriceApiKeyCommand {}
 impl Command for SetPriceApiKeyCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Sets the API key for fetching zec prices. Register with CoinCap for a free API key.
+            Sets the API key for fetching historical zec prices. Register with CoinCap for a free API key.
             https://pro.coincap.io/signup
 
             Currently only CoinCap is supported.
