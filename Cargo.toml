@@ -100,6 +100,9 @@ webpki-roots = "0.26"
 crossbeam-channel = "0.5"
 rayon = "1"
 
+# tor
+rusqlite = "0.32"
+
 testvectors = { path = "testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }
