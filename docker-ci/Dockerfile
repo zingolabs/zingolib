@@ -56,6 +56,7 @@ RUN apt update \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libsqlite3-dev \
     ca-certificates \
     && update-ca-certificates
 
