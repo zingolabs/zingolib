@@ -26,9 +26,6 @@ pub enum PriceError {
     /// Deserialization failed.
     #[error("deserialization failed. {0}")]
     DeserializationFailed(#[from] serde_json::Error),
-    /// Response error. Commonly due to bad or missing CoinCap API keys.
-    #[error("response error. {0}")]
-    ResponseError(String),
     /// Parse error.
     #[error("parse error. {0}")]
     ParseError(#[from] std::num::ParseFloatError),
@@ -41,12 +38,6 @@ pub enum PriceError {
     /// Decimal conversion error.
     #[error("decimal conversion error. {0}")]
     DecimalError(#[from] rust_decimal::Error),
-    /// Not JSON string.
-    #[error("not JSON string.")]
-    NotJsonString,
-    /// Not JSON array.
-    #[error("not JSON array.")]
-    NotJsonArray,
     /// Invalid price.
     #[error("invalid price.")]
     InvalidPrice,
