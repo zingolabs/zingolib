@@ -18,6 +18,7 @@ use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::path::PathBuf;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_address::ZcashAddress;
 use zcash_keys::address::Address;
@@ -40,8 +41,14 @@ lazy_static! {
     static ref LIGHTCLIENT: Mutex<Option<LightClient>> = Mutex::new(None);
 }
 
-fn lock_client_return_seed(lightclient: LightClient) -> String {
-    LIGHTCLIENT.lock().unwrap().replace(lightclient);
+fn lock_client_return_seed(mut lightclient: LightClient, tor_dir: PathBuf) -> String {
+    let lightclient_tor = zingolib::commands::RT.block_on(async move {
+        if let Err(e) = lightclient.create_tor_client(Some(tor_dir)).await {
+            eprintln!("error: failed to create tor client. price updates disabled. {e}")
+        }
+        lightclient
+    });
+    LIGHTCLIENT.lock().unwrap().replace(lightclient_tor);
 
     get_seed()
 }
@@ -96,7 +103,7 @@ pub fn init_logging() -> String {
 
 pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> String {
     let (config, lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
+    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -116,7 +123,7 @@ pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> Str
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient)
+    lock_client_return_seed(lightclient, data_dir.into())
 }
 
 pub fn init_from_seed(
@@ -127,7 +134,7 @@ pub fn init_from_seed(
     chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
+    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -151,7 +158,7 @@ pub fn init_from_seed(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient)
+    lock_client_return_seed(lightclient, data_dir.into())
 }
 
 pub fn init_from_ufvk(
@@ -162,7 +169,7 @@ pub fn init_from_ufvk(
     chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
+    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -186,7 +193,7 @@ pub fn init_from_ufvk(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient)
+    lock_client_return_seed(lightclient, data_dir.into())
 }
 
 pub fn init_from_b64(
@@ -196,7 +203,7 @@ pub fn init_from_b64(
     chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir, chain_hint) {
+    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -222,7 +229,7 @@ pub fn init_from_b64(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient)
+    lock_client_return_seed(lightclient, data_dir.into())
 }
 
 pub fn save_to_b64() -> String {
@@ -719,7 +726,16 @@ pub fn get_total_spends_to_address() -> String {
 pub fn zec_price() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
-            match lightclient.wallet.lock().await.current_price().await {
+            let Some(tor_client) = lightclient.tor_client.as_ref() else {
+                return "error: no client found. please try restarting.".to_string();
+            };
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .update_current_price(tor_client)
+                .await
+            {
                 Ok(price) => object! { "current_price" => price },
                 Err(e) => {
                     object! { "error" => e.to_string() }
