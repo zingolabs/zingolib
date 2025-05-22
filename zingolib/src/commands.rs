@@ -19,7 +19,6 @@ use zcash_protocol::value::Zatoshis;
 use crate::data::{PollReport, proposal};
 use crate::lightclient::LightClient;
 use crate::utils::conversion::txid_from_hex_encoded_str;
-use crate::wallet::error::PriceError;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use pepper_sync::wallet::{OrchardNote, SaplingNote, SyncMode};
 
@@ -590,50 +589,6 @@ impl Command for InfoCommand {
     }
 }
 
-struct UpdatePriceCommand {}
-impl Command for UpdatePriceCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Updates current price of ZEC via tor.
-            If an API key is set, also updates historical daily prices for wallet transactions.
-            Type `help set_price_api_key` for setting an API key (requires registration).
-            Historical price fetching does not currently connect via tor but does not leak any wallet data.
-            Currently only supports USD.
-
-            WARNING: The use of tor may be illegal in some countries.
-
-            Usage:
-            update_price
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Updates current ZEC price and historical prices for wallet transactions."
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move {
-            let Some(tor_client) = lightclient.tor_client.as_ref() else {
-                return "error: no client found. please try restarting.".to_string();
-            };
-
-            let mut wallet = lightclient.wallet.lock().await;
-            match wallet.update_current_price(tor_client).await {
-                Ok(_) => (),
-                Err(e) => return format!("error: {e}"),
-            }
-            match wallet.update_historical_prices().await {
-                Ok(_) => "current and historical prices successfully updated.".to_string(),
-                Err(PriceError::PriceError(zingo_price::PriceError::NoApiKey)) => {
-                    "current price successfully updated.".to_string()
-                }
-                Err(e) => format!("error: {e}"),
-            }
-        })
-    }
-}
-
 struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
@@ -641,7 +596,7 @@ impl Command for CurrentPriceCommand {
             Updates and returns current price of ZEC via tor.
             Currently only supports USD.
 
-            WARNING: The use of tor may be illegal in some countries.
+            Tor is used to protect the user's IP address. Use at your own discretion.
 
             Usage:
             current_price
@@ -655,7 +610,7 @@ impl Command for CurrentPriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let Some(tor_client) = lightclient.tor_client.as_ref() else {
+            let Some(tor_client) = lightclient.tor_client() else {
                 return "error: no client found. please try restarting.".to_string();
             };
 
@@ -670,44 +625,6 @@ impl Command for CurrentPriceCommand {
                 Err(e) => format!("error: {e}"),
             }
         })
-    }
-}
-
-struct SetPriceApiKeyCommand {}
-impl Command for SetPriceApiKeyCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Sets the API key for fetching historical zec prices. Register with CoinCap for a free API key.
-            https://pro.coincap.io/signup
-
-            Currently only CoinCap is supported.
-
-            Usage:
-            set_price_api_key <api_key>
-
-            Example:
-            set_price_api_key 4bce48cf8766d5c55ecdd83622cbba676fdc23745c7176916fd518b40e5ee6f1
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Sets the API key for fetching zec prices. Register with CoinCap for a free API key."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: incorrect number of parameters\nTry 'help set_price_api_key' for correct usage and examples.".to_string();
-        }
-        RT.block_on(async move {
-            lightclient
-                .wallet
-                .lock()
-                .await
-                .set_price_api_key(args[0].to_string());
-        });
-
-        "Successfully set API key".to_string()
     }
 }
 
@@ -1966,9 +1883,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
-        ("update_price", Box::new(UpdatePriceCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
-        ("set_price_api_key", Box::new(SetPriceApiKeyCommand {})),
         ("send", Box::new(SendCommand {})),
         ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),

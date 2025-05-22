@@ -288,14 +288,27 @@ impl LightWallet {
         }
     }
 
+    /// Updates and returns current price of ZEC over tor.
+    pub async fn update_current_price(
+        &mut self,
+        tor_client: &tor::Client,
+    ) -> Result<f32, PriceError> {
+        let current_price = self
+            .price_list
+            .update_current_price(tor_client)
+            .await?
+            .price_usd;
+        self.save_required = true;
+
+        Ok(current_price)
+    }
+
     /// Updates historical daily price list.
     /// Prunes any unused price data in the wallet after it's been updated.
     /// If this is the first time update has been called, initialises the price list from the wallet data.
     ///
-    /// Warning: historical price fetch not currently over tor but does not leak any wallet data.
     /// Currently only USD is supported.
-    ///
-    /// Returns an error if no API key is found.
+    // TODO: under development
     pub async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
         if self
             .price_list
@@ -317,27 +330,13 @@ impl LightWallet {
         self.prune_price_list();
         self.save_required = true;
 
-        Ok(())
-    }
-
-    /// Updates and returns current price of ZEC over tor.
-    pub async fn update_current_price(
-        &mut self,
-        tor_client: &tor::Client,
-    ) -> Result<f32, PriceError> {
-        let current_price = self
-            .price_list
-            .update_current_price(tor_client)
-            .await?
-            .price_usd;
-        self.save_required = true;
-
-        Ok(current_price)
+        todo!()
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.
     ///
     /// Avoids pruning above fully scanned height.
+    // TODO: under development
     pub fn prune_price_list(&mut self) {
         let Some(fully_scanned_height) = self.sync_state.fully_scanned_height() else {
             return;
@@ -360,12 +359,6 @@ impl LightWallet {
             .expect("fully scanned height should always be on a scan range boundary")
             .time();
         self.price_list.prune(transaction_times, prune_below);
-    }
-
-    /// Sets the CoinCap API key for updating the historical daily price list.
-    pub fn set_price_api_key(&mut self, api_key: String) {
-        self.price_list.set_api_key(api_key);
-        self.save_required = true;
     }
 
     /// Clears all wallet data obtained from the block chain including the sync state.

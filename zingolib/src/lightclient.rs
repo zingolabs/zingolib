@@ -144,7 +144,7 @@ pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
     /// Tor client
-    pub(crate) tor_client: Option<tor::Client>,
+    tor_client: Option<tor::Client>,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
@@ -227,9 +227,14 @@ impl LightClient {
         Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Returns config used to create lightclient.
     pub fn config(&self) -> &ZingoConfig {
         &self.config
+    }
+
+    /// Returns tor client.
+    pub fn tor_client(&self) -> Option<&tor::Client> {
+        self.tor_client.as_ref()
     }
 
     /// Generates a new unified address from the given `addr_type`.
