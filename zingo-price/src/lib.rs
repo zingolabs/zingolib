@@ -12,6 +12,7 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+use serde::Deserialize;
 use zcash_client_backend::tor::{self, http::cryptex::Exchanges};
 use zcash_encoding::{Optional, Vector};
 
@@ -40,15 +41,21 @@ pub enum PriceError {
     /// Decimal conversion error.
     #[error("decimal conversion error. {0}")]
     DecimalError(#[from] rust_decimal::Error),
-    /// Not JSON number.
-    #[error("not JSON number.")]
-    NotJsonNumber,
+    /// Not JSON string.
+    #[error("not JSON string.")]
+    NotJsonString,
     /// Not JSON array.
     #[error("not JSON array.")]
     NotJsonArray,
     /// Invalid price.
     #[error("invalid price.")]
     InvalidPrice,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentPriceResponse {
+    price: String,
+    timestamp: u32,
 }
 
 /// Price of ZEC in USD at a given point in time.
@@ -228,37 +235,31 @@ impl PriceList {
 
 /// Get current price of ZEC in USD
 async fn get_current_price() -> Result<Price, PriceError> {
-    let current_time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("should never fail when comparing with an instant so far in the past")
-        .as_secs() as u32;
-
     let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
     let mut trades = httpget
-        .json::<serde_json::Value>()
+        .json::<Vec<CurrentPriceResponse>>()
         .await?
-        .as_array()
-        .ok_or(PriceError::NotJsonArray)?
         .iter()
-        .map(|value| {
-            let value = value.as_f64().ok_or(PriceError::NotJsonNumber)? as f32;
-            if value.is_finite() {
-                Ok(value)
-            } else {
-                Err(PriceError::InvalidPrice)
+        .map(|response| {
+            let price_usd: f32 = response.price.parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
             }
+
+            Ok(Price {
+                price_usd,
+                time: response.timestamp,
+            })
         })
-        .collect::<Result<Vec<f32>, PriceError>>()?;
+        .collect::<Result<Vec<Price>, PriceError>>()?;
 
     trades.sort_by(|a, b| {
-        a.partial_cmp(b)
+        a.price_usd
+            .partial_cmp(&b.price_usd)
             .expect("trades are checked to be finite and comparable")
     });
 
-    Ok(Price {
-        time: current_time,
-        price_usd: trades[5],
-    })
+    Ok(trades[5])
 }
 
 /// Get current price of ZEC in USD over tor.
