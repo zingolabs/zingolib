@@ -58,12 +58,10 @@ namespace zingo {
   string get_total_memobytes_to_address();
   string get_total_value_to_address();
   string get_total_spends_to_address();
-  string zec_price();
+  string zec_price(string tor);
   string resend_transaction(string txid);
   string remove_transaction(string txid);
   string get_spendable_balance(string address, string zennies);
   string set_option_wallet();
   string get_option_wallet();
-  string zec_price();
-  string zec_price_api_key(string key);
 };

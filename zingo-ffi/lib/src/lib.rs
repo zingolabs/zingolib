@@ -723,12 +723,19 @@ pub fn get_total_spends_to_address() -> String {
     }
 }
 
-pub fn zec_price() -> String {
+pub fn zec_price(tor: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
-            let Some(tor_client) = lightclient.tor_client.as_ref() else {
-                return "error: no client found. please try restarting.".to_string();
+            let tor_bool = tor.parse().unwrap_or(false);
+            let tor_client = if tor_bool {
+                match lightclient.tor_client() {
+                    Some(tor_cli) => Some(tor_cli),
+                    None => return "error: no client found. please try restarting.".to_string(),
+                }
+            } else {
+                None
             };
+
             match lightclient
                 .wallet
                 .lock()
@@ -743,21 +750,6 @@ pub fn zec_price() -> String {
             }
             .pretty(2)
         })
-    } else {
-        "Error: Lightclient is not initialized".to_string()
-    }
-}
-
-pub fn zec_price_api_key(key: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        zingolib::commands::RT.block_on(async move {
-            lightclient
-                .wallet
-                .lock()
-                .await
-                .set_price_api_key(key.to_string());
-        });
-        "Successfully set API key".to_string()
     } else {
         "Error: Lightclient is not initialized".to_string()
     }

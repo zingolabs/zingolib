@@ -773,7 +773,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 
 [[package]]
 name = "bumpalo"
@@ -1256,7 +1256,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "futures-util",
  "hex",
@@ -2895,6 +2895,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3449,7 +3450,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4521,9 +4522,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.20"
+version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eded382c5f5f786b989652c49544c4877d9f015cc22e145a5ea8ea66c2921cd2"
+checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
 
 [[package]]
 name = "rusty-fork"
@@ -5247,7 +5248,7 @@ dependencies = [
 [[package]]
 name = "testvectors"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "bip0039",
 ]
@@ -7776,7 +7777,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7788,7 +7789,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "http",
  "http-body",
@@ -7808,10 +7809,11 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "byteorder",
  "reqwest",
+ "rusqlite",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -7823,7 +7825,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7832,7 +7834,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#77405b08e54730650e626b437ee1f597dd4994d2"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
 dependencies = [
  "append-only-vec",
  "bech32",

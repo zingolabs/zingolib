@@ -14,7 +14,7 @@ zcash_primitives = "0.22.0"
 zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
 zcash_address = "0.7.0"
 zcash_protocol = "0.5.1"
-zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
 android_logger = "0.11"
 base64 = "0.22"
 darkside-tests = { git = "https://github.com/Oscar-Pepper/zingolib", branch = "tor_price" }
