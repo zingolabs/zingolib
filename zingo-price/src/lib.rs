@@ -35,11 +35,20 @@ pub enum PriceError {
     #[error("price list start time has not been set.")]
     PriceListNotInitialized,
     /// Tor price fetch error.
-    #[error("Tor price fetch error. {0}")]
+    #[error("tor price fetch error. {0}")]
     TorError(#[from] tor::Error),
     /// Decimal conversion error.
-    #[error("Decimal conversion error. {0}")]
+    #[error("decimal conversion error. {0}")]
     DecimalError(#[from] rust_decimal::Error),
+    /// Not JSON number.
+    #[error("not JSON number.")]
+    NotJsonNumber,
+    /// Not JSON array.
+    #[error("not JSON array.")]
+    NotJsonArray,
+    /// Invalid price.
+    #[error("invalid price.")]
+    InvalidPrice,
 }
 
 /// Price of ZEC in USD at a given point in time.
@@ -102,14 +111,19 @@ impl PriceList {
         self.time_historical_prices_last_updated = Some(time_of_birthday);
     }
 
-    /// Update and return current price of ZEC over tor.
+    /// Update and return current price of ZEC.
     ///
+    /// Will fetch via tor if a `tor_client` is provided.
     /// Currently only USD is supported.
     pub async fn update_current_price(
         &mut self,
-        tor_client: &tor::Client,
+        tor_client: Option<&tor::Client>,
     ) -> Result<Price, PriceError> {
-        let current_price = get_current_price(tor_client).await?;
+        let current_price = if let Some(client) = tor_client {
+            get_current_price_tor(client).await?
+        } else {
+            get_current_price().await?
+        };
         self.current_price = Some(current_price);
 
         Ok(current_price)
@@ -212,8 +226,43 @@ impl PriceList {
     }
 }
 
+/// Get current price of ZEC in USD
+async fn get_current_price() -> Result<Price, PriceError> {
+    let current_time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("should never fail when comparing with an instant so far in the past")
+        .as_secs() as u32;
+
+    let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
+    let mut trades = httpget
+        .json::<serde_json::Value>()
+        .await?
+        .as_array()
+        .ok_or(PriceError::NotJsonArray)?
+        .iter()
+        .map(|value| {
+            let value = value.as_f64().ok_or(PriceError::NotJsonNumber)? as f32;
+            if value.is_finite() {
+                Ok(value)
+            } else {
+                Err(PriceError::InvalidPrice)
+            }
+        })
+        .collect::<Result<Vec<f32>, PriceError>>()?;
+
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("trades are checked to be finite and comparable")
+    });
+
+    Ok(Price {
+        time: current_time,
+        price_usd: trades[5],
+    })
+}
+
 /// Get current price of ZEC in USD over tor.
-async fn get_current_price(tor_client: &tor::Client) -> Result<Price, PriceError> {
+async fn get_current_price_tor(tor_client: &tor::Client) -> Result<Price, PriceError> {
     let exchanges = Exchanges::unauthenticated_known_with_gemini_trusted();
     let current_price = tor_client.get_latest_zec_to_usd_rate(&exchanges).await?;
     let current_time = SystemTime::now()

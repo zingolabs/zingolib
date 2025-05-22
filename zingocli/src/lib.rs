@@ -64,6 +64,10 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("data-dir")
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory"))
+            .arg(Arg::new("tor")
+                .long("tor")
+                .help("Enable tor for price fetching")
+                .action(clap::ArgAction::SetTrue) )
             .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -291,6 +295,7 @@ pub struct ConfigTemplate {
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
+    tor_enabled: bool,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -311,6 +316,7 @@ fn short_circuit_on_help(params: Vec<String>) {
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
         let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
+        let tor_enabled = matches.get_flag("tor"); // Begin short_circuit section
 
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
@@ -424,6 +430,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             regtest_manager,
             child_process_handler,
             chaintype,
+            tor_enabled,
         })
     }
 }
@@ -525,12 +532,15 @@ pub fn startup(
         );
     }
 
-    let mut lightclient = RT.block_on(async move {
-        if let Err(e) = lightclient.create_tor_client(None).await {
-            eprintln!("error: failed to create tor client. price updates disabled. {e}")
-        }
-        lightclient
-    });
+    if filled_template.tor_enabled {
+        info!("Creating tor client");
+        lightclient = RT.block_on(async move {
+            if let Err(e) = lightclient.create_tor_client(None).await {
+                eprintln!("error: failed to create tor client. price updates disabled. {e}")
+            }
+            lightclient
+        });
+    }
 
     // At startup, run a sync.
     if filled_template.sync {

@@ -593,10 +593,11 @@ struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Updates and returns current price of ZEC via tor.
+            Updates and returns current price of ZEC.
             Currently only supports USD.
 
-            Tor is used to protect the user's IP address. Use at your own discretion.
+            To fetch prices via tor, it must be enabled with the `--tor` flag on startup.
+            Tor is used to protect the user's IP address but may be unlawful in some countries. Use at your own discretion.
 
             Usage:
             current_price
@@ -605,20 +606,16 @@ impl Command for CurrentPriceCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Updates and returns current price of ZEC via tor."
+        "Updates and returns current price of ZEC."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let Some(tor_client) = lightclient.tor_client() else {
-                return "error: no client found. please try restarting.".to_string();
-            };
-
             match lightclient
                 .wallet
                 .lock()
                 .await
-                .update_current_price(tor_client)
+                .update_current_price(lightclient.tor_client())
                 .await
             {
                 Ok(price) => format!("current price: {price}"),
