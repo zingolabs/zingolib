@@ -1,8 +1,12 @@
 [package]
 name = "zingo-netutils"
-version = "0.1.0"
+description = "This crate provides the `GrpcConnector` struct used to communicate with a lightwalletd"
+version = "0.0.1"
 authors = ["zingo@zingolabs.org"]
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 http-body-util.workspace = true
