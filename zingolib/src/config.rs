@@ -46,6 +46,10 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
+/// Re-export pepper-sync SyncConfig for use with load_clientconfig
+///
+pub use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+
 /// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,

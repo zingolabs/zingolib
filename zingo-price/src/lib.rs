@@ -1,37 +1,52 @@
 #![warn(missing_docs)]
 
-//! Crate for fetching historical and live ZEC prices.
+//! Crate for fetching ZEC prices.
 //!
 //! Currently only supports USD.
-//! Prices are fetched using the CoinCap API. A CoinCap API key is needed via registration.
 
 use std::{
     collections::HashSet,
     io::{Read, Write},
+    time::SystemTime,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use serde::Deserialize;
 
+use serde::Deserialize;
+use zcash_client_backend::tor::{self, http::cryptex::Exchanges};
 use zcash_encoding::{Optional, Vector};
 
-#[derive(Debug, Deserialize)]
-struct HistoricalPriceData {
-    /// Date.
-    #[serde(rename = "date")]
-    _date: String,
-    /// ZEC price in USD.
-    #[serde(rename = "priceUsd")]
-    price_usd: String,
-    /// Time in milliseconds.
-    time: u128,
+/// Errors with price requests and parsing.
+// TODO: remove unused when historical data is implemented
+#[derive(Debug, thiserror::Error)]
+pub enum PriceError {
+    /// Request failed.
+    #[error("request failed. {0}")]
+    RequestFailed(#[from] reqwest::Error),
+    /// Deserialization failed.
+    #[error("deserialization failed. {0}")]
+    DeserializationFailed(#[from] serde_json::Error),
+    /// Parse error.
+    #[error("parse error. {0}")]
+    ParseError(#[from] std::num::ParseFloatError),
+    /// Price list start time not set. Call `PriceList::set_start_time`.
+    #[error("price list start time has not been set.")]
+    PriceListNotInitialized,
+    /// Tor price fetch error.
+    #[error("tor price fetch error. {0}")]
+    TorError(#[from] tor::Error),
+    /// Decimal conversion error.
+    #[error("decimal conversion error. {0}")]
+    DecimalError(#[from] rust_decimal::Error),
+    /// Invalid price.
+    #[error("invalid price.")]
+    InvalidPrice,
 }
 
 #[derive(Debug, Deserialize)]
-struct CurrentPriceData {
-    /// ZEC price in USD.
-    #[serde(rename = "priceUsd")]
-    price_usd: String,
+struct CurrentPriceResponse {
+    price: String,
+    timestamp: u32,
 }
 
 /// Price of ZEC in USD at a given point in time.
@@ -46,14 +61,14 @@ pub struct Price {
 /// Price list for wallets to maintain an updated list of daily ZEC prices.
 #[derive(Debug)]
 pub struct PriceList {
-    /// CoinCap API key.
-    api_key: Option<String>,
-    /// Time of last price update in seconds.
-    time_last_updated: Option<u32>,
     /// Current price.
     current_price: Option<Price>,
     /// Historical price data by day.
+    // TODO: currently unused
     daily_prices: Vec<Price>,
+    /// Time of last historical price update in seconds.
+    // TODO: currently unused
+    time_historical_prices_last_updated: Option<u32>,
 }
 
 impl Default for PriceList {
@@ -66,21 +81,10 @@ impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
     pub fn new() -> Self {
         PriceList {
-            api_key: None,
-            time_last_updated: None,
             current_price: None,
             daily_prices: Vec::new(),
+            time_historical_prices_last_updated: None,
         }
-    }
-
-    /// Returns the CoinCap api key for fetching prices.
-    pub fn api_key(&self) -> Option<&str> {
-        self.api_key.as_deref()
-    }
-
-    /// Returns time price list was last updated.
-    pub fn time_last_updated(&self) -> Option<u32> {
-        self.time_last_updated
     }
 
     /// Returns current price.
@@ -93,31 +97,51 @@ impl PriceList {
         &self.daily_prices
     }
 
-    /// Sets CoinCap API key.
-    pub fn set_api_key(&mut self, api_key: String) {
-        self.api_key = Some(api_key);
+    /// Returns time historical prices were last updated.
+    pub fn time_historical_prices_last_updated(&self) -> Option<u32> {
+        self.time_historical_prices_last_updated
     }
 
     /// Price list requires a start time before it can be updated.
     ///
     /// Recommended start time is the time the wallet's birthday block height was mined.
     pub fn set_start_time(&mut self, time_of_birthday: u32) {
-        self.time_last_updated = Some(time_of_birthday);
+        self.time_historical_prices_last_updated = Some(time_of_birthday);
     }
 
-    /// Updates price list.
-    pub async fn update(&mut self) -> Result<(), PriceError> {
-        let api_key = self.api_key.as_ref().ok_or(PriceError::NoApiKey)?.as_str();
+    /// Update and return current price of ZEC.
+    ///
+    /// Will fetch via tor if a `tor_client` is provided.
+    /// Currently only USD is supported.
+    pub async fn update_current_price(
+        &mut self,
+        tor_client: Option<&tor::Client>,
+    ) -> Result<Price, PriceError> {
+        let current_price = if let Some(client) = tor_client {
+            get_current_price_tor(client).await?
+        } else {
+            get_current_price().await?
+        };
+        self.current_price = Some(current_price);
 
-        self.current_price = Some(get_current_price(api_key).await?);
-        let current_time = self.current_price.expect("should be non-empty").time;
+        Ok(current_price)
+    }
 
-        if let Some(time_last_updated) = self.time_last_updated {
+    /// Updates historical daily price list.
+    ///
+    /// Currently only USD is supported.
+    // TODO: under development
+    pub async fn update_historical_price_list(&mut self) -> Result<(), PriceError> {
+        let current_time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("should never fail when comparing with an instant so far in the past")
+            .as_secs() as u32;
+
+        if let Some(time_last_updated) = self.time_historical_prices_last_updated {
             self.daily_prices.append(
                 &mut get_daily_prices(
                     time_last_updated as u128 * 1000,
                     current_time as u128 * 1000,
-                    api_key,
                 )
                 .await?,
             );
@@ -125,21 +149,22 @@ impl PriceList {
             return Err(PriceError::PriceListNotInitialized);
         }
 
-        self.time_last_updated = Some(self.current_price.expect("should be non-empty").time);
+        self.time_historical_prices_last_updated = Some(current_time);
 
-        Ok(())
+        todo!()
     }
 
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
     ///
     /// Will not remove prices above or equal to the `prune_below` threshold.
+    // TODO: under development
     pub fn prune(&mut self, transaction_times: Vec<u32>, prune_below: u32) {
         let mut relevant_days = HashSet::new();
 
         for transaction_time in transaction_times.into_iter() {
             for daily_price in self.daily_prices() {
                 if daily_price.time > transaction_time {
-                    assert!(daily_price.time - transaction_time < 86_400);
+                    assert!(daily_price.time - transaction_time < 60 * 60 * 24);
                     relevant_days.insert(daily_price.time);
                     break;
                 }
@@ -158,7 +183,6 @@ impl PriceList {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
-        let api_key = Optional::read(&mut reader, read_string)?;
         let time_last_updated = Optional::read(&mut reader, |r| r.read_u32::<LittleEndian>())?;
         let current_price = Optional::read(&mut reader, |r| {
             Ok(Price {
@@ -174,10 +198,9 @@ impl PriceList {
         })?;
 
         Ok(Self {
-            api_key,
-            time_last_updated,
             current_price,
             daily_prices,
+            time_historical_prices_last_updated: time_last_updated,
         })
     }
 
@@ -185,12 +208,11 @@ impl PriceList {
     pub fn write<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
 
-        Optional::write(&mut writer, self.api_key(), |w, api_key| {
-            write_string(w, api_key)
-        })?;
-        Optional::write(&mut writer, self.time_last_updated(), |w, time| {
-            w.write_u32::<LittleEndian>(time)
-        })?;
+        Optional::write(
+            &mut writer,
+            self.time_historical_prices_last_updated(),
+            |w, time| w.write_u32::<LittleEndian>(time),
+        )?;
         Optional::write(&mut writer, self.current_price(), |w, price| {
             w.write_u32::<LittleEndian>(price.time)?;
             w.write_f32::<LittleEndian>(price.price_usd)
@@ -202,120 +224,52 @@ impl PriceList {
     }
 }
 
-/// Errors with price requests and parsing.
-#[derive(Debug, thiserror::Error)]
-pub enum PriceError {
-    /// Request failed.
-    #[error("request failed. {0}")]
-    RequestFailed(#[from] reqwest::Error),
-    /// Deserialization failed.
-    #[error("deserialization failed. {0}")]
-    DeserializationFailed(#[from] serde_json::Error),
-    /// Response error. Commonly due to bad or missing CoinCap API keys.
-    #[error("response error. {0}")]
-    ResponseError(String),
-    /// Parse error.
-    #[error("parse error. {0}")]
-    ParseError(#[from] std::num::ParseFloatError),
-    /// Price list start time not set. Call `PriceList::set_start_time`.
-    #[error("price list start time not set. call `PriceList::set_start_time`.")]
-    PriceListNotInitialized,
-    /// API key has not been set. Call `PriceList::set_api_key`.
-    #[error("API key has not been set. Call `PriceList::set_api_key`.")]
-    NoApiKey,
+/// Get current price of ZEC in USD
+async fn get_current_price() -> Result<Price, PriceError> {
+    let httpget = reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await?;
+    let mut trades = httpget
+        .json::<Vec<CurrentPriceResponse>>()
+        .await?
+        .iter()
+        .map(|response| {
+            let price_usd: f32 = response.price.parse()?;
+            if !price_usd.is_finite() {
+                return Err(PriceError::InvalidPrice);
+            }
+
+            Ok(Price {
+                price_usd,
+                time: response.timestamp,
+            })
+        })
+        .collect::<Result<Vec<Price>, PriceError>>()?;
+
+    trades.sort_by(|a, b| {
+        a.price_usd
+            .partial_cmp(&b.price_usd)
+            .expect("trades are checked to be finite and comparable")
+    });
+
+    Ok(trades[5])
 }
 
-/// Get current price of ZEC in USD.
-async fn get_current_price(api_key: &str) -> Result<Price, PriceError> {
-    let url = "https://rest.coincap.io/v3/assets/zcash".to_string();
+/// Get current price of ZEC in USD over tor.
+async fn get_current_price_tor(tor_client: &tor::Client) -> Result<Price, PriceError> {
+    let exchanges = Exchanges::unauthenticated_known_with_gemini_trusted();
+    let current_price = tor_client.get_latest_zec_to_usd_rate(&exchanges).await?;
+    let current_time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("should never fail when comparing with an instant so far in the past")
+        .as_secs() as u32;
 
-    let client = reqwest::Client::new();
-    let response: serde_json::Value = serde_json::from_str(
-        client
-            .get(url)
-            .bearer_auth(api_key)
-            .send()
-            .await?
-            .text()
-            .await?
-            .as_str(),
-    )?;
-
-    let current_price = if let Some(data) = response.get("data") {
-        let response_data: CurrentPriceData = serde_json::from_value(data.clone())?;
-        let response_time = response
-            .get("timestamp")
-            .expect("data should include timestamp")
-            .as_u64()
-            .expect("should be positive integer");
-
-        Price {
-            time: (response_time / 1000) as u32,
-            price_usd: response_data.price_usd.parse()?,
-        }
-    } else {
-        return Err(PriceError::ResponseError(
-            response
-                .get("error")
-                .expect("if no `data` is present must have `error` key")
-                .to_string(),
-        ));
-    };
-
-    Ok(current_price)
+    Ok(Price {
+        time: current_time,
+        price_usd: current_price.try_into()?,
+    })
 }
 
 /// Get daily prices in USD from `start` to `end` time in milliseconds.
-async fn get_daily_prices(start: u128, end: u128, api_key: &str) -> Result<Vec<Price>, PriceError> {
-    let url = format!(
-        "https://rest.coincap.io/v3/assets/zcash/history?interval=d1&start={}&end={}",
-        start, end
-    );
-
-    let client = reqwest::Client::new();
-    let response: serde_json::Value = serde_json::from_str(
-        client
-            .get(url)
-            .bearer_auth(api_key)
-            .send()
-            .await?
-            .text()
-            .await?
-            .as_str(),
-    )?;
-
-    let response_data: Vec<HistoricalPriceData> = if let Some(data) = response.get("data") {
-        serde_json::from_value(data.clone())?
-    } else {
-        return Err(PriceError::ResponseError(
-            response
-                .get("error")
-                .expect("if no `data` is present must have `error` key")
-                .to_string(),
-        ));
-    };
-
-    Ok(response_data
-        .into_iter()
-        .map(|data| {
-            Ok(Price {
-                time: (data.time / 1000) as u32,
-                price_usd: data.price_usd.parse()?,
-            })
-        })
-        .collect::<Result<Vec<Price>, std::num::ParseFloatError>>()?)
-}
-
-fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
-    let str_len = reader.read_u64::<LittleEndian>()?;
-    let mut str_bytes = vec![0; str_len as usize];
-    reader.read_exact(&mut str_bytes)?;
-
-    String::from_utf8(str_bytes)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-}
-
-fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
-    writer.write_u64::<LittleEndian>(str.len() as u64)?;
-    writer.write_all(str.as_bytes())
+// TODO: under development
+async fn get_daily_prices(_start: u128, _end: u128) -> Result<Vec<Price>, PriceError> {
+    todo!()
 }

@@ -594,41 +594,15 @@ impl Command for InfoCommand {
     }
 }
 
-struct UpdatePriceCommand {}
-impl Command for UpdatePriceCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Updates current zec price and historical prices for wallet transactions.
-            Currently only supports USD.
-
-            Type `help set_price_api_key` for setting up an API key for price fetching.
-
-            Usage:
-            update_price
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Updates current zec price and historic prices for wallet transactions."
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move {
-            match lightclient.wallet.lock().await.update_price().await {
-                Ok(_) => "prices successfully updated".to_string(),
-                Err(e) => format!("Error: {e}"),
-            }
-        })
-    }
-}
-
 struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Updates price list and returns current price of zec.
+            Updates and returns current price of ZEC.
             Currently only supports USD.
+
+            To fetch prices via tor, it must be enabled with the `--tor` flag on startup.
+            Tor is used to protect the user's IP address but may be unlawful in some countries. Use at your own discretion.
 
             Usage:
             current_price
@@ -637,57 +611,22 @@ impl Command for CurrentPriceCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Updates price list and returns current price of zec."
+        "Updates and returns current price of ZEC."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.current_price().await {
-                Ok(price) => object! { "current_price" => price },
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
-            }
-            .pretty(2)
-        })
-    }
-}
-
-struct SetPriceApiKeyCommand {}
-impl Command for SetPriceApiKeyCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Sets the API key for fetching zec prices. Register with CoinCap for a free API key.
-            https://pro.coincap.io/signup
-
-            Currently only CoinCap is supported.
-
-            Usage:
-            set_price_api_key <api_key>
-
-            Example:
-            set_price_api_key 4bce48cf8766d5c55ecdd83622cbba676fdc23745c7176916fd518b40e5ee6f1
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Sets the API key for fetching zec prices. Register with CoinCap for a free API key."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: incorrect number of parameters\nTry 'help set_price_api_key' for correct usage and examples.".to_string();
-        }
-        RT.block_on(async move {
-            lightclient
+            match lightclient
                 .wallet
                 .lock()
                 .await
-                .set_price_api_key(args[0].to_string());
-        });
-
-        "Successfully set API key".to_string()
+                .update_current_price(lightclient.tor_client())
+                .await
+            {
+                Ok(price) => format!("current price: {price}"),
+                Err(e) => format!("error: {e}"),
+            }
+        })
     }
 }
 
@@ -1939,9 +1878,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
-        ("update_price", Box::new(UpdatePriceCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
-        ("set_price_api_key", Box::new(SetPriceApiKeyCommand {})),
         ("send", Box::new(SendCommand {})),
         ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
