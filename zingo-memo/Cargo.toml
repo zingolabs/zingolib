@@ -1,7 +1,9 @@
 [package]
 name = "zingo-memo"
-version = "0.1.0"
+description = "Utilities for procedural creation and parsing of the Memo field for ZCash."
+version = "0.0.1"
 edition = "2024"
+
 
 [dependencies]
 zcash_address.workspace = true
