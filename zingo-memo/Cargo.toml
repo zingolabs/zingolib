@@ -3,6 +3,9 @@ name = "zingo-memo"
 description = "Utilities for procedural creation and parsing of the Memo field for ZCash."
 version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
 
 
 [dependencies]
