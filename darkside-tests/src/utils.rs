@@ -600,7 +600,10 @@ pub mod scenarios {
                 DarksideSender::ExternalClient(lc) => lc,
             };
             // upgrade sapling
-            lightclient.quick_shield().await.unwrap();
+            lightclient
+                .quick_shield(zip32::AccountId::ZERO)
+                .await
+                .unwrap();
             let mut streamed_raw_txns = self
                 .darkside_connector
                 .get_incoming_transactions()

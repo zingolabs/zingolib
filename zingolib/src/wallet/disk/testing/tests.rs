@@ -244,7 +244,6 @@ async fn reload_wallet_from_buffer() {
         .lock()
         .await
         .write(&mut mid_buffer, &mid_client.config.chain)
-        .await
         .unwrap();
 
     let config = ZingoConfig::create_testnet();

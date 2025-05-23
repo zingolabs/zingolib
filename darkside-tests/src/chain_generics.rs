@@ -33,6 +33,9 @@ pub(crate) mod conduct_chain {
 
     //!   - these tests cannot portray the full range of network weather.
 
+    use std::num::NonZeroU32;
+
+    use bip0039::Mnemonic;
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
@@ -73,7 +76,10 @@ pub(crate) mod conduct_chain {
             LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
-                    WalletBase::MnemonicPhrase(DARKSIDE_SEED.to_string()),
+                    WalletBase::Mnemonic {
+                        mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
+                        no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                    },
                     0.into(),
                     config.wallet_settings.clone(),
                 )

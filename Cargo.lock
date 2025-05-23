@@ -784,6 +784,7 @@ dependencies = [
 name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
+ "bip0039",
  "futures-util",
  "hex",
  "http",
@@ -807,6 +808,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingolib",
+ "zip32",
 ]
 
 [[package]]

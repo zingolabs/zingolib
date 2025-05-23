@@ -7,17 +7,17 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::config::RegtestNetwork;
-use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
+use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
-    balance: PoolBalances,
+    balance: AccountBalance,
     o_expect: u64,
     s_expect: u64,
     t_expect: u64,
@@ -44,7 +44,7 @@ fn check_expected_balance_with_fvks(
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
-    balance: &PoolBalances,
+    balance: &AccountBalance,
     unified_key_store: &UnifiedKeyStore,
     fvks: &[&Fvk],
     orchard_fvk: &Fvk,
@@ -1056,7 +1056,7 @@ mod fast {
         let balance_b = recipient.do_balance().await;
         assert_eq!(
             balance_b,
-            PoolBalances {
+            AccountBalance {
                 sapling_balance: Some(5000),
                 verified_sapling_balance: Some(5000),
                 spendable_sapling_balance: Some(5000),
