@@ -3414,7 +3414,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo",
+ "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils",
  "zingo-status",
  "zip32",
@@ -7533,6 +7533,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-memo"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c2c655174c0bff41505d5c0d45b0fea09d458e62324206b27fb2888f92a6293"
+dependencies = [
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zingo-netutils"
 version = "0.1.0"
 dependencies = [
@@ -7630,7 +7643,7 @@ dependencies = [
  "zcash_proofs",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo",
+ "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils",
  "zingo-price",
  "zingo-status",
