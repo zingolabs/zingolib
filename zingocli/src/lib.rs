@@ -4,9 +4,11 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
+use bip0039::Mnemonic;
 use log::{error, info};
 
 use clap::{self, Arg};
@@ -463,7 +465,15 @@ pub fn startup(
         Some(phrase) => LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::from_string(phrase),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(phrase).map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("Invalid seed phrase. {}", e),
+                        )
+                    })?,
+                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                },
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )

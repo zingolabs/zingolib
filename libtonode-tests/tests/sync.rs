@@ -1,3 +1,6 @@
+use std::num::NonZeroU32;
+
+use bip0039::Mnemonic;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -38,7 +41,10 @@ async fn sync_mainnet_test() {
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
-            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
             2_650_318.into(),
             config.wallet_settings.clone(),
         )
@@ -82,7 +88,10 @@ async fn sync_status() {
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
-            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
             2_496_152.into(),
             config.wallet_settings.clone(),
         )
@@ -119,8 +128,20 @@ async fn sync_test() {
 
     // println!("{}", recipient.transaction_summaries().await.unwrap());
     println!("{}", recipient.value_transfers().await.unwrap());
-    println!("{}", recipient.do_balance().await);
-    println!("{:?}", recipient.propose_shield().await);
+    println!(
+        "{}",
+        recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
+    );
+    println!(
+        "{:?}",
+        recipient.propose_shield(zip32::AccountId::ZERO).await
+    );
 
     // println!(
     //     "{:?}",

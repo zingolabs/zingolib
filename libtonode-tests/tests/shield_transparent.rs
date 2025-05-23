@@ -11,8 +11,20 @@ async fn shield_transparent() {
         "scenario initial
             faucet: {}
             recipient: {}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        &faucet
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
     );
     let proposal = from_inputs::quick_send(
         &mut faucet,
@@ -29,8 +41,20 @@ async fn shield_transparent() {
         "sent to recipient
             faucet: {}
             recipient: {}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        &faucet
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
     );
     zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
         .await
@@ -40,11 +64,26 @@ async fn shield_transparent() {
         "synced recipient
             faucet: {}
             recipient: {}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        &faucet
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
     );
 
-    let shielding_proposal = recipient.propose_shield().await.unwrap();
+    let shielding_proposal = recipient
+        .propose_shield(zip32::AccountId::ZERO)
+        .await
+        .unwrap();
 
     println!("Initial proposal {:?}", proposal);
     println!("Shielding proposal {:?}", shielding_proposal);
@@ -58,7 +97,19 @@ async fn shield_transparent() {
         "post-shield recipient
             faucet: {}
             recipient: {}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap(),
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap(),
+        &faucet
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
     );
 }

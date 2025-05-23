@@ -154,9 +154,9 @@ pub(crate) fn transaction_unspent_notes<'a, N: NoteInterface + 'a>(
 }
 
 /// Returns all unspent transparent outputs in the given `transaction`.
-pub(crate) fn transaction_unspent_coins<'a>(
-    transaction: &'a WalletTransaction,
-) -> impl Iterator<Item = &'a TransparentCoin> + 'a {
+pub(crate) fn transaction_unspent_coins(
+    transaction: &WalletTransaction,
+) -> impl Iterator<Item = &TransparentCoin> {
     TransparentCoin::transaction_outputs(transaction)
         .iter()
         .filter(move |&coin| coin.spending_transaction().is_none())

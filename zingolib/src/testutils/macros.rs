@@ -34,26 +34,32 @@ macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
         use zingolib::wallet::data::summaries::TransactionSummaryInterface as _;
 
-        let balance = $client.do_balance().await;
+        let balance = $client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         assert_eq!(
-            balance.orchard_balance.unwrap(),
+            balance.total_orchard_balance.unwrap().into_u64(),
             $orchard,
             "\no_balance: {} expectation: {} ",
-            balance.orchard_balance.unwrap(),
+            balance.total_orchard_balance.unwrap().into_u64(),
             $orchard
         );
         assert_eq!(
-            balance.sapling_balance.unwrap(),
+            balance.total_sapling_balance.unwrap().into_u64(),
             $sapling,
             "\ns_balance: {} expectation: {} ",
-            balance.sapling_balance.unwrap(),
+            balance.total_sapling_balance.unwrap().into_u64(),
             $sapling
         );
         assert_eq!(
-            balance.confirmed_transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent,
             "\nt_balance: {} expectation: {} ",
-            balance.confirmed_transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent
         );
         let summaries = $client.transaction_summaries().await.unwrap();
@@ -66,9 +72,9 @@ macro_rules! check_client_balances {
             })
             .sum::<i64>();
         assert_eq!(
-            (balance.orchard_balance.unwrap()
-                + balance.sapling_balance.unwrap()
-                + balance.confirmed_transparent_balance.unwrap()) as i64,
+            (balance.total_orchard_balance.unwrap().into_u64()
+                + balance.total_sapling_balance.unwrap().into_u64()
+                + balance.confirmed_transparent_balance.unwrap().into_u64()) as i64,
             summaries_balance,
             "transaction_summaries: {}",
             summaries

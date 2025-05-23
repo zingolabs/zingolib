@@ -177,7 +177,6 @@ impl LightWallet {
             } => {
                 let no_of_accounts = u32::from(no_of_accounts);
                 let unified_key_store = (0..no_of_accounts)
-                    .into_iter()
                     .map(|account_index| {
                         Ok((
                             zip32::AccountId::try_from(account_index)?,
