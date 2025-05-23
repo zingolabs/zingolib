@@ -18,7 +18,6 @@ use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::path::PathBuf;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_address::ZcashAddress;
 use zcash_keys::address::Address;
@@ -41,21 +40,34 @@ lazy_static! {
     static ref LIGHTCLIENT: Mutex<Option<LightClient>> = Mutex::new(None);
 }
 
-fn lock_client_return_seed(mut lightclient: LightClient, tor_dir: PathBuf) -> String {
-    let lightclient_tor = zingolib::commands::RT.block_on(async move {
-        if let Err(e) = lightclient.create_tor_client(Some(tor_dir)).await {
-            eprintln!("error: failed to create tor client. price updates disabled. {e}")
-        }
+fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: String) -> String {
+    let tor_bool = tor.parse().unwrap_or(false);
+    let lightclient_tor = if tor_bool {
+        zingolib::commands::RT.block_on(async move {
+            if let Err(e) = lightclient.create_tor_client(Some(data_dir.into())).await {
+                eprintln!("error: failed to create tor client. price updates disabled. {e}");
+            };
+            lightclient
+        })
+    } else {
         lightclient
-    });
+    };
     LIGHTCLIENT.lock().unwrap().replace(lightclient_tor);
-
+    
     get_seed()
 }
 
+//fn lightclient_create_tor_client(mut lightclient: LightClient, data_dir: String) -> LightClient {
+//    zingolib::commands::RT.block_on(async move {
+//        if let Err(e) = lightclient.create_tor_client(Some(data_dir.into())).await {
+//            eprintln!("error: failed to create tor client. price updates disabled. {e}");
+//        };
+//        lightclient
+//    })
+//}
+
 fn construct_uri_load_config(
     uri: String,
-    data_dir: String,
     chain_hint: String,
 ) -> Result<(ZingoConfig, http::Uri), String> {
     // if uri is empty -> Offline Mode.
@@ -67,7 +79,7 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
-    let mut config = match zingolib::config::load_clientconfig(
+    let config = match zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
         chaintype,
@@ -82,7 +94,6 @@ fn construct_uri_load_config(
             return Err(format!("Error: Config load: {e}"));
         }
     };
-    config.set_data_dir(data_dir);
 
     Ok((config, lightwalletd_uri))
 }
@@ -101,9 +112,9 @@ pub fn init_logging() -> String {
     "OK".to_string()
 }
 
-pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> String {
+pub fn init_new(server_uri: String, data_dir: String, chain_hint: String, tor: String) -> String {
     let (config, lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
+    match construct_uri_load_config(server_uri, chain_hint) {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -123,7 +134,7 @@ pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> Str
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir.into())
+    lock_client_return_seed(lightclient, data_dir, tor)
 }
 
 pub fn init_from_seed(
@@ -132,9 +143,10 @@ pub fn init_from_seed(
     birthday: u64,
     data_dir: String,
     chain_hint: String,
+    tor: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
+    match construct_uri_load_config(server_uri, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -158,7 +170,7 @@ pub fn init_from_seed(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir.into())
+    lock_client_return_seed(lightclient, data_dir, tor)
 }
 
 pub fn init_from_ufvk(
@@ -167,9 +179,10 @@ pub fn init_from_ufvk(
     birthday: u64,
     data_dir: String,
     chain_hint: String,
+    tor: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
+    match construct_uri_load_config(server_uri, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -193,7 +206,7 @@ pub fn init_from_ufvk(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir.into())
+    lock_client_return_seed(lightclient, data_dir, tor)
 }
 
 pub fn init_from_b64(
@@ -201,9 +214,10 @@ pub fn init_from_b64(
     base64_data: String,
     data_dir: String,
     chain_hint: String,
+    tor: String,
 ) -> String {
     let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, data_dir.clone(), chain_hint) {
+    match construct_uri_load_config(server_uri, chain_hint) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
@@ -229,7 +243,7 @@ pub fn init_from_b64(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir.into())
+    lock_client_return_seed(lightclient, data_dir.into(), tor)
 }
 
 pub fn save_to_b64() -> String {
@@ -826,9 +840,25 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
 }
 
 pub fn set_option_wallet() -> String {
-    "Error unimplemented".to_string()
+    "Error: unimplemented".to_string()
 }
 
 pub fn get_option_wallet() -> String {
-    "Error unimplemented".to_string()
+    "Error: unimplemented".to_string()
+}
+
+pub fn create_tor_client(data_dir: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        let result = zingolib::commands::RT.block_on(async move {
+            lightclient.create_tor_client(Some(data_dir.into())).await
+        });
+        match result {
+            Ok(_) => "Client tor created successfully".to_string(),
+            Err(e) => {
+                format!("Error: {e}")
+            }
+        }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }

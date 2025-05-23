@@ -773,7 +773,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 
 [[package]]
 name = "bumpalo"
@@ -876,9 +876,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.23"
+version = "1.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4ac86a9e5bc1e2b3449ab9d7d3a6a405e3d1bb28d7b9be8614f55846ae3766"
+checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
 dependencies = [
  "jobserver",
  "libc",
@@ -1256,7 +1256,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "futures-util",
  "hex",
@@ -2412,11 +2412,10 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.27.5"
+version = "0.27.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d191583f3da1305256f22463b9bb0471acad48a4e534a5218b9963e9c1f59b2"
+checksum = "03a01595e11bdcec50946522c32dde3fc6914743000a68b93000965f2f02406d"
 dependencies = [
- "futures-util",
  "http",
  "hyper",
  "hyper-util",
@@ -2427,7 +2426,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "tower-service",
- "webpki-roots 0.26.11",
+ "webpki-roots 1.0.0",
 ]
 
 [[package]]
@@ -3450,7 +3449,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "bip32",
  "byteorder",
@@ -5248,7 +5247,7 @@ dependencies = [
 [[package]]
 name = "testvectors"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "bip0039",
 ]
@@ -6760,9 +6759,13 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "valuable"
@@ -7777,7 +7780,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7789,7 +7792,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "http",
  "http-body",
@@ -7809,7 +7812,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7825,7 +7828,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7834,7 +7837,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=tor_price#e50651542c0656c10eb32236f454a90e8ea5c5ad"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
 dependencies = [
  "append-only-vec",
  "bech32",
