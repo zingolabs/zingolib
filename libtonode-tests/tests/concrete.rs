@@ -28,7 +28,7 @@ fn check_expected_balance_with_fvks(
             Fvk::Sapling(_) => {
                 assert_eq!(balance.total_sapling_balance.unwrap().into_u64(), s_expect);
                 assert_eq!(
-                    balance.confirmed_orchard_balance.unwrap().into_u64(),
+                    balance.confirmed_sapling_balance.unwrap().into_u64(),
                     s_expect
                 );
                 assert_eq!(
