@@ -26,9 +26,9 @@ sapling-crypto = "0.5.0"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.1"
 zcash_address = "0.7.0"
-zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs"] }
+zcash_client_backend = { version = "0.18.0" , features = [ "lightwalletd-tonic", "orchard", "transparent-inputs", "tor" ] }
 zcash_encoding = "0.3.0"
-zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
+zcash_keys = { version = "0.8.0" , features = [ "transparent-inputs", "sapling", "orchard" ] }
 zcash_note_encryption = "0.4.1"
 zcash_primitives = "0.22.0"
 zcash_proofs = "0.22.0"
@@ -69,6 +69,8 @@ prost = "0.13"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17"
+rusqlite = "0.32"
+rust_decimal = "1.37.1"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
@@ -98,6 +100,7 @@ webpki-roots = "0.26"
 # Parallel processing
 crossbeam-channel = "0.5"
 rayon = "1"
+
 
 testvectors = { path = "testvectors" }
 zingo-memo = { path = "zingo-memo" }

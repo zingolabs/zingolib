@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reqwest = { workspace = true, default-features = false, features = ["cookies", "rustls-tls"] }
+zcash_encoding = { workspace = true }
+zcash_client_backend = { workspace = true }
+
+byteorder = { workspace = true }
+reqwest = { workspace = true, default-features = false, features = ["cookies", "rustls-tls", "json"] }
+rust_decimal = "1.37.1"
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-byteorder = { workspace = true }
-zcash_encoding = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [ "full" ] }

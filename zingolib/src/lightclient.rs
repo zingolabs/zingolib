@@ -3,6 +3,7 @@
 use std::{
     fs::File,
     io::BufReader,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
@@ -13,6 +14,7 @@ use json::{JsonValue, array};
 use serde::Serialize;
 use tokio::{sync::Mutex, task::JoinHandle};
 
+use zcash_client_backend::tor;
 use zcash_primitives::consensus::BlockHeight;
 
 use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
@@ -138,10 +140,11 @@ pub struct AccountBackupInfo {
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
-#[derive(Debug)]
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub(crate) config: ZingoConfig,
+    /// Tor client
+    tor_client: Option<tor::Client>,
     /// Wallet data
     pub wallet: Arc<Mutex<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
@@ -195,6 +198,7 @@ impl LightClient {
         }
         Ok(LightClient {
             config,
+            tor_client: None,
             wallet: Arc::new(Mutex::new(wallet)),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -223,9 +227,14 @@ impl LightClient {
         Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Returns config used to create lightclient.
     pub fn config(&self) -> &ZingoConfig {
         &self.config
+    }
+
+    /// Returns tor client.
+    pub fn tor_client(&self) -> Option<&tor::Client> {
+        self.tor_client.as_ref()
     }
 
     /// Generates a new unified address from the given `addr_type`.
@@ -251,8 +260,36 @@ impl LightClient {
     pub fn set_server(&self, server: http::Uri) {
         *self.config.lightwalletd_uri.write().unwrap() = server
     }
+
+    /// Creates a tor client for current price updates.
+    ///
+    /// If `tor_dir` is `None` it will be set to the wallet's data directory.
+    pub async fn create_tor_client(
+        &mut self,
+        tor_dir: Option<PathBuf>,
+    ) -> Result<(), LightClientError> {
+        let tor_dir =
+            tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
+        tokio::fs::create_dir_all(tor_dir.as_path()).await?;
+        self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
+
+        Ok(())
+    }
 }
 
+impl std::fmt::Debug for LightClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LightClient")
+            .field("config", &self.config)
+            .field("sync_mode", &self.sync_mode())
+            .field(
+                "save_active",
+                &self.save_active.load(std::sync::atomic::Ordering::Acquire),
+            )
+            .field("latest_proposal", &self.latest_proposal)
+            .finish()
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::{
