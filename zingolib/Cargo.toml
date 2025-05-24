@@ -1,8 +1,12 @@
 [package]
 name = "zingolib"
-version = "0.2.0"
-authors = ["zingo@zingolabs.org>"]
+description = "Zingo backend library."
+version = "0.0.1"
+authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

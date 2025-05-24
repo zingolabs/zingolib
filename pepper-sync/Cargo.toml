@@ -1,7 +1,12 @@
 [package]
 name = "pepper-sync"
-version = "0.1.0"
+description = "Pepper-sync is a crate providing a sync engine for the zcash network."
+authors = ["<zingo@zingolabs.org>"]
+version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
 
 [features]
 default = ["wallet_essentials"]
