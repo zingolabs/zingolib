@@ -35,7 +35,22 @@ fn git_description() {
     .unwrap();
 }
 
+/// Checks if zcash params are available and downloads them if not.
+fn get_zcash_params() {
+    println!("Checking if params are available...");
+
+    match zcash_proofs::download_sapling_parameters(Some(100)) {
+        Ok(p) => {
+            println!("Params downloaded!");
+            println!("Spend path: {}", p.spend.to_str().unwrap());
+            println!("Output path: {}", p.output.to_str().unwrap());
+        }
+        Err(e) => println!("Error downloading params: {}", e),
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    get_zcash_params();
     git_description();
     Ok(())
 }
