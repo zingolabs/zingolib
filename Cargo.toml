@@ -116,7 +116,7 @@ zingo-memo = "0.0.1"
 zingo-netutils = "0.0.1"
 zingo-price = "0.0.1"
 zingo-status = "0.0.1"
-pepper-sync = { path = "pepper-sync" }
+pepper-sync = "0.0.1"
 zingolib = { path = "zingolib" }
 
 [profile.test]
