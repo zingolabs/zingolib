@@ -1191,7 +1191,7 @@ dependencies = [
  "tracing-subscriber",
  "zcash_primitives",
  "zcash_protocol",
- "zingo-netutils",
+ "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
 ]
 
@@ -3415,7 +3415,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo-netutils",
+ "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-status",
  "zip32",
 ]
@@ -7566,6 +7566,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-netutils"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a19585976d02b6ccb84e7a51433ce1cc7e76d9061b993f58598fb73a1d07a27"
+dependencies = [
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "prost",
+ "thiserror 2.0.12",
+ "tokio-rustls 0.26.2",
+ "tonic",
+ "tower 0.5.2",
+ "webpki-roots 0.25.4",
+ "zcash_client_backend",
+]
+
+[[package]]
 name = "zingo-price"
 version = "0.1.0"
 dependencies = [
@@ -7583,7 +7604,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7644,7 +7665,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo-netutils",
+ "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-price",
  "zingo-status",
  "zip32",
