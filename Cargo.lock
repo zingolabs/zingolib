@@ -7588,7 +7588,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-price"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7605,6 +7605,8 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66709d62607750781993ae49bebd96b3e5823fda5b46adca5dcf618dfdc3dc17"
 dependencies = [
  "byteorder",
  "zcash_primitives",
