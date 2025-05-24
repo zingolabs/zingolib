@@ -8,23 +8,31 @@ edition = "2024"
 
 [features]
 ci = []
-darkside_tests = [ "pepper-sync/darkside_test" ]
+darkside_tests = ["pepper-sync/darkside_test"]
 test-elevation = ["portpicker", "testvectors", "tempfile"]
 zaino-test = ['test-elevation']
 
 [dependencies]
-zingo-memo = { workspace = true }
-zingo-price = { workspace = true }
-zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
+zingo-memo = "0.0.1"
+zingo-status = "0.0.1"
+zingo-netutils = "0.0.1"
 pepper-sync = { workspace = true }
+zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
-incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
+incrementalmerkletree = { workspace = true, features = [
+    "test-dependencies",
+    "legacy-api",
+] }
 zcash_address = { workspace = true }
-zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
+zcash_client_backend = { workspace = true, features = [
+    "unstable",
+    "transparent-inputs",
+    "unstable-serialization",
+    "unstable-spanning-tree",
+] }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
@@ -63,9 +71,9 @@ secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tempfile = {workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio =  { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tonic = { workspace = true }
 tracing-subscriber = { workspace = true }
 bech32 = { workspace = true }

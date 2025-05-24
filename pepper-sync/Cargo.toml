@@ -4,21 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = [ "wallet_essentials" ]
+default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
-wallet_essentials = [ "dep:byteorder", "dep:zcash_encoding" ]
+wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
 # removes failing calls to `GetSubTreeRoots` in darkside testing
 darkside_test = []
 
 [dependencies]
 # Zingo
-zingo-netutils = { workspace = true }
-zingo-memo = { workspace = true }
-zingo-status = { workspace = true }
+zingo-netutils = "0.0.1"
+zingo-memo = "0.0.1"
+zingo-status = "0.0.1"
 
 # Zcash
 zcash_encoding = { workspace = true, optional = true }
-zcash_client_backend = { workspace = true, features = [ "unstable-serialization" ] }
+zcash_client_backend = { workspace = true, features = [
+    "unstable-serialization",
+] }
 zcash_primitives.workspace = true
 zcash_note_encryption.workspace = true
 zcash_keys.workspace = true

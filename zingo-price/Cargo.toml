@@ -1,19 +1,27 @@
 [package]
 name = "zingo-price"
-version = "0.1.0"
+description = "Crate for fetching ZEC prices."
+version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
 
 [dependencies]
 zcash_encoding = { workspace = true }
 zcash_client_backend = { workspace = true }
 
 byteorder = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = ["cookies", "rustls-tls", "json"] }
+reqwest = { workspace = true, default-features = false, features = [
+    "cookies",
+    "rustls-tls",
+    "json",
+] }
 rust_decimal = "1.37.1"
-serde = { workspace = true, features = [ "derive" ] }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = [ "full" ] }
+tokio = { workspace = true, features = ["full"] }
