@@ -2793,7 +2793,7 @@ dependencies = [
  "bip0039",
  "itertools 0.14.0",
  "json",
- "pepper-sync",
+ "pepper-sync 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "proptest",
  "rustls 0.23.27",
  "serde_json",
@@ -3388,6 +3388,43 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
+dependencies = [
+ "bip32",
+ "byteorder",
+ "crossbeam-channel",
+ "futures",
+ "incrementalmerkletree",
+ "json",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
+ "shardtree",
+ "subtle",
+ "thiserror 2.0.12",
+ "tokio",
+ "tonic",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-status",
+ "zip32",
+]
+
+[[package]]
+name = "pepper-sync"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d3b3c82be25cab357957856b2eacef69a51530616240f6fd5ba21cf9896b3bf"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7512,7 +7549,7 @@ dependencies = [
  "http",
  "json",
  "log",
- "pepper-sync",
+ "pepper-sync 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.23.27",
  "rustyline",
  "shellwords",
@@ -7656,7 +7693,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
- "pepper-sync",
+ "pepper-sync 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "prost",
  "rand 0.8.5",
