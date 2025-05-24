@@ -4,7 +4,8 @@ namespace zingo {
   string init_new(
       string serveruri,
       string datadir,
-      string chainhint
+      string chainhint,
+      string tor
   );
 
   string init_from_seed(
@@ -12,7 +13,8 @@ namespace zingo {
       string seed,
       u64 birthday,
       string datadir,
-      string chainhint
+      string chainhint,
+      string tor
   );
 
   string init_from_ufvk(
@@ -20,14 +22,16 @@ namespace zingo {
       string ufvk,
       u64 birthday,
       string datadir,
-      string chainhint
+      string chainhint,
+      string tor
   );
 
   string init_from_b64(
       string serveruri,
       string datab64,
       string datadir,
-      string chainhint
+      string chainhint,
+      string tor
   );
 
   string save_to_b64();
@@ -58,12 +62,11 @@ namespace zingo {
   string get_total_memobytes_to_address();
   string get_total_value_to_address();
   string get_total_spends_to_address();
-  string zec_price();
+  string zec_price(string tor);
   string resend_transaction(string txid);
   string remove_transaction(string txid);
   string get_spendable_balance(string address, string zennies);
   string set_option_wallet();
   string get_option_wallet();
-  string zec_price();
-  string zec_price_api_key(string key);
+  string create_tor_client(string datadir);
 };
