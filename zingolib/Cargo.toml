@@ -8,8 +8,6 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
-exclude = ["testvectors/*", "testutils/*"]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
@@ -42,7 +40,7 @@ zcash_client_backend = { workspace = true, features = [
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
-zcash_proofs = { workspace = true }
+zcash_proofs = { version = "0.22.0", features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zip32.workspace = true
@@ -70,7 +68,6 @@ portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
-rust-embed = { workspace = true, features = ["debug-embed"] }
 rustls.workspace = true
 sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
@@ -87,3 +84,6 @@ bech32 = { workspace = true }
 [dev-dependencies]
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
+
+[build-dependencies]
+zcash_proofs = { version = "0.22.0", features = ["download-params"] }
