@@ -1183,7 +1183,6 @@ dependencies = [
  "sapling-crypto",
  "serde_json",
  "tempfile",
- "testvectors",
  "tokio",
  "tonic",
  "tonic-build",
@@ -1192,6 +1191,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-testvectors",
  "zingolib",
 ]
 
@@ -2799,7 +2799,6 @@ dependencies = [
  "serde_json",
  "shardtree",
  "tempfile",
- "testvectors",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2808,6 +2807,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zingo-status",
+ "zingo-testvectors",
  "zingolib",
  "zip32",
 ]
@@ -5181,13 +5181,6 @@ dependencies = [
  "once_cell",
  "rustix 1.0.7",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "testvectors"
-version = "0.1.0"
-dependencies = [
- "bip0039",
 ]
 
 [[package]]
@@ -7667,6 +7660,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-testvectors"
+version = "0.0.1"
+dependencies = [
+ "bip0039",
+]
+
+[[package]]
 name = "zingolib"
 version = "0.0.1"
 dependencies = [
@@ -7707,7 +7707,6 @@ dependencies = [
  "serde_json",
  "shardtree",
  "tempfile",
- "testvectors",
  "thiserror 2.0.12",
  "tokio",
  "tonic",
@@ -7724,6 +7723,7 @@ dependencies = [
  "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-price 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-status",
+ "zingo-testvectors",
  "zip32",
 ]
 

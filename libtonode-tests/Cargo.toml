@@ -9,10 +9,10 @@ ci = ["zingolib/ci"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { workspace = true, features = [ "test-elevation" ] }
-zingo-status = { workspace = true}
-pepper-sync = { workspace = true}
-testvectors = { workspace = true}
+zingolib = { workspace = true, features = ["test-elevation"] }
+zingo-status = { workspace = true }
+pepper-sync = { workspace = true }
+testvectors = { workspace = true }
 
 zip32 = { workspace = true }
 shardtree = { workspace = true }

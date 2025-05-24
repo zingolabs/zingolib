@@ -1,0 +1,12 @@
+[package]
+name = "zingo-testvectors"
+description = "A crate that provides access to Zingo testvectors."
+version = "0.0.1"
+edition = "2024"
+authors = ["Zingo Labs <zingo@zingolabs.org>"]
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[dependencies]
+bip0039 = { workspace = true }
