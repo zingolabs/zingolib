@@ -7603,6 +7603,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-price"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11878e7124006314820d39666fd417e0f269c6de7e9402e6e186c6f389512cbf"
+dependencies = [
+ "byteorder",
+ "reqwest",
+ "rusqlite",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "zcash_client_backend",
+ "zcash_encoding",
+]
+
+[[package]]
 name = "zingo-status"
 version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7668,7 +7685,7 @@ dependencies = [
  "zcash_transparent",
  "zingo-memo 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo-price",
+ "zingo-price 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-status",
  "zip32",
 ]

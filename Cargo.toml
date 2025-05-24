@@ -114,7 +114,7 @@ rayon = "1"
 testvectors = { path = "testvectors" }
 zingo-memo = "0.0.1"
 zingo-netutils = "0.0.1"
-zingo-price = { path = "zingo-price" }
+zingo-price = "0.0.1"
 zingo-status = "0.0.1"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
