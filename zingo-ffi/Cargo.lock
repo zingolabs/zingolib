@@ -3491,6 +3491,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "pepper-sync"
+version = "0.0.1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#55c523c0d48731f1deaa05fca425bd2beee9f325"
+dependencies = [
+ "bip32",
+ "byteorder",
+ "crossbeam-channel",
+ "futures",
+ "incrementalmerkletree",
+ "json",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
+ "shardtree",
+ "subtle",
+ "thiserror 2.0.12",
+ "tokio",
+ "tonic",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo-memo",
+ "zingo-netutils",
+ "zingo-status",
+ "zip32",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4335,7 +4371,7 @@ dependencies = [
  "darkside-tests",
  "env_logger",
  "json",
- "pepper-sync",
+ "pepper-sync 0.0.1 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "regchest_utils",
  "rustls 0.23.27",
  "tokio",
@@ -7730,7 +7766,7 @@ dependencies = [
  "json",
  "lazy_static",
  "log",
- "pepper-sync",
+ "pepper-sync 0.0.1 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "rustls 0.23.27",
  "serde_json",
  "tokio",
@@ -7840,7 +7876,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
- "pepper-sync",
+ "pepper-sync 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "prost",
  "rand 0.8.5",
