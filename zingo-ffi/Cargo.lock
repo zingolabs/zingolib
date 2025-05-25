@@ -1249,6 +1249,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkside-tests"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#55c523c0d48731f1deaa05fca425bd2beee9f325"
+dependencies = [
+ "futures-util",
+ "hex",
+ "http",
+ "hyper",
+ "hyper-util",
+ "incrementalmerkletree",
+ "orchard",
+ "portpicker",
+ "proptest",
+ "prost",
+ "sapling-crypto",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tower 0.5.2",
+ "tracing-subscriber",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zingo-netutils",
+ "zingo-testvectors",
+ "zingolib",
+]
+
+[[package]]
 name = "darling"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4302,6 +4332,7 @@ dependencies = [
 name = "rust"
 version = "2.0.0"
 dependencies = [
+ "darkside-tests",
  "env_logger",
  "json",
  "pepper-sync",
@@ -7786,8 +7817,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a9668c4a4884e0f5408e553f424db5c28ba4b6f03a9a2e998f1677bba308e9c"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#55c523c0d48731f1deaa05fca425bd2beee9f325"
 dependencies = [
  "append-only-vec",
  "bech32",
