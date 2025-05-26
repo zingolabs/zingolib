@@ -80,6 +80,7 @@ tokio = { workspace = true, features = ["full"] }
 tonic = { workspace = true }
 tracing-subscriber = { workspace = true }
 bech32 = { workspace = true }
+rust-embed = { workspace = true, features = ["debug-embed"] }
 
 [dev-dependencies]
 portpicker = { workspace = true }

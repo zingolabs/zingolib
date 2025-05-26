@@ -36,17 +36,37 @@ fn git_description() {
 }
 
 /// Checks if zcash params are available and downloads them if not.
+/// Also copies them to an internal location for use by mobile platforms.
 fn get_zcash_params() {
     println!("Checking if params are available...");
 
-    match zcash_proofs::download_sapling_parameters(Some(100)) {
+    let params_path = match zcash_proofs::download_sapling_parameters(Some(100)) {
         Ok(p) => {
             println!("Params downloaded!");
             println!("Spend path: {}", p.spend.to_str().unwrap());
             println!("Output path: {}", p.output.to_str().unwrap());
+            p
         }
-        Err(e) => println!("Error downloading params: {}", e),
-    }
+        Err(e) => {
+            println!("Error downloading params: {}", e);
+            panic!();
+        }
+    };
+
+    // Copy the params to the internal location.
+    let internal_params_path = Path::new("zcash-params");
+    std::fs::create_dir_all(internal_params_path).unwrap();
+    std::fs::copy(
+        params_path.spend,
+        internal_params_path.join("sapling-spend.params"),
+    )
+    .unwrap();
+
+    std::fs::copy(
+        params_path.output,
+        internal_params_path.join("sapling-output.params"),
+    )
+    .unwrap();
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

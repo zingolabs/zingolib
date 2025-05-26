@@ -80,13 +80,12 @@ impl LightWallet {
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
-        let (sapling_output, sapling_spend) = crate::wallet::utils::read_sapling_params()
-            .map_err(CalculateTransactionError::SaplingParams)?;
+        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+            crate::wallet::utils::read_sapling_params()
+                .map_err(CalculateTransactionError::SaplingParams)?;
 
-        let sapling_prover = zcash_proofs::prover::LocalTxProver::new(
-            sapling_spend.as_path(),
-            sapling_output.as_path(),
-        );
+        let sapling_prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
         let calculated_txids = match proposal.steps().len() {
             1 => {
