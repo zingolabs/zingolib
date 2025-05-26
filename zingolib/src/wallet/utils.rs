@@ -1,9 +1,6 @@
 //! TODO: Add Mod Description Here!
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::{
-    io::{self, Read, Write},
-    path::PathBuf,
-};
+use std::io::{self, Read, Write};
 use zcash_primitives::{memo::MemoBytes, transaction::TxId};
 
 /// TODO: Add Doc Comment Here!
@@ -50,12 +47,23 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
-/// Returns the path to the downloaded Sapling parameters
-pub(crate) fn read_sapling_params() -> Result<(PathBuf, PathBuf), String> {
-    let zcash_params_path = zcash_proofs::download_sapling_parameters(Some(5)).unwrap();
+/// Returns the downloaded Sapling parameters as bytes.
+pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
+    use crate::SaplingParams;
+    let mut sapling_output = vec![];
+    sapling_output.extend_from_slice(
+        SaplingParams::get("sapling-output.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
 
-    let sapling_output_path = zcash_params_path.output;
-    let sapling_spend_path = zcash_params_path.spend;
-
-    Ok((sapling_output_path, sapling_spend_path))
+    let mut sapling_spend = vec![];
+    sapling_spend.extend_from_slice(
+        SaplingParams::get("sapling-spend.params")
+            .unwrap()
+            .data
+            .as_ref(),
+    );
+    Ok((sapling_output, sapling_spend))
 }
