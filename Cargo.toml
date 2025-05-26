@@ -110,7 +110,7 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 
-testvectors = { package = "zingo-testvectors", version = "0.0.1" }
+testvectors = { path = "zingo-testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }
 zingo-price = { path = "zingo-price" }
