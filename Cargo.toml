@@ -111,11 +111,11 @@ rayon = "1"
 
 
 testvectors = { package = "zingo-testvectors", version = "0.0.1" }
-zingo-memo = "0.0.1"
-zingo-netutils = "0.0.1"
-zingo-price = "0.0.1"
-zingo-status = "0.0.1"
-pepper-sync = "0.0.1"
+zingo-memo = { path = "zingo-memo" }
+zingo-netutils = { path = "zingo-netutils" }
+zingo-price = { path = "zingo-price" }
+zingo-status = { path = "zingo-status" }
+pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
 [profile.test]
