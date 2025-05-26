@@ -699,7 +699,7 @@ pub fn get_balance() -> String {
                 .account_balance(AccountId::ZERO)
                 .await
             {
-                Ok(bal) => bal.to_string(),
+                Ok(bal) => json::JsonValue::from(bal).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
         })
