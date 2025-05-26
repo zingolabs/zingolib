@@ -26,15 +26,13 @@ pub async fn assert_wallet_capability_matches_seed(
     let actual_seed_phrase = wallet.mnemonic_phrase().unwrap();
     assert_eq!(expected_seed_phrase, actual_seed_phrase);
 
-    let expected_mnemonic = (
-        Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap(),
-        0,
-    );
+    let expected_mnemonic =
+        Mnemonic::<bip0039::English>::from_phrase(expected_seed_phrase).unwrap();
 
     let expected_keys = crate::wallet::keys::unified::UnifiedKeyStore::new_from_mnemonic(
         &wallet.network,
-        &expected_mnemonic.0,
-        expected_mnemonic.1,
+        &expected_mnemonic,
+        zip32::AccountId::ZERO,
     )
     .unwrap();
 

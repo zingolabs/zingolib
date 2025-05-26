@@ -179,9 +179,10 @@ impl LightWallet {
                 let no_of_accounts = u32::from(no_of_accounts);
                 let unified_key_store = (0..no_of_accounts)
                     .map(|account_index| {
+                        let account_id = zip32::AccountId::try_from(account_index)?;
                         Ok((
-                            zip32::AccountId::try_from(account_index)?,
-                            UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_index)?,
+                            account_id,
+                            UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_id)?,
                         ))
                     })
                     .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
@@ -275,6 +276,25 @@ impl LightWallet {
             birthday: self.birthday.into(),
             no_of_accounts: self.unified_key_store.len() as u32,
         })
+    }
+
+    pub fn create_new_account(&mut self) -> Result<(), WalletError> {
+        let last_account = self.unified_key_store.keys().copied().max();
+        let account_id = last_account.map_or(Ok(zip32::AccountId::ZERO), |last_account| {
+            last_account
+                .next()
+                .ok_or(WalletError::AccountCreationFailed)
+        })?;
+        self.unified_key_store.insert(
+            account_id,
+            UnifiedKeyStore::new_from_mnemonic(
+                &self.network,
+                self.mnemonic().ok_or(WalletError::MnemonicNotFound)?,
+                account_id,
+            )?,
+        );
+
+        Ok(())
     }
 
     // Set the previous send's result as a JSON string.
@@ -413,6 +433,7 @@ mod tests {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
+    // TODO: move to relevant mod
     #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle

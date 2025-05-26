@@ -51,14 +51,10 @@ impl UnifiedKeyStore {
     pub fn new_from_seed(
         network: &ChainType,
         seed: &[u8; 64],
-        account_index: u32,
+        account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
-        let usk = UnifiedSpendingKey::from_seed(
-            network,
-            seed,
-            AccountId::try_from(account_index).map_err(KeyError::InvalidAccountId)?,
-        )
-        .map_err(KeyError::KeyDerivationError)?;
+        let usk = UnifiedSpendingKey::from_seed(network, seed, account_index)
+            .map_err(KeyError::KeyDerivationError)?;
 
         Ok(UnifiedKeyStore::Spend(Box::new(usk)))
     }
@@ -69,7 +65,7 @@ impl UnifiedKeyStore {
     pub fn new_from_mnemonic(
         network: &ChainType,
         mnemonic: &Mnemonic,
-        account_index: u32,
+        account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
         let seed = mnemonic.to_seed("");
         Self::new_from_seed(network, &seed, account_index)

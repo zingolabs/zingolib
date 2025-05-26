@@ -15,6 +15,9 @@ pub enum WalletError {
     /// Key error
     #[error("{0}")]
     KeyError(#[from] KeyError),
+    /// Mnemonic not found.
+    #[error("Mnemonic not found.")]
+    MnemonicNotFound,
     /// Mnemonic error
     #[error("{0}")]
     MnemonicError(#[from] bip0039::Error),
@@ -39,6 +42,9 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// Maximum number of accounts already in use.
+    #[error("Maximum number of accounts already in use.")]
+    AccountCreationFailed,
 }
 
 /// Price error

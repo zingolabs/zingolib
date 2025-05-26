@@ -255,15 +255,12 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wallet = client.wallet.lock().await;
 
-    let expected_mnemonic = (
-        Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-        0,
-    );
+    let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
         &mid_client_network,
-        &expected_mnemonic.0,
-        expected_mnemonic.1,
+        &expected_mnemonic,
+        zip32::AccountId::ZERO,
     )
     .unwrap();
 
