@@ -3,9 +3,6 @@
 //! ZingoLib
 //! Zingo backend library
 
-#[macro_use]
-extern crate rust_embed;
-
 pub mod commands;
 pub mod config;
 pub mod data;
@@ -22,11 +19,6 @@ pub mod testutils;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
-
-/// TODO: Add Doc Comment Here!
-#[derive(RustEmbed)]
-#[folder = "zcash-params/"]
-pub struct SaplingParams;
 
 /// TODO: Add Doc Comment Here!
 // TODO:  use `get_latest_block` gRPC, also should be removed from zingolib, runtimes should be handled by consumers

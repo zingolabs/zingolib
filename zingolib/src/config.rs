@@ -416,22 +416,9 @@ impl ZingoConfig {
                 ));
             }
 
-            let mut zcash_params = self.get_zingo_wallet_dir().into_path_buf();
-            zcash_params.push("..");
+            let zcash_params_dir = zcash_proofs::default_params_folder().unwrap();
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            zcash_params.push("ZcashParams");
-
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            zcash_params.push(".zcash-params");
-
-            match std::fs::create_dir_all(zcash_params.clone()) {
-                Ok(_) => Ok(zcash_params.into_boxed_path()),
-                Err(e) => {
-                    eprintln!("Couldn't create zcash params directory\n{}", e);
-                    Err(e)
-                }
-            }
+            Ok(zcash_params_dir.into_boxed_path())
         }
     }
 

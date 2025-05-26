@@ -1,7 +1,13 @@
 [package]
 name = "zingo-memo"
-version = "0.1.0"
+description = "Utilities for procedural creation and parsing of the Memo field for ZCash."
+authors = ["<zingo@zingolabs.org>"]
+version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
 
 [dependencies]
 zcash_address.workspace = true
