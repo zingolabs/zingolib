@@ -1251,8 +1251,9 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#38112a50f00330b718b168dc6e0eec509c92abde"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
+ "bip0039",
  "futures-util",
  "hex",
  "http",
@@ -1276,6 +1277,7 @@ dependencies = [
  "zingo-netutils",
  "zingo-testvectors",
  "zingolib",
+ "zip32",
 ]
 
 [[package]]
@@ -3456,8 +3458,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d3b3c82be25cab357957856b2eacef69a51530616240f6fd5ba21cf9896b3bf"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7760,6 +7761,7 @@ version = "2.0.0"
 dependencies = [
  "android_logger",
  "base64",
+ "bip0039",
  "http",
  "json",
  "lazy_static",
@@ -7781,8 +7783,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c2c655174c0bff41505d5c0d45b0fea09d458e62324206b27fb2888f92a6293"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7794,8 +7795,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a19585976d02b6ccb84e7a51433ce1cc7e76d9061b993f58598fb73a1d07a27"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "http",
  "http-body",
@@ -7815,8 +7815,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11878e7124006314820d39666fd417e0f269c6de7e9402e6e186c6f389512cbf"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7832,8 +7831,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66709d62607750781993ae49bebd96b3e5823fda5b46adca5dcf618dfdc3dc17"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7842,8 +7840,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ae3f8ecf840229827a051457870b8c770de2cc341c4c020689c27cc266045f"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "bip0039",
 ]
@@ -7851,7 +7848,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#38112a50f00330b718b168dc6e0eec509c92abde"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
 dependencies = [
  "append-only-vec",
  "bech32",
