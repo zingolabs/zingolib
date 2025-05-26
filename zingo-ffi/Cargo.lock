@@ -771,11 +771,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build_utils"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
-
-[[package]]
 name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1096,9 +1091,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
+checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -1256,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#38112a50f00330b718b168dc6e0eec509c92abde"
 dependencies = [
  "futures-util",
  "hex",
@@ -1271,7 +1266,6 @@ dependencies = [
  "sapling-crypto",
  "serde_json",
  "tempfile",
- "testvectors",
  "tokio",
  "tonic",
  "tonic-build",
@@ -1280,6 +1274,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zingo-netutils",
+ "zingo-testvectors",
  "zingolib",
 ]
 
@@ -3062,6 +3057,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "minreq"
+version = "2.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0d2aaba477837b46ec1289588180fabfccf0c3b1d1a0c6b1866240cd6cd5ce9"
+dependencies = [
+ "log",
+ "rustls 0.21.12",
+ "rustls-webpki 0.101.7",
+ "webpki-roots 0.25.4",
+]
+
+[[package]]
 name = "mio"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3075,13 +3082,13 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2886843bf800fba2e3377cff24abf6379b4c4d5c6681eaf9ea5b0d15090450bd"
+checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
 dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3448,8 +3455,9 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d3b3c82be25cab357957856b2eacef69a51530616240f6fd5ba21cf9896b3bf"
 dependencies = [
  "bip32",
  "byteorder",
@@ -5029,9 +5037,9 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 
 [[package]]
 name = "socket2"
-version = "0.5.9"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f5fd57c80058a56cf5c777ab8a126398ece8e442983605d280a44ce79d0edef"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -5245,14 +5253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "testvectors"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
-dependencies = [
- "bip0039",
-]
-
-[[package]]
 name = "textwrap"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5388,14 +5388,14 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.45.0"
+version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
+checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
 dependencies = [
  "backtrace",
  "bytes",
  "libc",
- "mio 1.0.3",
+ "mio 1.0.4",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
@@ -7606,6 +7606,7 @@ dependencies = [
  "jubjub",
  "known-folders",
  "lazy_static",
+ "minreq",
  "rand_core 0.6.4",
  "redjubjub",
  "sapling-crypto",
@@ -7779,8 +7780,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c2c655174c0bff41505d5c0d45b0fea09d458e62324206b27fb2888f92a6293"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7791,8 +7793,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a19585976d02b6ccb84e7a51433ce1cc7e76d9061b993f58598fb73a1d07a27"
 dependencies = [
  "http",
  "http-body",
@@ -7811,8 +7814,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-price"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11878e7124006314820d39666fd417e0f269c6de7e9402e6e186c6f389512cbf"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7827,24 +7831,33 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66709d62607750781993ae49bebd96b3e5823fda5b46adca5dcf618dfdc3dc17"
 dependencies = [
  "byteorder",
  "zcash_primitives",
 ]
 
 [[package]]
+name = "zingo-testvectors"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39ae3f8ecf840229827a051457870b8c770de2cc341c4c020689c27cc266045f"
+dependencies = [
+ "bip0039",
+]
+
+[[package]]
 name = "zingolib"
-version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#44baa11b4a7003f4eb5aee7a6fdbd32137a349b1"
+version = "0.0.1"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#38112a50f00330b718b168dc6e0eec509c92abde"
 dependencies = [
  "append-only-vec",
  "bech32",
  "bip0039",
  "bip32",
  "bs58",
- "build_utils",
  "byteorder",
  "bytes",
  "chrono",
@@ -7875,7 +7888,6 @@ dependencies = [
  "serde_json",
  "shardtree",
  "tempfile",
- "testvectors",
  "thiserror 2.0.12",
  "tokio",
  "tonic",
@@ -7892,6 +7904,7 @@ dependencies = [
  "zingo-netutils",
  "zingo-price",
  "zingo-status",
+ "zingo-testvectors",
  "zip32",
 ]
 
