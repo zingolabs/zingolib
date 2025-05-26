@@ -526,17 +526,27 @@ impl LightWallet {
 
         // add price to transaction summary
         // takes price from the day of transaction's datetime. otherwise, current price.
-        let mut price = None;
-        for daily_price in self.price_list.daily_prices() {
-            if daily_price.time > transaction.datetime() {
-                assert!(daily_price.time - transaction.datetime() < 86_400);
-                price = Some(daily_price.price_usd);
-                break;
-            }
-        }
-        if price.is_none() {
-            price = self.price_list.current_price().map(|price| price.price_usd);
-        }
+        // TODO: historical prices currently unimplemented
+        // let mut price = None;
+        // for daily_price in self.price_list.daily_prices() {
+        //     if daily_price.time > transaction.datetime() {
+        //         assert!(daily_price.time - transaction.datetime() < 24 * 60 * 60);
+        //         price = Some(daily_price.price_usd);
+        //         break;
+        //     }
+        // }
+        // if price.is_none() {
+        //     price = self.price_list.current_price().and_then(|current_price| {
+        //         if transaction.datetime() <= current_price.time
+        //             && transaction.datetime() > current_price.time - 2 * 24 * 60 * 60
+        //         // exchange APIs may start daily prices 2 days back
+        //         {
+        //             Some(current_price.price_usd)
+        //         } else {
+        //             None
+        //         }
+        //     });
+        // }
 
         Ok((
             kind,
@@ -548,7 +558,7 @@ impl LightWallet {
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coin,
-            price,
+            None,
         ))
     }
 
