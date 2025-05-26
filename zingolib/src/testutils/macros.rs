@@ -1,23 +1,15 @@
 /// Note that do_addresses returns an array, each element is a JSON representation
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>
+// TODO: is this needed as a macro?
 #[macro_export]
 macro_rules! get_base_address_macro {
     ($client:expr, $address_protocol:expr) => {
         match $address_protocol {
-            "unified" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["address"]
+            "unified" => $client.unified_addresses().await[0]["address"]
                 .take()
                 .to_string(),
-            "sapling" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["receivers"]["sapling"]
-                .clone()
-                .to_string(),
-            "transparent" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["receivers"]["transparent"]
+            "transparent" => $client.transparent_addresses().await[0]["receivers"]["transparent"]
                 .clone()
                 .to_string(),
             _ => "ERROR".to_string(),

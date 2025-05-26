@@ -1,22 +1,12 @@
-//! TODO: Add Mod Description Here!
-//! In all cases in this file "external_version" refers to a serialization version that is interpreted
-//! from a source outside of the code-base e.g. a wallet-file.
-use crate::config::ZingoConfig;
+//! [crate::wallet::LightWallet] methods associated with keys and addresses.
+
 use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     wallet::KeyIdInterface,
 };
-use sapling_crypto::{
-    PaymentAddress,
-    zip32::{DiversifiableFullViewingKey, ExtendedSpendingKey},
-};
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{
-    consensus::NetworkConstants,
-    legacy::{TransparentAddress, keys::NonHardenedChildIndex},
-    zip32::ChildIndex,
-};
+use zcash_primitives::legacy::{TransparentAddress, keys::NonHardenedChildIndex};
 
 use super::{LightWallet, error::KeyError};
 
@@ -24,6 +14,42 @@ pub mod legacy;
 pub mod unified;
 
 impl LightWallet {
+    /// Returns unified addresses in a JSON array.
+    pub fn unified_addresses(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.unified_addresses
+                .iter()
+                .map(|(id, unified_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id),
+                        "address_index" => id.address_index,
+                        "has_orchard" => unified_address.has_sapling(),
+                        "has_sapling" => unified_address.has_orchard(),
+                        "has_transparent" => unified_address.has_transparent(),
+                        "encoded_address" => unified_address.encode(&self.network),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Returns transparent addresses in a JSON array.
+    pub fn transparent_addresses(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.transparent_addresses
+                .iter()
+                .map(|(id, transparent_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent_address.clone(),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+
     /// Returns a new unified address for the given `receivers` and `account_id`.
     /// Also adds this new unified address to the wallet.
     /// If the unified address contains a transparent receiver, this is also added to transparent addresses.
@@ -112,41 +138,4 @@ impl LightWallet {
 
         Ok(refund_addresses)
     }
-}
-
-/// TODO: Add Doc Comment Here!
-pub fn get_zaddr_from_bip39seed(
-    config: &ZingoConfig,
-    bip39_seed: &[u8],
-    pos: u32,
-) -> (
-    ExtendedSpendingKey,
-    DiversifiableFullViewingKey,
-    PaymentAddress,
-) {
-    assert_eq!(bip39_seed.len(), 64);
-
-    let extsk: ExtendedSpendingKey = ExtendedSpendingKey::from_path(
-        &ExtendedSpendingKey::master(bip39_seed),
-        &[
-            ChildIndex::hardened(32),
-            ChildIndex::hardened(config.chain.coin_type()),
-            ChildIndex::hardened(pos),
-        ],
-    );
-    let fvk = extsk.to_diversifiable_full_viewing_key();
-    // Now we convert `ExtendedFullViewingKey` (EFVK) to `DiversifiableFullViewingKey` (DFVK).
-    // DFVK is a subset of EFVK with same capabilities excluding the capability
-    // of non-hardened key derivation. This is not a problem because Sapling non-hardened
-    // key derivation has not been found useful in any real world scenario.
-    //
-    // On the other hand, only DFVK can be imported from Unified FVK. Degrading
-    // EFVK to DFVK here enables us to keep one type of Sapling FVK across the wallet,
-    // no matter whether the FVK was derived from SK or imported from UFVK.
-    //
-    // If the non-hardened key derivation is ever needed, we can recover EFVK easily
-    // from Sapling extended spending key.
-    let address = fvk.default_address().1;
-
-    (extsk, fvk, address)
 }

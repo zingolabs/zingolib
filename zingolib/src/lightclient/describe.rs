@@ -11,16 +11,15 @@ use crate::wallet::data::{
 };
 use crate::wallet::error::SummaryError;
 
-pub enum UAReceivers {
-    Orchard,
-    Shielded,
-    All,
-}
-
 impl LightClient {
-    /// Wrapper for [crate::wallet::LightWallet::do_addresses].
-    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
-        self.wallet.lock().await.do_addresses(subset).await
+    /// Wrapper for [crate::wallet::LightWallet::unified_addresses].
+    pub async fn unified_addresses(&self) -> JsonValue {
+        self.wallet.lock().await.unified_addresses()
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses].
+    pub async fn transparent_addresses(&self) -> JsonValue {
+        self.wallet.lock().await.transparent_addresses()
     }
 
     /// Returns server information.

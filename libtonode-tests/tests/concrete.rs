@@ -1057,7 +1057,7 @@ mod fast {
         for code in ["o", "zo", "z"] {
             recipient.do_new_address(code).await.unwrap();
         }
-        let addresses = recipient.do_addresses(UAReceivers::All).await;
+        let addresses = recipient.unified_addresses().await;
         let address_5000_nonememo_tuples = addresses
             .members()
             .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
@@ -1126,7 +1126,7 @@ mod fast {
 
         //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
         let new_address = recipient1.do_new_address("tzo").await.unwrap();
-        let ua_index_1 = recipient1.do_addresses(UAReceivers::All).await[1].clone();
+        let ua_index_1 = recipient1.unified_addresses().await[1].clone();
         let ua_address_index_1 = ua_index_1["address"].clone().to_string();
         assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
         let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
@@ -1871,8 +1871,7 @@ mod slow {
             .clone();
         assert_eq!(transaction.blockheight(), 4.into());
         assert_eq!(
-            recipient.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"]
-                .to_string(),
+            recipient.unified_addresses().await[0]["receivers"]["transparent"].to_string(),
             recipient_taddr
         );
         assert_eq!(transaction.value(), value);

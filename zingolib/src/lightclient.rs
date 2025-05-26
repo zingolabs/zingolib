@@ -192,7 +192,7 @@ impl std::fmt::Debug for LightClient {
 mod tests {
     use crate::{
         config::{ChainType, RegtestNetwork, ZingoConfig},
-        lightclient::{describe::UAReceivers, error::LightClientError},
+        lightclient::error::LightClientError,
         wallet::LightWallet,
     };
     use bip0039::Mnemonic;
@@ -249,7 +249,7 @@ mod tests {
         ));
 
         // The first t address and z address should be derived
-        let addresses = lc.do_addresses(UAReceivers::All).await;
+        let addresses = lc.unified_addresses().await;
         assert_eq!(
             "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
                 .to_string(),

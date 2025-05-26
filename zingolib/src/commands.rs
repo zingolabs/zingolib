@@ -711,44 +711,45 @@ impl Command for SpendableBalanceCommand {
     }
 }
 
-struct AddressCommand {}
-impl Command for AddressCommand {
+struct UnifiedAddressesCommand {}
+impl Command for UnifiedAddressesCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            List current addresses in the wallet, shielded excludes t-addresses.
+            List unified addresses in the wallet.
+
             Usage:
-            addresses [shielded|orchard]
+            unified_addresses
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "List all addresses in the wallet"
+        "List unified addresses in the wallet."
     }
 
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        use crate::lightclient::describe::UAReceivers;
-        match args.len() {
-            0 => RT.block_on(
-                async move { lightclient.do_addresses(UAReceivers::All).await.pretty(2) },
-            ),
-            1 => match args[0] {
-                "shielded" => RT.block_on(async move {
-                    lightclient
-                        .do_addresses(UAReceivers::Shielded)
-                        .await
-                        .pretty(2)
-                }),
-                "orchard" => RT.block_on(async move {
-                    lightclient
-                        .do_addresses(UAReceivers::Orchard)
-                        .await
-                        .pretty(2)
-                }),
-                _ => self.help().to_string(),
-            },
-            _ => self.help().to_string(),
-        }
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move { lightclient.unified_addresses().await.pretty(2) })
+    }
+}
+
+struct TransparentAddressesCommand {}
+impl Command for TransparentAddressesCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            List transparent addresses in the wallet.
+
+            Usage:
+            transparent_addresses
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List transparent addresses in the wallet."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move { lightclient.transparent_addresses().await.pretty(2) })
     }
 }
 
@@ -1864,7 +1865,11 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("clear", Box::new(ClearCommand {})),
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
-        ("addresses", Box::new(AddressCommand {})),
+        ("unified_addresses", Box::new(UnifiedAddressesCommand {})),
+        (
+            "transparent_addresses",
+            Box::new(TransparentAddressesCommand {}),
+        ),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
