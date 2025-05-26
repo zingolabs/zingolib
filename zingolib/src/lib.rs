@@ -20,6 +20,13 @@ pub mod testutils;
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
+#[macro_use]
+extern crate rust_embed;
+/// Embedded zcash-params for mobile devices.
+#[derive(RustEmbed)]
+#[folder = "zcash-params/"]
+pub struct SaplingParams;
+
 /// TODO: Add Doc Comment Here!
 // TODO:  use `get_latest_block` gRPC, also should be removed from zingolib, runtimes should be handled by consumers
 pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
