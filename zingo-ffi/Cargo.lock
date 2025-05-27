@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -3458,7 +3458,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7783,7 +7783,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7795,7 +7795,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "http",
  "http-body",
@@ -7815,7 +7815,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7831,7 +7831,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7840,7 +7840,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "bip0039",
 ]
@@ -7848,7 +7848,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#97978614d2b60306c4b4f8f2cf3551d8c338b925"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=multi_account_support#aa6994afb0e7a6e8bdd8bac069e3dc6b3f1e09b7"
 dependencies = [
  "append-only-vec",
  "bech32",

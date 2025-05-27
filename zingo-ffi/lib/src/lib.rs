@@ -443,8 +443,9 @@ pub fn get_seed() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.wallet.lock().await.recovery_info() {
-                Some(backup_info) => backup_info.to_string(),
-                None => "error: no mnemonic found. wallet loaded from key.".to_string(),
+                Some(backup_info) => serde_json::to_string_pretty(&backup_info)
+                    .unwrap_or_else(|_| "error: get seed. failed to serialize".to_string()),
+                None => "error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
             }
         })
     } else {
