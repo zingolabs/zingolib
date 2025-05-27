@@ -10,7 +10,7 @@ use std::{
     },
 };
 
-use json::{JsonValue, array};
+use json::JsonValue;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -21,7 +21,7 @@ use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{LightWallet, WalletBase, error::WalletError, keys::unified::ReceiverSelection},
+    wallet::{LightWallet, WalletBase, error::WalletError},
 };
 use error::LightClientError;
 
@@ -135,23 +135,14 @@ impl LightClient {
         self.tor_client.as_ref()
     }
 
-    /// Generates a new unified address from the given `addr_type`.
-    // TODO: remove?
-    pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
-        let desired_receivers = ReceiverSelection {
-            sapling: addr_type.contains('z'),
-            orchard: addr_type.contains('o'),
-            transparent: addr_type.contains('t'),
-        };
+    /// Wrapper for [crate::wallet::LightWallet::unified_addresses].
+    pub async fn unified_addresses(&self) -> JsonValue {
+        self.wallet.lock().await.unified_addresses()
+    }
 
-        let new_address = self
-            .wallet
-            .lock()
-            .await
-            .generate_unified_address(desired_receivers, zip32::AccountId::ZERO)
-            .map_err(|e| e.to_string())?;
-
-        Ok(array![new_address.encode(&self.config.chain)])
+    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses].
+    pub async fn transparent_addresses(&self) -> JsonValue {
+        self.wallet.lock().await.transparent_addresses()
     }
 
     /// TODO: Add Doc Comment Here!

@@ -391,15 +391,11 @@ impl LightWallet {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
             let scope = TransparentScope::try_from(r.read_u8()?)?;
-            let address_index = r.read_u32::<LittleEndian>()?;
+            let address_index = NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
+                .expect("only non-hardened child indexes should be written");
 
             Ok((
-                TransparentAddressId::new(
-                    account_id,
-                    scope,
-                    NonHardenedChildIndex::from_index(address_index)
-                        .expect("only non-hardened child indexes should be written"),
-                ),
+                TransparentAddressId::new(account_id, scope, address_index),
                 transparent::encode_address(
                     &network,
                     unified_key_store

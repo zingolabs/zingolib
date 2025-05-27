@@ -8,6 +8,7 @@ use std::str::FromStr;
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
+use pepper_sync::keys::transparent;
 use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
@@ -19,8 +20,8 @@ use zcash_protocol::value::Zatoshis;
 use crate::data::{PollReport, proposal};
 use crate::lightclient::LightClient;
 use crate::utils::conversion::txid_from_hex_encoded_str;
-use crate::wallet::keys::unified::UnifiedKeyStore;
-use pepper_sync::wallet::{OrchardNote, SaplingNote, SyncMode};
+use crate::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
+use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 
 mod error;
 mod utils;
@@ -108,21 +109,19 @@ impl Command for ChangeServerCommand {
     }
 }
 
-struct GetBirthdayCommand {}
-impl Command for GetBirthdayCommand {
+struct BirthdayCommand {}
+impl Command for BirthdayCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Introspect over wallet value transfers, and report the lowest observed block height.
-            Usage:
-            get_birthday
+            Returns block height wallet was created.
 
-            Example:
-            get_birthday
+            Usage:
+            birthday
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get wallet birthday."
+        "Returns block height wallet was created"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
@@ -711,6 +710,100 @@ impl Command for SpendableBalanceCommand {
     }
 }
 
+struct NewUnifiedAddressCommand {}
+impl Command for NewUnifiedAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Create a new unified address.
+
+            Usage:
+            new_address [ o | z ]
+
+            Examples:
+             - orchard and sapling receivers
+            new_address oz
+
+            - orchard-only
+            new_address o
+
+            - sapling-only
+            new_address z
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Create a new unified address."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return format!("No address type specified\n{}", self.help());
+        }
+        if !args[0].contains('o') && !args[0].contains('z') {
+            return format!("No address type specified\n{}", self.help());
+        }
+
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.lock().await;
+            let network = wallet.network;
+            let receivers = ReceiverSelection {
+                orchard: args[0].contains('o'),
+                sapling: args[0].contains('z'),
+                transparent: false,
+            };
+            match wallet.generate_unified_address(receivers, zip32::AccountId::ZERO) {
+                Ok((id, unified_address)) => {
+                    json::object! {
+                        "account" => u32::from(zip32::AccountId::ZERO), // used concrete type instead of u32 to simplify upgrading CLI to multi-account
+                        "address_index" => id.address_index,
+                        "has_orchard" => unified_address.has_orchard(),
+                        "has_sapling" => unified_address.has_sapling(),
+                        "has_transparent" => unified_address.has_transparent(),
+                        "encoded_address" => unified_address.encode(&network),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct NewTransparentAddressCommand {}
+impl Command for NewTransparentAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Create a new transparent address.
+
+            Usage:
+            new_taddress
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Create a new transparent address."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.lock().await;
+            let network = wallet.network;
+            match wallet.generate_transparent_address(zip32::AccountId::ZERO) {
+                Ok((id, transparent_address)) => {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent::encode_address(&network,  transparent_address),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct UnifiedAddressesCommand {}
 impl Command for UnifiedAddressesCommand {
     fn help(&self) -> &'static str {
@@ -718,7 +811,7 @@ impl Command for UnifiedAddressesCommand {
             List unified addresses in the wallet.
 
             Usage:
-            unified_addresses
+            addresses
 
         "#}
     }
@@ -739,7 +832,7 @@ impl Command for TransparentAddressesCommand {
             List transparent addresses in the wallet.
 
             Usage:
-            transparent_addresses
+            t_addresses
 
         "#}
     }
@@ -757,18 +850,16 @@ struct ExportUfvkCommand {}
 impl Command for ExportUfvkCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Export Unified full viewing key for the wallet.
-            Note: If you want to backup spend capability, use the 'seed' command instead.
-            Usage:
-            exportufvk
+            Export unified full viewing key for the wallet.
+            Note: If you want to backup spend capability, use the 'recovery_info' command instead.
 
-            Example:
+            Usage:
             exportufvk
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Export full viewing key for wallet addresses"
+        "Export unified full viewing key for the wallet."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1575,39 +1666,6 @@ impl Command for HeightCommand {
     }
 }
 
-struct NewAddressCommand {}
-impl Command for NewAddressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Create a new address in this wallet
-            Usage:
-            new [z | t | o]
-
-            Example:
-            To create a new z address:
-            new z
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Create a new address in this wallet"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return format!("No address type specified\n{}", self.help());
-        }
-
-        RT.block_on(async move {
-            match lightclient.do_new_address(args[0]).await {
-                Ok(j) => j,
-                Err(e) => object! { "error" => e },
-            }
-            .pretty(2)
-        })
-    }
-}
-
 struct NotesCommand {}
 impl Command for NotesCommand {
     fn help(&self) -> &'static str {
@@ -1865,11 +1923,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("clear", Box::new(ClearCommand {})),
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
-        ("unified_addresses", Box::new(UnifiedAddressesCommand {})),
-        (
-            "transparent_addresses",
-            Box::new(TransparentAddressesCommand {}),
-        ),
+        ("addresses", Box::new(UnifiedAddressesCommand {})),
+        ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),
@@ -1891,9 +1946,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),
-        ("new", Box::new(NewAddressCommand {})),
+        ("new_address", Box::new(NewUnifiedAddressCommand {})),
+        ("new_taddress", Box::new(NewTransparentAddressCommand {})),
         ("recovery_info", Box::new(RecoveryInfoCommand {})),
-        ("get_birthday", Box::new(GetBirthdayCommand {})),
+        ("birthday", Box::new(BirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
         ("remove_transaction", Box::new(RemoveTransactionCommand {})),

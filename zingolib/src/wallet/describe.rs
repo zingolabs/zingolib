@@ -3,12 +3,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use json::JsonValue;
-
-use zcash_address::ZcashAddress;
-use zcash_keys::encoding::encode_payment_address;
-use zcash_primitives::consensus::NetworkConstants as _;
-use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_protocol::PoolType;

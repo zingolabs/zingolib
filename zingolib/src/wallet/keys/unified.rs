@@ -148,18 +148,19 @@ impl UnifiedKeyStore {
             let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
 
             // not all sapling_diversifier_indexes produce valid sapling addresses.
-            // therefore, `sapling_diversifier_index` may be larger than `ua_index` and only the valid payment
+            // therefore, `sapling_diversifier_index` may be larger than `unified_address_index` and only the valid payment
             // addresses are counted.
             loop {
                 (sapling_diversifier_index, address) = fvk
                     .find_address(sapling_diversifier_index)
                     .expect("Diversifier index overflow");
-                sapling_diversifier_index
-                    .increment()
-                    .expect("Diversifier index overflow");
                 if count == unified_address_index {
                     break;
                 }
+
+                sapling_diversifier_index
+                    .increment()
+                    .expect("Diversifier index overflow");
                 count += 1;
             }
             Some(address)
@@ -168,11 +169,14 @@ impl UnifiedKeyStore {
         };
 
         let transparent_receiver = if receivers.transparent {
-            Some(self.generate_transparent_address(
-                unified_address_index,
-                TransparentScope::External,
-                legacy_key,
-            )?)
+            Some(
+                self.generate_transparent_address(
+                    NonHardenedChildIndex::from_index(unified_address_index)
+                        .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
+                    TransparentScope::External,
+                    legacy_key,
+                )?,
+            )
         } else {
             None
         };
@@ -188,11 +192,9 @@ impl UnifiedKeyStore {
     }
 
     /// Generates a transparent address for the given `address_index` and `scope`.
-    ///
-    /// Panics if `address_index` has the hardened bit set.
     pub fn generate_transparent_address(
         &self,
-        address_index: u32,
+        address_index: NonHardenedChildIndex,
         scope: TransparentScope,
         // this should only be `true` when generating externally scoped transparent addresses while loading from legacy
         // keys (pre wallet version 29).
@@ -200,8 +202,6 @@ impl UnifiedKeyStore {
         // skip this scope derivation.
         legacy_key: bool,
     ) -> Result<TransparentAddress, KeyError> {
-        let child_index = NonHardenedChildIndex::from_index(address_index)
-            .expect("hardened bit should not be set for non-hardened child indexes");
         let account_pubkey = UnifiedFullViewingKey::try_from(self)?
             .transparent()
             .ok_or(KeyError::NoViewCapability)?
@@ -210,19 +210,19 @@ impl UnifiedKeyStore {
         let transparent_address = match scope {
             TransparentScope::External => {
                 if legacy_key {
-                    generate_transparent_address_from_legacy_key(&account_pubkey, child_index)?
+                    generate_transparent_address_from_legacy_key(&account_pubkey, address_index)?
                 } else {
                     account_pubkey
                         .derive_external_ivk()?
-                        .derive_address(child_index)?
+                        .derive_address(address_index)?
                 }
             }
             TransparentScope::Internal => account_pubkey
                 .derive_internal_ivk()?
-                .derive_address(child_index)?,
+                .derive_address(address_index)?,
             TransparentScope::Refund => account_pubkey
                 .derive_ephemeral_ivk()?
-                .derive_ephemeral_address(child_index)?,
+                .derive_ephemeral_address(address_index)?,
         };
 
         Ok(transparent_address)
@@ -376,14 +376,14 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// Selects the receivers for the creation of a new unified address.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ReceiverSelection {
-    /// TODO: Add Doc Comment Here!
+    /// Orchard
     pub orchard: bool,
-    /// TODO: Add Doc Comment Here!
+    /// Sapling
     pub sapling: bool,
-    /// TODO: Add Doc Comment Here!
+    /// Transparent
     pub transparent: bool,
 }
 
