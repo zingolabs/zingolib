@@ -159,7 +159,7 @@ pub fn init_from_seed(
         config.chain,
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(seed).unwrap(),
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            no_of_accounts: config.no_of_accounts,
         },
         BlockHeight::from_u32(birthday as u32),
         WalletSettings {
