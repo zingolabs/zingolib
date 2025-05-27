@@ -1347,7 +1347,6 @@ mod slow {
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
     };
-    use shardtree::store::ShardStore;
     use testvectors::TEST_TXID;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::memo::Memo;
@@ -2519,41 +2518,6 @@ mod slow {
             true,
         )
         .await;
-
-        {
-            let wallet = faucet.wallet.lock().await;
-            dbg!(wallet.sync_state.wallet_height());
-            dbg!(
-                wallet
-                    .shard_trees
-                    .sapling
-                    .store()
-                    .max_checkpoint_id()
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .orchard
-                    .store()
-                    .max_checkpoint_id()
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .sapling
-                    .root_at_checkpoint_id(&3.into())
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .orchard
-                    .root_at_checkpoint_id(&3.into())
-                    .unwrap()
-            );
-        }
 
         let amount_to_send = 5_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");

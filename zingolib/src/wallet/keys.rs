@@ -68,7 +68,7 @@ impl LightWallet {
                 .filter(|&address_id| address_id.account_id == account_id)
                 .map(|&address_id| address_id.address_index)
                 .max()
-                .unwrap_or(0),
+                .map_or(0, |address_id| address_id + 1),
         };
         let unified_address = self
             .unified_key_store
@@ -109,9 +109,11 @@ impl LightWallet {
             })
             .map(|&address_id| address_id.address_index())
             .max()
-            .unwrap_or(NonHardenedChildIndex::ZERO)
-            .next()
-            .ok_or(KeyError::InvalidNonHardenedChildIndex)?;
+            .map_or(Ok(NonHardenedChildIndex::ZERO), |address_index| {
+                address_index
+                    .next()
+                    .ok_or(KeyError::InvalidNonHardenedChildIndex)
+            })?;
         let address_id =
             TransparentAddressId::new(account_id, TransparentScope::External, address_index);
         let external_address = self
@@ -145,9 +147,11 @@ impl LightWallet {
             })
             .map(|&address_id| address_id.address_index())
             .max()
-            .unwrap_or(NonHardenedChildIndex::ZERO)
-            .next()
-            .ok_or(KeyError::InvalidNonHardenedChildIndex)?
+            .map_or(Ok(NonHardenedChildIndex::ZERO), |address_index| {
+                address_index
+                    .next()
+                    .ok_or(KeyError::InvalidNonHardenedChildIndex)
+            })?
             .index() as usize;
 
         let refund_addresses = (first_index..(first_index + n))
