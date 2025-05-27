@@ -43,7 +43,7 @@ lazy_static! {
     static ref LIGHTCLIENT: Mutex<Option<LightClient>> = Mutex::new(None);
 }
 
-fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: String) -> String {
+fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: String, seed: bool) -> String {
     let tor_bool = tor.parse().unwrap_or(false);
     let lightclient_tor = if tor_bool {
         zingolib::commands::RT.block_on(async move {
@@ -57,7 +57,11 @@ fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: 
     };
     LIGHTCLIENT.lock().unwrap().replace(lightclient_tor);
     
-    get_seed()
+    if seed {
+        get_seed()
+    } else {
+        get_ufvk()
+    }
 }
 
 //fn lightclient_create_tor_client(mut lightclient: LightClient, data_dir: String) -> LightClient {
@@ -138,7 +142,7 @@ pub fn init_new(server_uri: String, data_dir: String, chain_hint: String, tor: S
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor)
+    lock_client_return_seed(lightclient, data_dir, tor, true)
 }
 
 pub fn init_from_seed(
@@ -177,7 +181,7 @@ pub fn init_from_seed(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor)
+    lock_client_return_seed(lightclient, data_dir, tor, true)
 }
 
 pub fn init_from_ufvk(
@@ -213,7 +217,7 @@ pub fn init_from_ufvk(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor)
+    lock_client_return_seed(lightclient, data_dir, tor, false)
 }
 
 pub fn init_from_b64(
@@ -244,13 +248,19 @@ pub fn init_from_b64(
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
     };
+    let seed: bool = if wallet.mnemonic().is_some() {
+        true
+    } else {
+        false
+    };
     let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir.into(), tor)
+
+    lock_client_return_seed(lightclient, data_dir.into(), tor, seed)
 }
 
 pub fn save_to_b64() -> String {
