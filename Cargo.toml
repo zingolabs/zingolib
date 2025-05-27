@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-bip0039 = "0.12"
+bip0039 = { version = "0.12", features = [ "rand" ] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 
 zip32 = "0.2.0"
@@ -110,12 +110,12 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 
-testvectors = { package = "zingo-testvectors", version = "0.0.1" }
-zingo-memo = "0.0.1"
-zingo-netutils = "0.0.1"
-zingo-price = "0.0.1"
-zingo-status = "0.0.1"
-pepper-sync = "0.0.1"
+testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
+zingo-memo = { path = "zingo-memo" }
+zingo-netutils = { path = "zingo-netutils" }
+zingo-price = { path = "zingo-price" }
+zingo-status = { path = "zingo-status" }
+pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
 [profile.test]

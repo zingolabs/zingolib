@@ -12,8 +12,8 @@ use crate::client::{self, FetchRequest};
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
-use crate::wallet::Locator;
 use crate::wallet::traits::SyncWallet;
+use crate::wallet::{KeyIdInterface, Locator};
 
 use super::{MAX_VERIFICATION_WINDOW, TransparentAddressDiscovery};
 

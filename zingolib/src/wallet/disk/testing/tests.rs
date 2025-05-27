@@ -195,8 +195,17 @@ async fn loaded_wallet_assert(
             assert!(addr.transparent().is_some());
         }
 
-        let balance = lightclient.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(expected_balance));
+        let balance = lightclient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            balance.total_orchard_balance,
+            Some(expected_balance.try_into().unwrap())
+        );
     }
     if expected_balance > 0 {
         let sapling_address = crate::get_base_address_macro!(lightclient, "sapling");
@@ -235,7 +244,6 @@ async fn reload_wallet_from_buffer() {
         .lock()
         .await
         .write(&mut mid_buffer, &mid_client.config.chain)
-        .await
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
@@ -247,19 +255,20 @@ async fn reload_wallet_from_buffer() {
     .unwrap();
     let wallet = client.wallet.lock().await;
 
-    let expected_mnemonic = (
-        Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-        0,
-    );
+    let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
         &mid_client_network,
-        &expected_mnemonic.0,
-        expected_mnemonic.1,
+        &expected_mnemonic,
+        zip32::AccountId::ZERO,
     )
     .unwrap();
 
-    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be spending key!")
     };
     let UnifiedKeyStore::Spend(expected_usk) = &expected_keys else {
@@ -296,7 +305,11 @@ async fn reload_wallet_from_buffer() {
         wallet.wallet_settings.clone(),
     )
     .unwrap();
-    let UnifiedKeyStore::View(v_ufvk) = &view_wallet.unified_key_store else {
+    let UnifiedKeyStore::View(v_ufvk) = &view_wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be viewing key!");
     };
     let v_ufvk_string = v_ufvk.encode(&view_wallet.network);

@@ -33,12 +33,10 @@ impl SyncWallet for LightWallet {
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error> {
-        let account_id = AccountId::try_from(0).expect("valid hard-coded u32");
-        let ufvk = UnifiedFullViewingKey::try_from(&self.unified_key_store)?;
-        let mut ufvk_map = HashMap::new();
-        ufvk_map.insert(account_id, ufvk);
-
-        Ok(ufvk_map)
+        self.unified_key_store
+            .iter()
+            .map(|(account_id, key)| Ok((*account_id, UnifiedFullViewingKey::try_from(key)?)))
+            .collect()
     }
 
     fn get_transparent_addresses(

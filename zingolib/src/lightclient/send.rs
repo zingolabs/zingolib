@@ -33,10 +33,11 @@ pub mod send_with_proposal {
         async fn send(
             &mut self,
             proposal: &Proposal<zip317::FeeRule, OutputRef>,
+            sending_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
             let mut wallet = self.wallet.lock().await;
             let calculated_txids = wallet
-                .calculate_transactions(proposal)
+                .calculate_transactions(proposal, sending_account)
                 .await
                 .map_err(SendError::CalculateSendError)?;
             self.latest_proposal = None;
@@ -49,10 +50,11 @@ pub mod send_with_proposal {
         async fn shield(
             &mut self,
             proposal: &Proposal<zip317::FeeRule, Infallible>,
+            shielding_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
             let mut wallet = self.wallet.lock().await;
             let calculated_txids = wallet
-                .calculate_transactions(proposal)
+                .calculate_transactions(proposal, shielding_account)
                 .await
                 .map_err(SendError::CalculateShieldError)?;
             self.latest_proposal = None;
@@ -73,14 +75,18 @@ pub mod send_with_proposal {
             Ok(())
         }
 
-        /// Calculates, signs and broadcasts transactions from a stored proposal.
+        /// Creates and transmits transactions from a stored proposal.
         pub async fn send_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, SendError> {
             if let Some(proposal) = self.latest_proposal.clone() {
                 match proposal {
-                    ZingoProposal::Transfer(transfer_proposal) => {
-                        self.send(&transfer_proposal).await
-                    }
-                    ZingoProposal::Shield(shield_proposal) => self.shield(&shield_proposal).await,
+                    ZingoProposal::Send {
+                        proposal,
+                        sending_account,
+                    } => self.send(&proposal, sending_account).await,
+                    ZingoProposal::Shield {
+                        proposal,
+                        shielding_account,
+                    } => self.shield(&proposal, shielding_account).await,
                 }
             } else {
                 Err(SendError::NoStoredProposal)
@@ -91,22 +97,31 @@ pub mod send_with_proposal {
         pub async fn quick_send(
             &mut self,
             request: TransactionRequest,
+            account_id: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
                 .wallet
                 .lock()
                 .await
-                .create_send_proposal(request)
+                .create_send_proposal(request, account_id)
                 .await?;
 
-            Ok(self.send(&proposal).await?)
+            Ok(self.send(&proposal, account_id).await?)
         }
 
         /// Shields all transparent funds skipping proposal confirmation.
-        pub async fn quick_shield(&mut self) -> Result<NonEmpty<TxId>, QuickShieldError> {
-            let proposal = self.wallet.lock().await.create_shield_proposal().await?;
+        pub async fn quick_shield(
+            &mut self,
+            account_id: zip32::AccountId,
+        ) -> Result<NonEmpty<TxId>, QuickShieldError> {
+            let proposal = self
+                .wallet
+                .lock()
+                .await
+                .create_shield_proposal(account_id)
+                .await?;
 
-            Ok(self.shield(&proposal).await?)
+            Ok(self.shield(&proposal, account_id).await?)
         }
     }
 
@@ -114,6 +129,7 @@ pub mod send_with_proposal {
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
+        use bip0039::Mnemonic;
         use pepper_sync::sync::SyncConfig;
 
         use crate::{
@@ -136,7 +152,10 @@ pub mod send_with_proposal {
             let mut lc = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
-                    WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+                    WalletBase::Mnemonic {
+                        mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
+                        no_of_accounts: 1.try_into().unwrap(),
+                    },
                     1.into(),
                     WalletSettings {
                         sync_config: SyncConfig {
@@ -151,7 +170,9 @@ pub mod send_with_proposal {
             )
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            lc.send(&proposal).await.unwrap_err();
+            lc.send(&proposal, zip32::AccountId::ZERO)
+                .await
+                .unwrap_err();
             // TODO: match on specific error
         }
 

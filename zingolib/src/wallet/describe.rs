@@ -3,7 +3,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use bip0039::Mnemonic;
 use json::JsonValue;
 
 use zcash_address::ZcashAddress;
@@ -12,10 +11,8 @@ use zcash_primitives::consensus::NetworkConstants as _;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
-use zcash_protocol::value::Zatoshis;
 
 use super::data::summaries::BasicCoinSummary;
 use super::data::summaries::BasicNoteSummary;
@@ -34,7 +31,6 @@ use super::data::summaries::ValueTransfers;
 use super::error::KeyError;
 use super::error::SpendError;
 use super::error::SummaryError;
-use super::keys::unified::UnifiedKeyStore;
 use super::summary;
 use super::summary::SendType;
 use super::summary::TransactionKind;
@@ -43,9 +39,7 @@ use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::lightclient::describe::UAReceivers;
-use crate::utils;
 use crate::wallet::LightWallet;
-use crate::wallet::error::BalanceError;
 use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
 use pepper_sync::keys::transparent::TransparentScope;
@@ -93,127 +87,6 @@ impl LightWallet {
             )
         }
         JsonValue::Array(objectified_addresses)
-    }
-
-    /// returns Some seed phrase for the wallet.
-    /// if wallet does not have a seed phrase, returns None
-    pub async fn get_seed_phrase(&self) -> Option<String> {
-        self.mnemonic()
-            .map(|(mnemonic, _)| mnemonic.phrase().to_string())
-    }
-
-    /// Returns the total balance of the all outputs of a given pool type in the wallet matching the output and transaction
-    /// criteria specified by the `filter_function`.
-    /// Returns `None` if the wallet does not have viewing capability for the given pool type.
-    pub async fn get_filtered_balance<Op, F>(&self, filter_function: F) -> Option<u64>
-    where
-        Op: OutputInterface,
-        F: Fn(&Op, &WalletTransaction) -> bool,
-    {
-        match &self.unified_key_store {
-            UnifiedKeyStore::Spend(_) => (),
-            UnifiedKeyStore::View(ufvk) => match Op::POOL_TYPE {
-                PoolType::Transparent => {
-                    ufvk.transparent()?;
-                }
-                PoolType::Shielded(ShieldedProtocol::Sapling) => {
-                    ufvk.sapling()?;
-                }
-                PoolType::Shielded(ShieldedProtocol::Orchard) => {
-                    ufvk.orchard()?;
-                }
-            },
-            UnifiedKeyStore::Empty => return None,
-        }
-
-        Some(
-            self.wallet_transactions
-                .values()
-                .fold(0, |acc, transaction| {
-                    acc + Op::transaction_outputs(transaction)
-                        .iter()
-                        .filter(|&note| {
-                            filter_function(note, transaction)
-                                && note.spending_transaction().is_none()
-                        })
-                        .map(|output| output.value())
-                        .sum::<u64>()
-                }),
-        )
-    }
-
-    /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool.
-    pub async fn confirmed_balance<Op>(&self) -> Option<u64>
-    where
-        Op: OutputInterface,
-    {
-        self.get_filtered_balance::<Op, _>(|_, transaction: &WalletTransaction| {
-            transaction.status().is_confirmed()
-        })
-        .await
-    }
-
-    /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool.
-    /// Returns `None` if the wallet does not have spend capability.
-    // TODO: also calculate whether notes in the wallet have the necessary info (i.e. commitment trees) to spend
-    pub async fn spendable_balance<Op>(&self) -> Option<u64>
-    where
-        Op: OutputInterface,
-    {
-        if let UnifiedKeyStore::Spend(_) = self.unified_key_store {
-            self.confirmed_balance::<Op>().await
-        } else {
-            None
-        }
-    }
-
-    /// Returns total wallet balance of unspent notes not yet confirmed on the block chain for a given shielded pool.
-    pub async fn pending_balance<Op>(&self) -> Option<u64>
-    where
-        Op: OutputInterface,
-    {
-        self.get_filtered_balance::<Op, _>(|_, transaction: &WalletTransaction| {
-            !transaction.status().is_confirmed()
-        })
-        .await
-    }
-
-    /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool excluding any notes
-    /// with value less than marginal fee (5_000).
-    pub async fn confirmed_balance_excluding_dust<Op>(&self) -> Option<u64>
-    where
-        Op: OutputInterface,
-    {
-        self.get_filtered_balance::<Op, _>(|note, transaction: &WalletTransaction| {
-            Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
-        })
-        .await
-    }
-
-    /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
-    /// that are confirmed on the block chain (the block has at least 1 confirmation).
-    /// Does not include transparent funds.
-    ///
-    /// # Error
-    ///
-    /// Returns an error if the full viewing key is not found or if the balance summation exceeds the valid range of zatoshis.
-    pub async fn confirmed_shielded_balance_excluding_dust(
-        &self,
-    ) -> Result<Zatoshis, BalanceError> {
-        Ok(utils::conversion::zatoshis_from_u64(
-            self.confirmed_balance_excluding_dust::<OrchardNote>()
-                .await
-                .ok_or(BalanceError::NoFullViewingKey)?
-                + self
-                    .confirmed_balance_excluding_dust::<SaplingNote>()
-                    .await
-                    .ok_or(BalanceError::NoFullViewingKey)?,
-        )?)
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
-        self.mnemonic.as_ref()
     }
 
     /// Lists the transparent addresses known by the wallet.
@@ -1005,26 +878,35 @@ impl LightWallet {
             .map(|(address_id, _)| address_id.scope())
     }
 
-    /// Checks if the given `address` is derived from the wallet's sapling FVKs. External scope only. For internal, query
-    /// outgoing sapling note scope.
+    /// Checks if the given `address` is derived from the wallet's sapling FVKs. External scope only.
     fn is_sapling_external_send_to_self(
         &self,
         address: &sapling_crypto::PaymentAddress,
     ) -> Result<bool, KeyError> {
-        Ok(
-            sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(&self.unified_key_store)?
+        for unified_key in self.unified_key_store.values() {
+            if sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)?
                 .decrypt_diversifier(address)
-                .is_some(),
-        )
+                .is_some()
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Checks if the given `address` is derived from the wallet's orchard FVKs.
     fn is_orchard_send_to_self(&self, address: &orchard::Address) -> Result<bool, KeyError> {
-        Ok(
-            orchard::keys::FullViewingKey::try_from(&self.unified_key_store)?
+        for unified_key in self.unified_key_store.values() {
+            if orchard::keys::FullViewingKey::try_from(unified_key)?
                 .scope_for_address(address)
-                .is_some(),
-        )
+                .is_some()
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }
 

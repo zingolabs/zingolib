@@ -581,10 +581,16 @@ impl std::fmt::Debug for WalletTransaction {
     }
 }
 
+/// Provides a common API for all key identifiers.
+pub trait KeyIdInterface {
+    /// Account ID.
+    fn account_id(&self) -> zip32::AccountId;
+}
+
 /// Provides a common API for all output types.
 pub trait OutputInterface: Sized {
     /// Identifier for key used to decrypt output.
-    type KeyId;
+    type KeyId: KeyIdInterface;
     /// Transaction input type associated with spend detection of output.
     type Input: Clone + Debug + PartialEq + Eq + PartialOrd + Ord;
 
@@ -605,6 +611,7 @@ pub trait OutputInterface: Sized {
     fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>);
 
     /// Note value..
+    // TODO: change to Zatoshis checked type
     fn value(&self) -> u64;
 
     /// Returns the type used to link with transaction inputs for spend detection.

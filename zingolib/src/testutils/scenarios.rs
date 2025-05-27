@@ -28,6 +28,7 @@ mod config_templaters;
 pub mod setup {
     use std::path::PathBuf;
 
+    use bip0039::Mnemonic;
     use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
     use tokio::time::sleep;
 
@@ -222,6 +223,7 @@ pub mod setup {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     },
                 },
+                1.try_into().unwrap(),
             )
             .unwrap()
         }
@@ -253,7 +255,10 @@ pub mod setup {
             LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
-                    WalletBase::MnemonicPhrase(mnemonic_phrase),
+                    WalletBase::Mnemonic {
+                        mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
+                        no_of_accounts: 1.try_into().unwrap(),
+                    },
                     (birthday as u32).into(),
                     config.wallet_settings.clone(),
                 )
@@ -936,7 +941,10 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .await
         .unwrap();
     // shield transparent
-    recipient.quick_shield().await.unwrap();
+    recipient
+        .quick_shield(zip32::AccountId::ZERO)
+        .await
+        .unwrap();
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
         .await
         .unwrap();

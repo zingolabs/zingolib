@@ -18,8 +18,7 @@ pub async fn new_client_from_save_buffer(
         .wallet
         .lock()
         .await
-        .write(&mut wallet_bytes, &template_client.config.chain)
-        .await?;
+        .write(&mut wallet_bytes, &template_client.config.chain)?;
 
     LightClient::create_from_wallet(
         LightWallet::read(wallet_bytes.as_slice(), template_client.config.chain)?,
@@ -70,7 +69,9 @@ pub mod from_inputs {
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
-        quick_sender.quick_send(request).await
+        quick_sender
+            .quick_send(request, zip32::AccountId::ZERO)
+            .await
     }
 
     /// Panics if the address, amount or memo conversion fails.
@@ -112,7 +113,7 @@ pub mod from_inputs {
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
-        proposer.propose_send(request).await
+        proposer.propose_send(request, zip32::AccountId::ZERO).await
     }
 }
 

@@ -5,7 +5,9 @@ use super::{
     LightWallet,
     error::{FeeError, RemovalError, SpendError},
 };
-use pepper_sync::wallet::{OutputId, OutputInterface, TransparentCoin, WalletTransaction};
+use pepper_sync::wallet::{
+    KeyIdInterface, NoteInterface, OutputId, OutputInterface, TransparentCoin, WalletTransaction,
+};
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -134,16 +136,28 @@ impl LightWallet {
     }
 }
 
-/// Returns all unspent outputs of the specified pool in the given `transaction`.
+/// Returns all unspent notes of the specified pool and `account` in the given `transaction`.
 ///
 /// Any output IDs in `exclude` will not be returned.
-pub(crate) fn transaction_unspent_outputs<'a, Op: OutputInterface + 'a>(
+pub(crate) fn transaction_unspent_notes<'a, N: NoteInterface + 'a>(
     transaction: &'a WalletTransaction,
     exclude: &'a [OutputId],
-) -> impl Iterator<Item = &'a Op> + 'a {
-    Op::transaction_outputs(transaction)
+    account: zip32::AccountId,
+) -> impl Iterator<Item = &'a N> + 'a {
+    N::transaction_outputs(transaction)
         .iter()
-        .filter(|&output| {
-            output.spending_transaction().is_none() && !exclude.contains(&output.output_id())
+        .filter(move |&note| {
+            note.spending_transaction().is_none()
+                && !exclude.contains(&note.output_id())
+                && note.key_id().account_id() == account
         })
+}
+
+/// Returns all unspent transparent outputs in the given `transaction`.
+pub(crate) fn transaction_unspent_coins(
+    transaction: &WalletTransaction,
+) -> impl Iterator<Item = &TransparentCoin> {
+    TransparentCoin::transaction_outputs(transaction)
+        .iter()
+        .filter(move |&coin| coin.spending_transaction().is_none())
 }

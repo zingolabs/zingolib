@@ -18,6 +18,8 @@ incrementalmerkletree = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 
+bip0039.workspace = true
+zip32.workspace = true
 tokio = { workspace = true, features = ["full"] }
 http = { workspace = true }
 hyper = { workspace = true }

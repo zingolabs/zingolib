@@ -6,18 +6,19 @@ use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
+use zcash_protocol::value::Zatoshis;
 use zingolib::config::RegtestNetwork;
-use zingolib::lightclient::PoolBalances;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
+use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
-    balance: PoolBalances,
+    balance: AccountBalance,
     o_expect: u64,
     s_expect: u64,
     t_expect: u64,
@@ -25,17 +26,32 @@ fn check_expected_balance_with_fvks(
     for fvk in fvks {
         match fvk {
             Fvk::Sapling(_) => {
-                assert_eq!(balance.sapling_balance.unwrap(), s_expect);
-                assert_eq!(balance.verified_sapling_balance.unwrap(), s_expect);
-                assert_eq!(balance.unverified_sapling_balance.unwrap(), s_expect);
+                assert_eq!(balance.total_sapling_balance.unwrap().into_u64(), s_expect);
+                assert_eq!(
+                    balance.confirmed_sapling_balance.unwrap().into_u64(),
+                    s_expect
+                );
+                assert_eq!(
+                    balance.unconfirmed_sapling_balance.unwrap().into_u64(),
+                    s_expect
+                );
             }
             Fvk::Orchard(_) => {
-                assert_eq!(balance.orchard_balance.unwrap(), o_expect);
-                assert_eq!(balance.verified_orchard_balance.unwrap(), o_expect);
-                assert_eq!(balance.unverified_orchard_balance.unwrap(), o_expect);
+                assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), o_expect);
+                assert_eq!(
+                    balance.confirmed_orchard_balance.unwrap().into_u64(),
+                    o_expect
+                );
+                assert_eq!(
+                    balance.unconfirmed_orchard_balance.unwrap().into_u64(),
+                    o_expect
+                );
             }
             Fvk::P2pkh(_) => {
-                assert_eq!(balance.confirmed_transparent_balance.unwrap(), t_expect);
+                assert_eq!(
+                    balance.confirmed_transparent_balance.unwrap().into_u64(),
+                    t_expect
+                );
             }
             _ => panic!(),
         }
@@ -44,15 +60,15 @@ fn check_expected_balance_with_fvks(
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
-    balance: &PoolBalances,
+    balance: &AccountBalance,
     unified_key_store: &UnifiedKeyStore,
     fvks: &[&Fvk],
     orchard_fvk: &Fvk,
     sapling_fvk: &Fvk,
     transparent_fvk: &Fvk,
-    sent_o_value: Option<u64>,
-    sent_s_value: Option<u64>,
-    sent_t_value: Option<u64>,
+    sent_o_value: Option<Zatoshis>,
+    sent_s_value: Option<Zatoshis>,
+    sent_t_value: Option<Zatoshis>,
     orchard_notes: &[NoteSummary],
     sapling_notes: &[NoteSummary],
     transparent_coins: &[CoinSummary],
@@ -63,15 +79,15 @@ fn check_view_capability_bounds(
     //Orchard
     if !fvks.contains(&orchard_fvk) {
         assert!(ufvk.orchard().is_none());
-        assert_eq!(balance.orchard_balance, None);
-        assert_eq!(balance.verified_orchard_balance, None);
-        assert_eq!(balance.unverified_orchard_balance, None);
+        assert_eq!(balance.total_orchard_balance, None);
+        assert_eq!(balance.confirmed_orchard_balance, None);
+        assert_eq!(balance.unconfirmed_orchard_balance, None);
         assert_eq!(orchard_notes.len(), 0);
     } else {
         assert!(ufvk.orchard().is_some());
-        assert_eq!(balance.orchard_balance, sent_o_value);
-        assert_eq!(balance.verified_orchard_balance, sent_o_value);
-        assert_eq!(balance.unverified_orchard_balance, Some(0));
+        assert_eq!(balance.total_orchard_balance, sent_o_value);
+        assert_eq!(balance.confirmed_orchard_balance, sent_o_value);
+        assert_eq!(balance.unconfirmed_orchard_balance, Some(Zatoshis::ZERO));
         // assert 1 Orchard note, or 2 notes if a dummy output is included
         let orchard_notes_count = orchard_notes
             .iter()
@@ -82,15 +98,15 @@ fn check_view_capability_bounds(
     //Sapling
     if !fvks.contains(&sapling_fvk) {
         assert!(ufvk.sapling().is_none());
-        assert_eq!(balance.sapling_balance, None);
-        assert_eq!(balance.verified_sapling_balance, None);
-        assert_eq!(balance.unverified_sapling_balance, None);
+        assert_eq!(balance.total_sapling_balance, None);
+        assert_eq!(balance.confirmed_sapling_balance, None);
+        assert_eq!(balance.unconfirmed_sapling_balance, None);
         assert_eq!(sapling_notes.len(), 0);
     } else {
         assert!(ufvk.sapling().is_some());
-        assert_eq!(balance.sapling_balance, sent_s_value);
-        assert_eq!(balance.verified_sapling_balance, sent_s_value);
-        assert_eq!(balance.unverified_sapling_balance, Some(0));
+        assert_eq!(balance.total_sapling_balance, sent_s_value);
+        assert_eq!(balance.confirmed_sapling_balance, sent_s_value);
+        assert_eq!(balance.unconfirmed_sapling_balance, Some(Zatoshis::ZERO));
         assert_eq!(
             sapling_notes
                 .iter()
@@ -453,6 +469,7 @@ mod fast {
                 address_from_str(&get_base_address_macro!(&recipient, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -470,6 +487,7 @@ mod fast {
                 address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
                 true,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -571,7 +589,10 @@ mod fast {
         macro_rules! send_and_sync {
             ($client:ident, $message:ident) => {
                 // Propose sending the message
-                $client.propose_send($message.clone()).await.unwrap();
+                $client
+                    .propose_send($message.clone(), zip32::AccountId::ZERO)
+                    .await
+                    .unwrap();
                 // Complete and broadcast the stored proposal
                 $client.send_stored_proposal().await.unwrap();
                 // Increase the height and wait for the client
@@ -586,21 +607,27 @@ mod fast {
             .wallet
             .lock()
             .await
-            .generate_unified_address(ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
+            .generate_unified_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                zip32::AccountId::ZERO,
+            )
             .unwrap();
         let charlie = faucet
             .wallet
             .lock()
             .await
-            .generate_unified_address(ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
+            .generate_unified_address(
+                ReceiverSelection {
+                    orchard: true,
+                    sapling: true,
+                    transparent: true,
+                },
+                zip32::AccountId::ZERO,
+            )
             .unwrap();
 
         // messages
@@ -830,7 +857,10 @@ mod fast {
 
             let transaction_request = TransactionRequest::new(payment).unwrap();
 
-            let proposal = sender.propose_send(transaction_request).await.unwrap();
+            let proposal = sender
+                .propose_send(transaction_request, zip32::AccountId::ZERO)
+                .await
+                .unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
             let _sent_txids_according_to_broadcast = sender.send_stored_proposal().await.unwrap();
             let _txids = sender
@@ -935,7 +965,10 @@ mod fast {
         );
         drop(wallet);
 
-        recipient.quick_shield().await.unwrap();
+        recipient
+            .quick_shield(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
@@ -1039,20 +1072,25 @@ mod fast {
         )
         .await
         .unwrap();
-        let balance_b = recipient.do_balance().await;
+        let balance_b = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         assert_eq!(
             balance_b,
-            PoolBalances {
-                sapling_balance: Some(5000),
-                verified_sapling_balance: Some(5000),
-                spendable_sapling_balance: Some(5000),
-                unverified_sapling_balance: Some(0),
-                orchard_balance: Some(15000),
-                verified_orchard_balance: Some(15000),
-                spendable_orchard_balance: Some(15000),
-                unverified_orchard_balance: Some(0),
-                confirmed_transparent_balance: Some(0),
-                unconfirmed_transparent_balance: Some(0)
+            AccountBalance {
+                total_sapling_balance: Some(5000.try_into().unwrap()),
+                confirmed_sapling_balance: Some(5000.try_into().unwrap()),
+                unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+                total_orchard_balance: Some(15000.try_into().unwrap()),
+                confirmed_orchard_balance: Some(15000.try_into().unwrap()),
+                unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+                total_transparent_balance: Some(0.try_into().unwrap()),
+                confirmed_transparent_balance: Some(0.try_into().unwrap()),
+                unconfirmed_transparent_balance: Some(0.try_into().unwrap())
             }
         );
     }
@@ -1231,7 +1269,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 100)
             .await
             .unwrap();
-        faucet.quick_shield().await.unwrap();
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
     }
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
@@ -1241,7 +1279,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 100)
             .await
             .unwrap();
-        let proposal = faucet.propose_shield().await.unwrap();
+        let proposal = faucet.propose_shield(zip32::AccountId::ZERO).await.unwrap();
         let only_step = proposal.steps().first();
 
         // Orchard action and dummy, plus 4 transparent inputs
@@ -1274,7 +1312,7 @@ mod fast {
             .await
             .unwrap();
         faucet.do_new_address("zto").await.unwrap();
-        let proposal = faucet.propose_shield().await.unwrap();
+        let proposal = faucet.propose_shield(zip32::AccountId::ZERO).await.unwrap();
         let only_step = proposal.steps().first();
 
         // Orchard action and dummy, plus 4 transparent inputs
@@ -1374,7 +1412,13 @@ mod slow {
 
         println!(
             "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+            &recipient
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
         );
         println!(
             "{}",
@@ -1657,6 +1701,7 @@ mod slow {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
             },
+            1.try_into().unwrap(),
         )
         .unwrap();
 
@@ -1685,12 +1730,25 @@ mod slow {
         )
         .await
         .unwrap();
-        let original_recipient_balance = original_recipient.do_balance().await;
+        let original_recipient_balance = original_recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         let sent_t_value = original_recipient_balance
             .confirmed_transparent_balance
-            .unwrap();
-        let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
-        let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
+            .unwrap()
+            .into_u64();
+        let sent_s_value = original_recipient_balance
+            .total_sapling_balance
+            .unwrap()
+            .into_u64();
+        let sent_o_value = original_recipient_balance
+            .total_orchard_balance
+            .unwrap()
+            .into_u64();
         assert_eq!(sent_t_value, 10_000u64);
         assert_eq!(sent_s_value, 20_000u64);
         assert_eq!(sent_o_value, 30_000u64);
@@ -1702,7 +1760,10 @@ mod slow {
         // Extract viewing keys
         let original_wallet = original_recipient.wallet.lock().await;
         let [o_fvk, s_fvk, t_fvk] = zingolib::testutils::build_fvks_from_unified_keystore(
-            &original_wallet.unified_key_store,
+            &original_wallet
+                .unified_key_store
+                .get(&zip32::AccountId::ZERO)
+                .unwrap(),
         );
         let fvks_sets = [
             vec![&o_fvk],
@@ -1720,10 +1781,22 @@ mod slow {
 
             let mut watch_client = build_fvk_client(fvks, zingo_config.clone());
             // assert empty wallet before rescan
-            let balance = watch_client.do_balance().await;
+            let balance = watch_client
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap();
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
             watch_client.rescan_and_await().await.unwrap();
-            let balance = watch_client.do_balance().await;
+            let balance = watch_client
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap();
             {
                 let watch_wallet = watch_client.wallet.lock().await;
                 let orchard_notes = watch_wallet.note_summaries::<OrchardNote>(true);
@@ -1732,14 +1805,17 @@ mod slow {
 
                 check_view_capability_bounds(
                     &balance,
-                    &watch_wallet.unified_key_store,
+                    &watch_wallet
+                        .unified_key_store
+                        .get(&zip32::AccountId::ZERO)
+                        .unwrap(),
                     fvks,
                     &o_fvk,
                     &s_fvk,
                     &t_fvk,
-                    Some(sent_o_value),
-                    Some(sent_s_value),
-                    Some(sent_t_value),
+                    Some(sent_o_value.try_into().unwrap()),
+                    Some(sent_s_value.try_into().unwrap()),
+                    Some(sent_t_value.try_into().unwrap()),
                     &orchard_notes,
                     &sapling_notes,
                     &transparent_coin,
@@ -1754,7 +1830,7 @@ mod slow {
                 )
                 .await,
                 Err(QuickSendError::SendError(SendError::CalculateSendError(
-                    CalculateTransactionError::NoSpendCapability
+                    CalculateTransactionError::NoSpendingKey(_)
                 )))
             ));
         }
@@ -1842,7 +1918,10 @@ mod slow {
         )
         .await
         .unwrap();
-        recipient.quick_shield().await.unwrap();
+        recipient
+            .quick_shield(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         zingolib::testutils::increase_height_and_wait_for_client(
             regtest_manager,
             &mut recipient,
@@ -1852,7 +1931,13 @@ mod slow {
         .unwrap();
         println!(
             "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+            &recipient
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
         );
         println!("{}", recipient.transaction_summaries().await.unwrap());
         println!(
@@ -1862,7 +1947,13 @@ mod slow {
         recipient.rescan_and_await().await.unwrap();
         println!(
             "{}",
-            serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+            &recipient
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
         );
         println!("{}", recipient.transaction_summaries().await.unwrap());
         println!(
@@ -2078,13 +2169,19 @@ mod slow {
         {
             let recipient_wallet = recipient.wallet.lock().await;
             assert_eq!(
-                recipient_wallet.pending_balance::<OrchardNote>().await,
-                Some(expected_funds)
+                recipient_wallet
+                    .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .await
+                    .unwrap(),
+                expected_funds.try_into().unwrap()
             );
             //  (2) The balance is not yet verified
             assert_eq!(
-                recipient_wallet.confirmed_balance::<OrchardNote>().await,
-                Some(0)
+                recipient_wallet
+                    .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                    .await
+                    .unwrap(),
+                0.try_into().unwrap()
             );
         }
 
@@ -2309,9 +2406,10 @@ mod slow {
                 .wallet
                 .lock()
                 .await
-                .spendable_balance::<OrchardNote>()
-                .await,
-            Some(second_wave_expected_funds),
+                .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
+                .await
+                .unwrap(),
+            second_wave_expected_funds.try_into().unwrap(),
         );
     }
 
@@ -2366,7 +2464,13 @@ mod slow {
         );
         println!(
             "{}",
-            serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+            &faucet
+                .wallet
+                .lock()
+                .await
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
         );
 
         check_client_balances!(faucet, o: faucet_orch s: 0 t: 0);
@@ -2460,12 +2564,21 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        let balance = faucet.do_balance().await;
+        let balance = faucet
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         // We send change to orchard now, so we should have the full value of the note
         // we spent, minus the transaction fee
-        assert_eq!(balance.unverified_orchard_balance, Some(0));
         assert_eq!(
-            balance.verified_orchard_balance.unwrap(),
+            balance.unconfirmed_orchard_balance,
+            Some(0.try_into().unwrap())
+        );
+        assert_eq!(
+            balance.confirmed_orchard_balance.unwrap().into_u64(),
             625_000_000 - 4 * u64::from(MARGINAL_FEE)
         );
     }
@@ -2713,10 +2826,16 @@ mod slow {
 
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
         let network = recipient.wallet.lock().await.network;
-        let balance = recipient.do_balance().await;
-        assert_eq!(balance.sapling_balance.unwrap(), value);
-        assert_eq!(balance.unverified_sapling_balance.unwrap(), 0);
-        assert_eq!(balance.spendable_sapling_balance.unwrap(), value);
+        let balance = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(balance.total_sapling_balance.unwrap().into_u64(), value);
+        assert_eq!(balance.confirmed_sapling_balance.unwrap().into_u64(), value);
+        assert_eq!(balance.unconfirmed_sapling_balance.unwrap().into_u64(), 0);
 
         {
             let recipient_sapling_address = *recipient
@@ -3254,11 +3373,17 @@ mod slow {
         let (regtest_manager, _cph, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(value).await;
 
-        let bal = recipient.do_balance().await;
-        println!("{}", serde_json::to_string_pretty(&bal).unwrap());
-        assert_eq!(bal.orchard_balance.unwrap(), value);
-        assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
-        assert_eq!(bal.verified_orchard_balance.unwrap(), value);
+        let bal = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        println!("{}", bal);
+        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
+        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
+        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
 
         // 3. Mine 10 blocks
         zingolib::testutils::increase_height_and_wait_for_client(
@@ -3268,10 +3393,16 @@ mod slow {
         )
         .await
         .unwrap();
-        let bal = recipient.do_balance().await;
-        assert_eq!(bal.orchard_balance.unwrap(), value);
-        assert_eq!(bal.verified_orchard_balance.unwrap(), value);
-        assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
+        let bal = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
+        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
+        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
 
         // 4. Spend the funds
         let sent_value = 2000;
@@ -3288,13 +3419,19 @@ mod slow {
         .await
         .unwrap();
 
-        let bal = recipient.do_balance().await;
+        let bal = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
 
         // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
         let new_bal = value - (sent_value + u64::from(MINIMUM_FEE));
-        assert_eq!(bal.orchard_balance.unwrap(), new_bal);
-        assert_eq!(bal.verified_orchard_balance.unwrap(), 0);
-        assert_eq!(bal.unverified_orchard_balance.unwrap(), new_bal);
+        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), new_bal);
+        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), 0);
+        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), new_bal);
 
         // 5. Mine the pending block, making the funds verified and spendable.
         zingolib::testutils::increase_height_and_wait_for_client(
@@ -3305,11 +3442,17 @@ mod slow {
         .await
         .unwrap();
 
-        let bal = recipient.do_balance().await;
+        let bal = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
 
-        assert_eq!(bal.orchard_balance.unwrap(), new_bal);
-        assert_eq!(bal.verified_orchard_balance.unwrap(), new_bal);
-        assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
+        assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), new_bal);
+        assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), new_bal);
+        assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
     }
 
     // FIXME: add unified address discovery to pepper sync and add a test here
@@ -3403,7 +3546,7 @@ mod slow {
         //  # Expected Fees to recipient:
         //    - legacy: 10_000
         //    - 317:    15_000 1-orchard + 1-dummy + 1-transparent in
-        client.quick_shield().await.unwrap();
+        client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
         bump_and_check!(o: 35_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
@@ -3487,7 +3630,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    20_000 = 10_000 orchard and o-dummy + 10_000 (2 t-notes)
-        client.quick_shield().await.unwrap();
+        client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
         bump_and_check!(o: 500_000 s: 10_000 t: 0);
         test_dev_total_expected_fee += 20_000;
         assert_eq!(
@@ -3585,7 +3728,7 @@ mod slow {
         //  # Expected Fees:
         //    - legacy: 10_000
         //    - 317:    15_000 1t and 2o
-        client.quick_shield().await.unwrap();
+        client.quick_shield(zip32::AccountId::ZERO).await.unwrap();
         bump_and_check!(o: 455_000 s: 0 t: 0);
         test_dev_total_expected_fee += 15_000;
         assert_eq!(
@@ -3816,10 +3959,19 @@ mod slow {
                     .is_confirmed()
             );
         }
-        let balance = recipient.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(880_000));
-        assert_eq!(balance.unverified_orchard_balance, Some(880_000));
-        assert_eq!(balance.verified_orchard_balance, Some(0));
+        let balance = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), 880_000);
+        assert_eq!(balance.confirmed_orchard_balance.unwrap().into_u64(), 0);
+        assert_eq!(
+            balance.unconfirmed_orchard_balance.unwrap().into_u64(),
+            880_000
+        );
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
@@ -3854,10 +4006,19 @@ mod slow {
                     .is_confirmed()
             );
         }
-        let balance = recipient.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(880_000));
-        assert_eq!(balance.unverified_orchard_balance, Some(0));
-        assert_eq!(balance.verified_orchard_balance, Some(880_000));
+        let balance = recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(balance.total_orchard_balance.unwrap().into_u64(), 880_000);
+        assert_eq!(
+            balance.confirmed_orchard_balance.unwrap().into_u64(),
+            880_000
+        );
+        assert_eq!(balance.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
     }
 }
 
@@ -4308,7 +4469,7 @@ mod send_all {
             Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
             recipient
-                .get_spendable_shielded_balance(external_uaddress, true)
+                .get_spendable_shielded_balance(external_uaddress, true, zip32::AccountId::ZERO)
                 .await
                 .unwrap(),
             expected_balance
@@ -4367,6 +4528,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await
             .unwrap();
@@ -4381,18 +4543,22 @@ mod send_all {
                 .wallet
                 .lock()
                 .await
-                .confirmed_balance_excluding_dust::<SaplingNote>()
-                .await,
-            Some(0)
+                .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
+                .into_u64(),
+            0
         );
         assert_eq!(
             recipient
                 .wallet
                 .lock()
                 .await
-                .confirmed_balance_excluding_dust::<OrchardNote>()
-                .await,
-            Some(0)
+                .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
+                .into_u64(),
+            0
         );
     }
 
@@ -4406,6 +4572,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await;
 
@@ -4433,6 +4600,7 @@ mod send_all {
                 address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
                 false,
                 None,
+                zip32::AccountId::ZERO,
             )
             .await;
 

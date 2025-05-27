@@ -2,7 +2,7 @@
 
 use pepper_sync::{
     keys::transparent::TransparentScope,
-    wallet::{NoteInterface, OutputInterface as _, TransparentCoin},
+    wallet::{KeyIdInterface, NoteInterface, OutputInterface as _, TransparentCoin},
 };
 use zcash_primitives::{consensus::BlockHeight, memo::Memo, transaction::TxId};
 use zingo_status::confirmation_status::ConfirmationStatus;

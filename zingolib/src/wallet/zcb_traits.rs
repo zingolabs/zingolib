@@ -35,8 +35,8 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::{self, TransparentScope},
     wallet::{
-        NoteInterface as _, OrchardNote, OrchardShardStore, OutputId, OutputInterface, SaplingNote,
-        SaplingShardStore, traits::SyncWallet,
+        KeyIdInterface, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
+        OutputInterface, SaplingNote, SaplingShardStore, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -51,7 +51,7 @@ impl Account for ZingoAccount {
     }
 
     fn name(&self) -> Option<&str> {
-        Some("Account 0")
+        None
     }
 
     fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
@@ -73,7 +73,7 @@ impl WalletRead for LightWallet {
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(vec![(Self::AccountId::ZERO)])
+        Ok(self.unified_key_store.keys().cloned().collect())
     }
 
     fn get_account(
@@ -110,7 +110,17 @@ impl WalletRead for LightWallet {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        Ok(Some(ZingoAccount(Self::AccountId::ZERO, ufvk.clone())))
+        let Some((account_id, unified_key)) =
+            self.unified_key_store.iter().find(|(_, unified_key)| {
+                UnifiedFullViewingKey::try_from(*unified_key).is_ok_and(|account_ufvk| {
+                    account_ufvk.encode(&self.network) == *ufvk.encode(&self.network)
+                })
+            })
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(ZingoAccount(*account_id, unified_key.try_into()?)))
     }
 
     fn list_addresses(
@@ -427,11 +437,11 @@ impl WalletWrite for LightWallet {
 
     fn reserve_next_n_ephemeral_addresses(
         &mut self,
-        _account_id: Self::AccountId,
+        account_id: Self::AccountId,
         n: usize,
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
         Ok(self
-            .generate_refund_addresses(n)?
+            .generate_refund_addresses(n, account_id)?
             .into_iter()
             .map(|(address_id, address)| {
                 (
@@ -550,7 +560,7 @@ impl InputSource for LightWallet {
 
     fn select_spendable_notes(
         &self,
-        _account: Self::AccountId,
+        account: Self::AccountId,
         target_value: Zatoshis,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
@@ -573,6 +583,7 @@ impl InputSource for LightWallet {
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_sapling,
+                account,
             )?
         } else {
             Vec::new()
@@ -582,6 +593,7 @@ impl InputSource for LightWallet {
                 &mut remaining_value_needed,
                 anchor_height,
                 &exclude_orchard,
+                account,
             )?
         } else {
             Vec::new()
@@ -687,7 +699,6 @@ impl InputSource for LightWallet {
         Ok(self
             .spendable_transparent_coins(
                 target_height,
-                &[],
                 NonZeroU32::new(min_confirmations).ok_or(WalletError::MinimumConfirmationError)?,
             )
             .into_iter()

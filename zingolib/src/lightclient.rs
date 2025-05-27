@@ -11,7 +11,6 @@ use std::{
 };
 
 use json::{JsonValue, array};
-use serde::Serialize;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -32,109 +31,6 @@ pub mod propose;
 pub mod save;
 pub mod send;
 pub mod sync;
-
-/// TODO: Add Doc Comment Here!
-// TODO: move balance fns to wallet balance sub-module and also move this struct there
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct PoolBalances {
-    /// TODO: Add Doc Comment Here!
-    pub sapling_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub verified_sapling_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub spendable_sapling_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub unverified_sapling_balance: Option<u64>,
-
-    /// TODO: Add Doc Comment Here!
-    pub orchard_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub verified_orchard_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub unverified_orchard_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub spendable_orchard_balance: Option<u64>,
-
-    /// TODO: Add Doc Comment Here!
-    pub confirmed_transparent_balance: Option<u64>,
-    /// TODO: Add Doc Comment Here!
-    pub unconfirmed_transparent_balance: Option<u64>,
-}
-
-// TODO: underscore every 3 digits instead of 4
-fn format_option_zatoshis(ioz: &Option<u64>) -> String {
-    ioz.map(|ioz_num| {
-        if ioz_num == 0 {
-            "0".to_string()
-        } else {
-            let mut digits = vec![];
-            let mut remainder = ioz_num;
-            while remainder != 0 {
-                digits.push(remainder % 10);
-                remainder /= 10;
-            }
-            let mut backwards = "".to_string();
-            for (i, digit) in digits.iter().enumerate() {
-                if i % 8 == 4 {
-                    backwards.push('_');
-                }
-                if let Some(ch) = char::from_digit(*digit as u32, 10) {
-                    backwards.push(ch);
-                }
-                if i == 7 {
-                    backwards.push('.');
-                }
-            }
-            backwards.chars().rev().collect::<String>()
-        }
-    })
-    .unwrap_or("null".to_string())
-}
-
-impl std::fmt::Display for PoolBalances {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[
-    sapling_balance: {}
-    verified_sapling_balance: {}
-    spendable_sapling_balance: {}
-    unverified_sapling_balance: {}
-
-    orchard_balance: {}
-    verified_orchard_balance: {}
-    spendable_orchard_balance: {}
-    unverified_orchard_balance: {}
-
-    confirmed_transparent_balance: {}
-    unconfirmed_transparent_balance: {}
-]",
-            format_option_zatoshis(&self.sapling_balance),
-            format_option_zatoshis(&self.verified_sapling_balance),
-            format_option_zatoshis(&self.spendable_sapling_balance),
-            format_option_zatoshis(&self.unverified_sapling_balance),
-            format_option_zatoshis(&self.orchard_balance),
-            format_option_zatoshis(&self.verified_orchard_balance),
-            format_option_zatoshis(&self.spendable_orchard_balance),
-            format_option_zatoshis(&self.unverified_orchard_balance),
-            format_option_zatoshis(&self.confirmed_transparent_balance),
-            format_option_zatoshis(&self.unconfirmed_transparent_balance),
-        )
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-// TODO: move seed fns to wallet and move this struct also
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct AccountBackupInfo {
-    /// TODO: Add Doc Comment Here!
-    #[serde(rename = "seed")]
-    pub seed_phrase: String,
-    /// TODO: Add Doc Comment Here!
-    pub birthday: u64,
-    /// TODO: Add Doc Comment Here!
-    pub account_index: u32,
-}
 
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
@@ -168,7 +64,9 @@ impl LightClient {
         Self::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::FreshEntropy,
+                WalletBase::FreshEntropy {
+                    no_of_accounts: config.no_of_accounts,
+                },
                 chain_height,
                 config.wallet_settings.clone(),
             )?,
@@ -238,20 +136,20 @@ impl LightClient {
     }
 
     /// Generates a new unified address from the given `addr_type`.
-    // TODO: move to wallet
+    // TODO: remove?
     pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
-        //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
             orchard: addr_type.contains('o'),
             transparent: addr_type.contains('t'),
         };
 
-        let mut wallet = self.wallet.lock().await;
-        let new_address = wallet
-            .generate_unified_address(desired_receivers)
+        let new_address = self
+            .wallet
+            .lock()
+            .await
+            .generate_unified_address(desired_receivers, zip32::AccountId::ZERO)
             .map_err(|e| e.to_string())?;
-        wallet.save_required = true;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -297,6 +195,7 @@ mod tests {
         lightclient::{describe::UAReceivers, error::LightClientError},
         wallet::LightWallet,
     };
+    use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
 
@@ -312,7 +211,10 @@ mod tests {
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
                 0.into(),
                 config.wallet_settings.clone(),
             )
@@ -328,7 +230,10 @@ mod tests {
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
                 0.into(),
                 config.wallet_settings.clone(),
             )

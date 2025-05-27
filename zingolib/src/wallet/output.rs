@@ -10,7 +10,8 @@ use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
 use super::error::WalletError;
-use super::transaction::transaction_unspent_outputs;
+use super::transaction::transaction_unspent_coins;
+use super::transaction::transaction_unspent_notes;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
@@ -217,7 +218,7 @@ impl LightWallet {
         }
     }
 
-    /// Returns all spendable notes of the specified shielded pool in the wallet confirmed at or below `anchor_height`.
+    /// Returns all spendable notes of the specified shielded pool and `account` confirmed at or below `anchor_height`.
     ///
     /// Any notes with output IDs in `exclude` will not be returned.
     /// Any notes without a nullifier or commitment tree position will not be returned.
@@ -226,6 +227,7 @@ impl LightWallet {
         &'a self,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
+        account: zip32::AccountId,
     ) -> Vec<&'a N> {
         self.wallet_transactions
             .values()
@@ -234,7 +236,7 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_unspent_outputs::<N>(transaction, exclude).collect()
+                    transaction_unspent_notes::<N>(transaction, exclude, account).collect()
                 } else {
                     Vec::new()
                 }
@@ -243,16 +245,15 @@ impl LightWallet {
             .collect()
     }
 
-    /// Returns all spendable transparent coins in the wallet confirmed at or below `target_height`.
+    /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
     ///
     /// Any coins with output IDs in `exclude` will not be returned.
     /// Any coins from a coinbase transaction will not be returned without 100 additional confirmations.
-    pub(crate) fn spendable_transparent_coins<'a>(
-        &'a self,
+    pub(crate) fn spendable_transparent_coins(
+        &self,
         target_height: BlockHeight,
-        exclude: &'a [OutputId],
         min_confirmations: NonZeroU32,
-    ) -> Vec<&'a TransparentCoin> {
+    ) -> Vec<&TransparentCoin> {
         self.wallet_transactions
             .values()
             .filter(|&transaction| transaction.status().is_confirmed())
@@ -261,9 +262,8 @@ impl LightWallet {
                     .status()
                     .get_confirmed_height()
                     .expect("transaction must be confirmed in this scope")
-                    > self.sync_state.wallet_height().unwrap_or(self.birthday)
+                    > self.sync_state.wallet_height().unwrap_or(self.birthday) + 1
                         - min_confirmations.get()
-                        + 1
                 {
                     return Vec::new();
                 }
@@ -277,7 +277,7 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&(target_height - additional_confirmations))
                 {
-                    transaction_unspent_outputs::<TransparentCoin>(transaction, exclude).collect()
+                    transaction_unspent_coins(transaction).collect()
                 } else {
                     Vec::new()
                 }
@@ -285,7 +285,7 @@ impl LightWallet {
             .collect()
     }
 
-    /// Selects spendable notes for a given pool confirmed at or below `anchor_height` up to the total value of
+    /// Selects spendable notes for a given pool and `account` confirmed at or below `anchor_height` up to the total value of
     /// `remaining_value_needed`.
     ///
     /// Any notes with output IDs in `exclude` will not be selected.
@@ -296,6 +296,7 @@ impl LightWallet {
         remaining_value_needed: &mut RemainingNeeded,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
+        account: zip32::AccountId,
     ) -> Result<Vec<&'a N>, WalletError> {
         let target_value = match remaining_value_needed {
             RemainingNeeded::Positive(value) => *value,
@@ -303,7 +304,7 @@ impl LightWallet {
         };
 
         let mut selected_notes: Vec<&'a N> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude);
+        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude, account);
         unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());

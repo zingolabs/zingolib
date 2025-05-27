@@ -15,6 +15,9 @@ pub enum WalletError {
     /// Key error
     #[error("{0}")]
     KeyError(#[from] KeyError),
+    /// Mnemonic not found.
+    #[error("Mnemonic not found.")]
+    MnemonicNotFound,
     /// Mnemonic error
     #[error("{0}")]
     MnemonicError(#[from] bip0039::Error),
@@ -39,6 +42,9 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// Maximum number of accounts already in use.
+    #[error("Maximum number of accounts already in use.")]
+    AccountCreationFailed,
 }
 
 /// Price error
@@ -129,12 +135,15 @@ pub enum SpendError {
 /// Errors associated with balance calculation
 #[derive(Debug, thiserror::Error)]
 pub enum BalanceError {
-    /// failed to retrieve full viewing key
-    #[error("failed to retrieve full viewing key.")]
-    NoFullViewingKey,
-    /// conversion failed
+    /// Key error
+    #[error("key error. {0}")]
+    KeyError(#[from] KeyError),
+    /// Conversion failed
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
+    /// Summation overflow
+    #[error("overflow occured during summation")]
+    Overflow,
 }
 
 /// Errors associated with key and address derivation
@@ -146,6 +155,9 @@ pub enum KeyError {
     /// Invalid account ID
     #[error("Account ID should be at most 31 bits")]
     InvalidAccountId(#[from] zip32::TryFromIntError),
+    /// Invalid account ID
+    #[error("No keys found for the given account id. Try adding the account.")]
+    NoAccountKeys,
     /// Key derivation failed
     #[error("Key derivation failed")]
     KeyDerivationError(#[from] DerivationError),
@@ -217,12 +229,10 @@ pub enum TransmissionError {
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
-    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-    NoSpendCapability,
-    #[error("Could not load sapling_params: {0}")]
+    #[error("No unified spending key found for this account. {0}")]
+    NoSpendingKey(#[from] crate::wallet::error::KeyError),
+    #[error("Failed to load sapling paramaters. {0}")]
     SaplingParams(String),
-    #[error("Could not find UnifiedSpendKey: {0}")]
-    UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
         zcash_client_backend::data_api::error::Error<

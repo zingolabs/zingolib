@@ -34,7 +34,7 @@ impl LightClient {
     }
 
     /// Stores a proposal in the `latest_proposal` field of the LightClient.
-    /// This field must be populated in order to then send a transaction.
+    /// This field must be populated in order to then create and transmit a transaction.
     async fn store_proposal(&mut self, proposal: ZingoProposal) {
         self.latest_proposal = Some(proposal);
     }
@@ -43,28 +43,33 @@ impl LightClient {
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
+        account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let proposal = self
             .wallet
             .lock()
             .await
-            .create_send_proposal(request)
+            .create_send_proposal(request, account_id)
             .await?;
-        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-            .await;
+        self.store_proposal(ZingoProposal::Send {
+            proposal: proposal.clone(),
+            sending_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
 
-    /// Creates and stores a proposal for sending all shielded funds to a given address.
+    /// Creates and stores a proposal for sending all shielded funds from a specified account to a given `address`.
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
         memo: Option<zcash_primitives::memo::MemoBytes>,
+        account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let spendable_balance = self
-            .get_spendable_shielded_balance(address.clone(), zennies_for_zingo)
+            .get_spendable_shielded_balance(address.clone(), zennies_for_zingo, account_id)
             .await?;
         if spendable_balance == Zatoshis::ZERO {
             return Err(ProposeSendError::ZeroValueSendAll);
@@ -79,10 +84,13 @@ impl LightClient {
             .wallet
             .lock()
             .await
-            .create_send_proposal(request)
+            .create_send_proposal(request, account_id)
             .await?;
-        self.store_proposal(ZingoProposal::Transfer(proposal.clone()))
-            .await;
+        self.store_proposal(ZingoProposal::Send {
+            proposal: proposal.clone(),
+            sending_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
@@ -101,9 +109,12 @@ impl LightClient {
         &self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
+        account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
         let mut wallet = self.wallet.lock().await;
-        let confirmed_balance = wallet.confirmed_shielded_balance_excluding_dust().await?;
+        let confirmed_balance = wallet
+            .confirmed_shielded_balance_excluding_dust(account_id)
+            .await?;
         let mut spendable_balance = confirmed_balance;
 
         loop {
@@ -112,7 +123,7 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request).await;
+            let trial_proposal = wallet.create_send_proposal(request, account_id).await;
 
             match trial_proposal {
                 Err(ProposeSendError::Proposal(
@@ -162,10 +173,19 @@ impl LightClient {
     /// Creates and stores a proposal for shielding all transparent funds..
     pub async fn propose_shield(
         &mut self,
+        account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let proposal = self.wallet.lock().await.create_shield_proposal().await?;
-        self.store_proposal(ZingoProposal::Shield(proposal.clone()))
-            .await;
+        let proposal = self
+            .wallet
+            .lock()
+            .await
+            .create_shield_proposal(account_id)
+            .await?;
+        self.store_proposal(ZingoProposal::Shield {
+            proposal: proposal.clone(),
+            shielding_account: account_id,
+        })
+        .await;
 
         Ok(proposal)
     }
@@ -173,6 +193,7 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
+    use bip0039::Mnemonic;
     use pepper_sync::sync::SyncConfig;
 
     use crate::{
@@ -186,7 +207,13 @@ mod shielding {
         LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
-                WalletBase::MnemonicPhrase(testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(
+                        testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                    )
+                    .unwrap(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                },
                 0.into(),
                 WalletSettings {
                     sync_config: SyncConfig {
@@ -208,7 +235,7 @@ mod shielding {
             .wallet
             .lock()
             .await
-            .create_shield_proposal()
+            .create_shield_proposal(zip32::AccountId::ZERO)
             .await;
         match propose_shield_result {
             Err(ProposeShieldError::Component(

@@ -9,11 +9,11 @@ use testvectors::seeds::DARKSIDE_SEED;
 // use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
-use zingolib::lightclient::PoolBalances;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::setup::ClientBuilder;
+use zingolib::wallet::balance::AccountBalance;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
@@ -38,18 +38,23 @@ async fn simple_sync() {
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 }
@@ -76,18 +81,23 @@ async fn reorg_receipt_sync_generic() {
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
     prepare_darksidewalletd(server_id.clone(), false)
@@ -95,18 +105,23 @@ async fn reorg_receipt_sync_generic() {
         .unwrap();
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(0),
-            verified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(0),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(0.try_into().unwrap()),
+            confirmed_orchard_balance: Some(0.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 }
@@ -138,18 +153,23 @@ async fn sent_transaction_reorged_into_mempool() {
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
     let one_txid = from_inputs::quick_send(
@@ -179,11 +199,23 @@ async fn sent_transaction_reorged_into_mempool() {
     //  light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient pre-reorg: {}",
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     println!(
         "Sender pre-reorg (unsynced): {}",
-        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
+        &light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
 
     prepare_darksidewalletd(server_id.clone(), true)
@@ -198,11 +230,23 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.sync_and_await().await.unwrap();
     println!(
         "Recipient post-reorg: {}",
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        &recipient
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     println!(
         "Sender post-reorg: {}",
-        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
+        &light_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     let mut loaded_client =
         zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
@@ -210,7 +254,16 @@ async fn sent_transaction_reorged_into_mempool() {
             .unwrap();
     loaded_client.sync_and_await().await.unwrap();
     assert_eq!(
-        loaded_client.do_balance().await.orchard_balance,
-        Some(100000000)
+        loaded_client
+            .wallet
+            .lock()
+            .await
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
+            .total_orchard_balance
+            .unwrap()
+            .into_u64(),
+        100000000
     );
 }

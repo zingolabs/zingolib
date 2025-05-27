@@ -13,6 +13,7 @@ use zcash_protocol::consensus::Parameters;
 
 use super::LightWallet;
 use super::error::CalculateTransactionError;
+use super::error::KeyError;
 use super::error::TransmissionError;
 use crate::wallet::now;
 use pepper_sync::wallet::traits::SyncWallet as _;
@@ -72,11 +73,8 @@ impl LightWallet {
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        if !self.unified_key_store.is_spending_key() {
-            return Err(CalculateTransactionError::NoSpendCapability);
-        }
-
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
@@ -89,7 +87,7 @@ impl LightWallet {
 
         let calculated_txids = match proposal.steps().len() {
             1 => {
-                self.create_proposed_transactions(sapling_prover, proposal)
+                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
                     .await?
             }
             2 if proposal.steps()[1]
@@ -108,7 +106,7 @@ impl LightWallet {
                     )
                 }) =>
             {
-                self.create_proposed_transactions(sapling_prover, proposal)
+                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
                     .await?
             }
 
@@ -123,11 +121,14 @@ impl LightWallet {
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
-        let usk = (&self.unified_key_store)
-            .try_into()
-            .map_err(CalculateTransactionError::UnifiedSpendKey)?;
+        let usk = self
+            .unified_key_store
+            .get(&sending_account)
+            .ok_or(KeyError::NoAccountKeys)?
+            .try_into()?;
 
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
@@ -260,6 +261,7 @@ impl LightWallet {
                 Ok(sent_transaction.txid)
             })
             .collect::<Result<Vec<TxId>, TransmissionError>>()?;
+        self.save_required = true;
 
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
     }

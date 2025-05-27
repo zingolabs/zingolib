@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 use std::{
     io::{self, Error, ErrorKind},
+    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
@@ -55,6 +56,7 @@ pub fn load_clientconfig(
     data_dir: Option<PathBuf>,
     chain: ChainType,
     wallet_settings: WalletSettings,
+    no_of_accounts: NonZeroU32,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -88,6 +90,7 @@ pub fn load_clientconfig(
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
+        no_of_accounts,
     };
 
     Ok(config)
@@ -138,9 +141,11 @@ pub struct ZingoConfigBuilder {
     pub logfile_name: Option<PathBuf>,
     /// Wallet settings.
     pub wallet_settings: WalletSettings,
+    /// Number of accounts
+    pub no_of_accounts: NonZeroU32,
 }
 
-/// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
+/// Configuration data for the creation of a LightClient.
 // TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
 // lightclient or lightwallet if it needs to retained in memory.
 #[derive(Clone, Debug)]
@@ -157,6 +162,8 @@ pub struct ZingoConfig {
     pub logfile_name: PathBuf,
     /// Wallet settings.
     pub wallet_settings: WalletSettings,
+    /// Number of accounts
+    pub no_of_accounts: NonZeroU32,
 }
 
 impl ZingoConfigBuilder {
@@ -208,6 +215,12 @@ impl ZingoConfigBuilder {
     }
 
     /// TODO: Add Doc Comment Here!
+    pub fn set_no_of_accounts(&mut self, no_of_accounts: NonZeroU32) -> &mut Self {
+        self.no_of_accounts = no_of_accounts;
+        self
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
         let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
@@ -217,6 +230,7 @@ impl ZingoConfigBuilder {
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
             wallet_settings: self.wallet_settings.clone(),
+            no_of_accounts: self.no_of_accounts,
         }
     }
 }
@@ -237,6 +251,7 @@ impl Default for ZingoConfigBuilder {
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
             },
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }
     }
 }
@@ -679,6 +694,7 @@ mod tests {
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
             },
+            1.try_into().unwrap(),
         );
 
         assert!(valid_config.is_ok());
@@ -710,6 +726,7 @@ mod tests {
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
             },
+            1.try_into().unwrap(),
         )
         .unwrap();
 

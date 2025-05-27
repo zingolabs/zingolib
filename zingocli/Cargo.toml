@@ -7,9 +7,9 @@ edition = "2024"
 zingolib = { workspace = true, features = [ "test-elevation" ] }
 pepper-sync = { workspace = true }
 
+bip0039 = { workspace = true }
 clap = { workspace = true }
 http = { workspace = true }
-
 json = { workspace = true }
 log = { workspace = true }
 rustyline = { workspace = true }

@@ -285,6 +285,7 @@ impl NetworkSeedVersion {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                         },
                     },
+                    1.try_into().unwrap(),
                 )
                 .unwrap()
             }

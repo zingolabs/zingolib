@@ -32,19 +32,21 @@ use crate::{
 use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     sync::{SyncConfig, TransparentAddressDiscovery},
-    wallet::{NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction},
+    wallet::{
+        KeyIdInterface, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock,
+        WalletTransaction,
+    },
 };
 
 impl LightWallet {
-    /// Changes in version 34:
-    /// - New price list
+    /// Changes in version 35:
+    /// - Multi-account support
     pub const fn serialized_version() -> u64 {
-        34
+        35
     }
 
     /// Serialize into `writer`
-    // TODO: make sync fn
-    pub async fn write<W: Write>(
+    pub fn write<W: Write>(
         &mut self,
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
@@ -52,17 +54,19 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
         utils::write_string(&mut writer, &self.network.to_string())?;
         let seed_bytes = match &self.mnemonic {
-            Some(m) => m.0.clone().into_entropy(),
+            Some(m) => m.clone().into_entropy(),
             None => vec![],
         };
-
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
-        if let Some(m) = &self.mnemonic {
-            writer.write_u32::<LittleEndian>(m.1)?;
-        }
         writer.write_u32::<LittleEndian>(self.birthday.into())?;
-        self.unified_key_store.write(&mut writer, self.network)?;
-
+        Vector::write(
+            &mut writer,
+            &self.unified_key_store.iter().collect::<Vec<_>>(),
+            |w, (account_id, unified_key)| {
+                w.write_u32::<LittleEndian>(u32::from(**account_id))?;
+                unified_key.write(w, self.network)
+            },
+        )?;
         // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
         Vector::write(
             &mut writer,
@@ -87,7 +91,6 @@ impl LightWallet {
                 w.write_u32::<LittleEndian>(address_id.address_index().index())
             },
         )?;
-
         Vector::write(
             &mut writer,
             &self.wallet_blocks.values().collect::<Vec<_>>(),
@@ -111,7 +114,6 @@ impl LightWallet {
         )?;
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
-
         self.wallet_settings.sync_config.write(&mut writer)?;
         self.price_list.write(&mut writer)
     }
@@ -123,7 +125,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=34 => Self::read_v32(reader, network, version),
+            32..=35 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -208,16 +210,15 @@ impl LightWallet {
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
         let mnemonic = if !seed_bytes.is_empty() {
-            let account_index = if version >= 28 {
+            let _account_index = if version >= 28 {
                 reader.read_u32::<LittleEndian>()?
             } else {
                 0
             };
-            Some((
+            Some(
                 Mnemonic::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
-                account_index,
-            ))
+            )
         } else {
             None
         };
@@ -232,14 +233,14 @@ impl LightWallet {
                 wallet_capability.unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
                         &network,
-                        &mnemonic.0.to_seed(""),
+                        &mnemonic.to_seed(""),
                         AccountId::ZERO,
                     )
                     .map_err(|e| {
                         Error::new(
                             ErrorKind::InvalidData,
                             format!(
-                                "Failed to derive unified spending key from stored seed bytes. {}",
+                                "failed to derive unified spending key from stored seed bytes. {}",
                                 e
                             ),
                         )
@@ -248,33 +249,29 @@ impl LightWallet {
             } else if let UnifiedKeyStore::Spend(_) = &wallet_capability.unified_key_store {
                 return Err(io::Error::new(
                     ErrorKind::Other,
-                    "loading from legacy spending keys with no seed phrase to recover",
+                    "loading from legacy spending keys with no seed to recover",
                 ));
             }
         }
 
-        let unified_key_store = wallet_capability.unified_key_store;
-
-        info!("Keys in this wallet:");
-        match &unified_key_store {
-            UnifiedKeyStore::Spend(_) => {
-                info!("  - orchard spending key");
-                info!("  - sapling extended spending key");
-                info!("  - transparent extended private key");
-            }
-            UnifiedKeyStore::View(ufvk) => {
-                if ufvk.orchard().is_some() {
-                    info!("  - orchard full viewing key");
-                }
-                if ufvk.sapling().is_some() {
-                    info!("  - sapling diversifiable full viewing key");
-                }
-                if ufvk.transparent().is_some() {
-                    info!("  - transparent extended public key");
-                }
-            }
-            UnifiedKeyStore::Empty => info!("  - no keys found"),
-        }
+        let mut unified_key_store = BTreeMap::new();
+        unified_key_store.insert(zip32::AccountId::ZERO, wallet_capability.unified_key_store);
+        let first_address_index = 0;
+        let unified_key = unified_key_store
+            .get(&zip32::AccountId::ZERO)
+            .expect("account 0 must exist");
+        // TODO: remove transparent receivers
+        let first_unified_address = unified_key
+            .generate_unified_address(first_address_index, unified_key.can_view(), false)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let mut unified_addresses = BTreeMap::new();
+        unified_addresses.insert(
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: first_address_index,
+            },
+            first_unified_address.clone(),
+        );
 
         // setup targetted scanning from zingo 1.x transaction data
         let mut sync_state = SyncState::new();
@@ -291,19 +288,6 @@ impl LightWallet {
                         .map(|height| (height, transaction.txid))
                 })
                 .collect::<Vec<_>>(),
-        );
-
-        let first_address_index = 0;
-        let first_unified_address = unified_key_store
-            .generate_unified_address(first_address_index, unified_key_store.can_view(), false)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let mut unified_addresses = BTreeMap::new();
-        unified_addresses.insert(
-            UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
-                address_index: first_address_index,
-            },
-            first_unified_address.clone(),
         );
 
         let lw = Self {
@@ -338,7 +322,7 @@ impl LightWallet {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "Wallet chain name {} doesn't match expected {}",
+                    "wallet chain name {} doesn't match expected {}",
                     saved_network, network
                 ),
             ));
@@ -346,17 +330,36 @@ impl LightWallet {
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
         let mnemonic = if !seed_bytes.is_empty() {
-            let account_index = reader.read_u32::<LittleEndian>()?;
-            Some((
+            if version < 35 {
+                let _account_index = reader.read_u32::<LittleEndian>()?;
+            }
+            Some(
                 <Mnemonic>::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
-                account_index,
-            ))
+            )
         } else {
             None
         };
         let birthday = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
-        let unified_key_store = UnifiedKeyStore::read(&mut reader, network)?;
+
+        let unified_key_store = if version >= 35 {
+            Vector::read(&mut reader, |r| {
+                Ok((
+                    zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
+                        .expect("only valid account ids are stored"),
+                    UnifiedKeyStore::read(r, network)?,
+                ))
+            })?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+        } else {
+            let mut keys = BTreeMap::new();
+            keys.insert(
+                zip32::AccountId::ZERO,
+                UnifiedKeyStore::read(&mut reader, network)?,
+            );
+            keys
+        };
 
         let unified_addresses = Vector::read(&mut reader, |r| {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
@@ -370,6 +373,14 @@ impl LightWallet {
                     address_index,
                 },
                 unified_key_store
+                    .get(&account_id)
+                    .ok_or(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "unified addresses found for account {} but was account not found",
+                            u32::from(account_id)
+                        ),
+                    ))?
                     .generate_unified_address(address_index, receivers, false)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
             ))
@@ -392,6 +403,14 @@ impl LightWallet {
                 transparent::encode_address(
                     &network,
                     unified_key_store
+                        .get(&account_id)
+                        .ok_or(Error::new(
+                            ErrorKind::InvalidData,
+                            format!(
+                                "unified addresses found for account {} but was account not found",
+                                u32::from(account_id)
+                            ),
+                        ))?
                         .generate_transparent_address(address_index, scope, false)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                 ),

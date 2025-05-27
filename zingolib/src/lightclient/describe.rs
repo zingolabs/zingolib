@@ -1,25 +1,15 @@
 //! These functions can be called by consumer to learn about the LightClient.
-use json::{JsonValue, object};
-use pepper_sync::wallet::{OrchardNote, SaplingNote, TransparentCoin};
+
 use std::collections::HashMap;
-use tokio::runtime::Runtime;
 
-use crate::{
-    lightclient::{AccountBackupInfo, LightClient, PoolBalances},
-    wallet::{
-        data::{
-            finsight,
-            summaries::{
-                SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers,
-            },
-        },
-        error::SummaryError,
-    },
+use json::{JsonValue, object};
+
+use crate::lightclient::LightClient;
+use crate::wallet::data::{
+    finsight,
+    summaries::{SentValueTransfer, TransactionSummaries, ValueTransferKind, ValueTransfers},
 };
-
-fn some_sum(a: Option<u64>, b: Option<u64>) -> Option<u64> {
-    a.xor(b).or_else(|| a.zip(b).map(|(v, u)| v + u))
-}
+use crate::wallet::error::SummaryError;
 
 pub enum UAReceivers {
     Orchard,
@@ -31,40 +21,6 @@ impl LightClient {
     /// Wrapper for [crate::wallet::LightWallet::do_addresses].
     pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
         self.wallet.lock().await.do_addresses(subset).await
-    }
-
-    /// Returns wallet balances.
-    // TODO: move to wallet
-    pub async fn do_balance(&self) -> PoolBalances {
-        let wallet = self.wallet.lock().await;
-
-        let confirmed_transparent_balance = wallet.confirmed_balance::<TransparentCoin>().await;
-        let unconfirmed_transparent_balance = wallet.pending_balance::<TransparentCoin>().await;
-
-        let verified_sapling_balance = wallet.confirmed_balance::<SaplingNote>().await;
-        let unverified_sapling_balance = wallet.pending_balance::<SaplingNote>().await;
-        let spendable_sapling_balance = wallet.spendable_balance::<SaplingNote>().await;
-        let sapling_balance = some_sum(verified_sapling_balance, unverified_sapling_balance);
-
-        let verified_orchard_balance = wallet.confirmed_balance::<OrchardNote>().await;
-        let unverified_orchard_balance = wallet.pending_balance::<OrchardNote>().await;
-        let spendable_orchard_balance = wallet.spendable_balance::<OrchardNote>().await;
-        let orchard_balance = some_sum(verified_orchard_balance, unverified_orchard_balance);
-
-        PoolBalances {
-            sapling_balance,
-            verified_sapling_balance,
-            spendable_sapling_balance,
-            unverified_sapling_balance,
-
-            orchard_balance,
-            verified_orchard_balance,
-            spendable_orchard_balance,
-            unverified_orchard_balance,
-
-            confirmed_transparent_balance,
-            unconfirmed_transparent_balance,
-        }
     }
 
     /// Returns server information.
@@ -159,28 +115,6 @@ impl LightClient {
             .await
             .transaction_summaries_json_string()
             .await
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: move to wallet
-    pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
-        let wallet = self.wallet.lock().await;
-        match wallet.mnemonic() {
-            Some(m) => Ok(AccountBackupInfo {
-                seed_phrase: m.0.phrase().to_string(),
-                birthday: wallet.birthday.into(),
-                account_index: m.1,
-            }),
-            None => Err("This wallet is watch-only or was created without a mnemonic."),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    // TODO: remove, consumers should handle their own runtimes
-    pub fn do_seed_phrase_sync(&self) -> Result<AccountBackupInfo, &str> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_seed_phrase().await })
     }
 
     /// TODO: Add Doc Comment Here!
