@@ -206,38 +206,43 @@ impl LightWallet {
             }
         };
 
-        let first_address_index = 0;
-        let first_unified_address = unified_key_store
+        let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
-            .expect("key store always non-empty")
-            .generate_unified_address(
-                first_address_index,
-                unified_key_store
-                    .get(&zip32::AccountId::ZERO)
-                    .expect("key store always non-empty")
-                    .can_view(),
+            .expect("account 0 must exist");
+        let mut unified_addresses = BTreeMap::new();
+        if let Some(receivers) = unified_key.default_receivers() {
+            let unified_address_id = UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: 0,
+            };
+            let first_unified_address = unified_key.generate_unified_address(
+                unified_address_id.address_index,
+                receivers,
                 false,
             )?;
-        let mut unified_addresses = BTreeMap::new();
-        unified_addresses.insert(
-            UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
-                address_index: first_address_index,
-            },
-            first_unified_address.clone(),
-        );
+            unified_addresses.insert(unified_address_id, first_unified_address.clone());
+        }
 
         let mut transparent_addresses = BTreeMap::new();
-        if let Some(transparent_address) = first_unified_address.transparent() {
-            transparent_addresses.insert(
-                TransparentAddressId::new(
-                    zip32::AccountId::ZERO,
-                    TransparentScope::External,
-                    NonHardenedChildIndex::from_index(first_address_index).expect("infallible"),
-                ),
-                transparent::encode_address(&network, *transparent_address),
-            );
-        }
+        let transparent_address_id = TransparentAddressId::new(
+            zip32::AccountId::ZERO,
+            TransparentScope::External,
+            NonHardenedChildIndex::ZERO,
+        );
+        match unified_key.generate_transparent_address(
+            transparent_address_id.address_index(),
+            transparent_address_id.scope(),
+            false,
+        ) {
+            Ok(first_transparent_address) => {
+                transparent_addresses.insert(
+                    transparent_address_id,
+                    transparent::encode_address(&network, first_transparent_address),
+                );
+            }
+            Err(KeyError::NoViewCapability) => (),
+            Err(e) => return Err(e.into()),
+        };
 
         Ok(Self {
             network,

@@ -104,24 +104,27 @@ impl UnifiedKeyStore {
         matches!(self, UnifiedKeyStore::Empty)
     }
 
-    /// Returns a selection of pools where the wallet can view funds.
-    pub fn can_view(&self) -> ReceiverSelection {
+    /// Returns the default receivers for unified address generation depending on the wallet's capability.
+    /// Returns `None` if the wallet does not have viewing capabilities of at least 1 shielded pool.
+    pub fn default_receivers(&self) -> Option<ReceiverSelection> {
         match self {
-            UnifiedKeyStore::Spend(_) => ReceiverSelection {
+            UnifiedKeyStore::Spend(_) => Some(ReceiverSelection {
                 orchard: true,
                 sapling: true,
-                transparent: true,
-            },
-            UnifiedKeyStore::View(ufvk) => ReceiverSelection {
-                orchard: ufvk.orchard().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                transparent: ufvk.transparent().is_some(),
-            },
-            UnifiedKeyStore::Empty => ReceiverSelection {
-                orchard: false,
-                sapling: false,
                 transparent: false,
-            },
+            }),
+            UnifiedKeyStore::View(ufvk) => {
+                if ufvk.orchard().is_some() || ufvk.sapling().is_some() {
+                    Some(ReceiverSelection {
+                        orchard: ufvk.orchard().is_some(),
+                        sapling: ufvk.sapling().is_some(),
+                        transparent: false,
+                    })
+                } else {
+                    None
+                }
+            }
+            UnifiedKeyStore::Empty => None,
         }
     }
 

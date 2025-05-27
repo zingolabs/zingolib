@@ -14,14 +14,21 @@ use json::JsonValue;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_client_backend::tor;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress};
 
-use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
+use pepper_sync::{
+    error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
+};
 
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{LightWallet, WalletBase, error::WalletError},
+    wallet::{
+        LightWallet, WalletBase,
+        error::{KeyError, WalletError},
+        keys::unified::{ReceiverSelection, UnifiedAddressId},
+    },
 };
 use error::LightClientError;
 
@@ -133,6 +140,29 @@ impl LightClient {
     /// Returns tor client.
     pub fn tor_client(&self) -> Option<&tor::Client> {
         self.tor_client.as_ref()
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::generate_unified_address].
+    pub async fn generate_unified_address(
+        &mut self,
+        receivers: ReceiverSelection,
+        account_id: zip32::AccountId,
+    ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
+        self.wallet
+            .lock()
+            .await
+            .generate_unified_address(receivers, account_id)
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::generate_transparent_address].
+    pub async fn generate_transparent_address(
+        &mut self,
+        account_id: zip32::AccountId,
+    ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
+        self.wallet
+            .lock()
+            .await
+            .generate_transparent_address(account_id)
     }
 
     /// Wrapper for [crate::wallet::LightWallet::unified_addresses].
