@@ -40,7 +40,7 @@ zcash_client_backend = { workspace = true, features = [
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
-zcash_proofs = { version = "0.22.0", features = ["download-params"] }
+zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zip32.workspace = true
@@ -87,4 +87,4 @@ portpicker = { workspace = true }
 concat-idents = { workspace = true }
 
 [build-dependencies]
-zcash_proofs = { version = "0.22.0", features = ["download-params"] }
+zcash_proofs = { workspace = true, features = ["download-params"] }
