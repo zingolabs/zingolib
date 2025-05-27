@@ -27,22 +27,45 @@ pub async fn new_client_from_save_buffer(
     )
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
-/// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Transparent => client.unified_addresses().await[0]["receivers"]["transparent"]
-            .clone()
-            .to_string(),
-        PoolType::Shielded(ShieldedProtocol::Sapling) => {
-            client.unified_addresses().await[0]["receivers"]["sapling"]
+        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+            assert_eq!(
+                client.unified_addresses().await[0]["has_orchard"]
+                    .as_bool()
+                    .unwrap(),
+                true
+            );
+            assert_eq!(
+                client.unified_addresses().await[0]["has_sapling"]
+                    .as_bool()
+                    .unwrap(),
+                true
+            );
+            client.unified_addresses().await[0]["encoded_address"]
                 .clone()
                 .to_string()
         }
-        PoolType::Shielded(ShieldedProtocol::Orchard) => {
-            client.unified_addresses().await[0]["address"]
-                .take()
+        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+            assert_eq!(
+                client.unified_addresses().await[1]["has_orchard"]
+                    .as_bool()
+                    .unwrap(),
+                false
+            );
+            assert_eq!(
+                client.unified_addresses().await[1]["has_sapling"]
+                    .as_bool()
+                    .unwrap(),
+                true
+            );
+            client.unified_addresses().await[1]["encoded_address"]
+                .clone()
                 .to_string()
         }
+        PoolType::Transparent => client.transparent_addresses().await[0]["encoded_address"]
+            .clone()
+            .to_string(),
     }
 }
 /// Get the total fees paid by a given client (assumes 1 capability per client).

@@ -35,7 +35,7 @@ where
 
     println!("client is ready to send");
 
-    let mut recipient = environment.create_client();
+    let mut recipient = environment.create_client().await;
     dbg!("TEST 1");
     with_assertions::propose_send_bump_sync_all_recipients(
         &mut environment,
@@ -134,7 +134,7 @@ where
     let primary_fund = 1_000_000;
     let mut primary = environment.fund_client_orchard(primary_fund).await;
 
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_taddr = get_base_address(&secondary, PoolType::Transparent).await;
 
     for _ in 0..n {
@@ -198,7 +198,7 @@ where
     let mut environment = CC::setup().await;
 
     let mut primary = environment.fund_client_orchard(120_000).await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_sapling_addr =
         get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
     let secondary_orchard_addr =
@@ -275,7 +275,7 @@ where
     let mut primary = environment
         .fund_client_orchard(expected_fee_for_transaction_1 + expected_value_from_transaction_1)
         .await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
 
     // Send number_of_notes transfers in increasing 10_000 zat increments
     let secondary_sapling_addr =
@@ -393,7 +393,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     let mut environment = CC::setup().await;
 
     let mut primary = environment.fund_client_orchard(1_000_000).await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_addr = get_base_address(&secondary, PoolType::Shielded(shpool)).await;
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
@@ -408,7 +408,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     .await
     .unwrap();
 
-    let tertiary = environment.create_client();
+    let tertiary = environment.create_client().await;
 
     let tertiary_fund = 100_000;
     assert_eq!(
@@ -444,8 +444,8 @@ where
 {
     let mut environment = CC::setup().await;
 
-    let mut secondary = environment.create_client();
-    let tertiary = environment.create_client();
+    let mut secondary = environment.create_client().await;
+    let tertiary = environment.create_client().await;
 
     secondary.sync_and_await().await.unwrap();
 
@@ -492,8 +492,8 @@ pub async fn any_source_sends_to_any_receiver<CC>(
     let mut environment = CC::setup().await;
 
     let mut primary = environment.create_faucet().await;
-    let mut secondary = environment.create_client();
-    let mut tertiary = environment.create_client();
+    let mut secondary = environment.create_client().await;
+    let mut tertiary = environment.create_client().await;
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 

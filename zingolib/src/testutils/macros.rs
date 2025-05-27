@@ -20,7 +20,7 @@ macro_rules! get_base_address_macro {
                     true
                 );
                 $client.unified_addresses().await[0]["encoded_address"]
-                    .take()
+                    .clone()
                     .to_string()
             }
             "sapling" => {
@@ -37,7 +37,7 @@ macro_rules! get_base_address_macro {
                     true
                 );
                 $client.unified_addresses().await[1]["encoded_address"]
-                    .take()
+                    .clone()
                     .to_string()
             }
             "transparent" => $client.transparent_addresses().await[0]["encoded_address"]

@@ -515,7 +515,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client();
+        let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -761,7 +761,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client();
+        let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -1126,7 +1126,7 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn diversification_deterministic_and_coherent() {
+    async fn address_generation_deterministic_and_coherent() {
         let (_regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
@@ -1149,7 +1149,7 @@ mod fast {
             new_address_id,
             UnifiedAddressId {
                 account_id: zip32::AccountId::ZERO,
-                address_index: 1
+                address_index: 2
             }
         );
         assert!(new_address.has_orchard());
@@ -1158,9 +1158,8 @@ mod fast {
         assert_eq!(
             new_address.encode(&network),
             "\
-            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
-            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
-            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h"
+uregtest1ds3zxwluuzmcwvdxh4wf8xsger96c5yyzqhwzwu7vt85crj4jyf7nsn258rn89g68lvelsjhkqywz8w70wxdg2cmnul4zadukwu2ywezgjwt36\
+f06qvre5qdlkqp5fksyy9j5dm0fdwxwptkk04gzt84r5qv0wfdlx250n0gdcdd6e00"
         );
 
         let (sapling_address_id, sapling_address) = recipient
@@ -1178,7 +1177,7 @@ mod fast {
             sapling_address_id,
             UnifiedAddressId {
                 account_id: zip32::AccountId::ZERO,
-                address_index: 2
+                address_index: 3
             }
         );
         assert!(!sapling_address.has_orchard());
@@ -1187,9 +1186,7 @@ mod fast {
         assert_eq!(
             sapling_address.encode(&network),
             "\
-            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
-            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
-            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h"
+uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35gzw53tdmgz6dtfvlnfmjwl2a84cx5m3fq"
         );
 
         let (taddress_id, new_taddress) = recipient
@@ -1204,7 +1201,11 @@ mod fast {
                 NonHardenedChildIndex::from_index(1).unwrap()
             )
         );
-        assert_eq!(transparent::encode_address(&network, new_taddress), "");
+        assert_eq!(
+            transparent::encode_address(&network, new_taddress),
+            "\
+tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
+        );
     }
 
     #[tokio::test]

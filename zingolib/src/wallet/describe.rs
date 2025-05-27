@@ -900,8 +900,15 @@ mod test {
         #[allow(clippy::result_unit_err)]
         /// gets a string address for the wallet, based on pooltype
         pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
-            let ua = self.get_first_ua()?;
-            self.encode_ua_as_pool(&ua, pool)
+            match pool {
+                PoolType::Transparent => {
+                    Ok(self.transparent_addresses.values().next().unwrap().clone())
+                }
+                _ => {
+                    let ua = self.get_first_ua()?;
+                    self.encode_ua_as_pool(&ua, pool)
+                }
+            }
         }
     }
 
