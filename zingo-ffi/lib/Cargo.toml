@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 zingolib = { workspace = true }
 pepper-sync = { workspace = true }
+
 http = { workspace = true }
 json = { workspace = true }
 lazy_static = { workspace = true }
@@ -17,6 +18,7 @@ uniffi = { workspace = true, features = ["cli"] }
 tokio = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }
+bip0039 = { workspace = true }
 
 zcash_primitives = { workspace = true }
 zcash_keys = { workspace = true }
