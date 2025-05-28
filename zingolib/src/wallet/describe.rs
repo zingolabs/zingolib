@@ -854,60 +854,35 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "test-elevation"))]
 mod test {
-    use zcash_protocol::{PoolType, ShieldedProtocol, consensus::NetworkConstants};
+    use zcash_protocol::PoolType;
 
-    use crate::wallet::LightWallet;
+    use crate::wallet::{LightWallet, keys::unified::UnifiedAddressId};
 
     /// these functions have clearer typing than
     /// the production functions using json that could be upgraded soon
     impl LightWallet {
         #[allow(clippy::result_unit_err)]
-        /// gets a UnifiedAddress, the first of the wallet.
-        /// zingolib includes derivations of further addresses.
-        /// ZingoMobile uses one address.
-        pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            Ok(self.unified_addresses().values().next().ok_or(())?.clone())
-        }
-
-        #[allow(clippy::result_unit_err)]
-        /// UnifiedAddress type is not a string. to process it into a string requires chain date.
-        pub fn encode_ua_as_pool(
-            &self,
-            ua: &zcash_keys::address::UnifiedAddress,
-            pool: PoolType,
-        ) -> Result<String, ()> {
-            match pool {
-                PoolType::Transparent => ua
-                    .transparent()
-                    .map(|taddr| {
-                        // TODO: new crate for shared conversion, parsing and encoding
-                        pepper_sync::keys::transparent::encode_address(&self.network, *taddr)
-                    })
-                    .ok_or(()),
-                PoolType::Shielded(ShieldedProtocol::Sapling) => ua
-                    .sapling()
-                    .map(|z_addr| {
-                        zcash_keys::encoding::encode_payment_address(
-                            self.network.hrp_sapling_payment_address(),
-                            z_addr,
-                        )
-                    })
-                    .ok_or(()),
-                PoolType::Shielded(ShieldedProtocol::Orchard) => Ok(ua.encode(&self.network)),
-            }
-        }
-
-        #[allow(clippy::result_unit_err)]
         /// gets a string address for the wallet, based on pooltype
-        pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
+        pub fn get_address(&self, pool: PoolType) -> Result<String, ()> {
             match pool {
+                PoolType::ORCHARD => Ok(self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 0,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .ok_or(())?
+                    .encode(&self.network)),
+                PoolType::SAPLING => Ok(self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 1,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .ok_or(())?
+                    .encode(&self.network)),
                 PoolType::Transparent => {
                     Ok(self.transparent_addresses.values().next().unwrap().clone())
-                }
-                _ => {
-                    let ua = self.get_first_ua()?;
-                    dbg!(ua.clone());
-                    self.encode_ua_as_pool(&ua, pool)
                 }
             }
         }

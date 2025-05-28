@@ -374,7 +374,7 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
 }
 
 /// Selects the receivers for the creation of a new unified address.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Deserialize, serde::Serialize)]
 pub struct ReceiverSelection {
     /// Orchard
     pub orchard: bool,

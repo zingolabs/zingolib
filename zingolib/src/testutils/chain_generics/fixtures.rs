@@ -419,7 +419,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
                     .wallet
                     .lock()
                     .await
-                    .get_first_address(pool)
+                    .get_address(pool)
                     .unwrap()
                     .as_str(),
                 tertiary_fund,
@@ -459,7 +459,7 @@ where
                     .wallet
                     .lock()
                     .await
-                    .get_first_address(pool)
+                    .get_address(pool)
                     .unwrap()
                     .as_str(),
                 try_amount,

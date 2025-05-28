@@ -36,12 +36,6 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
                     .unwrap(),
                 true
             );
-            assert_eq!(
-                client.unified_addresses_json().await[0]["has_sapling"]
-                    .as_bool()
-                    .unwrap(),
-                true
-            );
             client.unified_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string()

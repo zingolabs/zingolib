@@ -35,7 +35,7 @@ impl NetworkSeedVersion {
         ] {
             assert_eq!(
                 wallet
-                    .get_first_address(pool)
+                    .get_address(pool)
                     .expect("can find the first address"),
                 self.example_wallet_address(pool)
             );
