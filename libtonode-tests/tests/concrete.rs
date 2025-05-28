@@ -817,27 +817,23 @@ mod fast {
     }
 
     pub mod tex {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
         use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
-        use zingolib::{
-            utils,
-            wallet::{LightWallet, keys::unified::UnifiedAddressId},
-        };
+        use zingolib::{utils, wallet::LightWallet};
 
         use super::*;
 
         fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
-            let taddr = wallet
-                .unified_addresses
-                .get(&UnifiedAddressId {
-                    account_id: zip32::AccountId::ZERO,
-                    address_index: 0,
-                })
-                .unwrap()
-                .transparent()
-                .unwrap();
+            let taddr = wallet.transparent_addresses.values().next().unwrap();
+            let Address::Transparent(taddr) =
+                decode_address(&wallet.network, taddr.as_str()).unwrap()
+            else {
+                panic!("not t addr")
+            };
 
             let taddr_bytes = match taddr {
-                TransparentAddress::PublicKeyHash(taddr_bytes) => *taddr_bytes,
+                TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
             let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
@@ -1076,21 +1072,10 @@ mod fast {
             )
             .await
             .unwrap();
-        recipient
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: false,
-                    sapling: true,
-                    transparent: false,
-                },
-                zip32::AccountId::ZERO,
-            )
-            .await
-            .unwrap();
         let addresses = recipient.unified_addresses().await;
         let address_5000_nonememo_tuples = addresses
             .members()
-            .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
+            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 5_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
@@ -1360,6 +1345,7 @@ mod slow {
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
+        encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -1369,6 +1355,7 @@ mod slow {
         TransactionSummaryInterface,
     };
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
+    use zingolib::wallet::keys::unified::UnifiedAddressId;
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::{self, SendType, TransactionKind};
     use zip32::AccountId;
@@ -2699,6 +2686,7 @@ mod slow {
                 false,
             )
             .await;
+        let network = recipient.wallet.lock().await.network;
 
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
@@ -2744,7 +2732,10 @@ mod slow {
                 .unwrap()
                 .outgoing_sapling_notes()
                 .iter()
-                .any(|note| { note.recipient == faucet_sapling_address })
+                .any(|note| {
+                    note.recipient
+                        == encoded_sapling_address_from_ua(&network, &faucet_sapling_address)
+                })
         );
         assert!(
             transactions
@@ -2792,7 +2783,6 @@ mod slow {
         );
 
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
-        let network = recipient.wallet.lock().await.network;
         let balance = recipient
             .wallet
             .lock()
@@ -2810,8 +2800,10 @@ mod slow {
                 .lock()
                 .await
                 .unified_addresses
-                .values()
-                .next()
+                .get(&UnifiedAddressId {
+                    address_index: 1,
+                    account_id: zip32::AccountId::ZERO,
+                })
                 .unwrap()
                 .sapling()
                 .unwrap();
@@ -2916,11 +2908,23 @@ mod slow {
             assert!(!sent_transaction.status().is_confirmed());
             assert_eq!(sent_transaction.status().get_height(), 5.into());
 
-            let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+            let faucet_sapling_address = faucet
+                .wallet
+                .lock()
+                .await
+                .unified_addresses
+                .get(&UnifiedAddressId {
+                    address_index: 1,
+                    account_id: zip32::AccountId::ZERO,
+                })
+                .unwrap()
+                .sapling()
+                .unwrap()
+                .clone();
             let outgoing_sapling_note = sent_transaction
                 .outgoing_sapling_notes()
                 .iter()
-                .find(|note| note.encoded_recipient(&network) == Ok(faucet_sapling_address.clone()))
+                .find(|note| note.recipient() == faucet_sapling_address)
                 .unwrap();
             if let Memo::Text(memo) = outgoing_sapling_note.memo() {
                 assert_eq!(&String::from(memo.clone()), outgoing_memo);
