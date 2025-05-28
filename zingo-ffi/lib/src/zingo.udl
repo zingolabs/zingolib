@@ -58,7 +58,6 @@ namespace zingo {
   string get_version();
   string get_messages(string address);
   string get_balance();
-  string get_addresses(string receivers);
   string get_total_memobytes_to_address();
   string get_total_value_to_address();
   string get_total_spends_to_address();
@@ -69,4 +68,8 @@ namespace zingo {
   string set_option_wallet();
   string get_option_wallet();
   string create_tor_client(string datadir);
+  string get_unified_addresses();
+  string get_transparent_addresses();
+  string create_new_unified_address(string receivers);
+  string create_new_transparent_address();
 };

@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -3472,7 +3472,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7793,7 +7793,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7805,7 +7805,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "http",
  "http-body",
@@ -7825,7 +7825,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7841,7 +7841,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7850,7 +7850,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "bip0039",
 ]
@@ -7858,7 +7858,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=diversified_addresses#f3d3cdc0afa8f4c01d925b4894042aea1670c719"
 dependencies = [
  "append-only-vec",
  "bech32",

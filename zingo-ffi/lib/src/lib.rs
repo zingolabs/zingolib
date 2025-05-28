@@ -14,6 +14,8 @@ use base64::Engine;
 use json::object;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::SyncMode;
+use pepper_sync::wallet::KeyIdInterface;
+use pepper_sync::keys::transparent;
 use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::str::FromStr;
@@ -28,12 +30,12 @@ use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
-use zingolib::lightclient::describe::UAReceivers;
 use zingolib::utils::conversion::address_from_str;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::WalletSettings;
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
+use zingolib::wallet::keys::unified::ReceiverSelection;
 use bip0039::Mnemonic;
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -63,15 +65,6 @@ fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: 
         get_ufvk()
     }
 }
-
-//fn lightclient_create_tor_client(mut lightclient: LightClient, data_dir: String) -> LightClient {
-//    zingolib::commands::RT.block_on(async move {
-//        if let Err(e) = lightclient.create_tor_client(Some(data_dir.into())).await {
-//            eprintln!("error: failed to create tor client. price updates disabled. {e}");
-//        };
-//        lightclient
-//    })
-//}
 
 fn construct_uri_load_config(
     uri: String,
@@ -719,22 +712,6 @@ pub fn get_balance() -> String {
     }
 }
 
-pub fn get_addresses(receivers: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        let receiver_type = match receivers.as_str() {
-            "full" => UAReceivers::All,
-            "shielded" => UAReceivers::Shielded,
-            "orchard" => UAReceivers::Orchard,
-            _ => return "Error: unknown receivers".to_string(),
-        };
-
-        zingolib::commands::RT
-            .block_on(async move { lightclient.do_addresses(receiver_type).await.pretty(2) })
-    } else {
-        "Error: Lightclient is not initialized".to_string()
-    }
-}
-
 pub fn get_total_memobytes_to_address() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
         zingolib::commands::RT.block_on(async move {
@@ -895,6 +872,75 @@ pub fn create_tor_client(data_dir: String) -> String {
                 format!("Error: {e}")
             }
         }
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_unified_addresses() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move { lightclient.unified_addresses().await.pretty(2) })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_transparent_addresses() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move { lightclient.transparent_addresses().await.pretty(2) })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn create_new_unified_address(receivers: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            let mut wallet = lightclient.wallet.lock().await;
+            let network = wallet.network;
+            let receivers_available = ReceiverSelection {
+                orchard: receivers.contains('o'),
+                sapling: receivers.contains('z'),
+                transparent: false,
+            };
+            match wallet.generate_unified_address(receivers_available, AccountId::ZERO) {
+                Ok((id, unified_address)) => {
+                    json::object! {
+                        "account" => u32::from(AccountId::ZERO),
+                        "address_index" => id.address_index,
+                        "has_orchard" => unified_address.has_orchard(),
+                        "has_sapling" => unified_address.has_sapling(),
+                        "has_transparent" => unified_address.has_transparent(),
+                        "encoded_address" => unified_address.encode(&network),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn create_new_transparent_address() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            let mut wallet = lightclient.wallet.lock().await;
+            let network = wallet.network;
+            match wallet.generate_transparent_address(AccountId::ZERO) {
+                Ok((id, transparent_address)) => {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent::encode_address(&network,  transparent_address),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
