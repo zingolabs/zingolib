@@ -77,7 +77,7 @@ impl LightWallet {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
                     sapling: address.sapling().is_some(),
-                    transparent: address.transparent().is_some(),
+                    transparent: false,
                 }
                 .write(w, ())
             },
@@ -389,7 +389,8 @@ impl LightWallet {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
             let address_index = r.read_u32::<LittleEndian>()?;
-            let receivers = ReceiverSelection::read(r, ())?;
+            let mut receivers = ReceiverSelection::read(r, ())?;
+            receivers.transparent = false;
 
             Ok((
                 UnifiedAddressId {
