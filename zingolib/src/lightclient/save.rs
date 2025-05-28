@@ -9,6 +9,7 @@ use super::LightClient;
 use crate::{data::PollReport, utils};
 
 impl LightClient {
+    /// Launches a task for saving the wallet data to persistance when the wallet's `save_required` flag is set.
     pub async fn save_task(&mut self) {
         if self.save_active.load(atomic::Ordering::Acquire) {
             return;
@@ -34,6 +35,7 @@ impl LightClient {
         self.save_handle = Some(save_handle);
     }
 
+    /// Wait until the wallet's `save_required` flag is not set.
     pub async fn wait_for_save(&self) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

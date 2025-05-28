@@ -31,39 +31,39 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
     match pooltype {
         PoolType::Shielded(ShieldedProtocol::Orchard) => {
             assert_eq!(
-                client.unified_addresses().await[0]["has_orchard"]
+                client.unified_addresses_json().await[0]["has_orchard"]
                     .as_bool()
                     .unwrap(),
                 true
             );
             assert_eq!(
-                client.unified_addresses().await[0]["has_sapling"]
+                client.unified_addresses_json().await[0]["has_sapling"]
                     .as_bool()
                     .unwrap(),
                 true
             );
-            client.unified_addresses().await[0]["encoded_address"]
+            client.unified_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string()
         }
         PoolType::Shielded(ShieldedProtocol::Sapling) => {
             assert_eq!(
-                client.unified_addresses().await[1]["has_orchard"]
+                client.unified_addresses_json().await[1]["has_orchard"]
                     .as_bool()
                     .unwrap(),
                 false
             );
             assert_eq!(
-                client.unified_addresses().await[1]["has_sapling"]
+                client.unified_addresses_json().await[1]["has_sapling"]
                     .as_bool()
                     .unwrap(),
                 true
             );
-            client.unified_addresses().await[1]["encoded_address"]
+            client.unified_addresses_json().await[1]["encoded_address"]
                 .clone()
                 .to_string()
         }
-        PoolType::Transparent => client.transparent_addresses().await[0]["encoded_address"]
+        PoolType::Transparent => client.transparent_addresses_json().await[0]["encoded_address"]
             .clone()
             .to_string(),
     }

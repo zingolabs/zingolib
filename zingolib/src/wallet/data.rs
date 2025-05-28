@@ -847,7 +847,7 @@ pub mod summaries {
     }
 
     impl BasicNoteSummary {
-        /// Creates an OrchardNoteSummary from parts
+        /// Creates a BasicNoteSummary from parts
         pub fn from_parts(
             value: u64,
             spend_status: SpendStatus,
@@ -937,7 +937,7 @@ pub mod summaries {
     }
 
     impl BasicCoinSummary {
-        /// Creates a SaplingNoteSummary from parts
+        /// Creates a BasicCoinSummary from parts
         pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u32) -> Self {
             BasicCoinSummary {
                 value,

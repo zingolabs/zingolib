@@ -866,7 +866,7 @@ mod test {
         /// zingolib includes derivations of further addresses.
         /// ZingoMobile uses one address.
         pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            Ok(self.unified_addresses.values().next().ok_or(())?.clone())
+            Ok(self.unified_addresses().values().next().ok_or(())?.clone())
         }
 
         #[allow(clippy::result_unit_err)]
@@ -906,6 +906,7 @@ mod test {
                 }
                 _ => {
                     let ua = self.get_first_ua()?;
+                    dbg!(ua.clone());
                     self.encode_ua_as_pool(&ua, pool)
                 }
             }

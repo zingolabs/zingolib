@@ -165,14 +165,14 @@ impl LightClient {
             .generate_transparent_address(account_id)
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::unified_addresses].
-    pub async fn unified_addresses(&self) -> JsonValue {
-        self.wallet.lock().await.unified_addresses()
+    /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
+    pub async fn unified_addresses_json(&self) -> JsonValue {
+        self.wallet.lock().await.unified_addresses_json()
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses].
-    pub async fn transparent_addresses(&self) -> JsonValue {
-        self.wallet.lock().await.transparent_addresses()
+    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
+    pub async fn transparent_addresses_json(&self) -> JsonValue {
+        self.wallet.lock().await.transparent_addresses_json()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -269,16 +269,15 @@ mod tests {
             LightClientError::FileError(_)
         ));
 
-        // The first t address and z address should be derived
-        let addresses = lc.unified_addresses().await;
-        assert_eq!(
-            "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
-                .to_string(),
-            addresses[0]["receivers"]["sapling"]
-        );
+        // The first transparent address and unified address should be derived
         assert_eq!(
             "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
-            addresses[0]["receivers"]["transparent"]
+            lc.transparent_addresses_json().await[0]["encoded_address"]
+        );
+        assert_eq!(
+            "uregtest15en5x5cnsc7ye3wfy0prnh3ut34ns9w40htunlh9htfl6k5p004ja5gprxfz8fygjeax07a8489wzjk8gsx65thcp6d3ku8umgaka6f0"
+                .to_string(),
+            lc.unified_addresses_json().await[0]["encoded_address"]
         );
     }
 }

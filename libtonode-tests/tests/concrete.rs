@@ -825,7 +825,7 @@ mod fast {
         use super::*;
 
         fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
-            let taddr = wallet.transparent_addresses.values().next().unwrap();
+            let taddr = wallet.transparent_addresses().values().next().unwrap();
             let Address::Transparent(taddr) =
                 decode_address(&wallet.network, taddr.as_str()).unwrap()
             else {
@@ -1051,28 +1051,14 @@ mod fast {
         let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         recipient
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: true,
-                    sapling: false,
-                    transparent: false,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
             .await
             .unwrap();
         recipient
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: true,
-                    sapling: true,
-                    transparent: false,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
             .unwrap();
-        let addresses = recipient.unified_addresses().await;
+        let addresses = recipient.unified_addresses_json().await;
         let address_5000_nonememo_tuples = addresses
             .members()
             .map(|ua| (ua["encoded_address"].as_str().unwrap(), 5_000, None))
@@ -1120,14 +1106,7 @@ mod fast {
         let mut recipient = client_builder.build_client(seed_phrase, 0, false, regtest_network);
         let network = recipient.wallet.lock().await.network;
         let (new_address_id, new_address) = recipient
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: true,
-                    sapling: true,
-                    transparent: false,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
             .unwrap();
         assert_eq!(
@@ -1148,14 +1127,7 @@ f06qvre5qdlkqp5fksyy9j5dm0fdwxwptkk04gzt84r5qv0wfdlx250n0gdcdd6e00"
         );
 
         let (sapling_address_id, sapling_address) = recipient
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: false,
-                    sapling: true,
-                    transparent: false,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await
             .unwrap();
         assert_eq!(
@@ -1860,10 +1832,11 @@ mod slow {
             .unwrap()
             .clone();
         assert_eq!(transaction.blockheight(), 4.into());
-        assert_eq!(
-            recipient.unified_addresses().await[0]["receivers"]["transparent"].to_string(),
-            recipient_taddr
-        );
+        // TODO: add key id and/or recipient to basic summaries
+        // assert_eq!(
+        //     //,
+        //     recipient_taddr
+        // );
         assert_eq!(transaction.value(), value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
@@ -2079,8 +2052,8 @@ mod slow {
                  output_index: 0,
                  value: first_send_to_sapling,
                  memo: None,
-                 recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                 recipient_unified_address: None,
+                 recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
+                 recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
              }])
@@ -2298,8 +2271,8 @@ mod slow {
                 output_index: 0,
                  value: second_send_to_sapling,
                 memo: None,
-                recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                recipient_unified_address: None,
+                 recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
+                 recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
             }])
@@ -2799,7 +2772,7 @@ mod slow {
                 .wallet
                 .lock()
                 .await
-                .unified_addresses
+                .unified_addresses()
                 .get(&UnifiedAddressId {
                     address_index: 1,
                     account_id: zip32::AccountId::ZERO,
@@ -2912,7 +2885,7 @@ mod slow {
                 .wallet
                 .lock()
                 .await
-                .unified_addresses
+                .unified_addresses()
                 .get(&UnifiedAddressId {
                     address_index: 1,
                     account_id: zip32::AccountId::ZERO,

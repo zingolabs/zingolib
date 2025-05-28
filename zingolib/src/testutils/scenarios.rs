@@ -264,14 +264,7 @@ pub mod setup {
             )
             .unwrap();
             wallet
-                .generate_unified_address(
-                    ReceiverSelection {
-                        orchard: false,
-                        sapling: true,
-                        transparent: false,
-                    },
-                    zip32::AccountId::ZERO,
-                )
+                .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
                 .unwrap();
 
             LightClient::create_from_wallet(wallet, config, overwrite).unwrap()

@@ -1,4 +1,4 @@
-//! [crate::wallet::LightWallet] methods associated with keys and addresses.
+//! [crate::wallet::LightWallet] methods associated with keys and address derivation.
 
 use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
@@ -14,42 +14,6 @@ pub mod legacy;
 pub mod unified;
 
 impl LightWallet {
-    /// Returns unified addresses in a JSON array.
-    pub fn unified_addresses(&self) -> json::JsonValue {
-        json::JsonValue::Array(
-            self.unified_addresses
-                .iter()
-                .map(|(id, unified_address)| {
-                    json::object! {
-                        "account" => u32::from(id.account_id),
-                        "address_index" => id.address_index,
-                        "has_orchard" => unified_address.has_orchard(),
-                        "has_sapling" => unified_address.has_sapling(),
-                        "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&self.network),
-                    }
-                })
-                .collect::<Vec<_>>(),
-        )
-    }
-
-    /// Returns transparent addresses in a JSON array.
-    pub fn transparent_addresses(&self) -> json::JsonValue {
-        json::JsonValue::Array(
-            self.transparent_addresses
-                .iter()
-                .map(|(id, transparent_address)| {
-                    json::object! {
-                        "account" => u32::from(id.account_id()),
-                        "address_index" => id.address_index().index(),
-                        "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent_address.clone(),
-                    }
-                })
-                .collect::<Vec<_>>(),
-        )
-    }
-
     /// Returns a new unified address for the given `receivers` and `account_id`.
     /// Also adds this new unified address to the wallet.
     ///

@@ -108,18 +108,12 @@ impl UnifiedKeyStore {
     /// Returns `None` if the wallet does not have viewing capabilities of at least 1 shielded pool.
     pub fn default_receivers(&self) -> Option<ReceiverSelection> {
         match self {
-            UnifiedKeyStore::Spend(_) => Some(ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: false,
-            }),
+            UnifiedKeyStore::Spend(_) => Some(ReceiverSelection::orchard_only()),
             UnifiedKeyStore::View(ufvk) => {
-                if ufvk.orchard().is_some() || ufvk.sapling().is_some() {
-                    Some(ReceiverSelection {
-                        orchard: ufvk.orchard().is_some(),
-                        sapling: ufvk.sapling().is_some(),
-                        transparent: false,
-                    })
+                if ufvk.orchard().is_some() {
+                    Some(ReceiverSelection::orchard_only())
+                } else if ufvk.sapling().is_some() {
+                    Some(ReceiverSelection::sapling_only())
                 } else {
                     None
                 }
@@ -388,6 +382,35 @@ pub struct ReceiverSelection {
     pub sapling: bool,
     /// Transparent
     pub transparent: bool,
+}
+
+impl ReceiverSelection {
+    /// All shielded receivers.
+    pub fn all_shielded() -> Self {
+        Self {
+            orchard: true,
+            sapling: true,
+            transparent: false,
+        }
+    }
+
+    /// Only orchard receiver.
+    pub fn orchard_only() -> Self {
+        Self {
+            orchard: true,
+            sapling: false,
+            transparent: false,
+        }
+    }
+
+    /// Only sapling receiver.
+    pub fn sapling_only() -> Self {
+        Self {
+            orchard: false,
+            sapling: true,
+            transparent: false,
+        }
+    }
 }
 
 impl ReadableWriteable for ReceiverSelection {

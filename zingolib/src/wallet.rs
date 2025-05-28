@@ -12,7 +12,7 @@ use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
-use pepper_sync::wallet::ShardTrees;
+use pepper_sync::wallet::{KeyIdInterface, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
@@ -118,15 +118,15 @@ pub struct LightWallet {
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
-    pub mnemonic: Option<Mnemonic>,
+    mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
     pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// Unified_addresses
-    pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
-    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
@@ -273,6 +273,52 @@ impl LightWallet {
     pub fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic()
             .map(|mnemonic| mnemonic.phrase().to_string())
+    }
+
+    /// Returns unified addresses.
+    pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
+        &self.unified_addresses
+    }
+
+    /// Returns unified addresses in a JSON array.
+    pub fn unified_addresses_json(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.unified_addresses
+                .iter()
+                .map(|(id, unified_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id),
+                        "address_index" => id.address_index,
+                        "has_orchard" => unified_address.has_orchard(),
+                        "has_sapling" => unified_address.has_sapling(),
+                        "has_transparent" => unified_address.has_transparent(),
+                        "encoded_address" => unified_address.encode(&self.network),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Returns transparent addresses.
+    pub fn transparent_addresses(&self) -> &BTreeMap<TransparentAddressId, String> {
+        &self.transparent_addresses
+    }
+
+    /// Returns transparent addresses in a JSON array.
+    pub fn transparent_addresses_json(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.transparent_addresses
+                .iter()
+                .map(|(id, transparent_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent_address.clone(),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {

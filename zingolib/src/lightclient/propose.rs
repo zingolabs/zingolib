@@ -255,7 +255,7 @@ mod shielding {
             .wallet
             .lock()
             .await
-            .transparent_addresses
+            .transparent_addresses()
             .values()
             .map(|address| {
                 Ok(zcash_address::ZcashAddress::try_from_encoded(address)?

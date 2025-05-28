@@ -2,45 +2,40 @@
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>
 // TODO: is this needed as a macro?
+// TODO: change unified to orchard as both are unified with orchard-only or sapling-only receiver selections
 #[macro_export]
 macro_rules! get_base_address_macro {
     ($client:expr, $address_protocol:expr) => {
         match $address_protocol {
             "unified" => {
                 assert_eq!(
-                    $client.unified_addresses().await[0]["has_orchard"]
+                    $client.unified_addresses_json().await[0]["has_orchard"]
                         .as_bool()
                         .unwrap(),
                     true
                 );
-                assert_eq!(
-                    $client.unified_addresses().await[0]["has_sapling"]
-                        .as_bool()
-                        .unwrap(),
-                    true
-                );
-                $client.unified_addresses().await[0]["encoded_address"]
+                $client.unified_addresses_json().await[0]["encoded_address"]
                     .clone()
                     .to_string()
             }
             "sapling" => {
                 assert_eq!(
-                    $client.unified_addresses().await[1]["has_orchard"]
+                    $client.unified_addresses_json().await[1]["has_orchard"]
                         .as_bool()
                         .unwrap(),
                     false
                 );
                 assert_eq!(
-                    $client.unified_addresses().await[1]["has_sapling"]
+                    $client.unified_addresses_json().await[1]["has_sapling"]
                         .as_bool()
                         .unwrap(),
                     true
                 );
-                $client.unified_addresses().await[1]["encoded_address"]
+                $client.unified_addresses_json().await[1]["encoded_address"]
                     .clone()
                     .to_string()
             }
-            "transparent" => $client.transparent_addresses().await[0]["encoded_address"]
+            "transparent" => $client.transparent_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string(),
             _ => "ERROR".to_string(),

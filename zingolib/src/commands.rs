@@ -821,7 +821,7 @@ impl Command for UnifiedAddressesCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.unified_addresses().await.pretty(2) })
+        RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) })
     }
 }
 
@@ -842,7 +842,7 @@ impl Command for TransparentAddressesCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.transparent_addresses().await.pretty(2) })
+        RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
     }
 }
 
