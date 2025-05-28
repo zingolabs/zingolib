@@ -30,28 +30,25 @@ pub async fn new_client_from_save_buffer(
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
         PoolType::Shielded(ShieldedProtocol::Orchard) => {
-            assert_eq!(
+            assert!(
                 client.unified_addresses_json().await[0]["has_orchard"]
                     .as_bool()
-                    .unwrap(),
-                true
+                    .unwrap()
             );
             client.unified_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string()
         }
         PoolType::Shielded(ShieldedProtocol::Sapling) => {
-            assert_eq!(
-                client.unified_addresses_json().await[1]["has_orchard"]
+            assert!(
+                !client.unified_addresses_json().await[1]["has_orchard"]
                     .as_bool()
-                    .unwrap(),
-                false
+                    .unwrap()
             );
-            assert_eq!(
+            assert!(
                 client.unified_addresses_json().await[1]["has_sapling"]
                     .as_bool()
-                    .unwrap(),
-                true
+                    .unwrap()
             );
             client.unified_addresses_json().await[1]["encoded_address"]
                 .clone()
