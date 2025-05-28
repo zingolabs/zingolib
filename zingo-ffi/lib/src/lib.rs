@@ -879,7 +879,7 @@ pub fn create_tor_client(data_dir: String) -> String {
 
 pub fn get_unified_addresses() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.unified_addresses().await.pretty(2) })
+        zingolib::commands::RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -887,7 +887,7 @@ pub fn get_unified_addresses() -> String {
 
 pub fn get_transparent_addresses() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.transparent_addresses().await.pretty(2) })
+        zingolib::commands::RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
