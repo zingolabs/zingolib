@@ -17,6 +17,20 @@ use super::{LightWallet, error::KeyError};
 pub mod legacy;
 pub mod unified;
 
+pub enum WalletAddressRef {
+    Unified {
+        account_id: zip32::AccountId,
+        orchard: Option<(zip32::Scope, DiversifierIndex)>,
+        sapling: Option<DiversifierIndex>,
+        transparent: Option<NonHardenedChildIndex>,
+    },
+    Sapling {
+        account_id: zip32::AccountId,
+        diversifier_index: DiversifierIndex,
+    },
+    Transparent(TransparentAddressId),
+}
+
 impl LightWallet {
     /// Returns a new unified address for the given `receivers` and `account_id`.
     /// Also adds this new unified address to the wallet.
@@ -153,30 +167,58 @@ impl LightWallet {
         Ok(refund_addresses)
     }
 
-    /// Determines whether the `encoded_address` is derived by the wallet's keys.
+    /// Returns a [`crate::wallet::keys::WalletAddressRef`] if the `encoded_address` was derived by the wallet's keys.
     ///
     /// Fails to detect internal sapling addresses.
     /// https://github.com/zcash/sapling-crypto/issues/160.
-    pub fn is_wallet_address(&self, encoded_address: &str) -> Result<bool, KeyError> {
+    pub fn is_wallet_address(
+        &self,
+        encoded_address: &str,
+    ) -> Result<Option<WalletAddressRef>, KeyError> {
         Ok(match decode_address(&self.network, encoded_address)? {
-            zcash_keys::address::Address::Transparent(address) => {
-                self.is_transparent_wallet_address(&address).is_some()
+            zcash_keys::address::Address::Unified(address) => {
+                let orchard = address
+                    .orchard()
+                    .and_then(|address| self.is_orchard_wallet_address(address));
+                let sapling = address
+                    .sapling()
+                    .and_then(|address| self.is_sapling_external_wallet_address(address));
+                let transparent = address
+                    .transparent()
+                    .and_then(|address| self.is_transparent_wallet_address(address))
+                    .filter(|address_id| address_id.scope() == TransparentScope::External);
+
+                if orchard.is_some() || sapling.is_some() {
+                    let account_id = if let Some((account_id, _, _)) = &orchard {
+                        *account_id
+                    } else if let Some((account_id, _)) = &sapling {
+                        *account_id
+                    } else {
+                        unreachable!("At least one option should be Some in this scope!");
+                    };
+                    Some(WalletAddressRef::Unified {
+                        account_id,
+                        orchard: orchard
+                            .map(|(_, scope, diversifier_index)| (scope, diversifier_index)),
+                        sapling: sapling.map(|(_, diversifier_index)| diversifier_index),
+                        transparent: transparent.map(|address_id| address_id.address_index()),
+                    })
+                } else {
+                    None
+                }
             }
             zcash_keys::address::Address::Sapling(address) => {
-                self.is_sapling_external_wallet_address(&address).is_some()
+                self.is_sapling_external_wallet_address(&address).map(
+                    |(account_id, diversifier_index)| WalletAddressRef::Sapling {
+                        account_id,
+                        diversifier_index,
+                    },
+                )
             }
-            zcash_keys::address::Address::Unified(address) => {
-                address
-                    .transparent()
-                    .is_some_and(|addr| self.is_transparent_wallet_address(addr).is_some())
-                    || address
-                        .sapling()
-                        .is_some_and(|addr| self.is_sapling_external_wallet_address(addr).is_some())
-                    || address
-                        .orchard()
-                        .is_some_and(|addr| self.is_orchard_wallet_address(addr).is_some())
-            }
-            zcash_keys::address::Address::Tex(_) => false,
+            zcash_keys::address::Address::Transparent(address) => self
+                .is_transparent_wallet_address(&address)
+                .map(WalletAddressRef::Transparent),
+            zcash_keys::address::Address::Tex(_) => None,
         })
     }
 

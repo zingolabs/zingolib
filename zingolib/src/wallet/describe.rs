@@ -682,7 +682,7 @@ impl LightWallet {
             .outgoing_orchard_notes()
             .iter()
             .try_for_each(|note| {
-                if !self.is_wallet_address(&note.recipient)? {
+                if self.is_wallet_address(&note.recipient)?.is_none() {
                     let encoded_address = note
                         .recipient_unified_address
                         .clone()
@@ -698,7 +698,7 @@ impl LightWallet {
             .try_for_each(|note| {
                 // added scope check to circumvent sapling-crypto bug:
                 // https://github.com/zcash/sapling-crypto/issues/160.
-                if !self.is_wallet_address(&note.recipient)?
+                if self.is_wallet_address(&note.recipient)?.is_none()
                     && note.scope != summary::Scope::Internal
                 {
                     let encoded_address = note
@@ -711,7 +711,7 @@ impl LightWallet {
                 Ok::<(), KeyError>(())
             })?;
         outgoing_coins.iter().try_for_each(|coin| {
-            if !self.is_wallet_address(&coin.recipient)? {
+            if self.is_wallet_address(&coin.recipient)?.is_none() {
                 addresses.insert(coin.recipient.clone(), coin.output_index);
             }
 
