@@ -170,7 +170,7 @@ impl LightWallet {
     /// Returns a [`crate::wallet::keys::WalletAddressRef`] if the `encoded_address` was derived by the wallet's keys.
     ///
     /// Fails to detect internal sapling addresses.
-    /// https://github.com/zcash/sapling-crypto/issues/160.
+    /// <https://github.com/zcash/sapling-crypto/issues/160>
     pub fn is_wallet_address(
         &self,
         encoded_address: &str,
