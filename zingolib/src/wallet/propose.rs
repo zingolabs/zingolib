@@ -87,6 +87,19 @@ impl LightWallet {
         );
         let network = self.network;
 
+        // TODO: store t addrs as concrete types instead of encoded
+        let transparent_addresses = self
+            .transparent_addresses
+            .values()
+            .map(|address| {
+                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
+                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                        self.network.network_type(),
+                    )
+                    .expect("incorrect network should be checked on wallet load"))
+            })
+            .collect::<Result<Vec<_>, zcash_address::ParseError>>()?;
+
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
             LightWallet,
             ChainType,
@@ -102,7 +115,7 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             Zatoshis::const_from_u64(10_000),
-            &self.get_transparent_addresses()?,
+            &transparent_addresses,
             account_id,
             1,
         )
@@ -188,7 +201,7 @@ mod test {
         let mut wallet = client.wallet.lock().await;
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
-        let self_address = wallet.get_first_address(pool).unwrap();
+        let self_address = wallet.get_address(pool).unwrap();
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
         let request = transaction_request_from_send_inputs(receivers)

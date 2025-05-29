@@ -3,12 +3,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use json::JsonValue;
-
-use zcash_address::ZcashAddress;
-use zcash_keys::encoding::encode_payment_address;
-use zcash_primitives::consensus::NetworkConstants as _;
-use zcash_primitives::consensus::Parameters;
 use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_protocol::PoolType;
@@ -38,7 +32,6 @@ use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
-use crate::lightclient::describe::UAReceivers;
 use crate::wallet::LightWallet;
 use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
@@ -52,57 +45,6 @@ use pepper_sync::wallet::TransparentCoin;
 use pepper_sync::wallet::WalletTransaction;
 
 impl LightWallet {
-    /// Returns wallet addresses in a JSON array
-    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
-        let mut objectified_addresses = Vec::new();
-        for address in self.unified_addresses.values() {
-            let local_address = match subset {
-                UAReceivers::Orchard => zcash_keys::address::UnifiedAddress::from_receivers(
-                    address.orchard().copied(),
-                    None,
-                    None,
-                )
-                .expect("To create a new address."),
-                UAReceivers::Shielded => zcash_keys::address::UnifiedAddress::from_receivers(
-                    address.orchard().copied(),
-                    address.sapling().copied(),
-                    None,
-                )
-                .expect("To create a new address."),
-                UAReceivers::All => address.clone(),
-            };
-            let encoded_ua = local_address.encode(&self.network);
-            let transparent = local_address
-                .transparent()
-                .map(|taddr| pepper_sync::keys::transparent::encode_address(&self.network, *taddr));
-            objectified_addresses.push(
-                json::object!{
-                    "address" => encoded_ua,
-                    "receivers" => json::object!(
-                        "transparent" => transparent,
-                        "sapling" => local_address.sapling().map(|z_addr| encode_payment_address(self.network.hrp_sapling_payment_address(), z_addr)),
-                        "orchard_exists" => local_address.orchard().is_some()
-                    )
-                }
-            )
-        }
-        JsonValue::Array(objectified_addresses)
-    }
-
-    /// Lists the transparent addresses known by the wallet.
-    pub fn get_transparent_addresses(
-        &self,
-    ) -> Result<Vec<TransparentAddress>, zcash_address::ParseError> {
-        self.transparent_addresses
-            .values()
-            .map(|address| {
-                Ok(ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<TransparentAddress>(self.network.network_type())
-                    .expect("incorrect network should be checked on wallet load"))
-            })
-            .collect()
-    }
-
     /// Determine the kind of transaction from the wallet data.
     pub(crate) fn transaction_kind(
         &self,
@@ -912,54 +854,37 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "test-elevation"))]
 mod test {
-    use zcash_protocol::{PoolType, ShieldedProtocol, consensus::NetworkConstants};
+    use zcash_protocol::PoolType;
 
-    use crate::wallet::LightWallet;
+    use crate::wallet::{LightWallet, keys::unified::UnifiedAddressId};
 
     /// these functions have clearer typing than
     /// the production functions using json that could be upgraded soon
     impl LightWallet {
         #[allow(clippy::result_unit_err)]
-        /// gets a UnifiedAddress, the first of the wallet.
-        /// zingolib includes derivations of further addresses.
-        /// ZingoMobile uses one address.
-        pub fn get_first_ua(&self) -> Result<zcash_keys::address::UnifiedAddress, ()> {
-            Ok(self.unified_addresses.values().next().ok_or(())?.clone())
-        }
-
-        #[allow(clippy::result_unit_err)]
-        /// UnifiedAddress type is not a string. to process it into a string requires chain date.
-        pub fn encode_ua_as_pool(
-            &self,
-            ua: &zcash_keys::address::UnifiedAddress,
-            pool: PoolType,
-        ) -> Result<String, ()> {
-            match pool {
-                PoolType::Transparent => ua
-                    .transparent()
-                    .map(|taddr| {
-                        // TODO: new crate for shared conversion, parsing and encoding
-                        pepper_sync::keys::transparent::encode_address(&self.network, *taddr)
-                    })
-                    .ok_or(()),
-                PoolType::Shielded(ShieldedProtocol::Sapling) => ua
-                    .sapling()
-                    .map(|z_addr| {
-                        zcash_keys::encoding::encode_payment_address(
-                            self.network.hrp_sapling_payment_address(),
-                            z_addr,
-                        )
-                    })
-                    .ok_or(()),
-                PoolType::Shielded(ShieldedProtocol::Orchard) => Ok(ua.encode(&self.network)),
-            }
-        }
-
-        #[allow(clippy::result_unit_err)]
         /// gets a string address for the wallet, based on pooltype
-        pub fn get_first_address(&self, pool: PoolType) -> Result<String, ()> {
-            let ua = self.get_first_ua()?;
-            self.encode_ua_as_pool(&ua, pool)
+        pub fn get_address(&self, pool: PoolType) -> Result<String, ()> {
+            match pool {
+                PoolType::ORCHARD => Ok(self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 0,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .ok_or(())?
+                    .encode(&self.network)),
+                PoolType::SAPLING => Ok(self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 1,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .ok_or(())?
+                    .encode(&self.network)),
+                PoolType::Transparent => {
+                    Ok(self.transparent_addresses.values().next().unwrap().clone())
+                }
+            }
         }
     }
 

@@ -2,8 +2,6 @@
 
 use std::collections::HashMap;
 
-use json::{JsonValue, object};
-
 use crate::lightclient::LightClient;
 use crate::wallet::data::{
     finsight,
@@ -11,23 +9,12 @@ use crate::wallet::data::{
 };
 use crate::wallet::error::SummaryError;
 
-pub enum UAReceivers {
-    Orchard,
-    Shielded,
-    All,
-}
-
 impl LightClient {
-    /// Wrapper for [crate::wallet::LightWallet::do_addresses].
-    pub async fn do_addresses(&self, subset: UAReceivers) -> JsonValue {
-        self.wallet.lock().await.do_addresses(subset).await
-    }
-
     /// Returns server information.
     pub async fn do_info(&self) -> String {
         match crate::grpc_connector::get_info(self.get_server_uri()).await {
             Ok(i) => {
-                let o = object! {
+                let o = json::object! {
                     "version" => i.version,
                     "git_commit" => i.git_commit,
                     "server_uri" => self.get_server_uri().to_string(),

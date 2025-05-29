@@ -6,6 +6,7 @@
 use crate::config::ZingoConfig;
 use crate::get_base_address_macro;
 use crate::testutils::lightclient::from_inputs;
+use crate::wallet::keys::unified::ReceiverSelection;
 use crate::{lightclient::LightClient, wallet::LightWallet};
 
 #[allow(async_fn_in_trait)]
@@ -27,9 +28,15 @@ pub trait ConductChain {
     fn zingo_config(&mut self) -> crate::config::ZingoConfig;
 
     /// builds an empty client
-    fn create_client(&mut self) -> LightClient {
+    async fn create_client(&mut self) -> LightClient {
         let config = self.zingo_config();
-        LightClient::new(config, 0.into(), false).unwrap()
+        let mut lightclient = LightClient::new(config, 0.into(), false).unwrap();
+        lightclient
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+
+        lightclient
     }
 
     /// loads a client from bytes
@@ -49,7 +56,7 @@ pub trait ConductChain {
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
         let mut faucet = self.create_faucet().await;
-        let mut recipient = self.create_client();
+        let mut recipient = self.create_client().await;
 
         self.bump_chain().await;
         faucet.sync_and_await().await.unwrap();

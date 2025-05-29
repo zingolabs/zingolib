@@ -10,18 +10,25 @@ use std::{
     },
 };
 
-use json::{JsonValue, array};
+use json::JsonValue;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use zcash_client_backend::tor;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress};
 
-use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
+use pepper_sync::{
+    error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
+};
 
 use crate::{
     config::ZingoConfig,
     data::proposal::ZingoProposal,
-    wallet::{LightWallet, WalletBase, error::WalletError, keys::unified::ReceiverSelection},
+    wallet::{
+        LightWallet, WalletBase,
+        error::{KeyError, WalletError},
+        keys::unified::{ReceiverSelection, UnifiedAddressId},
+    },
 };
 use error::LightClientError;
 
@@ -135,23 +142,37 @@ impl LightClient {
         self.tor_client.as_ref()
     }
 
-    /// Generates a new unified address from the given `addr_type`.
-    // TODO: remove?
-    pub async fn do_new_address(&mut self, addr_type: &str) -> Result<JsonValue, String> {
-        let desired_receivers = ReceiverSelection {
-            sapling: addr_type.contains('z'),
-            orchard: addr_type.contains('o'),
-            transparent: addr_type.contains('t'),
-        };
-
-        let new_address = self
-            .wallet
+    /// Wrapper for [crate::wallet::LightWallet::generate_unified_address].
+    pub async fn generate_unified_address(
+        &mut self,
+        receivers: ReceiverSelection,
+        account_id: zip32::AccountId,
+    ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
+        self.wallet
             .lock()
             .await
-            .generate_unified_address(desired_receivers, zip32::AccountId::ZERO)
-            .map_err(|e| e.to_string())?;
+            .generate_unified_address(receivers, account_id)
+    }
 
-        Ok(array![new_address.encode(&self.config.chain)])
+    /// Wrapper for [crate::wallet::LightWallet::generate_transparent_address].
+    pub async fn generate_transparent_address(
+        &mut self,
+        account_id: zip32::AccountId,
+    ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
+        self.wallet
+            .lock()
+            .await
+            .generate_transparent_address(account_id)
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
+    pub async fn unified_addresses_json(&self) -> JsonValue {
+        self.wallet.lock().await.unified_addresses_json()
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
+    pub async fn transparent_addresses_json(&self) -> JsonValue {
+        self.wallet.lock().await.transparent_addresses_json()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -192,7 +213,7 @@ impl std::fmt::Debug for LightClient {
 mod tests {
     use crate::{
         config::{ChainType, RegtestNetwork, ZingoConfig},
-        lightclient::{describe::UAReceivers, error::LightClientError},
+        lightclient::error::LightClientError,
         wallet::LightWallet,
     };
     use bip0039::Mnemonic;
@@ -248,16 +269,15 @@ mod tests {
             LightClientError::FileError(_)
         ));
 
-        // The first t address and z address should be derived
-        let addresses = lc.do_addresses(UAReceivers::All).await;
-        assert_eq!(
-            "zregtestsapling1etnl5s47cqves0g5hk2dx5824rme4xv4aeauwzp4d6ys3qxykt5sw5rnaqh9syxry8vgxr7x3x4"
-                .to_string(),
-            addresses[0]["receivers"]["sapling"]
-        );
+        // The first transparent address and unified address should be derived
         assert_eq!(
             "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
-            addresses[0]["receivers"]["transparent"]
+            lc.transparent_addresses_json().await[0]["encoded_address"]
+        );
+        assert_eq!(
+            "uregtest15en5x5cnsc7ye3wfy0prnh3ut34ns9w40htunlh9htfl6k5p004ja5gprxfz8fygjeax07a8489wzjk8gsx65thcp6d3ku8umgaka6f0"
+                .to_string(),
+            lc.unified_addresses_json().await[0]["encoded_address"]
         );
     }
 }

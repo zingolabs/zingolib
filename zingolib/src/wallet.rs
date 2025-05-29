@@ -12,7 +12,7 @@ use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
-use pepper_sync::wallet::ShardTrees;
+use pepper_sync::wallet::{KeyIdInterface, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
@@ -118,15 +118,15 @@ pub struct LightWallet {
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
-    pub mnemonic: Option<Mnemonic>,
+    mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
     pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// Unified_addresses
-    pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
-    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
@@ -206,38 +206,43 @@ impl LightWallet {
             }
         };
 
-        let first_address_index = 0;
-        let first_unified_address = unified_key_store
+        let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
-            .expect("key store always non-empty")
-            .generate_unified_address(
-                first_address_index,
-                unified_key_store
-                    .get(&zip32::AccountId::ZERO)
-                    .expect("key store always non-empty")
-                    .can_view(),
+            .expect("account 0 must exist");
+        let mut unified_addresses = BTreeMap::new();
+        if let Some(receivers) = unified_key.default_receivers() {
+            let unified_address_id = UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: 0,
+            };
+            let first_unified_address = unified_key.generate_unified_address(
+                unified_address_id.address_index,
+                receivers,
                 false,
             )?;
-        let mut unified_addresses = BTreeMap::new();
-        unified_addresses.insert(
-            UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
-                address_index: first_address_index,
-            },
-            first_unified_address.clone(),
-        );
+            unified_addresses.insert(unified_address_id, first_unified_address.clone());
+        }
 
         let mut transparent_addresses = BTreeMap::new();
-        if let Some(transparent_address) = first_unified_address.transparent() {
-            transparent_addresses.insert(
-                TransparentAddressId::new(
-                    zip32::AccountId::ZERO,
-                    TransparentScope::External,
-                    NonHardenedChildIndex::from_index(first_address_index).expect("infallible"),
-                ),
-                transparent::encode_address(&network, *transparent_address),
-            );
-        }
+        let transparent_address_id = TransparentAddressId::new(
+            zip32::AccountId::ZERO,
+            TransparentScope::External,
+            NonHardenedChildIndex::ZERO,
+        );
+        match unified_key.generate_transparent_address(
+            transparent_address_id.address_index(),
+            transparent_address_id.scope(),
+            false,
+        ) {
+            Ok(first_transparent_address) => {
+                transparent_addresses.insert(
+                    transparent_address_id,
+                    transparent::encode_address(&network, first_transparent_address),
+                );
+            }
+            Err(KeyError::NoViewCapability) => (),
+            Err(e) => return Err(e.into()),
+        };
 
         Ok(Self {
             network,
@@ -268,6 +273,52 @@ impl LightWallet {
     pub fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic()
             .map(|mnemonic| mnemonic.phrase().to_string())
+    }
+
+    /// Returns unified addresses.
+    pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
+        &self.unified_addresses
+    }
+
+    /// Returns unified addresses in a JSON array.
+    pub fn unified_addresses_json(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.unified_addresses
+                .iter()
+                .map(|(id, unified_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id),
+                        "address_index" => id.address_index,
+                        "has_orchard" => unified_address.has_orchard(),
+                        "has_sapling" => unified_address.has_sapling(),
+                        "has_transparent" => unified_address.has_transparent(),
+                        "encoded_address" => unified_address.encode(&self.network),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Returns transparent addresses.
+    pub fn transparent_addresses(&self) -> &BTreeMap<TransparentAddressId, String> {
+        &self.transparent_addresses
+    }
+
+    /// Returns transparent addresses in a JSON array.
+    pub fn transparent_addresses_json(&self) -> json::JsonValue {
+        json::JsonValue::Array(
+            self.transparent_addresses
+                .iter()
+                .map(|(id, transparent_address)| {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent_address.clone(),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {

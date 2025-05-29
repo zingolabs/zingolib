@@ -31,12 +31,11 @@ impl NetworkSeedVersion {
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
         for pool in [
             PoolType::Transparent,
-            PoolType::Shielded(ShieldedProtocol::Sapling),
             PoolType::Shielded(ShieldedProtocol::Orchard),
         ] {
             assert_eq!(
                 wallet
-                    .get_first_address(pool)
+                    .get_address(pool)
                     .expect("can find the first address"),
                 self.example_wallet_address(pool)
             );
@@ -286,13 +285,13 @@ async fn reload_wallet_from_buffer() {
         expected_usk.transparent().to_bytes()
     );
 
-    // FIXME: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
+    // TODO: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
     // should thoroughly test UA discovery when syncing which should find these UAs again
     assert_eq!(wallet.unified_addresses.len(), 1);
     for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
-        assert!(addr.sapling().is_some());
-        assert!(addr.transparent().is_some());
+        assert!(addr.sapling().is_none());
+        assert!(addr.transparent().is_none());
     }
 
     let ufvk = usk.to_unified_full_viewing_key();

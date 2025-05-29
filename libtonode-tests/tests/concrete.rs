@@ -130,15 +130,19 @@ mod fast {
     use std::str::FromStr as _;
 
     use bip0039::Mnemonic;
-    use pepper_sync::wallet::{OutputInterface, TransparentCoin};
+    use pepper_sync::{
+        keys::transparent::{self, TransparentAddressId, TransparentScope},
+        wallet::{OutputInterface, TransparentCoin},
+    };
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
-    use zcash_primitives::{consensus::BlockHeight, memo::Memo};
+    use zcash_primitives::{
+        consensus::BlockHeight, legacy::keys::NonHardenedChildIndex, memo::Memo,
+    };
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        lightclient::describe::UAReceivers,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             increase_server_height,
@@ -149,7 +153,7 @@ mod fast {
                 SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface as _,
                 ValueTransferKind,
             },
-            keys::unified::ReceiverSelection,
+            keys::unified::{ReceiverSelection, UnifiedAddressId},
         },
     };
 
@@ -511,7 +515,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client();
+        let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -603,10 +607,7 @@ mod fast {
         }
         // Addresses: alice, bob, charlie
         let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
-        let bob = faucet
-            .wallet
-            .lock()
-            .await
+        let (_, bob) = faucet
             .generate_unified_address(
                 ReceiverSelection {
                     orchard: true,
@@ -615,11 +616,9 @@ mod fast {
                 },
                 zip32::AccountId::ZERO,
             )
+            .await
             .unwrap();
-        let charlie = faucet
-            .wallet
-            .lock()
-            .await
+        let (_, charlie) = faucet
             .generate_unified_address(
                 ReceiverSelection {
                     orchard: true,
@@ -628,6 +627,7 @@ mod fast {
                 },
                 zip32::AccountId::ZERO,
             )
+            .await
             .unwrap();
 
         // messages
@@ -761,7 +761,7 @@ mod fast {
         let mut environment = LibtonodeEnvironment::setup().await;
 
         let mut faucet = environment.create_faucet().await;
-        let mut recipient = environment.create_client();
+        let mut recipient = environment.create_client().await;
 
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
@@ -817,27 +817,23 @@ mod fast {
     }
 
     pub mod tex {
+        use pepper_sync::keys::decode_address;
+        use zcash_client_backend::address::Address;
         use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
-        use zingolib::{
-            utils,
-            wallet::{LightWallet, keys::unified::UnifiedAddressId},
-        };
+        use zingolib::{utils, wallet::LightWallet};
 
         use super::*;
 
         fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
-            let taddr = wallet
-                .unified_addresses
-                .get(&UnifiedAddressId {
-                    account_id: zip32::AccountId::ZERO,
-                    address_index: 0,
-                })
-                .unwrap()
-                .transparent()
-                .unwrap();
+            let taddr = wallet.transparent_addresses().values().next().unwrap();
+            let Address::Transparent(taddr) =
+                decode_address(&wallet.network, taddr.as_str()).unwrap()
+            else {
+                panic!("not t addr")
+            };
 
             let taddr_bytes = match taddr {
-                TransparentAddress::PublicKeyHash(taddr_bytes) => *taddr_bytes,
+                TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
             let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
@@ -1054,13 +1050,18 @@ mod fast {
     async fn diversified_addresses_receive_funds_in_best_pool() {
         let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
-        for code in ["o", "zo", "z"] {
-            recipient.do_new_address(code).await.unwrap();
-        }
-        let addresses = recipient.do_addresses(UAReceivers::All).await;
+        recipient
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        recipient
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let addresses = recipient.unified_addresses_json().await;
         let address_5000_nonememo_tuples = addresses
             .members()
-            .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
+            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 5_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
@@ -1096,77 +1097,71 @@ mod fast {
     }
 
     #[tokio::test]
-    async fn diversification_deterministic_and_coherent() {
+    async fn address_generation_deterministic_and_coherent() {
         let (_regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let seed_phrase = Mnemonic::<bip0039::English>::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let mut recipient1 = client_builder.build_client(seed_phrase, 0, false, regtest_network);
-        let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
+        let mut recipient = client_builder.build_client(seed_phrase, 0, false, regtest_network);
+        let network = recipient.wallet.lock().await.network;
+        let (new_address_id, new_address) = recipient
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         assert_eq!(
-            &get_base_address_macro!(recipient1, "transparent"),
-            &base_transparent_receiver
+            new_address_id,
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: 2
+            }
         );
-        let base_sapling_receiver = "\
-        zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
+        assert!(new_address.has_orchard());
+        assert!(new_address.has_sapling());
+        assert!(!new_address.has_transparent());
         assert_eq!(
-            &get_base_address_macro!(recipient1, "sapling"),
-            &base_sapling_receiver
-        );
-        // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
-        let base_unified_address = "\
-        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8\
-        edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhj\
-        nfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
-        assert_eq!(
-            &get_base_address_macro!(recipient1, "unified"),
-            &base_unified_address
+            new_address.encode(&network),
+            "\
+uregtest1ds3zxwluuzmcwvdxh4wf8xsger96c5yyzqhwzwu7vt85crj4jyf7nsn258rn89g68lvelsjhkqywz8w70wxdg2cmnul4zadukwu2ywezgjwt36\
+f06qvre5qdlkqp5fksyy9j5dm0fdwxwptkk04gzt84r5qv0wfdlx250n0gdcdd6e00"
         );
 
-        //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
-        let new_address = recipient1.do_new_address("tzo").await.unwrap();
-        let ua_index_1 = recipient1.do_addresses(UAReceivers::All).await[1].clone();
-        let ua_address_index_1 = ua_index_1["address"].clone().to_string();
-        assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
-        let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
-        let transparent_index_1 = ua_index_1["receivers"]["transparent"].clone().to_string();
-        let ua_address_index_1_match = ua_address_index_1
-            == "\
-            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
-            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
-            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
-        let sapling_index_1_match = sapling_index_1
-            == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
-        let transparent_index_1_match =
-            transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
+        let (sapling_address_id, sapling_address) = recipient
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            sapling_address_id,
+            UnifiedAddressId {
+                account_id: zip32::AccountId::ZERO,
+                address_index: 3
+            }
+        );
+        assert!(!sapling_address.has_orchard());
+        assert!(sapling_address.has_sapling());
+        assert!(!sapling_address.has_transparent());
+        assert_eq!(
+            sapling_address.encode(&network),
+            "\
+uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35gzw53tdmgz6dtfvlnfmjwl2a84cx5m3fq"
+        );
 
-        //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
-        let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
-        let ua_address_index_2 = new_orchard_only_address[0].to_string();
-        let ua_2_orchard_match = ua_address_index_2
-            == "\
-        uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n";
-        assert!(
-            ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
-            "\n\
-            ua_1, match: {} Observed:\n\
-            {}\n\n\
-            sapling_1, match: {} Observed:\n\
-            {}\n\n\
-            transparent_1, match: {} Observed:\n\
-            {}\n\n\
-            ua_address_index_2, match: {} Observed:\n\
-            {}\n
-        ",
-            ua_address_index_1_match,
-            ua_address_index_1,
-            sapling_index_1_match,
-            sapling_index_1,
-            transparent_index_1_match,
-            transparent_index_1,
-            ua_2_orchard_match,
-            ua_address_index_2
+        let (taddress_id, new_taddress) = recipient
+            .generate_transparent_address(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            taddress_id,
+            TransparentAddressId::new(
+                zip32::AccountId::ZERO,
+                TransparentScope::External,
+                NonHardenedChildIndex::from_index(1).unwrap()
+            )
+        );
+        assert_eq!(
+            transparent::encode_address(&network, new_taddress),
+            "\
+tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         );
     }
 
@@ -1303,39 +1298,6 @@ mod fast {
             Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
         )
     }
-    #[tokio::test]
-    async fn mine_to_transparent_and_propose_shielding_with_div_addr() {
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let (regtest_manager, _cph, mut faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, regtest_network, true).await;
-        increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 100)
-            .await
-            .unwrap();
-        faucet.do_new_address("zto").await.unwrap();
-        let proposal = faucet.propose_shield(zip32::AccountId::ZERO).await.unwrap();
-        let only_step = proposal.steps().first();
-
-        // Orchard action and dummy, plus 4 transparent inputs
-        let expected_fee = 30_000;
-
-        assert_eq!(proposal.steps().len(), 1);
-        assert_eq!(only_step.transparent_inputs().len(), 4);
-        assert_eq!(
-            only_step.balance().fee_required(),
-            Zatoshis::const_from_u64(expected_fee)
-        );
-        // Only one change item. I guess change could be split between pools?
-        assert_eq!(only_step.balance().proposed_change().len(), 1);
-        assert_eq!(
-            only_step
-                .balance()
-                .proposed_change()
-                .first()
-                .unwrap()
-                .value(),
-            Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
-        )
-    }
 }
 mod slow {
     use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
@@ -1343,7 +1305,6 @@ mod slow {
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
     };
-    use shardtree::store::ShardStore;
     use testvectors::TEST_TXID;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::memo::Memo;
@@ -1352,11 +1313,11 @@ mod slow {
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::config::ChainType;
-    use zingolib::lightclient::describe::UAReceivers;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
+        encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -1366,6 +1327,7 @@ mod slow {
         TransactionSummaryInterface,
     };
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
+    use zingolib::wallet::keys::unified::UnifiedAddressId;
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::{self, SendType, TransactionKind};
     use zip32::AccountId;
@@ -1870,11 +1832,11 @@ mod slow {
             .unwrap()
             .clone();
         assert_eq!(transaction.blockheight(), 4.into());
-        assert_eq!(
-            recipient.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"]
-                .to_string(),
-            recipient_taddr
-        );
+        // TODO: add key id and/or recipient to basic summaries
+        // assert_eq!(
+        //     //,
+        //     recipient_taddr
+        // );
         assert_eq!(transaction.value(), value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
@@ -2090,8 +2052,8 @@ mod slow {
                  output_index: 0,
                  value: first_send_to_sapling,
                  memo: None,
-                 recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                 recipient_unified_address: None,
+                 recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
+                 recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
              }])
@@ -2309,8 +2271,8 @@ mod slow {
                 output_index: 0,
                  value: second_send_to_sapling,
                 memo: None,
-                recipient: "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p".to_string(),
-                recipient_unified_address: None,
+                 recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
+                 recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
                  scope: summary::Scope::from(zip32::Scope::External),
             }])
@@ -2518,41 +2480,6 @@ mod slow {
         )
         .await;
 
-        {
-            let wallet = faucet.wallet.lock().await;
-            dbg!(wallet.sync_state.wallet_height());
-            dbg!(
-                wallet
-                    .shard_trees
-                    .sapling
-                    .store()
-                    .max_checkpoint_id()
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .orchard
-                    .store()
-                    .max_checkpoint_id()
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .sapling
-                    .root_at_checkpoint_id(&3.into())
-                    .unwrap()
-            );
-            dbg!(
-                wallet
-                    .shard_trees
-                    .orchard
-                    .root_at_checkpoint_id(&3.into())
-                    .unwrap()
-            );
-        }
-
         let amount_to_send = 5_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
         from_inputs::quick_send(
@@ -2732,6 +2659,7 @@ mod slow {
                 false,
             )
             .await;
+        let network = recipient.wallet.lock().await.network;
 
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
@@ -2777,7 +2705,10 @@ mod slow {
                 .unwrap()
                 .outgoing_sapling_notes()
                 .iter()
-                .any(|note| { note.recipient == faucet_sapling_address })
+                .any(|note| {
+                    note.recipient
+                        == encoded_sapling_address_from_ua(&network, &faucet_sapling_address)
+                })
         );
         assert!(
             transactions
@@ -2825,7 +2756,6 @@ mod slow {
         );
 
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
-        let network = recipient.wallet.lock().await.network;
         let balance = recipient
             .wallet
             .lock()
@@ -2842,9 +2772,11 @@ mod slow {
                 .wallet
                 .lock()
                 .await
-                .unified_addresses
-                .values()
-                .next()
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    address_index: 1,
+                    account_id: zip32::AccountId::ZERO,
+                })
                 .unwrap()
                 .sapling()
                 .unwrap();
@@ -2949,11 +2881,23 @@ mod slow {
             assert!(!sent_transaction.status().is_confirmed());
             assert_eq!(sent_transaction.status().get_height(), 5.into());
 
-            let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+            let faucet_sapling_address = faucet
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    address_index: 1,
+                    account_id: zip32::AccountId::ZERO,
+                })
+                .unwrap()
+                .sapling()
+                .unwrap()
+                .clone();
             let outgoing_sapling_note = sent_transaction
                 .outgoing_sapling_notes()
                 .iter()
-                .find(|note| note.encoded_recipient(&network) == Ok(faucet_sapling_address.clone()))
+                .find(|note| note.recipient() == faucet_sapling_address)
                 .unwrap();
             if let Memo::Text(memo) = outgoing_sapling_note.memo() {
                 assert_eq!(&String::from(memo.clone()), outgoing_memo);

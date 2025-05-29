@@ -18,8 +18,8 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_price::PriceList;
 use zip32::AccountId;
 
-use super::LightWallet;
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
+use super::{LightWallet, error::KeyError};
 use crate::wallet::{SendProgress, WalletSettings, legacy::WalletZecPriceInfo, utils};
 use crate::wallet::{legacy::WalletOptions, traits::ReadableWriteable};
 use crate::{
@@ -77,7 +77,7 @@ impl LightWallet {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
                     sapling: address.sapling().is_some(),
-                    transparent: address.transparent().is_some(),
+                    transparent: false,
                 }
                 .write(w, ())
             },
@@ -256,22 +256,46 @@ impl LightWallet {
 
         let mut unified_key_store = BTreeMap::new();
         unified_key_store.insert(zip32::AccountId::ZERO, wallet_capability.unified_key_store);
-        let first_address_index = 0;
         let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
             .expect("account 0 must exist");
-        // TODO: remove transparent receivers
-        let first_unified_address = unified_key
-            .generate_unified_address(first_address_index, unified_key.can_view(), false)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let mut unified_addresses = BTreeMap::new();
-        unified_addresses.insert(
-            UnifiedAddressId {
+        if let Some(receivers) = unified_key.default_receivers() {
+            let unified_address_id = UnifiedAddressId {
                 account_id: zip32::AccountId::ZERO,
-                address_index: first_address_index,
-            },
-            first_unified_address.clone(),
+                address_index: 0,
+            };
+            let first_unified_address = unified_key
+                .generate_unified_address(unified_address_id.address_index, receivers, false)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            unified_addresses.insert(unified_address_id, first_unified_address.clone());
+        }
+
+        let mut transparent_addresses = BTreeMap::new();
+        let transparent_address_id = TransparentAddressId::new(
+            zip32::AccountId::ZERO,
+            TransparentScope::External,
+            NonHardenedChildIndex::ZERO,
         );
+        match unified_key.generate_transparent_address(
+            transparent_address_id.address_index(),
+            transparent_address_id.scope(),
+            false,
+        ) {
+            Ok(first_transparent_address) => {
+                transparent_addresses.insert(
+                    transparent_address_id,
+                    transparent::encode_address(&network, first_transparent_address),
+                );
+            }
+            Err(KeyError::NoViewCapability) => (),
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to create transparent address. {}", e),
+                ));
+            }
+        };
 
         // setup targetted scanning from zingo 1.x transaction data
         let mut sync_state = SyncState::new();
@@ -302,7 +326,7 @@ impl LightWallet {
             outpoint_map: BTreeMap::new(),
             shard_trees: ShardTrees::new(),
             sync_state,
-            transparent_addresses: BTreeMap::new(),
+            transparent_addresses,
             unified_addresses,
             network,
             save_required: false,
@@ -365,7 +389,8 @@ impl LightWallet {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
             let address_index = r.read_u32::<LittleEndian>()?;
-            let receivers = ReceiverSelection::read(r, ())?;
+            let mut receivers = ReceiverSelection::read(r, ())?;
+            receivers.transparent = false;
 
             Ok((
                 UnifiedAddressId {
@@ -391,15 +416,11 @@ impl LightWallet {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
             let scope = TransparentScope::try_from(r.read_u8()?)?;
-            let address_index = r.read_u32::<LittleEndian>()?;
+            let address_index = NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
+                .expect("only non-hardened child indexes should be written");
 
             Ok((
-                TransparentAddressId::new(
-                    account_id,
-                    scope,
-                    NonHardenedChildIndex::from_index(address_index)
-                        .expect("only non-hardened child indexes should be written"),
-                ),
+                TransparentAddressId::new(account_id, scope, address_index),
                 transparent::encode_address(
                     &network,
                     unified_key_store

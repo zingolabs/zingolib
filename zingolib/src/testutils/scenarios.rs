@@ -38,6 +38,7 @@ pub mod setup {
     use crate::testutils::paths::get_regtest_dir;
     use crate::testutils::poll_server_height;
     use crate::testutils::regtest::ChildProcessHandler;
+    use crate::wallet::keys::unified::ReceiverSelection;
     use crate::wallet::{LightWallet, WalletSettings};
     use crate::{lightclient::LightClient, wallet::WalletBase};
     use testvectors::{
@@ -252,21 +253,21 @@ pub mod setup {
             regtest_network: crate::config::RegtestNetwork,
         ) -> LightClient {
             let config = self.make_unique_data_dir_and_load_config(regtest_network);
-            LightClient::create_from_wallet(
-                LightWallet::new(
-                    config.chain,
-                    WalletBase::Mnemonic {
-                        mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
-                        no_of_accounts: 1.try_into().unwrap(),
-                    },
-                    (birthday as u32).into(),
-                    config.wallet_settings.clone(),
-                )
-                .unwrap(),
-                config,
-                overwrite,
+            let mut wallet = LightWallet::new(
+                config.chain,
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
+                    no_of_accounts: 1.try_into().unwrap(),
+                },
+                (birthday as u32).into(),
+                config.wallet_settings.clone(),
             )
-            .unwrap()
+            .unwrap();
+            wallet
+                .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+                .unwrap();
+
+            LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
         }
     }
 

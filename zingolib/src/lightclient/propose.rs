@@ -195,6 +195,7 @@ impl LightClient {
 mod shielding {
     use bip0039::Mnemonic;
     use pepper_sync::sync::SyncConfig;
+    use zcash_protocol::consensus::Parameters;
 
     use crate::{
         config::ZingoConfigBuilder,
@@ -247,13 +248,27 @@ mod shielding {
     #[tokio::test]
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client();
+        let network = basic_client.wallet.lock().await.network;
+
+        // TODO: store t addrs as concrete types instead of encoded
+        let transparent_addresses = basic_client
+            .wallet
+            .lock()
+            .await
+            .transparent_addresses()
+            .values()
+            .map(|address| {
+                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
+                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                        network.network_type(),
+                    )
+                    .expect("incorrect network should be checked on wallet load"))
+            })
+            .collect::<Result<Vec<_>, zcash_address::ParseError>>()
+            .unwrap();
+
         assert_eq!(
-            basic_client
-                .wallet
-                .lock()
-                .await
-                .get_transparent_addresses()
-                .unwrap(),
+            transparent_addresses,
             [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
                 [
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,

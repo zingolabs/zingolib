@@ -9,9 +9,12 @@ use std::{io::Read, string::String, time::Duration};
 
 use json::JsonValue;
 
+use pepper_sync::keys::decode_address;
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zcash_address::unified::Fvk;
-use zcash_protocol::{PoolType, ShieldedProtocol};
+use zcash_keys::address::UnifiedAddress;
+use zcash_keys::encoding::AddressCodec;
+use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -636,4 +639,46 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub(crate) fn timestamped_test_log(text: &str) {
     println!("{}: {}", crate::wallet::now(), text);
+}
+
+/// Decodes unified address and re-encode as sapling address.
+pub fn encoded_sapling_address_from_ua(
+    consensus_parameters: &impl consensus::Parameters,
+    encoded_unified_address: &str,
+) -> String {
+    let zcash_keys::address::Address::Unified(unified_address) =
+        decode_address(consensus_parameters, encoded_unified_address).unwrap()
+    else {
+        panic!("not unified address")
+    };
+
+    unified_address
+        .sapling()
+        .expect("no sapling receiver")
+        .encode(consensus_parameters)
+}
+
+/// Decodes unified address and re-encode with only the orchard receiver.
+pub fn encoded_orchard_only_from_ua(
+    consensus_parameters: &impl consensus::Parameters,
+    encoded_unified_address: &str,
+) -> String {
+    let zcash_keys::address::Address::Unified(unified_address) =
+        decode_address(consensus_parameters, encoded_unified_address).unwrap()
+    else {
+        panic!("not unified address")
+    };
+
+    UnifiedAddress::from_receivers(
+        Some(
+            unified_address
+                .orchard()
+                .cloned()
+                .expect("no orchard receiver"),
+        ),
+        None,
+        None,
+    )
+    .unwrap()
+    .encode(consensus_parameters)
 }

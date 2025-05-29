@@ -237,14 +237,14 @@ pub fn decode_address(
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
+                format!("failed to decode address. {e}"),
             )
         })?
         .convert_if_network::<zcash_keys::address::Address>(consensus_parameters.network_type())
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
+                format!("failed to decode address. {e}"),
             )
         })
 }
