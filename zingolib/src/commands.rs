@@ -20,6 +20,7 @@ use zcash_protocol::value::Zatoshis;
 use crate::data::{PollReport, proposal};
 use crate::lightclient::LightClient;
 use crate::utils::conversion::txid_from_hex_encoded_str;
+use crate::wallet::keys::WalletAddressRef;
 use crate::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 
@@ -843,6 +844,72 @@ impl Command for TransparentAddressesCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
+    }
+}
+
+struct CheckAddressCommand {}
+impl Command for CheckAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Checks if the given encoded address is derived by the wallet's keys.
+
+            Usage:
+            check_address <encoded_address>
+
+            Example:
+            check_address u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Checks if the given encoded address is derived by the wallet's keys."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        if args.len() != 1 {
+            return json::object! { "error" => "no address specified. try 'help check_address' for correct usage and examples."
+                .to_string() }.pretty(2)            ;
+        }
+        RT.block_on(async move {
+            match lightclient.wallet.lock().await.is_wallet_address(args[0]) {
+                Ok(address_ref) => address_ref.map_or(
+                    json::object! { "is_wallet_address" => "false".to_string() },
+                    |address_ref| match address_ref {
+                        WalletAddressRef::Unified {
+                            account_id,
+                            orchard,
+                            sapling,
+                            transparent,
+                        } => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "unified".to_string(),
+                                "account_id" => u32::from(account_id),
+                                "orchard_diversifier_index" => orchard.filter(|orchard| orchard.0 == zip32::Scope::External).map(|orchard| u128::from(orchard.1).to_string()),
+                                "sapling_diversifier_index" => sapling.map(|sapling| u128::from(sapling).to_string()),
+                                "transparent_address_index" => transparent.map(|transparent| transparent.index()),
+                            },
+                        WalletAddressRef::Sapling {
+                            account_id,
+                            diversifier_index,
+                        } => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "sapling".to_string(),
+                                "account_id" => u32::from(account_id),
+                                "sapling_diversifier_index" => u128::from(diversifier_index).to_string(),
+                            },
+                        WalletAddressRef::Transparent(address_id) => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "transparent".to_string(),
+                                "account_id" => u32::from(address_id.account_id()),
+                                "scope" => address_id.scope().to_string(),
+                                "transparent_address_index" => address_id.address_index().index(),
+                            },
+                    },
+                ),
+                Err(e) => json::object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
     }
 }
 
@@ -1925,6 +1992,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("balance", Box::new(BalanceCommand {})),
         ("addresses", Box::new(UnifiedAddressesCommand {})),
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
+        ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("valuetransfers", Box::new(ValueTransfersCommand {})),

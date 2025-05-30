@@ -75,10 +75,9 @@ pub enum SummaryError {
     /// Address parse error
     #[error("address parse error. {0}")]
     ParseError(#[from] zcash_address::ParseError),
-    /// Std IO address parse or conversion error
-    // TODO: temp while we fix `decode_address` error handling in pepper sync
-    #[error("address parse error. {0}")]
-    StdParseError(#[from] std::io::Error),
+    /// Key error.
+    #[error("key error. {0}")]
+    KeyError(#[from] KeyError),
     /// Spend error
     #[error("spend error. {0}")]
     SpendError(#[from] SpendError),

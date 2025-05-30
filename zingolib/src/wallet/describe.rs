@@ -3,7 +3,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use zcash_primitives::legacy::TransparentAddress;
 use zcash_primitives::memo::Memo;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
@@ -33,9 +32,7 @@ use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::wallet::LightWallet;
-use pepper_sync::keys::decode_address;
 use pepper_sync::keys::transparent;
-use pepper_sync::keys::transparent::TransparentScope;
 use pepper_sync::wallet::NoteInterface as _;
 use pepper_sync::wallet::OrchardNote;
 use pepper_sync::wallet::OutgoingNoteInterface;
@@ -83,37 +80,22 @@ impl LightWallet {
                 .outgoing_sapling_notes()
                 .iter()
                 .all(|outgoing_note| {
-                    if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address.sapling().is_none_or(|address| {
-                            self.is_sapling_external_send_to_self(address)
-                                .expect("must have sapling view capability in this scope")
-                                || outgoing_note.key_id().scope == zip32::Scope::Internal
-                        }) || outgoing_note
+                    self.is_sapling_external_wallet_address(&outgoing_note.note().recipient())
+                        .is_some()
+                        || outgoing_note.key_id().scope == zip32::Scope::Internal
+                        || outgoing_note
                             .encoded_recipient_full_unified_address(&self.network)
-                            .expect("should exist in this scope")
-                            == *zfz_address
-                    } else {
-                        self.is_sapling_external_send_to_self(&outgoing_note.note().recipient())
-                            .expect("must have sapling view capability in this scope")
-                            || outgoing_note.key_id().scope == zip32::Scope::Internal
-                    }
+                            .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
             && transaction
                 .outgoing_orchard_notes()
                 .iter()
                 .all(|outgoing_note| {
-                    if let Some(full_address) = outgoing_note.recipient_full_unified_address() {
-                        full_address.orchard().is_none_or(|address| {
-                            self.is_orchard_send_to_self(address)
-                                .expect("must have orchard view capability in this scope")
-                        }) || outgoing_note
+                    self.is_orchard_wallet_address(&outgoing_note.note().recipient())
+                        .is_some()
+                        || outgoing_note
                             .encoded_recipient_full_unified_address(&self.network)
-                            .expect("should exist in this scope")
-                            == *zfz_address
-                    } else {
-                        self.is_orchard_send_to_self(&outgoing_note.note().recipient())
-                            .expect("must have orchard view capability in this scope")
-                    }
+                            .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
         {
             Ok(TransactionKind::Sent(SendType::SendToSelf))
@@ -686,7 +668,7 @@ impl LightWallet {
     fn create_send_value_transfers(
         &self,
         transaction_summary: &TransactionSummary,
-    ) -> std::io::Result<Vec<ValueTransfer>> {
+    ) -> Result<Vec<ValueTransfer>, KeyError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let outgoing_notes = transaction_summary
             .outgoing_orchard_notes()
@@ -696,27 +678,44 @@ impl LightWallet {
         let outgoing_coins = transaction_summary.outgoing_transparent_coins();
         let mut addresses = HashMap::new();
 
-        outgoing_notes.iter().try_for_each(|&note| {
-            let encoded_address = if let Some(ua) = note.recipient_unified_address.clone() {
-                ua
-            } else {
-                note.recipient.clone()
-            };
+        transaction_summary
+            .outgoing_orchard_notes()
+            .iter()
+            .try_for_each(|note| {
+                if self.is_wallet_address(&note.recipient)?.is_none() {
+                    let encoded_address = note
+                        .recipient_unified_address
+                        .clone()
+                        .unwrap_or(note.recipient.clone());
+                    addresses.insert(encoded_address, note.output_index);
+                }
 
-            if !self.is_send_to_self(&encoded_address, Some(&note.scope))? {
-                // hash map is used to create unique list of addresses as duplicates are not inserted twice
-                addresses.insert(encoded_address, note.output_index);
-            }
+                Ok::<(), KeyError>(())
+            })?;
+        transaction_summary
+            .outgoing_sapling_notes()
+            .iter()
+            .try_for_each(|note| {
+                // added scope check to circumvent sapling-crypto bug:
+                // https://github.com/zcash/sapling-crypto/issues/160.
+                if self.is_wallet_address(&note.recipient)?.is_none()
+                    && note.scope != summary::Scope::Internal
+                {
+                    let encoded_address = note
+                        .recipient_unified_address
+                        .clone()
+                        .unwrap_or(note.recipient.clone());
+                    addresses.insert(encoded_address, note.output_index);
+                }
 
-            Ok::<(), std::io::Error>(())
-        })?;
+                Ok::<(), KeyError>(())
+            })?;
         outgoing_coins.iter().try_for_each(|coin| {
-            if !self.is_send_to_self(&coin.recipient, None)? {
-                // hash map is used to create unique list of addresses as duplicates are not inserted twice
+            if self.is_wallet_address(&coin.recipient)?.is_none() {
                 addresses.insert(coin.recipient.clone(), coin.output_index);
             }
 
-            Ok::<(), std::io::Error>(())
+            Ok::<(), KeyError>(())
         })?;
         let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
         addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
@@ -765,90 +764,6 @@ impl LightWallet {
         });
 
         Ok(value_transfers)
-    }
-
-    /// Determines whether the `encoded_address` is derived by the wallet's keys.
-    ///
-    /// `note_scope` must be provided when the address could be decoded into a sapling address or a unified address
-    /// with a sapling receiver. This is to circumvent a bug with sapling_crypto::zip32::DiversableFullViewingKey::decrpyt_diversifier
-    /// https://github.com/zcash/sapling-crypto/issues/160.
-    fn is_send_to_self(
-        &self,
-        encoded_address: &str,
-        note_scope: Option<&summary::Scope>,
-    ) -> std::io::Result<bool> {
-        Ok(match decode_address(&self.network, encoded_address)? {
-            zcash_keys::address::Address::Transparent(address) => {
-                self.is_transparent_send_to_self(&address).is_some()
-            }
-            zcash_keys::address::Address::Sapling(address) => {
-                self.is_sapling_external_send_to_self(&address)
-                    .expect("should have sapling view capability in this scope")
-                    || *note_scope
-                        .expect("note scope must be provided for addresses with sapling receivers!")
-                        == summary::Scope::Internal
-            }
-            zcash_keys::address::Address::Unified(address) => {
-                address
-                    .transparent()
-                    .is_some_and(|addr| self.is_transparent_send_to_self(addr).is_some())
-                    || address.sapling().is_some_and(|addr| {
-                        self.is_sapling_external_send_to_self(addr)
-                            .expect("should have sapling view capability in this scope")
-                            || *note_scope.expect(
-                                "note scope must be provided for addresses with sapling receivers!",
-                            ) == summary::Scope::Internal
-                    })
-                    || address.orchard().is_some_and(|addr| {
-                        self.is_orchard_send_to_self(addr)
-                            .expect("should have sapling view capability in this scope")
-                    })
-            }
-            zcash_keys::address::Address::Tex(_) => false,
-        })
-    }
-
-    fn is_transparent_send_to_self(
-        &self,
-        address: &TransparentAddress,
-    ) -> Option<TransparentScope> {
-        let encoded_address = transparent::encode_address(&self.network, *address);
-
-        self.transparent_addresses
-            .iter()
-            .find(|(_, wallet_address)| **wallet_address == encoded_address)
-            .map(|(address_id, _)| address_id.scope())
-    }
-
-    /// Checks if the given `address` is derived from the wallet's sapling FVKs. External scope only.
-    fn is_sapling_external_send_to_self(
-        &self,
-        address: &sapling_crypto::PaymentAddress,
-    ) -> Result<bool, KeyError> {
-        for unified_key in self.unified_key_store.values() {
-            if sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)?
-                .decrypt_diversifier(address)
-                .is_some()
-            {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
-    }
-
-    /// Checks if the given `address` is derived from the wallet's orchard FVKs.
-    fn is_orchard_send_to_self(&self, address: &orchard::Address) -> Result<bool, KeyError> {
-        for unified_key in self.unified_key_store.values() {
-            if orchard::keys::FullViewingKey::try_from(unified_key)?
-                .scope_for_address(address)
-                .is_some()
-            {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
     }
 }
 

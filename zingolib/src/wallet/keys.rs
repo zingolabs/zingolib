@@ -1,17 +1,35 @@
 //! [crate::wallet::LightWallet] methods associated with keys and address derivation.
 
 use pepper_sync::{
-    keys::transparent::{self, TransparentAddressId, TransparentScope},
+    keys::{
+        decode_address,
+        transparent::{self, TransparentAddressId, TransparentScope},
+    },
     wallet::KeyIdInterface,
 };
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::legacy::{TransparentAddress, keys::NonHardenedChildIndex};
+use zip32::DiversifierIndex;
 
 use super::{LightWallet, error::KeyError};
 
 pub mod legacy;
 pub mod unified;
+
+pub enum WalletAddressRef {
+    Unified {
+        account_id: zip32::AccountId,
+        orchard: Option<(zip32::Scope, DiversifierIndex)>,
+        sapling: Option<DiversifierIndex>,
+        transparent: Option<NonHardenedChildIndex>,
+    },
+    Sapling {
+        account_id: zip32::AccountId,
+        diversifier_index: DiversifierIndex,
+    },
+    Transparent(TransparentAddressId),
+}
 
 impl LightWallet {
     /// Returns a new unified address for the given `receivers` and `account_id`.
@@ -147,5 +165,110 @@ impl LightWallet {
         self.save_required = true;
 
         Ok(refund_addresses)
+    }
+
+    /// Returns a [`crate::wallet::keys::WalletAddressRef`] if the `encoded_address` was derived by the wallet's keys.
+    ///
+    /// Fails to detect internal sapling addresses.
+    /// <https://github.com/zcash/sapling-crypto/issues/160>
+    pub fn is_wallet_address(
+        &self,
+        encoded_address: &str,
+    ) -> Result<Option<WalletAddressRef>, KeyError> {
+        Ok(match decode_address(&self.network, encoded_address)? {
+            zcash_keys::address::Address::Unified(address) => {
+                let orchard = address
+                    .orchard()
+                    .and_then(|address| self.is_orchard_wallet_address(address));
+                let sapling = address
+                    .sapling()
+                    .and_then(|address| self.is_sapling_external_wallet_address(address));
+                let transparent = address
+                    .transparent()
+                    .and_then(|address| self.is_transparent_wallet_address(address))
+                    .filter(|address_id| address_id.scope() == TransparentScope::External);
+
+                if orchard.is_some() || sapling.is_some() {
+                    let account_id = if let Some((account_id, _, _)) = &orchard {
+                        *account_id
+                    } else if let Some((account_id, _)) = &sapling {
+                        *account_id
+                    } else {
+                        unreachable!("At least one option should be Some in this scope!");
+                    };
+                    Some(WalletAddressRef::Unified {
+                        account_id,
+                        orchard: orchard
+                            .map(|(_, scope, diversifier_index)| (scope, diversifier_index)),
+                        sapling: sapling.map(|(_, diversifier_index)| diversifier_index),
+                        transparent: transparent.map(|address_id| address_id.address_index()),
+                    })
+                } else {
+                    None
+                }
+            }
+            zcash_keys::address::Address::Sapling(address) => {
+                self.is_sapling_external_wallet_address(&address).map(
+                    |(account_id, diversifier_index)| WalletAddressRef::Sapling {
+                        account_id,
+                        diversifier_index,
+                    },
+                )
+            }
+            zcash_keys::address::Address::Transparent(address) => self
+                .is_transparent_wallet_address(&address)
+                .map(WalletAddressRef::Transparent),
+            zcash_keys::address::Address::Tex(_) => None,
+        })
+    }
+
+    /// Returns the address identifier if the given `address` is one of the wallet's derived addresses.
+    pub fn is_transparent_wallet_address(
+        &self,
+        address: &TransparentAddress,
+    ) -> Option<TransparentAddressId> {
+        let encoded_address = transparent::encode_address(&self.network, *address);
+
+        self.transparent_addresses
+            .iter()
+            .find(|(_, wallet_address)| **wallet_address == encoded_address)
+            .map(|(address_id, _)| *address_id)
+    }
+
+    /// Returns the account id and diversifier index if the given `address` is derived from the wallet's sapling FVKs. External scope only.
+    pub fn is_sapling_external_wallet_address(
+        &self,
+        address: &sapling_crypto::PaymentAddress,
+    ) -> Option<(zip32::AccountId, DiversifierIndex)> {
+        for (account_id, unified_key) in self.unified_key_store.iter() {
+            if let Some((diversifier_index, _)) =
+                sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)
+                    .ok()
+                    .and_then(|fvk| fvk.decrypt_diversifier(address))
+            {
+                return Some((*account_id, diversifier_index));
+            }
+        }
+
+        None
+    }
+
+    /// Returns the account id and diversifier index if the given `address` is derived from the wallet's orchard FVKs.
+    pub fn is_orchard_wallet_address(
+        &self,
+        address: &orchard::Address,
+    ) -> Option<(zip32::AccountId, zip32::Scope, DiversifierIndex)> {
+        for (account_id, unified_key) in self.unified_key_store.iter() {
+            let Ok(fvk) = orchard::keys::FullViewingKey::try_from(unified_key) else {
+                continue;
+            };
+            for scope in [zip32::Scope::External, zip32::Scope::Internal] {
+                if let Some(diversifier_index) = fvk.to_ivk(scope).diversifier_index(address) {
+                    return Some((*account_id, scope, diversifier_index));
+                }
+            }
+        }
+
+        None
     }
 }
