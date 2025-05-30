@@ -465,6 +465,7 @@ mod fast {
             client_builder.build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network);
         let network = recipient.wallet.lock().await.network;
 
+        // create a range of UAs to be discovered when recipient is reset
         let orchard_only_addr = recipient
             .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
             .await
@@ -485,6 +486,7 @@ mod fast {
             .map(|addr| encode_payment_address_p(&network, addr))
             .unwrap();
 
+        // send to the UAs so they are recorded on chain
         increase_server_height(&regtest_manager, 3).await;
         faucet.sync_and_await().await.unwrap();
         from_inputs::quick_send(
@@ -504,6 +506,7 @@ mod fast {
         .unwrap();
         increase_server_height(&regtest_manager, 1).await;
 
+        // rebuild recipient and check the UAs don't exist in the wallet
         let mut recipient =
             client_builder.build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network);
         if let Some(_ua) =
@@ -546,6 +549,7 @@ mod fast {
             panic!("ua should not be in fresh wallet yet!");
         }
 
+        // sync recipient and check the UAs have been discovered
         recipient.sync_and_await().await.unwrap();
         assert_eq!(
             recipient

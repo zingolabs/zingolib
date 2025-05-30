@@ -1075,7 +1075,11 @@ fn discover_unified_addresses<W>(
 where
     W: SyncWallet,
 {
-    for note in transaction.orchard_notes() {
+    for note in transaction
+        .orchard_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
         let ivk = ufvks
             .get(&note.key_id().account_id())
             .expect("ufvk must exist to decrypt this note")
@@ -1090,7 +1094,11 @@ where
                 .expect("must be key used to create this address"),
         )?
     }
-    for note in transaction.sapling_notes() {
+    for note in transaction
+        .sapling_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
         let ivk = ufvks
             .get(&note.key_id().account_id())
             .expect("ufvk must exist to decrypt this note")
