@@ -72,4 +72,5 @@ namespace zingo {
   string get_transparent_addresses();
   string create_new_unified_address(string receivers);
   string create_new_transparent_address();
+  string check_my_address(string address);
 };

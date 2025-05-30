@@ -27,6 +27,7 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
+use zcash_primitives::zip32::Scope;
 use zcash_protocol::consensus::NetworkType;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
@@ -36,6 +37,7 @@ use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::WalletSettings;
 use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
 use zingolib::wallet::keys::unified::ReceiverSelection;
+use zingolib::wallet::keys::WalletAddressRef;
 use bip0039::Mnemonic;
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -491,7 +493,7 @@ pub fn change_server(server_uri: String) -> String {
                     lightclient.set_server(uri);
                     "server set".to_string()
                 }
-                Err(_) => "invalid server uri".to_string(),
+                Err(_) => "Error: invalid server uri".to_string(),
             }
         }
     } else {
@@ -772,9 +774,7 @@ pub fn zec_price(tor: String) -> String {
                 .await
             {
                 Ok(price) => object! { "current_price" => price },
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
@@ -842,9 +842,7 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
                         "balance" => bal.into_u64(),
                     }
                 }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
@@ -868,9 +866,7 @@ pub fn create_tor_client(data_dir: String) -> String {
         });
         match result {
             Ok(_) => "Client tor created successfully".to_string(),
-            Err(e) => {
-                format!("Error: {e}")
-            }
+            Err(e) => format!("Error: {e}"),
         }
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -914,7 +910,7 @@ pub fn create_new_unified_address(receivers: String) -> String {
                         "encoded_address" => unified_address.encode(&network),
                     }
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
@@ -937,7 +933,54 @@ pub fn create_new_transparent_address() -> String {
                         "encoded_address" => transparent::encode_address(&network,  transparent_address),
                     }
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("Error: {e}").into(),
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn check_my_address(address: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+        zingolib::commands::RT.block_on(async move {
+            match lightclient.wallet.lock().await.is_wallet_address(&address) {
+                Ok(address_ref) => address_ref.map_or(
+                    json::object! { "is_wallet_address" => "false".to_string() },
+                    |address_ref| match address_ref {
+                        WalletAddressRef::Unified {
+                            account_id,
+                            orchard,
+                            sapling,
+                            transparent,
+                        } => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "unified".to_string(),
+                                "account_id" => u32::from(account_id),
+                                "orchard_diversifier_index" => orchard.filter(|orchard| orchard.0 == Scope::External).map(|orchard| u128::from(orchard.1).to_string()),
+                                "sapling_diversifier_index" => sapling.map(|sapling| u128::from(sapling).to_string()),
+                                "transparent_address_index" => transparent.map(|transparent| transparent.index()),
+                            },
+                        WalletAddressRef::Sapling {
+                            account_id,
+                            diversifier_index,
+                        } => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "sapling".to_string(),
+                                "account_id" => u32::from(account_id),
+                                "diversifier_index" => u128::from(diversifier_index).to_string(),
+                            },
+                        WalletAddressRef::Transparent(address_id) => json::object! {
+                                "is_wallet_address" => "true".to_string(),
+                                "address_type" => "transparent".to_string(),
+                                "account_id" => u32::from(address_id.account_id()),
+                                "scope" => address_id.scope().to_string(),
+                                "address_index" => address_id.address_index().index(),
+                            },
+                    },
+                ),
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
