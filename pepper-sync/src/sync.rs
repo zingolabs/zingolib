@@ -1083,13 +1083,11 @@ where
             .expect("fvk must exist to decrypt this note")
             .to_ivk(zip32::Scope::External);
 
-        wallet.update_unified_addresses(
+        wallet.add_orchard_address(
             note.key_id().account_id(),
-            Some(
-                ivk.diversifier_index(&note.note().recipient())
-                    .expect("must be key used to create this address"),
-            ),
-            None,
+            note.note().recipient(),
+            ivk.diversifier_index(&note.note().recipient())
+                .expect("must be key used to create this address"),
         )?
     }
     for note in transaction.sapling_notes() {
@@ -1100,13 +1098,11 @@ where
             .expect("fvk must exist to decrypt this note")
             .to_external_ivk();
 
-        wallet.update_unified_addresses(
+        wallet.add_sapling_address(
             note.key_id().account_id(),
-            None,
-            Some(
-                ivk.decrypt_diversifier(&note.note().recipient())
-                    .expect("must be key used to create this address"),
-            ),
+            note.note().recipient(),
+            ivk.decrypt_diversifier(&note.note().recipient())
+                .expect("must be key used to create this address"),
         )?
     }
 

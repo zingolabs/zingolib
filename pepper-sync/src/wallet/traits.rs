@@ -43,12 +43,20 @@ pub trait SyncWallet {
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error>;
 
-    /// Update unified addresses to include the orchard and/or sapling address for the given diversifiers and `account_id`.
-    fn update_unified_addresses(
-        &self,
+    /// Add orchard address to wallet's unified address list.
+    fn add_orchard_address(
+        &mut self,
         account_id: zip32::AccountId,
-        orchard_diversifier_index: Option<DiversifierIndex>,
-        sapling_diversifier_index: Option<DiversifierIndex>,
+        address: orchard::Address,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error>;
+
+    /// Add sapling address to wallet's unified address list.
+    fn add_sapling_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: sapling_crypto::PaymentAddress,
+        diversifier_index: DiversifierIndex,
     ) -> Result<(), Self::Error>;
 
     /// Returns a reference to all transparent addresses known to this wallet.
