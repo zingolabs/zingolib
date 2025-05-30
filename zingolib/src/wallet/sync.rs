@@ -39,6 +39,15 @@ impl SyncWallet for LightWallet {
             .collect()
     }
 
+    fn update_unified_addresses(
+        &self,
+        account_id: zip32::AccountId,
+        orchard_diversifier_index: Option<zip32::DiversifierIndex>,
+        sapling_diversifier_index: Option<zip32::DiversifierIndex>,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
+
     fn get_transparent_addresses(
         &self,
     ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error> {

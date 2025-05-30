@@ -37,7 +37,8 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{
-    Locator, NullifierMap, OutputId, SyncMode, SyncState, WalletBlock, WalletTransaction,
+    KeyIdInterface, Locator, NoteInterface, NullifierMap, OutputId, OutputInterface, SyncMode,
+    SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 
@@ -832,6 +833,7 @@ where
                 consensus_parameters,
                 wallet,
                 fetch_request_sender.clone(),
+                ufvks,
                 &scan_range,
                 nullifiers,
                 outpoints,
@@ -1008,10 +1010,11 @@ async fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
     nullifiers: NullifierMap,
     mut outpoints: BTreeMap<OutputId, Locator>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
@@ -1024,7 +1027,7 @@ where
     let wallet_height = sync_state
         .wallet_height()
         .expect("scan ranges should not be empty in this scope");
-    for transaction in wallet_transactions.values() {
+    for transaction in transactions.values() {
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
@@ -1038,9 +1041,12 @@ where
             transaction,
         );
     }
+    for transaction in transactions.values() {
+        discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
+    }
 
     wallet
-        .extend_wallet_transactions(wallet_transactions)
+        .extend_wallet_transactions(transactions)
         .map_err(SyncError::WalletError)?;
     wallet
         .append_nullifiers(nullifiers)
@@ -1057,6 +1063,52 @@ where
             orchard_located_trees,
         )
         .await?;
+
+    Ok(())
+}
+
+fn discover_unified_addresses<W>(
+    wallet: &mut W,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    transaction: &WalletTransaction,
+) -> Result<(), W::Error>
+where
+    W: SyncWallet,
+{
+    for note in transaction.orchard_notes() {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .orchard()
+            .expect("fvk must exist to decrypt this note")
+            .to_ivk(zip32::Scope::External);
+
+        wallet.update_unified_addresses(
+            note.key_id().account_id(),
+            Some(
+                ivk.diversifier_index(&note.note().recipient())
+                    .expect("must be key used to create this address"),
+            ),
+            None,
+        )?
+    }
+    for note in transaction.sapling_notes() {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .sapling()
+            .expect("fvk must exist to decrypt this note")
+            .to_external_ivk();
+
+        wallet.update_unified_addresses(
+            note.key_id().account_id(),
+            None,
+            Some(
+                ivk.decrypt_diversifier(&note.note().recipient())
+                    .expect("must be key used to create this address"),
+            ),
+        )?
+    }
 
     Ok(())
 }
