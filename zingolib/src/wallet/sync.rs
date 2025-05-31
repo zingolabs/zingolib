@@ -9,11 +9,15 @@ use pepper_sync::{
     },
     wallet::{Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock},
 };
-use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
-use zip32::AccountId;
+use zip32::{AccountId, DiversifierIndex};
 
-use super::{LightWallet, error::WalletError};
+use super::{
+    LightWallet,
+    error::{KeyError, WalletError},
+    keys::unified::UnifiedAddressId,
+};
 
 impl SyncWallet for LightWallet {
     type Error = WalletError;
@@ -37,6 +41,80 @@ impl SyncWallet for LightWallet {
             .iter()
             .map(|(account_id, key)| Ok((*account_id, UnifiedFullViewingKey::try_from(key)?)))
             .collect()
+    }
+
+    // The unified address index for a given account is equal to the orchard diversifier index used to derive the orchard address.
+    fn add_orchard_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: orchard::Address,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error> {
+        let Ok(address_index) = u32::try_from(diversifier_index) else {
+            return Ok(());
+        };
+        let address_id = UnifiedAddressId {
+            account_id,
+            address_index,
+        };
+        let unified_address = if let Some(wallet_address) = self.unified_addresses.get(&address_id)
+        {
+            if wallet_address.orchard() == Some(&address) {
+                return Ok(());
+            }
+
+            UnifiedAddress::from_receivers(Some(address), wallet_address.sapling().cloned(), None)
+                .expect("guaranteed to have at least 1 shielded receiver")
+        } else {
+            UnifiedAddress::from_receivers(Some(address), None, None)
+                .expect("guaranteed to have at least 1 shielded receiver")
+        };
+        self.unified_addresses.insert(address_id, unified_address);
+
+        Ok(())
+    }
+
+    // The unified address index for a given account is equal to the (n-1)th valid sapling diversifier incrementing
+    // from a diversifier index of 0.
+    // For example, if the sapling address is associated with the 10th valid diversifier, this address will be added
+    // to the unified address of index 9.
+    // Unified address discovery for sapling addresses is limited to a maximum sapling diversifier index of 2^16 as
+    // very high indexes become computationally expensive.
+    fn add_sapling_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: sapling_crypto::PaymentAddress,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error> {
+        if u128::from(diversifier_index) > 2 ^ 16 {
+            return Ok(());
+        }
+
+        let address_index = self
+            .unified_key_store
+            .get(&account_id)
+            .ok_or(KeyError::NoAccountKeys)?
+            .determine_nth_valid_sapling_diversifier(diversifier_index)?
+            - 1;
+        let address_id = UnifiedAddressId {
+            account_id,
+            address_index,
+        };
+        let unified_address = if let Some(wallet_address) = self.unified_addresses.get(&address_id)
+        {
+            if wallet_address.sapling() == Some(&address) {
+                return Ok(());
+            }
+
+            UnifiedAddress::from_receivers(wallet_address.orchard().cloned(), Some(address), None)
+                .expect("guaranteed to have at least 1 shielded receiver")
+        } else {
+            UnifiedAddress::from_receivers(None, Some(address), None)
+                .expect("guaranteed to have at least 1 shielded receiver")
+        };
+        self.unified_addresses.insert(address_id, unified_address);
+
+        Ok(())
     }
 
     fn get_transparent_addresses(

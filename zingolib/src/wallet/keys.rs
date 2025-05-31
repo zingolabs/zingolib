@@ -20,15 +20,28 @@ pub mod unified;
 pub enum WalletAddressRef {
     Unified {
         account_id: zip32::AccountId,
-        orchard: Option<(zip32::Scope, DiversifierIndex)>,
-        sapling: Option<DiversifierIndex>,
-        transparent: Option<NonHardenedChildIndex>,
+        address_index: Option<u32>,
+        has_orchard: bool,
+        has_sapling: bool,
+        has_transparent: bool,
+        encoded_address: String,
     },
-    Sapling {
+    OrchardInternal {
         account_id: zip32::AccountId,
         diversifier_index: DiversifierIndex,
+        encoded_address: String,
     },
-    Transparent(TransparentAddressId),
+    SaplingExternal {
+        account_id: zip32::AccountId,
+        diversifier_index: DiversifierIndex,
+        encoded_address: String,
+    },
+    Transparent {
+        account_id: zip32::AccountId,
+        scope: TransparentScope,
+        address_index: NonHardenedChildIndex,
+        encoded_address: String,
+    },
 }
 
 impl LightWallet {
@@ -188,20 +201,78 @@ impl LightWallet {
                     .and_then(|address| self.is_transparent_wallet_address(address))
                     .filter(|address_id| address_id.scope() == TransparentScope::External);
 
-                if orchard.is_some() || sapling.is_some() {
-                    let account_id = if let Some((account_id, _, _)) = &orchard {
-                        *account_id
-                    } else if let Some((account_id, _)) = &sapling {
-                        *account_id
+                if let Some((account_id, scope, orchard_diversifier_index)) = &orchard {
+                    if *scope == zip32::Scope::External {
+                        // a unified address index can be assigned if there is no transparent receiver and the sapling
+                        // diversifier (if present) correlates with the same unified address index, indiciating it has been created
+                        // by this library.
+                        let address_index = u32::try_from(*orchard_diversifier_index)
+                            .ok()
+                            .and_then(|index| transparent.map_or(Some(index), |_| None))
+                            .and_then(|index| {
+                                sapling.map_or(
+                                    Some(index),
+                                    |(sapling_account_id, sapling_diversifier_index)| {
+                                        if sapling_account_id != *account_id {
+                                            return None;
+                                        }
+
+                                        if self
+                                            .unified_key_store
+                                            .get(account_id)
+                                            .expect("key must exist in this scope")
+                                            .determine_nth_valid_sapling_diversifier(
+                                                sapling_diversifier_index,
+                                            )
+                                            .expect("key must exist in this scope")
+                                            - 1
+                                            == index
+                                        {
+                                            Some(index)
+                                        } else {
+                                            None
+                                        }
+                                    },
+                                )
+                            });
+                        Some(WalletAddressRef::Unified {
+                            account_id: *account_id,
+                            address_index,
+                            has_orchard: true,
+                            has_sapling: sapling.is_some(),
+                            has_transparent: transparent.is_some(),
+                            encoded_address: encoded_address.to_string(),
+                        })
+                    } else if *scope == zip32::Scope::Internal {
+                        Some(WalletAddressRef::OrchardInternal {
+                            account_id: *account_id,
+                            diversifier_index: *orchard_diversifier_index,
+                            encoded_address: encoded_address.to_string(),
+                        })
                     } else {
-                        unreachable!("At least one option should be Some in this scope!");
+                        unreachable!("Only external and internal scopes exist!");
+                    }
+                } else if let Some((account_id, diversifier_index)) = &sapling {
+                    let address_index = if transparent.is_some() {
+                        None
+                    } else {
+                        Some(
+                            self.unified_key_store
+                                .get(account_id)
+                                .expect("key must exist in this scope")
+                                .determine_nth_valid_sapling_diversifier(*diversifier_index)
+                                .expect("key must exist in this scope")
+                                - 1,
+                        )
                     };
+
                     Some(WalletAddressRef::Unified {
-                        account_id,
-                        orchard: orchard
-                            .map(|(_, scope, diversifier_index)| (scope, diversifier_index)),
-                        sapling: sapling.map(|(_, diversifier_index)| diversifier_index),
-                        transparent: transparent.map(|address_id| address_id.address_index()),
+                        account_id: *account_id,
+                        address_index,
+                        has_orchard: false,
+                        has_sapling: true,
+                        has_transparent: transparent.is_some(),
+                        encoded_address: encoded_address.to_string(),
                     })
                 } else {
                     None
@@ -209,15 +280,21 @@ impl LightWallet {
             }
             zcash_keys::address::Address::Sapling(address) => {
                 self.is_sapling_external_wallet_address(&address).map(
-                    |(account_id, diversifier_index)| WalletAddressRef::Sapling {
+                    |(account_id, diversifier_index)| WalletAddressRef::SaplingExternal {
                         account_id,
                         diversifier_index,
+                        encoded_address: encoded_address.to_string(),
                     },
                 )
             }
             zcash_keys::address::Address::Transparent(address) => self
                 .is_transparent_wallet_address(&address)
-                .map(WalletAddressRef::Transparent),
+                .map(|address_id| WalletAddressRef::Transparent {
+                    account_id: address_id.account_id(),
+                    scope: address_id.scope(),
+                    address_index: address_id.address_index(),
+                    encoded_address: encoded_address.to_string(),
+                }),
             zcash_keys::address::Address::Tex(_) => None,
         })
     }

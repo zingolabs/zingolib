@@ -11,6 +11,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 use zcash_protocol::ShieldedProtocol;
+use zip32::DiversifierIndex;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
@@ -42,12 +43,28 @@ pub trait SyncWallet {
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error>;
 
-    /// Returns a reference to all the transparent addresses known to this wallet.
+    /// Add orchard address to wallet's unified address list.
+    fn add_orchard_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: orchard::Address,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error>;
+
+    /// Add sapling address to wallet's unified address list.
+    fn add_sapling_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: sapling_crypto::PaymentAddress,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error>;
+
+    /// Returns a reference to all transparent addresses known to this wallet.
     fn get_transparent_addresses(
         &self,
     ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error>;
 
-    /// Returns a mutable reference to all the transparent addresses known to this wallet.
+    /// Returns a mutable reference to all transparent addresses known to this wallet.
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;

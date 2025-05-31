@@ -135,7 +135,10 @@ mod fast {
         wallet::{OutputInterface, TransparentCoin},
     };
     use zcash_address::ZcashAddress;
-    use zcash_client_backend::zip321::{Payment, TransactionRequest};
+    use zcash_client_backend::{
+        encoding::encode_payment_address_p,
+        zip321::{Payment, TransactionRequest},
+    };
     use zcash_primitives::{
         consensus::BlockHeight, legacy::keys::NonHardenedChildIndex, memo::Memo,
     };
@@ -452,6 +455,145 @@ mod fast {
     //             .unwrap()
     //     )
     // }
+
+    #[tokio::test]
+    async fn unified_address_discovery() {
+        let (regtest_manager, _cph, mut client_builder, regtest_network) =
+            scenarios::custom_clients_default().await;
+        let mut faucet = client_builder.build_faucet(true, regtest_network);
+        let mut recipient =
+            client_builder.build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network);
+        let network = recipient.wallet.lock().await.network;
+
+        // create a range of UAs to be discovered when recipient is reset
+        let orchard_only_addr = recipient
+            .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
+            .await
+            .map(|(_, ua)| ua.encode(&network))
+            .unwrap();
+        let sapling_only_addr = recipient
+            .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .await
+            .map(|(_, ua)| ua.encode(&network))
+            .unwrap();
+        let (_, all_shielded_addr) = recipient
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        let all_shielded_encoded = all_shielded_addr.encode(&network);
+        let all_shielded_sapling_addr = all_shielded_addr
+            .sapling()
+            .map(|addr| encode_payment_address_p(&network, addr))
+            .unwrap();
+
+        // send to the UAs so they are recorded on chain
+        increase_server_height(&regtest_manager, 3).await;
+        faucet.sync_and_await().await.unwrap();
+        from_inputs::quick_send(
+            &mut faucet,
+            vec![
+                (&orchard_only_addr, 100_000, Some("orchard_only")),
+                (&sapling_only_addr, 200_000, Some("sapling_only")),
+                (&all_shielded_encoded, 300_000, Some("all_shielded")),
+                (
+                    &all_shielded_sapling_addr,
+                    400_000,
+                    Some("all_shielded_sapling"),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+        increase_server_height(&regtest_manager, 1).await;
+
+        // rebuild recipient and check the UAs don't exist in the wallet
+        let mut recipient =
+            client_builder.build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network);
+        if let Some(_ua) =
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 2,
+                })
+        {
+            panic!("ua should not be in fresh wallet yet!");
+        }
+        if let Some(_ua) =
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 3,
+                })
+        {
+            panic!("ua should not be in fresh wallet yet!");
+        }
+        if let Some(_ua) =
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 4,
+                })
+        {
+            panic!("ua should not be in fresh wallet yet!");
+        }
+
+        // sync recipient and check the UAs have been discovered
+        recipient.sync_and_await().await.unwrap();
+        assert_eq!(
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 2,
+                })
+                .unwrap()
+                .encode(&network),
+            orchard_only_addr
+        );
+        assert_eq!(
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 3,
+                })
+                .unwrap()
+                .encode(&network),
+            sapling_only_addr
+        );
+        assert_eq!(
+            recipient
+                .wallet
+                .lock()
+                .await
+                .unified_addresses()
+                .get(&UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 4,
+                })
+                .unwrap()
+                .encode(&network),
+            all_shielded_encoded
+        );
+    }
 
     #[tokio::test]
     async fn send_not_fully_synced() {

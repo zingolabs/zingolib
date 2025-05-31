@@ -139,28 +139,7 @@ impl UnifiedKeyStore {
         };
 
         let sapling_receiver = if receivers.sapling {
-            let mut sapling_diversifier_index = DiversifierIndex::new();
-            let mut address;
-            let mut count = 0;
-            let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
-
-            // not all sapling_diversifier_indexes produce valid sapling addresses.
-            // therefore, `sapling_diversifier_index` may be larger than `unified_address_index` and only the valid payment
-            // addresses are counted.
-            loop {
-                (sapling_diversifier_index, address) = fvk
-                    .find_address(sapling_diversifier_index)
-                    .expect("Diversifier index overflow");
-                if count == unified_address_index {
-                    break;
-                }
-
-                sapling_diversifier_index
-                    .increment()
-                    .expect("Diversifier index overflow");
-                count += 1;
-            }
-            Some(address)
+            Some(self.derive_sapling_address(unified_address_index)?)
         } else {
             None
         };
@@ -223,6 +202,65 @@ impl UnifiedKeyStore {
         };
 
         Ok(transparent_address)
+    }
+
+    fn derive_sapling_address(
+        &self,
+        unified_address_index: u32,
+    ) -> Result<sapling_crypto::PaymentAddress, KeyError> {
+        let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
+        let mut address;
+        let mut diversifier_index = DiversifierIndex::new();
+        let mut valid_diversifier_count = 0;
+
+        // not all sapling diversifier indexes produce valid sapling diversifiers.
+        // therefore, `diversifier_index` may be larger than `unified_address_index` as only the valid payment
+        // addresses are counted.
+        loop {
+            (diversifier_index, address) = fvk
+                .find_address(diversifier_index)
+                .expect("diversifier index overflow");
+            valid_diversifier_count += 1;
+            if valid_diversifier_count - 1 == unified_address_index {
+                break;
+            }
+
+            diversifier_index
+                .increment()
+                .expect("diversifier index overflow");
+        }
+
+        Ok(address)
+    }
+
+    /// Returns the number of valid sapling diversifiers when incrementing from 0 to `sapling_diversifier_index` inclusive.
+    ///
+    /// For example, if 10 is returned, the `sapling_diversifier_index` is associated with the 10th valid sapling
+    /// diversifier when incrementing from a diversifier index of 0.
+    pub(crate) fn determine_nth_valid_sapling_diversifier(
+        &self,
+        sapling_diversifier_index: DiversifierIndex,
+    ) -> Result<u32, KeyError> {
+        let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
+        let mut _address;
+        let mut diversifier_index = DiversifierIndex::new();
+        let mut valid_diversifier_count = 0;
+
+        loop {
+            (diversifier_index, _address) = fvk
+                .find_address(diversifier_index)
+                .expect("diversifier index overflow");
+            valid_diversifier_count += 1;
+            if diversifier_index == sapling_diversifier_index {
+                break;
+            }
+
+            diversifier_index
+                .increment()
+                .expect("diversifier index overflow");
+        }
+
+        Ok(valid_diversifier_count)
     }
 }
 
