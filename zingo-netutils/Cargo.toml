@@ -20,7 +20,7 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-webpki-roots = "0.25"
+webpki-roots = "1.0"
 zcash_client_backend.workspace = true
 
 [features]

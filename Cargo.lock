@@ -7563,7 +7563,7 @@ dependencies = [
  "tokio-rustls 0.26.2",
  "tonic",
  "tower 0.5.2",
- "webpki-roots 0.25.4",
+ "webpki-roots 1.0.0",
  "zcash_client_backend",
 ]
 
