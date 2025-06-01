@@ -2792,7 +2792,6 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
- "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -2807,8 +2806,6 @@ dependencies = [
  "pepper-sync",
  "proptest",
  "rustls 0.23.27",
- "serde_json",
- "shardtree",
  "tempfile",
  "tokio",
  "tracing",
@@ -7534,7 +7531,6 @@ dependencies = [
  "rustls 0.23.27",
  "rustyline",
  "shellwords",
- "tracing-subscriber",
  "zingolib",
 ]
 
@@ -7576,7 +7572,6 @@ version = "0.0.1"
 dependencies = [
  "byteorder",
  "reqwest",
- "rusqlite",
  "rust_decimal",
  "serde",
  "serde_json",

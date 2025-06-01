@@ -16,5 +16,3 @@ rustyline = { workspace = true }
 shellwords = { workspace = true }
 
 rustls.workspace = true
-
-tracing-subscriber.workspace = true
