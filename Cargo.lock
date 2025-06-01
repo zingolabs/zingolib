@@ -3638,9 +3638,9 @@ dependencies = [
 
 [[package]]
 name = "priority-queue"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "280a57180ca3feca206160b77f417faf9f3d2bae536a1f951040e05f053239d6"
+checksum = "5676d703dda103cbb035b653a9f11448c0a7216c7926bd35fcb5865475d0c970"
 dependencies = [
  "autocfg",
  "equivalent",
