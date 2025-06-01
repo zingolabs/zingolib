@@ -2807,8 +2807,6 @@ dependencies = [
  "pepper-sync",
  "proptest",
  "rustls 0.23.27",
- "serde_json",
- "shardtree",
  "tempfile",
  "tokio",
  "tracing",
@@ -7534,7 +7532,6 @@ dependencies = [
  "rustls 0.23.27",
  "rustyline",
  "shellwords",
- "tracing-subscriber",
  "zingolib",
 ]
 
@@ -7614,7 +7611,7 @@ dependencies = [
  "bytes",
  "chrono",
  "concat-idents",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "futures",
  "hex",
  "http",

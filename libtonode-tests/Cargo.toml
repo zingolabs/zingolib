@@ -15,7 +15,6 @@ pepper-sync = { workspace = true }
 testvectors = { workspace = true }
 
 zip32 = { workspace = true }
-shardtree = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
@@ -26,7 +25,6 @@ bip0039.workspace = true
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 itertools = { workspace = true }
-serde_json = { workspace = true }
 tempfile.workspace = true
 proptest.workspace = true
 tracing.workspace = true

@@ -52,7 +52,7 @@ bytes = "1"
 chrono = "0.4"
 clap = "4"
 concat-idents = "1"
-dirs = "5"
+dirs = "6"
 futures = "0.3"
 futures-util = "0.3"
 hex = "0.4"
@@ -103,7 +103,7 @@ tonic-build = "0.12"
 tower = { version = "0.5" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-webpki-roots = "0.26"
+webpki-roots = "1"
 
 # Parallel processing
 crossbeam-channel = "0.5"
