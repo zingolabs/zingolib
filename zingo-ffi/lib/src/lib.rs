@@ -341,11 +341,11 @@ pub fn set_crypto_default_provider_to_ring() -> String {
                 .install_default()
                 .map_err(|_| "Error: Failed to install crypto provider".to_string())
             {
-                Ok(_) => true,
+                Ok(_) => "true".to_string(),
                 Err(e) => e,
             };
         } else {
-            resp = true;
+            resp = "true".to_string();
         };
     }
 
