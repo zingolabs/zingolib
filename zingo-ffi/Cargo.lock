@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -3466,7 +3466,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4166,9 +4166,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.18"
+version = "0.12.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e98ff6b0dbbe4d5a37318f433d4fc82babd21631f194d370409ceb2e40b2f0b5"
+checksum = "a2f8e5513d63f2e5b386eb5106dc67eaf3f84e95258e210489136b8b92ad6119"
 dependencies = [
  "base64",
  "bytes",
@@ -6383,9 +6383,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+checksum = "5cc2d9e086a412a451384326f521c8123a99a466b329941a9403696bff9b0da2"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -7622,9 +7622,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_protocol"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0acf60e235c5ba42c83f1e7e3763cf90a436583e6de71557fed26bab2d65dc"
+checksum = "8f116cd111d813b7afc814be013566b16e32a7b887597f906ac42b0f7f6a1681"
 dependencies = [
  "core2",
  "document-features",
@@ -7787,7 +7787,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7799,7 +7799,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "http",
  "http-body",
@@ -7819,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7835,7 +7835,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7844,7 +7844,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "bip0039",
 ]
@@ -7852,7 +7852,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#84fed36a4e9b8961598f608bfa1ae1710dc848bd"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=check_address_fix#23e054d7b9c184753122424975f2b50b7e95e0c6"
 dependencies = [
  "append-only-vec",
  "bech32",
