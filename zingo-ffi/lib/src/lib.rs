@@ -19,7 +19,6 @@ use pepper_sync::keys::transparent;
 use rustls::crypto::ring::default_provider;
 use rustls::crypto::CryptoProvider;
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::num::NonZeroU32;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_address::ZcashAddress;
@@ -27,7 +26,6 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
-use zcash_primitives::zip32::Scope;
 use zcash_protocol::consensus::NetworkType;
 use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
 use zingolib::data::PollReport;
@@ -40,11 +38,13 @@ use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::keys::WalletAddressRef;
 use bip0039::Mnemonic;
 
+use std::sync::RwLock;
+
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
 // because we can't return such a complex structure back to JS
 lazy_static! {
-    static ref LIGHTCLIENT: Mutex<Option<LightClient>> = Mutex::new(None);
+    static ref LIGHTCLIENT: RwLock<Option<LightClient>> = RwLock::new(None);
 }
 
 fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: String, seed: bool) -> String {
@@ -59,7 +59,7 @@ fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: 
     } else {
         lightclient
     };
-    LIGHTCLIENT.lock().unwrap().replace(lightclient_tor);
+    LIGHTCLIENT.write().unwrap().replace(lightclient_tor);
     
     if seed {
         get_seed()
@@ -260,7 +260,7 @@ pub fn init_from_b64(
 
 pub fn save_to_b64() -> String {
     // Return the wallet as a base64 encoded string
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         // we need to use STANDARD because swift is expecting the encoded String with padding
         // I tried with STANDARD_NO_PAD and the decoding return `nil`.
         zingolib::commands::RT.block_on(async move {
@@ -277,7 +277,7 @@ pub fn save_to_b64() -> String {
 }
 
 pub fn execute_command(cmd: String, args_list: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         let args = if args_list.is_empty() {
             vec![]
         } else {
@@ -298,7 +298,7 @@ pub fn get_latest_block_server(server_uri: String) -> String {
 }
 
 pub fn get_latest_block_wallet() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
@@ -316,7 +316,7 @@ pub fn get_zennies_for_zingo_donation_address() -> String {
 }
 
 pub fn get_transaction_summaries() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT
             .block_on(async move { lightclient.transaction_summaries_json_string().await })
     } else {
@@ -325,7 +325,7 @@ pub fn get_transaction_summaries() -> String {
 }
 
 pub fn get_value_transfers() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT
             .block_on(async move { lightclient.value_transfers_json_string().await })
     } else {
@@ -341,11 +341,11 @@ pub fn set_crypto_default_provider_to_ring() -> String {
                 .install_default()
                 .map_err(|_| "Error: Failed to install crypto provider".to_string())
             {
-                Ok(_) => "true".to_string(),
+                Ok(_) => true,
                 Err(e) => e,
             };
         } else {
-            resp = "true".to_string();
+            resp = true;
         };
     }
 
@@ -353,7 +353,7 @@ pub fn set_crypto_default_provider_to_ring() -> String {
 }
 
 pub fn poll_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         match lightclient.poll_sync() {
             PollReport::NoHandle => "Sync task has not been launched.".to_string(),
             PollReport::NotReady => "Sync task is not complete.".to_string(),
@@ -371,7 +371,7 @@ pub fn poll_sync() -> String {
 }
 
 pub fn run_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         if lightclient.sync_mode() == SyncMode::Paused {
             lightclient.resume_sync().expect("sync should be paused");
             "Resuming sync task...".to_string()
@@ -389,7 +389,7 @@ pub fn run_sync() -> String {
 }
 
 pub fn pause_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         match lightclient.pause_sync() {
             Ok(_) => "Pausing sync task...".to_string(),
             Err(e) => format!("Error: {e}"),
@@ -400,7 +400,7 @@ pub fn pause_sync() -> String {
 }
 
 pub fn stop_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         match lightclient.stop_sync() {
             Ok(_) => "Stopping sync task...".to_string(),
             Err(e) => format!("Error: {e}"),
@@ -411,7 +411,7 @@ pub fn stop_sync() -> String {
 }
 
 pub fn status_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
                 Ok(status) => json::JsonValue::from(status).pretty(2),
@@ -424,7 +424,7 @@ pub fn status_sync() -> String {
 }
 
 pub fn run_rescan() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.rescan().await {
                 Ok(_) => "Launching rescan...".to_string(),
@@ -437,7 +437,7 @@ pub fn run_rescan() -> String {
 }
 
 pub fn info_server() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move { lightclient.do_info().await })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -445,7 +445,7 @@ pub fn info_server() -> String {
 }
 
 pub fn get_seed() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.wallet.lock().await.recovery_info() {
                 Some(backup_info) => serde_json::to_string_pretty(&backup_info)
@@ -459,7 +459,7 @@ pub fn get_seed() -> String {
 }
 
 pub fn get_ufvk() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             let wallet = lightclient.wallet.lock().await;
             let ufvk: UnifiedFullViewingKey = match wallet
@@ -483,7 +483,7 @@ pub fn get_ufvk() -> String {
 }
 
 pub fn change_server(server_uri: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         if server_uri.is_empty() {
             lightclient.set_server(http::Uri::default());
             "server set (default)".to_string()
@@ -502,7 +502,7 @@ pub fn change_server(server_uri: String) -> String {
 }
 
 pub fn wallet_kind() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             let wallet = lightclient.wallet.lock().await;
             if wallet.mnemonic().is_some() {
@@ -680,7 +680,7 @@ pub fn get_version() -> String {
 }
 
 pub fn get_messages(address: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient
                 .messages_containing(Some(address.as_str()))
@@ -696,7 +696,7 @@ pub fn get_messages(address: String) -> String {
 }
 
 pub fn get_balance() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient
                 .wallet
@@ -715,7 +715,7 @@ pub fn get_balance() -> String {
 }
 
 pub fn get_total_memobytes_to_address() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
                 Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
@@ -728,7 +728,7 @@ pub fn get_total_memobytes_to_address() -> String {
 }
 
 pub fn get_total_value_to_address() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.do_total_value_to_address().await {
                 Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
@@ -741,7 +741,7 @@ pub fn get_total_value_to_address() -> String {
 }
 
 pub fn get_total_spends_to_address() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
                 Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
@@ -754,7 +754,7 @@ pub fn get_total_spends_to_address() -> String {
 }
 
 pub fn zec_price(tor: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             let tor_bool = tor.parse().unwrap_or(false);
             let tor_client = if tor_bool {
@@ -784,7 +784,7 @@ pub fn zec_price(tor: String) -> String {
 }
 
 pub fn resend_transaction(txid: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         let txid_ok = match txid_from_hex_encoded_str(&txid) {
             Ok(txid) => txid,
             Err(e) => return format!("Error: {e}"),
@@ -802,7 +802,7 @@ pub fn resend_transaction(txid: String) -> String {
 }
 
 pub fn remove_transaction(txid: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         let txid_ok = match txid_from_hex_encoded_str(&txid) {
             Ok(txid) => txid,
             Err(e) => return format!("Error: {e}"),
@@ -825,7 +825,7 @@ pub fn remove_transaction(txid: String) -> String {
 }
 
 pub fn get_spendable_balance(address: String, zennies: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         let address_zcash: ZcashAddress;
         if let Ok(addr) = address_from_str(&address) {
             address_zcash = addr;
@@ -860,7 +860,7 @@ pub fn get_option_wallet() -> String {
 }
 
 pub fn create_tor_client(data_dir: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         let result = zingolib::commands::RT.block_on(async move {
             lightclient.create_tor_client(Some(data_dir.into())).await
         });
@@ -874,7 +874,7 @@ pub fn create_tor_client(data_dir: String) -> String {
 }
 
 pub fn get_unified_addresses() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -882,7 +882,7 @@ pub fn get_unified_addresses() -> String {
 }
 
 pub fn get_transparent_addresses() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -890,7 +890,7 @@ pub fn get_transparent_addresses() -> String {
 }
 
 pub fn create_new_unified_address(receivers: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         zingolib::commands::RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
@@ -920,7 +920,7 @@ pub fn create_new_unified_address(receivers: String) -> String {
 }
 
 pub fn create_new_transparent_address() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         zingolib::commands::RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
@@ -943,41 +943,64 @@ pub fn create_new_transparent_address() -> String {
 }
 
 pub fn check_my_address(address: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.lock().unwrap() {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         zingolib::commands::RT.block_on(async move {
             match lightclient.wallet.lock().await.is_wallet_address(&address) {
                 Ok(address_ref) => address_ref.map_or(
-                    json::object! { "is_wallet_address" => "false".to_string() },
+                    json::object! { "is_wallet_address" => false },
                     |address_ref| match address_ref {
                         WalletAddressRef::Unified {
                             account_id,
-                            orchard,
-                            sapling,
-                            transparent,
+                            address_index,
+                            has_orchard,
+                            has_sapling,
+                            has_transparent,
+                            encoded_address,
                         } => json::object! {
-                                "is_wallet_address" => "true".to_string(),
-                                "address_type" => "unified".to_string(),
-                                "account_id" => u32::from(account_id),
-                                "orchard_diversifier_index" => orchard.filter(|orchard| orchard.0 == Scope::External).map(|orchard| u128::from(orchard.1).to_string()),
-                                "sapling_diversifier_index" => sapling.map(|sapling| u128::from(sapling).to_string()),
-                                "transparent_address_index" => transparent.map(|transparent| transparent.index()),
-                            },
-                        WalletAddressRef::Sapling {
+                            "is_wallet_address" => true,
+                            "address_type" => "unified".to_string(),
+                            "address_index" => address_index,
+                            "account_id" => u32::from(account_id),
+                            "has_orchard" => has_orchard,
+                            "has_sapling" => has_sapling,
+                            "has_transparent" => has_transparent,
+                            "encoded_address" => encoded_address,
+                        },
+                        WalletAddressRef::OrchardInternal {
                             account_id,
                             diversifier_index,
+                            encoded_address,
                         } => json::object! {
-                                "is_wallet_address" => "true".to_string(),
-                                "address_type" => "sapling".to_string(),
-                                "account_id" => u32::from(account_id),
-                                "diversifier_index" => u128::from(diversifier_index).to_string(),
-                            },
-                        WalletAddressRef::Transparent(address_id) => json::object! {
-                                "is_wallet_address" => "true".to_string(),
-                                "address_type" => "transparent".to_string(),
-                                "account_id" => u32::from(address_id.account_id()),
-                                "scope" => address_id.scope().to_string(),
-                                "address_index" => address_id.address_index().index(),
-                            },
+                            "is_wallet_address" => true,
+                            "address_type" => "orchard_internal".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "diversifier_index" => u128::from(diversifier_index).to_string(),
+                            "encoded_address" => encoded_address,
+                        },
+                        WalletAddressRef::SaplingExternal {
+                            account_id,
+                            diversifier_index,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "sapling".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "diversifier_index" => u128::from(diversifier_index).to_string(),
+                            "encoded_address" => encoded_address,
+                        },
+                        WalletAddressRef::Transparent {
+                            account_id,
+                            scope,
+                            address_index,
+                            encoded_address,
+                        } => json::object! {
+                            "is_wallet_address" => true,
+                            "address_type" => "transparent".to_string(),
+                            "account_id" => u32::from(account_id),
+                            "scope" => scope.to_string(),
+                            "address_index" => address_index.index(),
+                            "encoded_address" => encoded_address,
+                        },
                     },
                 ),
                 Err(e) => format!("Error: {e}").into(),
