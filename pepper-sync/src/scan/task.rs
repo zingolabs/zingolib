@@ -335,6 +335,7 @@ where
             let mut previous_task_last_block: Option<WalletBlock> = None;
 
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
+                let mut retry_height = scan_task.scan_range.block_range().start;
                 let mut sapling_output_count = 0;
                 let mut orchard_output_count = 0;
                 let mut first_batch = true;
@@ -344,7 +345,21 @@ where
                     scan_task.scan_range.block_range().clone(),
                 )
                 .await?;
-                while let Some(compact_block) = block_stream.message().await? {
+                while let Some(compact_block) = match block_stream.message().await {
+                    Ok(b) => b,
+                    Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
+                        block_stream = client::get_compact_block_range(
+                            fetch_request_sender.clone(),
+                            retry_height..scan_task.scan_range.block_range().end,
+                        )
+                        .await?;
+
+                        block_stream.message().await?
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                } {
                     if let Some(block) = previous_task_last_block.as_ref() {
                         if scan_task.start_seam_block.is_none()
                             && scan_task.scan_range.block_range().start == block.block_height() + 1
@@ -407,6 +422,7 @@ where
                         orchard_output_count = 0;
                     }
 
+                    retry_height = compact_block.height() + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
