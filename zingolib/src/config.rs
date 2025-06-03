@@ -96,6 +96,29 @@ pub fn load_clientconfig(
     Ok(config)
 }
 
+/// Creates a serverless zingo config.
+pub fn load_clientconfig_serverless(
+    data_dir: Option<PathBuf>,
+    chain: ChainType,
+    wallet_settings: WalletSettings,
+    no_of_accounts: NonZeroU32,
+) -> std::io::Result<ZingoConfig> {
+    use std::net::ToSocketAddrs;
+
+    // Create a Light Client Config
+    let config = ZingoConfig {
+        lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
+        chain,
+        wallet_dir: data_dir,
+        wallet_name: DEFAULT_WALLET_NAME.into(),
+        logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        wallet_settings,
+        no_of_accounts,
+    };
+
+    Ok(config)
+}
+
 /// TODO: Add Doc Comment Here!
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {

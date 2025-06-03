@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use std::io::Error;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -58,6 +59,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help("Specify wallet birthday when restoring from seed. This is the earliest block height where the wallet has a transaction."))
             .arg(Arg::new("server")
                 .long("server")
+                .num_args(0..1)
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
@@ -455,8 +457,8 @@ pub fn startup(
     } else {
         filled_template.data_dir.clone()
     };
-    let config = zingolib::config::load_clientconfig(
-        filled_template.server.clone(),
+    let config = zingolib::config::load_clientconfig_serverless(
+        // filled_template.server.clone(),
         Some(data_dir),
         filled_template.chaintype,
         WalletSettings {
@@ -513,8 +515,9 @@ pub fn startup(
                 println!("Creating a new wallet");
                 // Call the lightwalletd server to get the current block-height
                 // Do a getinfo first, before opening the wallet
-                let server_uri = config.get_lightwalletd_uri();
-                let block_height = zingolib::get_latest_block_height(server_uri);
+                // let server_uri = config.get_lightwalletd_uri();
+                // let block_height = zingolib::get_latest_block_height(server_uri);
+                let block_height: Result<u64, Error> = Ok(0);
                 // Create a wallet with height - 100, to protect against reorgs
                 LightClient::new(
                     config.clone(),
@@ -543,15 +546,15 @@ pub fn startup(
         );
     }
 
-    if filled_template.tor_enabled {
-        info!("Creating tor client");
-        lightclient = RT.block_on(async move {
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}")
-            }
-            lightclient
-        });
-    }
+    // if filled_template.tor_enabled {
+    //     info!("Creating tor client");
+    //     lightclient = RT.block_on(async move {
+    //         if let Err(e) = lightclient.create_tor_client(None).await {
+    //             eprintln!("error: failed to create tor client. price updates disabled. {e}")
+    //         }
+    //         lightclient
+    //     });
+    // }
 
     // At startup, run a sync.
     if filled_template.sync {
