@@ -201,73 +201,69 @@ impl LightWallet {
                     .and_then(|address| self.is_transparent_wallet_address(address))
                     .filter(|address_id| address_id.scope() == TransparentScope::External);
 
-                if let Some((account_id, scope, orchard_diversifier_index)) = &orchard {
-                    if *scope == zip32::Scope::External {
-                        // a unified address index can be assigned if there is no transparent receiver and the sapling
-                        // diversifier (if present) correlates with the same unified address index, indiciating it has been created
-                        // by this library.
-                        let address_index = u32::try_from(*orchard_diversifier_index)
-                            .ok()
-                            .and_then(|index| transparent.map_or(Some(index), |_| None))
-                            .and_then(|index| {
-                                sapling.map_or(
-                                    Some(index),
-                                    |(sapling_account_id, sapling_diversifier_index)| {
-                                        if sapling_account_id != *account_id {
-                                            return None;
-                                        }
-
-                                        if self
-                                            .unified_key_store
-                                            .get(account_id)
-                                            .expect("key must exist in this scope")
-                                            .determine_nth_valid_sapling_diversifier(
-                                                sapling_diversifier_index,
-                                            )
-                                            .expect("key must exist in this scope")
-                                            - 1
-                                            == index
-                                        {
-                                            Some(index)
+                if let Some((account_id, scope, orchard_diversifier_index)) = orchard {
+                    if scope == zip32::Scope::External {
+                        // a unified address index will not be assigned if it does not match the address in the wallet
+                        let address_index = u32::try_from(orchard_diversifier_index).ok().and_then(
+                            |address_index| {
+                                self.unified_addresses()
+                                    .get(&UnifiedAddressId {
+                                        account_id,
+                                        address_index,
+                                    })
+                                    .and_then(|unified_address| {
+                                        if *unified_address == address {
+                                            Some(address_index)
                                         } else {
                                             None
                                         }
-                                    },
-                                )
-                            });
+                                    })
+                            },
+                        );
                         Some(WalletAddressRef::Unified {
-                            account_id: *account_id,
+                            account_id,
                             address_index,
                             has_orchard: true,
                             has_sapling: sapling.is_some(),
                             has_transparent: transparent.is_some(),
                             encoded_address: encoded_address.to_string(),
                         })
-                    } else if *scope == zip32::Scope::Internal {
+                    } else if scope == zip32::Scope::Internal {
                         Some(WalletAddressRef::OrchardInternal {
-                            account_id: *account_id,
-                            diversifier_index: *orchard_diversifier_index,
+                            account_id,
+                            diversifier_index: orchard_diversifier_index,
                             encoded_address: encoded_address.to_string(),
                         })
                     } else {
                         unreachable!("Only external and internal scopes exist!");
                     }
-                } else if let Some((account_id, diversifier_index)) = &sapling {
-                    let address_index = if transparent.is_some() {
-                        None
-                    } else {
-                        Some(
-                            self.unified_key_store
-                                .get(account_id)
-                                .expect("key must exist in this scope")
-                                .determine_nth_valid_sapling_diversifier(*diversifier_index)
-                                .expect("key must exist in this scope")
-                                - 1,
-                        )
-                    };
+                } else if let Some((account_id, diversifier_index)) = sapling {
+                    // a unified address index will not be assigned if it does not match the address in the wallet
+                    let address_index = Some(
+                        self.unified_key_store
+                            .get(&account_id)
+                            .expect("key must exist in this scope")
+                            .determine_nth_valid_sapling_diversifier(diversifier_index)
+                            .expect("key must exist in this scope")
+                            - 1,
+                    )
+                    .and_then(|address_index| {
+                        self.unified_addresses()
+                            .get(&UnifiedAddressId {
+                                account_id,
+                                address_index,
+                            })
+                            .and_then(|unified_address| {
+                                if *unified_address == address {
+                                    Some(address_index)
+                                } else {
+                                    None
+                                }
+                            })
+                    });
 
                     Some(WalletAddressRef::Unified {
-                        account_id: *account_id,
+                        account_id,
                         address_index,
                         has_orchard: false,
                         has_sapling: true,
