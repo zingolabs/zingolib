@@ -39,10 +39,10 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 35:
-    /// - Multi-account support
+    /// Changes in version 36:
+    /// - Fix transparent receiver
     pub const fn serialized_version() -> u64 {
-        35
+        36
     }
 
     /// Serialize into `writer`
@@ -67,7 +67,7 @@ impl LightWallet {
                 unified_key.write(w, self.network)
             },
         )?;
-        // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
+        // TODO: store receiver selections in encoded memos.
         Vector::write(
             &mut writer,
             &self.unified_addresses.iter().collect::<Vec<_>>(),
@@ -77,7 +77,7 @@ impl LightWallet {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
                     sapling: address.sapling().is_some(),
-                    transparent: false,
+                    transparent: address.transparent().is_some(),
                 }
                 .write(w, ())
             },
@@ -390,7 +390,11 @@ impl LightWallet {
                 .expect("only valid account ids are stored");
             let address_index = r.read_u32::<LittleEndian>()?;
             let mut receivers = ReceiverSelection::read(r, ())?;
-            receivers.transparent = false;
+
+            // reset transparent receivers to default for zingo 2.0 beta test versions
+            if version < 36 {
+                receivers.transparent = false;
+            }
 
             Ok((
                 UnifiedAddressId {
