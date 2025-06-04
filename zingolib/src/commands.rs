@@ -717,6 +717,9 @@ impl Command for NewUnifiedAddressCommand {
         indoc! {r#"
             Create a new unified address.
 
+            Transparent receivers not supported.
+            See `new_taddress` for creating transparent addresses.
+
             Usage:
             new_address [ o | z ]
 
@@ -750,7 +753,6 @@ impl Command for NewUnifiedAddressCommand {
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
                 sapling: args[0].contains('z'),
-                transparent: false,
             };
             match wallet.generate_unified_address(receivers, zip32::AccountId::ZERO) {
                 Ok((id, unified_address)) => {

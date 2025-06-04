@@ -67,7 +67,7 @@ impl LightWallet {
                 unified_key.write(w, self.network)
             },
         )?;
-        // TODO: consider whether its worth tracking receiver selections. if so, we need to store them in encoded memos.
+        // TODO: also store receiver selections in encoded memos.
         Vector::write(
             &mut writer,
             &self.unified_addresses.iter().collect::<Vec<_>>(),
@@ -77,7 +77,6 @@ impl LightWallet {
                 ReceiverSelection {
                     orchard: address.orchard().is_some(),
                     sapling: address.sapling().is_some(),
-                    transparent: false,
                 }
                 .write(w, ())
             },
@@ -266,7 +265,7 @@ impl LightWallet {
                 address_index: 0,
             };
             let first_unified_address = unified_key
-                .generate_unified_address(unified_address_id.address_index, receivers, false)
+                .generate_unified_address(unified_address_id.address_index, receivers)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             unified_addresses.insert(unified_address_id, first_unified_address.clone());
         }
@@ -280,7 +279,6 @@ impl LightWallet {
         match unified_key.generate_transparent_address(
             transparent_address_id.address_index(),
             transparent_address_id.scope(),
-            false,
         ) {
             Ok(first_transparent_address) => {
                 transparent_addresses.insert(
@@ -389,8 +387,7 @@ impl LightWallet {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
             let address_index = r.read_u32::<LittleEndian>()?;
-            let mut receivers = ReceiverSelection::read(r, ())?;
-            receivers.transparent = false;
+            let receivers = ReceiverSelection::read(r, ())?;
 
             Ok((
                 UnifiedAddressId {
@@ -406,7 +403,7 @@ impl LightWallet {
                             u32::from(account_id)
                         ),
                     ))?
-                    .generate_unified_address(address_index, receivers, false)
+                    .generate_unified_address(address_index, receivers)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
             ))
         })?
@@ -432,7 +429,7 @@ impl LightWallet {
                                 u32::from(account_id)
                             ),
                         ))?
-                        .generate_transparent_address(address_index, scope, false)
+                        .generate_transparent_address(address_index, scope)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                 ),
             ))

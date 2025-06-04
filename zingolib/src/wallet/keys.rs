@@ -45,11 +45,8 @@ pub enum WalletAddressRef {
 }
 
 impl LightWallet {
-    /// Returns a new unified address for the given `receivers` and `account_id`.
-    /// Also adds this new unified address to the wallet.
-    ///
-    /// Although supported, it is not recommended to include transparent receivers in unified addresses.
-    /// If the unified address contains a transparent receiver, this is also added to the wallet's transparent addresses.
+    /// Returns a new unified address for the given `receivers` and `account_id`, adding this new unified address to
+    /// the wallet.
     pub fn generate_unified_address(
         &mut self,
         receivers: ReceiverSelection,
@@ -69,19 +66,7 @@ impl LightWallet {
             .unified_key_store
             .get(&account_id)
             .ok_or(KeyError::NoAccountKeys)?
-            .generate_unified_address(address_id.address_index, receivers, false)?;
-
-        if let Some(transparent_address) = unified_address.transparent() {
-            self.transparent_addresses.insert(
-                TransparentAddressId::new(
-                    account_id,
-                    TransparentScope::External,
-                    NonHardenedChildIndex::from_index(address_id.address_index)
-                        .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
-                ),
-                transparent::encode_address(&self.network, *transparent_address),
-            );
-        }
+            .generate_unified_address(address_id.address_index, receivers)?;
         self.unified_addresses
             .insert(address_id, unified_address.clone());
         self.save_required = true;
@@ -115,7 +100,7 @@ impl LightWallet {
             .unified_key_store
             .get(&account_id)
             .ok_or(KeyError::NoAccountKeys)?
-            .generate_transparent_address(address_id.address_index(), address_id.scope(), false)?;
+            .generate_transparent_address(address_id.address_index(), address_id.scope())?;
 
         self.transparent_addresses.insert(
             address_id,
@@ -161,11 +146,7 @@ impl LightWallet {
                     .unified_key_store
                     .get(&account_id)
                     .ok_or(KeyError::NoAccountKeys)?
-                    .generate_transparent_address(
-                        address_id.address_index(),
-                        address_id.scope(),
-                        false,
-                    )?;
+                    .generate_transparent_address(address_id.address_index(), address_id.scope())?;
 
                 self.transparent_addresses.insert(
                     address_id,

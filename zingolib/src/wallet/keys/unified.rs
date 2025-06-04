@@ -22,8 +22,6 @@ use crate::config::ChainType;
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::ReadableWriteable;
 
-use super::legacy::generate_transparent_address_from_legacy_key;
-
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
 pub(crate) const KEY_TYPE_VIEW: u8 = 1;
 pub(crate) const KEY_TYPE_SPEND: u8 = 2;
@@ -123,13 +121,10 @@ impl UnifiedKeyStore {
     }
 
     /// Generates a unified address for the given `unified_address_index` and `receivers`.
-    ///
-    /// See [`self::UnifiedKeyStore::generate_transparent_address`] for information on using `legacy_key`.
     pub fn generate_unified_address(
         &self,
         unified_address_index: u32,
         receivers: ReceiverSelection,
-        legacy_key: bool,
     ) -> Result<UnifiedAddress, KeyError> {
         let orchard_receiver = if receivers.orchard {
             let fvk = orchard::keys::FullViewingKey::try_from(self)?;
@@ -144,25 +139,9 @@ impl UnifiedKeyStore {
             None
         };
 
-        let transparent_receiver = if receivers.transparent {
-            Some(
-                self.generate_transparent_address(
-                    NonHardenedChildIndex::from_index(unified_address_index)
-                        .ok_or(KeyError::InvalidNonHardenedChildIndex)?,
-                    TransparentScope::External,
-                    legacy_key,
-                )?,
-            )
-        } else {
-            None
-        };
-
-        let unified_address = UnifiedAddress::from_receivers(
-            orchard_receiver,
-            sapling_receiver,
-            transparent_receiver,
-        )
-        .ok_or(KeyError::UnifiedAddressError)?;
+        let unified_address =
+            UnifiedAddress::from_receivers(orchard_receiver, sapling_receiver, None)
+                .ok_or(KeyError::UnifiedAddressError)?;
 
         Ok(unified_address)
     }
@@ -172,11 +151,6 @@ impl UnifiedKeyStore {
         &self,
         address_index: NonHardenedChildIndex,
         scope: TransparentScope,
-        // this should only be `true` when generating externally scoped transparent addresses while loading from legacy
-        // keys (pre wallet version 29).
-        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will
-        // skip this scope derivation.
-        legacy_key: bool,
     ) -> Result<TransparentAddress, KeyError> {
         let account_pubkey = UnifiedFullViewingKey::try_from(self)?
             .transparent()
@@ -184,15 +158,9 @@ impl UnifiedKeyStore {
             .clone();
 
         let transparent_address = match scope {
-            TransparentScope::External => {
-                if legacy_key {
-                    generate_transparent_address_from_legacy_key(&account_pubkey, address_index)?
-                } else {
-                    account_pubkey
-                        .derive_external_ivk()?
-                        .derive_address(address_index)?
-                }
-            }
+            TransparentScope::External => account_pubkey
+                .derive_external_ivk()?
+                .derive_address(address_index)?,
             TransparentScope::Internal => account_pubkey
                 .derive_internal_ivk()?
                 .derive_address(address_index)?,
@@ -418,8 +386,6 @@ pub struct ReceiverSelection {
     pub orchard: bool,
     /// Sapling
     pub sapling: bool,
-    /// Transparent
-    pub transparent: bool,
 }
 
 impl ReceiverSelection {
@@ -428,7 +394,6 @@ impl ReceiverSelection {
         Self {
             orchard: true,
             sapling: true,
-            transparent: false,
         }
     }
 
@@ -437,7 +402,6 @@ impl ReceiverSelection {
         Self {
             orchard: true,
             sapling: false,
-            transparent: false,
         }
     }
 
@@ -446,13 +410,12 @@ impl ReceiverSelection {
         Self {
             orchard: false,
             sapling: true,
-            transparent: false,
         }
     }
 }
 
 impl ReadableWriteable for ReceiverSelection {
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
@@ -460,7 +423,6 @@ impl ReadableWriteable for ReceiverSelection {
         Ok(Self {
             orchard: receivers & 0b1 != 0,
             sapling: receivers & 0b10 != 0,
-            transparent: receivers & 0b100 != 0,
         })
     }
 
@@ -472,9 +434,6 @@ impl ReadableWriteable for ReceiverSelection {
         };
         if self.sapling {
             receivers |= 0b10;
-        };
-        if self.transparent {
-            receivers |= 0b100;
         };
         writer.write_u8(receivers)?;
         Ok(())

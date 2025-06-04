@@ -750,25 +750,11 @@ mod fast {
         // Addresses: alice, bob, charlie
         let alice = get_base_address(&recipient, PoolType::ORCHARD).await;
         let (_, bob) = faucet
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: true,
-                    sapling: true,
-                    transparent: true,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
             .unwrap();
         let (_, charlie) = faucet
-            .generate_unified_address(
-                ReceiverSelection {
-                    orchard: true,
-                    sapling: true,
-                    transparent: true,
-                },
-                zip32::AccountId::ZERO,
-            )
+            .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
             .unwrap();
 
