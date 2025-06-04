@@ -897,7 +897,6 @@ pub fn create_new_unified_address(receivers: String) -> String {
             let receivers_available = ReceiverSelection {
                 orchard: receivers.contains('o'),
                 sapling: receivers.contains('z'),
-                transparent: false,
             };
             match wallet.generate_unified_address(receivers_available, AccountId::ZERO) {
                 Ok((id, unified_address)) => {
@@ -924,7 +923,7 @@ pub fn create_new_transparent_address() -> String {
         zingolib::commands::RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
-            match wallet.generate_transparent_address(AccountId::ZERO) {
+            match wallet.generate_transparent_address(AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
                         "account" => u32::from(id.account_id()),
