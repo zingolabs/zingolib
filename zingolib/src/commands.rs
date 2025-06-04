@@ -717,6 +717,9 @@ impl Command for NewUnifiedAddressCommand {
         indoc! {r#"
             Create a new unified address.
 
+            Transparent receivers not supported.
+            See `new_taddress` for creating transparent addresses.
+
             Usage:
             new_address [ o | z ]
 
@@ -750,7 +753,6 @@ impl Command for NewUnifiedAddressCommand {
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
                 sapling: args[0].contains('z'),
-                transparent: false,
             };
             match wallet.generate_unified_address(receivers, zip32::AccountId::ZERO) {
                 Ok((id, unified_address)) => {
@@ -789,7 +791,7 @@ impl Command for NewTransparentAddressCommand {
         RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
-            match wallet.generate_transparent_address(zip32::AccountId::ZERO) {
+            match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
                         "account" => u32::from(id.account_id()),

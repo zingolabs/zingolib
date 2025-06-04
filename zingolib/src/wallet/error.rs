@@ -184,6 +184,11 @@ pub enum KeyError {
     /// Unified address missing shielded receiver
     #[error("Unified address must contain a shielded receiver")]
     UnifiedAddressError,
+    /// Transparent address generation failed. Latest transparent address has not received funds.
+    #[error(
+        "Transparent address generation failed. Latest transparent address has not received funds."
+    )]
+    GapError,
 }
 
 impl From<bip32::Error> for KeyError {

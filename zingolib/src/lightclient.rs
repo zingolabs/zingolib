@@ -158,11 +158,12 @@ impl LightClient {
     pub async fn generate_transparent_address(
         &mut self,
         account_id: zip32::AccountId,
+        enforce_no_gap: bool,
     ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
         self.wallet
             .lock()
             .await
-            .generate_transparent_address(account_id)
+            .generate_transparent_address(account_id, enforce_no_gap)
     }
 
     /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
