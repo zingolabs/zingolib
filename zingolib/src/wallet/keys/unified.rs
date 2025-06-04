@@ -442,8 +442,8 @@ impl ReadableWriteable for ReceiverSelection {
 
 #[test]
 fn read_write_receiver_selections() {
-    for (i, receivers_selected) in (0..8)
-        .map(|n| ReceiverSelection::read([1, n].as_slice(), ()).unwrap())
+    for (i, receivers_selected) in (0..4)
+        .map(|n| ReceiverSelection::read([2, n].as_slice(), ()).unwrap())
         .enumerate()
     {
         let mut receivers_selected_bytes = [0; 2];
