@@ -871,9 +871,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.24"
+version = "1.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
+checksum = "d0fc897dc1e865cc67c0e05a836d9d3f1df3cbe442aa4a9473b18e12624a4951"
 dependencies = [
  "jobserver",
  "libc",
@@ -1205,9 +1205,9 @@ dependencies = [
 
 [[package]]
 name = "crypto-common"
-version = "0.2.0-rc.2"
+version = "0.2.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "170d71b5b14dec99db7739f6fc7d6ec2db80b78c3acb77db48392ccc3d8a9ea0"
+checksum = "8a23fa214dea9efd4dacee5a5614646b30216ae0f05d4bb51bafb50e9da1c5be"
 dependencies = [
  "hybrid-array",
 ]
@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -1516,7 +1516,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf2e3d6615d99707295a9673e889bf363a04b2a466bd320c65a72536f7577379"
 dependencies = [
  "block-buffer 0.11.0-rc.4",
- "crypto-common 0.2.0-rc.2",
+ "crypto-common 0.2.0-rc.3",
  "subtle",
 ]
 
@@ -2242,12 +2242,6 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
-
-[[package]]
-name = "hermit-abi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f154ce46856750ed433c8649605bf7ed2de3bc35fd9d2a9f30cddd873c80cb08"
@@ -2715,7 +2709,7 @@ version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
- "hermit-abi 0.5.1",
+ "hermit-abi",
  "libc",
  "windows-sys 0.59.0",
 ]
@@ -2936,9 +2930,9 @@ checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 
 [[package]]
 name = "lock_api"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+checksum = "96936507f153605bddfcda068dd804796c84324ed2510809e5b2a624c81da765"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -3221,11 +3215,11 @@ dependencies = [
 
 [[package]]
 name = "num_cpus"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
- "hermit-abi 0.3.9",
+ "hermit-abi",
  "libc",
 ]
 
@@ -3397,9 +3391,9 @@ checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
 
 [[package]]
 name = "parking_lot"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
+checksum = "70d58bf43669b5795d1576d0641cfb6fbb2057bf629506267a92807158584a13"
 dependencies = [
  "lock_api",
  "parking_lot_core",
@@ -3407,9 +3401,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.10"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
+checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if",
  "libc",
@@ -3472,7 +3466,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "bip32",
  "byteorder",
@@ -3689,9 +3683,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.32"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
+checksum = "9dee91521343f4c5c6a63edd65e54f31f5c92fe8978c40a4282f8372194c6a7d"
 dependencies = [
  "proc-macro2",
  "syn 2.0.101",
@@ -3708,9 +3702,9 @@ dependencies = [
 
 [[package]]
 name = "priority-queue"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b816314f0ba557376adec2392396a0b5c8195b25ef5394b7eea496ac26e353e4"
+checksum = "5676d703dda103cbb035b653a9f11448c0a7216c7926bd35fcb5865475d0c970"
 dependencies = [
  "autocfg",
  "equivalent",
@@ -4172,9 +4166,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.16"
+version = "0.12.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bf597b113be201cb2269b4c39b39a804d01b99ee95a4278f0ed04e45cff1c71"
+checksum = "a2f8e5513d63f2e5b386eb5106dc67eaf3f84e95258e210489136b8b92ad6119"
 dependencies = [
  "base64",
  "bytes",
@@ -6389,9 +6383,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.4"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -7628,9 +7622,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_protocol"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0acf60e235c5ba42c83f1e7e3763cf90a436583e6de71557fed26bab2d65dc"
+checksum = "8f116cd111d813b7afc814be013566b16e32a7b887597f906ac42b0f7f6a1681"
 dependencies = [
  "core2",
  "document-features",
@@ -7793,7 +7787,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7805,7 +7799,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "http",
  "http-body",
@@ -7825,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7841,7 +7835,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7850,7 +7844,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "bip0039",
 ]
@@ -7858,7 +7852,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#ccc1d681a0ffadb2e8ab6ea295406ebd7c120392"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -7868,7 +7862,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "dirs 5.0.1",
+ "dirs 6.0.0",
  "futures",
  "hex",
  "http",
