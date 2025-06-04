@@ -215,11 +215,8 @@ impl LightWallet {
                 account_id: zip32::AccountId::ZERO,
                 address_index: 0,
             };
-            let first_unified_address = unified_key.generate_unified_address(
-                unified_address_id.address_index,
-                receivers,
-                false,
-            )?;
+            let first_unified_address = unified_key
+                .generate_unified_address(unified_address_id.address_index, receivers)?;
             unified_addresses.insert(unified_address_id, first_unified_address.clone());
         }
 
@@ -232,7 +229,6 @@ impl LightWallet {
         match unified_key.generate_transparent_address(
             transparent_address_id.address_index(),
             transparent_address_id.scope(),
-            false,
         ) {
             Ok(first_transparent_address) => {
                 transparent_addresses.insert(
