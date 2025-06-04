@@ -791,7 +791,7 @@ impl Command for NewTransparentAddressCommand {
         RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
-            match wallet.generate_transparent_address(zip32::AccountId::ZERO) {
+            match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
                         "account" => u32::from(id.account_id()),

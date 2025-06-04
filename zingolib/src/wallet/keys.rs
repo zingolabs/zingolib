@@ -5,7 +5,7 @@ use pepper_sync::{
         decode_address,
         transparent::{self, TransparentAddressId, TransparentScope},
     },
-    wallet::KeyIdInterface,
+    wallet::{KeyIdInterface, TransparentCoin},
 };
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
@@ -76,21 +76,37 @@ impl LightWallet {
 
     /// Generates a new transparent address of `external` scope for the given `account_id`.
     /// The new address is added to the wallet and returned.
+    ///
+    /// If `enforced_no_gap` is `true`, an error is returned if the latest transparent address has not received funds.
     pub fn generate_transparent_address(
         &mut self,
         account_id: zip32::AccountId,
+        enforce_no_gap: bool,
     ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
-        let address_index = self
+        let latest_address = self
             .transparent_addresses
-            .keys()
-            .filter(|&address_id| {
+            .iter()
+            .filter(|(address_id, _)| {
                 address_id.scope() == TransparentScope::External
                     && address_id.account_id() == account_id
             })
-            .map(|&address_id| address_id.address_index())
-            .max()
-            .map_or(Ok(NonHardenedChildIndex::ZERO), |address_index| {
+            .max_by_key(|(address_id, _)| address_id.address_index());
+        if enforce_no_gap {
+            if let Some((_, address)) = latest_address {
+                if !self
+                    .wallet_outputs::<TransparentCoin>()
+                    .iter()
+                    .any(|&output| output.address() == address.as_str())
+                {
+                    return Err(KeyError::GapError);
+                }
+            }
+        }
+
+        let address_index =
+            latest_address.map_or(Ok(NonHardenedChildIndex::ZERO), |(address_index, _)| {
                 address_index
+                    .address_index()
                     .next()
                     .ok_or(KeyError::InvalidNonHardenedChildIndex)
             })?;
@@ -101,7 +117,6 @@ impl LightWallet {
             .get(&account_id)
             .ok_or(KeyError::NoAccountKeys)?
             .generate_transparent_address(address_id.address_index(), address_id.scope())?;
-
         self.transparent_addresses.insert(
             address_id,
             transparent::encode_address(&self.network, external_address),
