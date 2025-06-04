@@ -1275,7 +1275,7 @@ uregtest1n22mmna853578fakgx6z6adn24ey5r7wfye8ulhscqc9hvm0rf5czxjuz9te0zzc8j93y35
         );
 
         let (taddress_id, new_taddress) = recipient
-            .generate_transparent_address(zip32::AccountId::ZERO)
+            .generate_transparent_address(zip32::AccountId::ZERO, false)
             .await
             .unwrap();
         assert_eq!(
