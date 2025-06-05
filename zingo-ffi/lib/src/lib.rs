@@ -304,7 +304,7 @@ pub fn get_zennies_for_zingo_donation_address() -> String {
 
 pub fn get_transaction_summaries() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient
                 .wallet
                 .lock()
@@ -323,7 +323,7 @@ pub fn get_transaction_summaries() -> String {
 
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient
                 .wallet
                 .lock()
