@@ -2,7 +2,7 @@
 name = "zingo"
 version = "2.0.0"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 zingolib = { workspace = true }
