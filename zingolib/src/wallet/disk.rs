@@ -384,61 +384,40 @@ impl LightWallet {
             keys
         };
 
-        let unified_addresses = if version >= 36 {
-            Vector::read(&mut reader, |r| {
-                let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                    .expect("only valid account ids are stored");
-                let address_index = r.read_u32::<LittleEndian>()?;
-                let receivers = ReceiverSelection::read(r, ())?;
+        let mut unified_addresses = Vector::read(&mut reader, |r| {
+            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
+                .expect("only valid account ids are stored");
+            let address_index = r.read_u32::<LittleEndian>()?;
+            let receivers = ReceiverSelection::read(r, ())?;
 
-                Ok((
-                    UnifiedAddressId {
-                        account_id,
-                        address_index,
-                    },
-                    unified_key_store
-                        .get(&account_id)
-                        .ok_or(Error::new(
-                            ErrorKind::InvalidData,
-                            format!(
-                                "unified addresses found for account {} but was account not found",
-                                u32::from(account_id)
-                            ),
-                        ))?
-                        .generate_unified_address(address_index, receivers)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                ))
-            })?
-            .into_iter()
-            .collect::<BTreeMap<_, _>>()
-        } else {
-            let unified_key = unified_key_store
-                .get(&zip32::AccountId::ZERO)
-                .expect("account 0 must exist");
-            let mut unified_addresses = BTreeMap::new();
-            if let Some(receivers) = unified_key.default_receivers() {
-                let unified_address_id = UnifiedAddressId {
-                    account_id: zip32::AccountId::ZERO,
-                    address_index: 0,
-                };
-                let first_unified_address = unified_key
-                    .generate_unified_address(unified_address_id.address_index, receivers)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                unified_addresses.insert(unified_address_id, first_unified_address.clone());
-            }
+            Ok((
+                UnifiedAddressId {
+                    account_id,
+                    address_index,
+                },
+                unified_key_store
+                    .get(&account_id)
+                    .ok_or(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "unified addresses found for account {} but was account not found",
+                            u32::from(account_id)
+                        ),
+                    ))?
+                    .generate_unified_address(address_index, receivers)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+            ))
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+        let mut transparent_addresses = Vector::read(&mut reader, |r| {
+            let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
+                .expect("only valid account ids are stored");
+            let scope = TransparentScope::try_from(r.read_u8()?)?;
+            let address_index = NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
+                .expect("only non-hardened child indexes should be written");
 
-            unified_addresses
-        };
-        let transparent_addresses = if version >= 36 {
-            Vector::read(&mut reader, |r| {
-                let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
-                    .expect("only valid account ids are stored");
-                let scope = TransparentScope::try_from(r.read_u8()?)?;
-                let address_index =
-                    NonHardenedChildIndex::from_index(r.read_u32::<LittleEndian>()?)
-                        .expect("only non-hardened child indexes should be written");
-
-                Ok((
+            Ok((
                 TransparentAddressId::new(account_id, scope, address_index),
                 transparent::encode_address(
                     &network,
@@ -455,14 +434,28 @@ impl LightWallet {
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                 ),
             ))
-            })?
-            .into_iter()
-            .collect::<BTreeMap<_, _>>()
-        } else {
+        })?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+        // reset zingo 2.0 test version addresses
+        if version < 36 {
             let unified_key = unified_key_store
                 .get(&zip32::AccountId::ZERO)
                 .expect("account 0 must exist");
-            let mut transparent_addresses = BTreeMap::new();
+            unified_addresses = BTreeMap::new();
+            if let Some(receivers) = unified_key.default_receivers() {
+                let unified_address_id = UnifiedAddressId {
+                    account_id: zip32::AccountId::ZERO,
+                    address_index: 0,
+                };
+                let first_unified_address = unified_key
+                    .generate_unified_address(unified_address_id.address_index, receivers)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                unified_addresses.insert(unified_address_id, first_unified_address.clone());
+            }
+
+            transparent_addresses = BTreeMap::new();
             let transparent_address_id = TransparentAddressId::new(
                 zip32::AccountId::ZERO,
                 TransparentScope::External,
@@ -486,9 +479,7 @@ impl LightWallet {
                     ));
                 }
             };
-
-            transparent_addresses
-        };
+        }
 
         let wallet_blocks = Vector::read(&mut reader, |r| WalletBlock::read(r))?
             .into_iter()
