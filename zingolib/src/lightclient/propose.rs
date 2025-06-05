@@ -47,7 +47,7 @@ impl LightClient {
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let proposal = self
             .wallet
-            .lock()
+            .write()
             .await
             .create_send_proposal(request, account_id)
             .await?;
@@ -82,7 +82,7 @@ impl LightClient {
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let proposal = self
             .wallet
-            .lock()
+            .write()
             .await
             .create_send_proposal(request, account_id)
             .await?;
@@ -111,7 +111,7 @@ impl LightClient {
         zennies_for_zingo: bool,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
-        let mut wallet = self.wallet.lock().await;
+        let mut wallet = self.wallet.write().await;
         let confirmed_balance = wallet
             .confirmed_shielded_balance_excluding_dust(account_id)
             .await?;
@@ -177,7 +177,7 @@ impl LightClient {
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
         let proposal = self
             .wallet
-            .lock()
+            .write()
             .await
             .create_shield_proposal(account_id)
             .await?;
@@ -234,7 +234,7 @@ mod shielding {
         let basic_client = create_basic_client();
         let propose_shield_result = basic_client
             .wallet
-            .lock()
+            .write()
             .await
             .create_shield_proposal(zip32::AccountId::ZERO)
             .await;
@@ -248,12 +248,12 @@ mod shielding {
     #[tokio::test]
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client();
-        let network = basic_client.wallet.lock().await.network;
+        let network = basic_client.wallet.read().await.network;
 
         // TODO: store t addrs as concrete types instead of encoded
         let transparent_addresses = basic_client
             .wallet
-            .lock()
+            .read()
             .await
             .transparent_addresses()
             .values()

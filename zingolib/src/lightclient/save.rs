@@ -24,7 +24,7 @@ impl LightClient {
         let save_handle = tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                if let Some(wallet_bytes) = wallet.lock().await.save()? {
+                if let Some(wallet_bytes) = wallet.write().await.save()? {
                     utils::write_to_path(&wallet_path, wallet_bytes).await?
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
@@ -41,7 +41,7 @@ impl LightClient {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            if !self.wallet.lock().await.save_required {
+            if !self.wallet.read().await.save_required {
                 return;
             }
         }

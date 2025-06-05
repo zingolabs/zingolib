@@ -463,7 +463,7 @@ mod fast {
         let mut faucet = client_builder.build_faucet(true, regtest_network);
         let mut recipient =
             client_builder.build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, true, regtest_network);
-        let network = recipient.wallet.lock().await.network;
+        let network = recipient.wallet.read().await.network;
 
         // create a range of UAs to be discovered when recipient is reset
         let orchard_only_addr = recipient
@@ -512,7 +512,7 @@ mod fast {
         if let Some(_ua) =
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -525,7 +525,7 @@ mod fast {
         if let Some(_ua) =
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -538,7 +538,7 @@ mod fast {
         if let Some(_ua) =
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -554,7 +554,7 @@ mod fast {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -568,7 +568,7 @@ mod fast {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -582,7 +582,7 @@ mod fast {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -973,7 +973,7 @@ mod fast {
             let (ref regtest_manager, _cph, ref faucet, mut sender, _txid) =
                 scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet.lock().await);
+            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet.read().await);
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
                 Zatoshis::from_u64(100_000).unwrap(),
@@ -989,7 +989,7 @@ mod fast {
             let _sent_txids_according_to_broadcast = sender.send_stored_proposal().await.unwrap();
             let _txids = sender
                 .wallet
-                .lock()
+                .read()
                 .await
                 .wallet_transactions
                 .keys()
@@ -998,7 +998,7 @@ mod fast {
             increase_height_and_wait_for_client(regtest_manager, &mut sender, 1)
                 .await
                 .unwrap();
-            assert_eq!(sender.wallet.lock().await.wallet_transactions.len(), 3usize);
+            assert_eq!(sender.wallet.read().await.wallet_transactions.len(), 3usize);
 
             // FIXME: add tex addresses to encoded memos
             // let val_tranfers = sender.sorted_value_transfers(true).await.unwrap();
@@ -1075,7 +1075,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
             .await
             .unwrap();
-        let wallet = recipient.wallet.lock().await;
+        let wallet = recipient.wallet.read().await;
         let preshield_utxos = wallet
             .wallet_outputs::<TransparentCoin>()
             .into_iter()
@@ -1097,7 +1097,7 @@ mod fast {
             .await
             .unwrap();
 
-        let wallet = recipient.wallet.lock().await;
+        let wallet = recipient.wallet.read().await;
         let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(postshield_utxos.len(), 1);
         assert!(
@@ -1203,7 +1203,7 @@ mod fast {
         .unwrap();
         let balance_b = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -1232,7 +1232,7 @@ mod fast {
             .unwrap()
             .to_string();
         let mut recipient = client_builder.build_client(seed_phrase, 0, false, regtest_network);
-        let network = recipient.wallet.lock().await.network;
+        let network = recipient.wallet.read().await.network;
         let (new_address_id, new_address) = recipient
             .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
@@ -1504,7 +1504,7 @@ mod slow {
             "{}",
             &recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -1543,7 +1543,7 @@ mod slow {
         .await
         .unwrap();
 
-        let recipient_wallet = recipient.wallet.lock().await;
+        let recipient_wallet = recipient.wallet.read().await;
         let transparent_coins = recipient_wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(transparent_coins.len(), 0);
         let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
@@ -1822,7 +1822,7 @@ mod slow {
         .unwrap();
         let original_recipient_balance = original_recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -1848,9 +1848,9 @@ mod slow {
         check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
         // Extract viewing keys
-        let original_wallet = original_recipient.wallet.lock().await;
+        let original_wallet = original_recipient.wallet.read().await;
         let [o_fvk, s_fvk, t_fvk] = zingolib::testutils::build_fvks_from_unified_keystore(
-            &original_wallet
+            original_wallet
                 .unified_key_store
                 .get(&zip32::AccountId::ZERO)
                 .unwrap(),
@@ -1873,7 +1873,7 @@ mod slow {
             // assert empty wallet before rescan
             let balance = watch_client
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -1882,20 +1882,20 @@ mod slow {
             watch_client.rescan_and_await().await.unwrap();
             let balance = watch_client
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap();
             {
-                let watch_wallet = watch_client.wallet.lock().await;
+                let watch_wallet = watch_client.wallet.read().await;
                 let orchard_notes = watch_wallet.note_summaries::<OrchardNote>(true);
                 let sapling_notes = watch_wallet.note_summaries::<SaplingNote>(true);
                 let transparent_coin = watch_wallet.coin_summaries(true);
 
                 check_view_capability_bounds(
                     &balance,
-                    &watch_wallet
+                    watch_wallet
                         .unified_key_store
                         .get(&zip32::AccountId::ZERO)
                         .unwrap(),
@@ -1950,7 +1950,7 @@ mod slow {
         // 3. Test the list
         let transaction = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .transaction_summaries()
             .await
@@ -2023,7 +2023,7 @@ mod slow {
             "{}",
             &recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -2039,7 +2039,7 @@ mod slow {
             "{}",
             &recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -2257,7 +2257,7 @@ mod slow {
             - (3 * u64::from(MARGINAL_FEE));
 
         {
-            let recipient_wallet = recipient.wallet.lock().await;
+            let recipient_wallet = recipient.wallet.read().await;
             assert_eq!(
                 recipient_wallet
                     .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
@@ -2494,7 +2494,7 @@ mod slow {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
                 .await
@@ -2514,7 +2514,7 @@ mod slow {
         faucet.sync_and_await().await.unwrap();
         let wallet_fully_scanned_height = faucet
             .wallet
-            .lock()
+            .read()
             .await
             .sync_state
             .fully_scanned_height()
@@ -2556,7 +2556,7 @@ mod slow {
             "{}",
             &faucet
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
@@ -2621,7 +2621,7 @@ mod slow {
             .unwrap();
         let balance = faucet
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -2787,7 +2787,7 @@ mod slow {
                 false,
             )
             .await;
-        let network = recipient.wallet.lock().await.network;
+        let network = recipient.wallet.read().await.network;
 
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
@@ -2810,7 +2810,7 @@ mod slow {
 
         let transactions = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .transaction_summaries()
             .await
@@ -2875,7 +2875,7 @@ mod slow {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .sync_state
                 .fully_scanned_height()
@@ -2886,7 +2886,7 @@ mod slow {
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
         let balance = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -2898,7 +2898,7 @@ mod slow {
         {
             let recipient_sapling_address = *recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -2908,7 +2908,7 @@ mod slow {
                 .unwrap()
                 .sapling()
                 .unwrap();
-            let transactions = &recipient.wallet.lock().await.wallet_transactions;
+            let transactions = &recipient.wallet.read().await.wallet_transactions;
             assert_eq!(transactions.len(), 1);
             let received_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&faucet_funding_txid).unwrap())
@@ -2955,14 +2955,14 @@ mod slow {
 
         let sapling_notes = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .note_summaries::<SaplingNote>(true);
 
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .wallet_outputs::<OrchardNote>()
                 .len(),
@@ -2998,7 +2998,7 @@ mod slow {
 
         {
             // Check transaction list
-            let transactions = &recipient.wallet.lock().await.wallet_transactions;
+            let transactions = &recipient.wallet.read().await.wallet_transactions;
             assert_eq!(transactions.len(), 2);
             let sent_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&sent_transaction_id).unwrap())
@@ -3011,7 +3011,7 @@ mod slow {
 
             let faucet_sapling_address = faucet
                 .wallet
-                .lock()
+                .read()
                 .await
                 .unified_addresses()
                 .get(&UnifiedAddressId {
@@ -3020,8 +3020,8 @@ mod slow {
                 })
                 .unwrap()
                 .sapling()
-                .unwrap()
-                .clone();
+                .copied()
+                .unwrap();
             let outgoing_sapling_note = sent_transaction
                 .outgoing_sapling_notes()
                 .iter()
@@ -3045,7 +3045,7 @@ mod slow {
         .unwrap();
 
         {
-            let transactions = &recipient.wallet.lock().await.wallet_transactions;
+            let transactions = &recipient.wallet.read().await.wallet_transactions;
             let sent_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&sent_transaction_id).unwrap())
                 .unwrap();
@@ -3058,7 +3058,7 @@ mod slow {
 
         // 7. Check the notes to see that we have one spent sapling note and one unspent sapling note (change)
         // Which is immediately spendable.
-        let recipient_wallet = recipient.wallet.lock().await;
+        let recipient_wallet = recipient.wallet.read().await;
         let sapling_notes = recipient_wallet.note_summaries::<SaplingNote>(true);
         let orchard_notes = recipient_wallet.note_summaries::<OrchardNote>(true);
 
@@ -3447,7 +3447,7 @@ mod slow {
 
         let bal = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -3467,7 +3467,7 @@ mod slow {
         .unwrap();
         let bal = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -3493,7 +3493,7 @@ mod slow {
 
         let bal = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -3516,7 +3516,7 @@ mod slow {
 
         let bal = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -3978,7 +3978,7 @@ mod slow {
         let sent_txid = txid_from_hex_encoded_str(&sent_transaction_id).unwrap();
         let orchard_note = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .wallet_transactions
             .get(&sent_txid)
@@ -4001,7 +4001,7 @@ mod slow {
         .unwrap();
         recipient.sync_and_await().await.unwrap();
         {
-            let recipient_wallet = recipient.wallet.lock().await;
+            let recipient_wallet = recipient.wallet.read().await;
             let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
@@ -4033,7 +4033,7 @@ mod slow {
         }
         let balance = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -4048,7 +4048,7 @@ mod slow {
             .await
             .unwrap();
         {
-            let recipient_wallet = recipient.wallet.lock().await;
+            let recipient_wallet = recipient.wallet.read().await;
             let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
@@ -4080,7 +4080,7 @@ mod slow {
         }
         let balance = recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -4613,7 +4613,7 @@ mod send_all {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
                 .await
@@ -4624,7 +4624,7 @@ mod send_all {
         assert_eq!(
             recipient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
                 .await
