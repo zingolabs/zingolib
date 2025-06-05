@@ -9,63 +9,46 @@ use android_logger::{Config, FilterBuilder};
 #[cfg(target_os = "android")]
 use log::Level;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use json::object;
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
-use pepper_sync::wallet::SyncMode;
-use pepper_sync::wallet::KeyIdInterface;
-use pepper_sync::keys::transparent;
-use rustls::crypto::ring::default_provider;
-use rustls::crypto::CryptoProvider;
-use std::str::FromStr;
 use std::num::NonZeroU32;
+use std::str::FromStr;
+use std::sync::RwLock;
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use bip0039::Mnemonic;
+use json::object;
+use rustls::crypto::{CryptoProvider, ring::default_provider};
+
 use zcash_address::unified::{Container, Encoding, Ufvk};
-use zcash_address::ZcashAddress;
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
-use zingolib::config::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
+
+use pepper_sync::keys::transparent;
+use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::wallet::{KeyIdInterface, SyncMode};
+use zingolib::commands::RT;
+use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
 use zingolib::data::PollReport;
-use zingolib::utils::conversion::address_from_str;
-use zingolib::utils::conversion::txid_from_hex_encoded_str;
-use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::WalletSettings;
-use zingolib::{commands, lightclient::LightClient, wallet::LightWallet, wallet::WalletBase};
-use zingolib::wallet::keys::unified::ReceiverSelection;
-use zingolib::wallet::keys::WalletAddressRef;
-use bip0039::Mnemonic;
+use zingolib::lightclient::LightClient;
+use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
+use zingolib::wallet::keys::{
+    WalletAddressRef,
+    unified::{ReceiverSelection, UnifiedKeyStore},
+};
+use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
-use std::sync::RwLock;
-
-// We'll use a MUTEX to store a global lightclient instance,
+// We'll use a RwLock to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
 // because we can't return such a complex structure back to JS
 lazy_static! {
     static ref LIGHTCLIENT: RwLock<Option<LightClient>> = RwLock::new(None);
 }
 
-fn lock_client_return_seed(mut lightclient: LightClient, data_dir: String, tor: String, seed: bool) -> String {
-    let tor_bool = tor.parse().unwrap_or(false);
-    let lightclient_tor = if tor_bool {
-        zingolib::commands::RT.block_on(async move {
-            if let Err(e) = lightclient.create_tor_client(Some(data_dir.into())).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            };
-            lightclient
-        })
-    } else {
-        lightclient
-    };
-    LIGHTCLIENT.write().unwrap().replace(lightclient_tor);
-    
-    if seed {
-        get_seed()
-    } else {
-        get_ufvk()
-    }
+fn store_client(lightclient: LightClient) {
+    LIGHTCLIENT.write().unwrap().replace(lightclient);
 }
 
 fn construct_uri_load_config(
@@ -115,17 +98,18 @@ pub fn init_logging() -> String {
     "OK".to_string()
 }
 
-pub fn init_new(server_uri: String, data_dir: String, chain_hint: String, tor: String) -> String {
-    let (config, lightwalletd_uri);
-    match construct_uri_load_config(server_uri, chain_hint) {
-        Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
-        Err(s) => return s,
-    }
-    let latest_block_height = match zingolib::get_latest_block_height(lightwalletd_uri)
-        .map_err(|e| format! {"Error: {e}"})
-    {
-        Ok(height) => height,
+pub fn init_new(server_uri: String, chain_hint: String) -> String {
+    let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+        Ok(c) => c,
         Err(e) => return e,
+    };
+    let latest_block_height = match RT
+        .block_on(async move { zingolib::grpc_connector::get_latest_block(lightwalletd_uri).await })
+    {
+        Ok(block_id) => block_id.height,
+        Err(e) => {
+            return format!("Error: {e}");
+        }
     };
     let lightclient = match LightClient::new(
         config,
@@ -137,27 +121,32 @@ pub fn init_new(server_uri: String, data_dir: String, chain_hint: String, tor: S
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor, true)
+    store_client(lightclient);
+
+    get_seed()
 }
 
+// TODO: change `seed` to `seed_phrase` or `mnemonic_phrase`
 pub fn init_from_seed(
     server_uri: String,
     seed: String,
     birthday: u64,
-    data_dir: String,
     chain_hint: String,
-    tor: String,
 ) -> String {
-    let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, chain_hint) {
-        Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
-        Err(s) => return s,
-    }
-
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let mnemonic = match Mnemonic::from_phrase(seed) {
+        Ok(m) => m,
+        Err(e) => {
+            return format!("Error: {e}");
+        }
+    };
     let wallet = match LightWallet::new(
         config.chain,
         WalletBase::Mnemonic {
-            mnemonic: Mnemonic::from_phrase(seed).unwrap(),
+            mnemonic,
             no_of_accounts: config.no_of_accounts,
         },
         BlockHeight::from_u32(birthday as u32),
@@ -176,23 +165,21 @@ pub fn init_from_seed(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor, true)
+    store_client(lightclient);
+
+    get_seed()
 }
 
 pub fn init_from_ufvk(
     server_uri: String,
     ufvk: String,
     birthday: u64,
-    data_dir: String,
     chain_hint: String,
-    tor: String,
 ) -> String {
-    let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, chain_hint) {
-        Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
-        Err(s) => return s,
-    }
-
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
     let wallet = match LightWallet::new(
         config.chain,
         WalletBase::Ufvk(ufvk),
@@ -212,21 +199,16 @@ pub fn init_from_ufvk(
             return format!("Error: {e}");
         }
     };
-    lock_client_return_seed(lightclient, data_dir, tor, false)
+    store_client(lightclient);
+
+    get_ufvk()
 }
 
-pub fn init_from_b64(
-    server_uri: String,
-    base64_data: String,
-    data_dir: String,
-    chain_hint: String,
-    tor: String,
-) -> String {
-    let (config, _lightwalletd_uri);
-    match construct_uri_load_config(server_uri, chain_hint) {
-        Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
-        Err(s) => return s,
-    }
+pub fn init_from_b64(server_uri: String, base64_data: String, chain_hint: String) -> String {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
     let decoded_bytes = match STANDARD.decode(&base64_data) {
         Ok(b) => b,
         Err(e) => {
@@ -243,19 +225,16 @@ pub fn init_from_b64(
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
     };
-    let seed: bool = if wallet.mnemonic().is_some() {
-        true
-    } else {
-        false
-    };
+    let has_seed = wallet.mnemonic().is_some();
     let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {e}");
         }
     };
+    store_client(lightclient);
 
-    lock_client_return_seed(lightclient, data_dir.into(), tor, seed)
+    if has_seed { get_seed() } else { get_ufvk() }
 }
 
 pub fn save_to_b64() -> String {
@@ -263,7 +242,7 @@ pub fn save_to_b64() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         // we need to use STANDARD because swift is expecting the encoded String with padding
         // I tried with STANDARD_NO_PAD and the decoding return `nil`.
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.wallet.lock().await.save() {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
@@ -276,6 +255,7 @@ pub fn save_to_b64() -> String {
     }
 }
 
+// TODO: deprecate
 pub fn execute_command(cmd: String, args_list: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         let args = if args_list.is_empty() {
@@ -283,23 +263,30 @@ pub fn execute_command(cmd: String, args_list: String) -> String {
         } else {
             vec![args_list.as_ref()]
         };
-        commands::do_user_command(&cmd, &args, lightclient)
+        zingolib::commands::do_user_command(&cmd, &args, lightclient)
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
 }
 
 pub fn get_latest_block_server(server_uri: String) -> String {
-    let lightwalletd_uri: http::Uri = server_uri.parse().expect("To be able to represent a Uri.");
-    match zingolib::get_latest_block_height(lightwalletd_uri).map_err(|e| format! {"Error: {e}"}) {
-        Ok(height) => height.to_string(),
-        Err(e) => e,
+    let lightwalletd_uri: http::Uri = match server_uri.parse() {
+        Ok(uri) => uri,
+        Err(e) => {
+            return format!("Error: failed to parse uri. {e}");
+        }
+    };
+    match RT
+        .block_on(async move { zingolib::grpc_connector::get_latest_block(lightwalletd_uri).await })
+    {
+        Ok(block_id) => block_id.height.to_string(),
+        Err(e) => format!("Error: {e}"),
     }
 }
 
 pub fn get_latest_block_wallet() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     } else {
@@ -317,8 +304,18 @@ pub fn get_zennies_for_zingo_donation_address() -> String {
 
 pub fn get_transaction_summaries() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT
-            .block_on(async move { lightclient.transaction_summaries_json_string().await })
+        zingolib::commands::RT.block_on(async move {
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .transaction_summaries()
+                .await
+            {
+                Ok(transactions) => json::JsonValue::from(transactions).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -326,30 +323,31 @@ pub fn get_transaction_summaries() -> String {
 
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT
-            .block_on(async move { lightclient.value_transfers_json_string().await })
+        zingolib::commands::RT.block_on(async move {
+            match lightclient
+                .wallet
+                .lock()
+                .await
+                .sorted_value_transfers(true)
+                .await
+            {
+                Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+                Err(e) => format!("Error: {e}"),
+            }
+        })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
 }
 
 pub fn set_crypto_default_provider_to_ring() -> String {
-    let resp: String;
-    {
-        if CryptoProvider::get_default().is_none() {
-            resp = match default_provider()
-                .install_default()
-                .map_err(|_| "Error: Failed to install crypto provider".to_string())
-            {
-                Ok(_) => "true".to_string(),
-                Err(e) => e,
-            };
-        } else {
-            resp = "true".to_string();
-        };
-    }
-
-    resp
+    CryptoProvider::get_default().map_or_else(
+        || match default_provider().install_default() {
+            Ok(_) => "true".to_string(),
+            Err(_) => "Error: Failed to install crypto provider".to_string(),
+        },
+        |_| "true".to_string(),
+    )
 }
 
 pub fn poll_sync() -> String {
@@ -376,7 +374,7 @@ pub fn run_sync() -> String {
             lightclient.resume_sync().expect("sync should be paused");
             "Resuming sync task...".to_string()
         } else {
-            zingolib::commands::RT.block_on(async move {
+            RT.block_on(async move {
                 match lightclient.sync().await {
                     Ok(_) => "Launching sync task...".to_string(),
                     Err(e) => format!("Error: {e}"),
@@ -412,7 +410,7 @@ pub fn stop_sync() -> String {
 
 pub fn status_sync() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
                 Ok(status) => json::JsonValue::from(status).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -425,7 +423,7 @@ pub fn status_sync() -> String {
 
 pub fn run_rescan() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.rescan().await {
                 Ok(_) => "Launching rescan...".to_string(),
                 Err(e) => format!("Error: {e}"),
@@ -438,17 +436,19 @@ pub fn run_rescan() -> String {
 
 pub fn info_server() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.do_info().await })
+        RT.block_on(async move { lightclient.do_info().await })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
 }
 
+// TODO: rename "get_seed_phrase" or "get_mnemonic_phrase"
+// or if other recovery info is being used could rename "get_recovery_info" ?
 pub fn get_seed() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.wallet.lock().await.recovery_info() {
-                Some(backup_info) => serde_json::to_string_pretty(&backup_info)
+                Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
                     .unwrap_or_else(|_| "error: get seed. failed to serialize".to_string()),
                 None => "error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
             }
@@ -460,7 +460,7 @@ pub fn get_seed() -> String {
 
 pub fn get_ufvk() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             let wallet = lightclient.wallet.lock().await;
             let ufvk: UnifiedFullViewingKey = match wallet
                 .unified_key_store
@@ -469,7 +469,9 @@ pub fn get_ufvk() -> String {
                 .try_into()
             {
                 Ok(ufvk) => ufvk,
-                Err(e) => return e.to_string(),
+                Err(e) => {
+                    return format!("Error: {e}");
+                }
             };
             object! {
                 "ufvk" => ufvk.encode(&wallet.network),
@@ -503,10 +505,10 @@ pub fn change_server(server_uri: String) -> String {
 
 pub fn wallet_kind() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             let wallet = lightclient.wallet.lock().await;
             if wallet.mnemonic().is_some() {
-                object! {"kind" => "Loaded from mnemonic (seed or phrase)",
+                object! {"kind" => "Loaded from seed or mnemonic phrase)",
                         "transparent" => true,
                         "sapling" => true,
                         "orchard" => true,
@@ -681,7 +683,7 @@ pub fn get_version() -> String {
 
 pub fn get_messages(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient
                 .messages_containing(Some(address.as_str()))
                 .await
@@ -697,7 +699,7 @@ pub fn get_messages(address: String) -> String {
 
 pub fn get_balance() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient
                 .wallet
                 .lock()
@@ -716,7 +718,7 @@ pub fn get_balance() -> String {
 
 pub fn get_total_memobytes_to_address() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
                 Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -729,7 +731,7 @@ pub fn get_total_memobytes_to_address() -> String {
 
 pub fn get_total_value_to_address() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.do_total_value_to_address().await {
                 Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -742,7 +744,7 @@ pub fn get_total_value_to_address() -> String {
 
 pub fn get_total_spends_to_address() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
                 Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -755,15 +757,20 @@ pub fn get_total_spends_to_address() -> String {
 
 pub fn zec_price(tor: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
-            let tor_bool = tor.parse().unwrap_or(false);
-            let tor_client = if tor_bool {
-                match lightclient.tor_client() {
-                    Some(tor_cli) => Some(tor_cli),
-                    None => return "error: no client found. please try restarting.".to_string(),
+        RT.block_on(async move {
+            let Ok(tor_bool) = tor.parse() else {
+                return "Error: failed to parse tor setting.".to_string();
+            };
+            let client_check = match (tor_bool, lightclient.tor_client()) {
+                (true, Some(tc)) => Ok(Some(tc)),
+                (true, None) => Err(()),
+                (false, _) => Ok(None),
+            };
+            let tor_client = match client_check {
+                Ok(tc) => tc,
+                Err(_) => {
+                    return "Error: no tor client found. please create a tor client.".to_string();
                 }
-            } else {
-                None
             };
 
             match lightclient
@@ -785,13 +792,13 @@ pub fn zec_price(tor: String) -> String {
 
 pub fn resend_transaction(txid: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        let txid_ok = match txid_from_hex_encoded_str(&txid) {
+        let txid = match txid_from_hex_encoded_str(&txid) {
             Ok(txid) => txid,
             Err(e) => return format!("Error: {e}"),
         };
 
-        zingolib::commands::RT.block_on(async move {
-            match lightclient.resend(txid_ok).await {
+        RT.block_on(async move {
+            match lightclient.resend(txid).await {
                 Ok(_) => "Successfully resent transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
@@ -803,17 +810,17 @@ pub fn resend_transaction(txid: String) -> String {
 
 pub fn remove_transaction(txid: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        let txid_ok = match txid_from_hex_encoded_str(&txid) {
+        let txid = match txid_from_hex_encoded_str(&txid) {
             Ok(txid) => txid,
             Err(e) => return format!("Error: {e}"),
         };
 
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient
                 .wallet
                 .lock()
                 .await
-                .remove_unconfirmed_transaction(txid_ok)
+                .remove_unconfirmed_transaction(txid)
             {
                 Ok(_) => "Successfully removed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
@@ -826,15 +833,15 @@ pub fn remove_transaction(txid: String) -> String {
 
 pub fn get_spendable_balance(address: String, zennies: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        let address_zcash: ZcashAddress;
-        if let Ok(addr) = address_from_str(&address) {
-            address_zcash = addr;
-        } else {
+        let Ok(address) = address_from_str(&address) else {
             return "Error: unknown address format".to_string();
-        }
-        zingolib::commands::RT.block_on(async move {
+        };
+        let Ok(zennies) = zennies.parse() else {
+            return "Error: failed to parse zennies setting.".to_string();
+        };
+        RT.block_on(async move {
             match lightclient
-                .get_spendable_shielded_balance(address_zcash, zennies.parse().unwrap_or(false), AccountId::ZERO)
+                .get_spendable_shielded_balance(address, zennies, AccountId::ZERO)
                 .await
             {
                 Ok(bal) => {
@@ -842,7 +849,7 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
                         "balance" => bal.into_u64(),
                     }
                 }
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => object! { "error" => e.to_string() },
             }
             .pretty(2)
         })
@@ -861,11 +868,9 @@ pub fn get_option_wallet() -> String {
 
 pub fn create_tor_client(data_dir: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        let result = zingolib::commands::RT.block_on(async move {
-            lightclient.create_tor_client(Some(data_dir.into())).await
-        });
-        match result {
-            Ok(_) => "Client tor created successfully".to_string(),
+        match RT.block_on(async move { lightclient.create_tor_client(Some(data_dir.into())).await })
+        {
+            Ok(_) => "Successfully created tor client.".to_string(),
             Err(e) => format!("Error: {e}"),
         }
     } else {
@@ -873,9 +878,11 @@ pub fn create_tor_client(data_dir: String) -> String {
     }
 }
 
+// FIXME: add "remove_tor_client". (add to zingolib)
+
 pub fn get_unified_addresses() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) })
+        RT.block_on(async move { lightclient.unified_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -883,7 +890,7 @@ pub fn get_unified_addresses() -> String {
 
 pub fn get_transparent_addresses() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
+        RT.block_on(async move { lightclient.transparent_addresses_json().await.pretty(2) })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -891,7 +898,7 @@ pub fn get_transparent_addresses() -> String {
 
 pub fn create_new_unified_address(receivers: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
             let receivers_available = ReceiverSelection {
@@ -910,7 +917,7 @@ pub fn create_new_unified_address(receivers: String) -> String {
                         "encoded_address" => unified_address.encode(&network),
                     }
                 }
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => object! { "error" => e.to_string() },
             }
             .pretty(2)
         })
@@ -921,7 +928,7 @@ pub fn create_new_unified_address(receivers: String) -> String {
 
 pub fn create_new_transparent_address() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             let mut wallet = lightclient.wallet.lock().await;
             let network = wallet.network;
             match wallet.generate_transparent_address(AccountId::ZERO) {
@@ -933,7 +940,7 @@ pub fn create_new_transparent_address() -> String {
                         "encoded_address" => transparent::encode_address(&network,  transparent_address),
                     }
                 }
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => object! { "error" => e.to_string() },
             }
             .pretty(2)
         })
@@ -944,7 +951,7 @@ pub fn create_new_transparent_address() -> String {
 
 pub fn check_my_address(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        zingolib::commands::RT.block_on(async move {
+        RT.block_on(async move {
             match lightclient.wallet.lock().await.is_wallet_address(&address) {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => false },
@@ -1003,7 +1010,7 @@ pub fn check_my_address(address: String) -> String {
                         },
                     },
                 ),
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => object! { "error" => e.to_string() },
             }
             .pretty(2)
         })
