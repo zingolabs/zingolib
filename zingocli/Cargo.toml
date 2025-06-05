@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-zingolib = { workspace = true }
+zingolib = { workspace = true, features = [ "test-elevation" ] }
 pepper-sync = { workspace = true }
 
 zcash_protocol = { workspace = true }
