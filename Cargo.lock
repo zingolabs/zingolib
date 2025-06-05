@@ -7532,6 +7532,7 @@ dependencies = [
  "rustls 0.23.27",
  "rustyline",
  "shellwords",
+ "zcash_protocol",
  "zingolib",
 ]
 

@@ -11,7 +11,7 @@ use std::{
 };
 
 use json::JsonValue;
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
@@ -49,7 +49,7 @@ pub struct LightClient {
     /// Tor client
     tor_client: Option<tor::Client>,
     /// Wallet data
-    pub wallet: Arc<Mutex<LightWallet>>,
+    pub wallet: Arc<RwLock<LightWallet>>,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
@@ -104,7 +104,7 @@ impl LightClient {
         Ok(LightClient {
             config,
             tor_client: None,
-            wallet: Arc::new(Mutex::new(wallet)),
+            wallet: Arc::new(RwLock::new(wallet)),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -149,7 +149,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
         self.wallet
-            .lock()
+            .write()
             .await
             .generate_unified_address(receivers, account_id)
     }
@@ -161,19 +161,19 @@ impl LightClient {
         enforce_no_gap: bool,
     ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
         self.wallet
-            .lock()
+            .write()
             .await
             .generate_transparent_address(account_id, enforce_no_gap)
     }
 
     /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
     pub async fn unified_addresses_json(&self) -> JsonValue {
-        self.wallet.lock().await.unified_addresses_json()
+        self.wallet.read().await.unified_addresses_json()
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
     pub async fn transparent_addresses_json(&self) -> JsonValue {
-        self.wallet.lock().await.transparent_addresses_json()
+        self.wallet.read().await.transparent_addresses_json()
     }
 
     /// TODO: Add Doc Comment Here!

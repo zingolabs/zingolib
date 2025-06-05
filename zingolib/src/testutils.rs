@@ -308,7 +308,7 @@ pub async fn sync_to_target_height(
     while u32::from(
         client
             .wallet
-            .lock()
+            .read()
             .await
             .sync_state
             .fully_scanned_height()

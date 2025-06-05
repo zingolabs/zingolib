@@ -9,9 +9,11 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use bip0039::Mnemonic;
+use clap::{self, Arg};
 use log::{error, info};
 
-use clap::{self, Arg};
+use zcash_protocol::consensus::BlockHeight;
+
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zingolib::commands::RT;
 use zingolib::config::ChainType;
@@ -514,14 +516,20 @@ pub fn startup(
                 // Call the lightwalletd server to get the current block-height
                 // Do a getinfo first, before opening the wallet
                 let server_uri = config.get_lightwalletd_uri();
-                let block_height = zingolib::get_latest_block_height(server_uri);
+                let chain_height = RT
+                    .block_on(async move {
+                        zingolib::grpc_connector::get_latest_block(server_uri)
+                            .await
+                            .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                    })
+                    .map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to create lightclient. {}", e),
+                        )
+                    })?;
                 // Create a wallet with height - 100, to protect against reorgs
-                LightClient::new(
-                    config.clone(),
-                    (block_height?.saturating_sub(100) as u32).into(),
-                    false,
-                )
-                .map_err(|e| {
+                LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Failed to create lightclient. {}", e),

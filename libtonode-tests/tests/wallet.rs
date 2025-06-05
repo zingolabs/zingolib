@@ -193,7 +193,7 @@ mod load_wallet {
         zingolib::testutils::increase_server_height(&regtest_manager, 2).await;
         let client_fully_scanned_height = faucet
             .wallet
-            .lock()
+            .read()
             .await
             .sync_state
             .fully_scanned_height()

@@ -74,7 +74,7 @@ impl LightClient {
         newer_first: bool,
     ) -> Result<ValueTransfers, SummaryError> {
         self.wallet
-            .lock()
+            .read()
             .await
             .sorted_value_transfers(newer_first)
             .await
@@ -82,26 +82,12 @@ impl LightClient {
 
     /// Wrapper for [crate::wallet::LightWallet::value_transfers].
     pub async fn value_transfers(&self) -> Result<ValueTransfers, SummaryError> {
-        self.wallet.lock().await.value_transfers().await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::value_transfers_json_string].
-    pub async fn value_transfers_json_string(&self) -> String {
-        self.wallet.lock().await.value_transfers_json_string().await
+        self.wallet.read().await.value_transfers().await
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
     pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
-        self.wallet.lock().await.transaction_summaries().await
-    }
-
-    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries_json_string].
-    pub async fn transaction_summaries_json_string(&self) -> String {
-        self.wallet
-            .lock()
-            .await
-            .transaction_summaries_json_string()
-            .await
+        self.wallet.read().await.transaction_summaries().await
     }
 
     /// TODO: Add Doc Comment Here!
@@ -171,7 +157,7 @@ impl LightClient {
     ) -> Result<finsight::ValuesSentToAddress, SummaryError> {
         let value_transfers = self
             .wallet
-            .lock()
+            .read()
             .await
             .sorted_value_transfers(false)
             .await?;

@@ -8,7 +8,7 @@ use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
@@ -309,7 +309,7 @@ impl TransparentAddressDiscoveryScopes {
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
-    wallet: Arc<Mutex<W>>,
+    wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
@@ -359,7 +359,7 @@ where
     });
 
     // pre-scan initialisation
-    let mut wallet_guard = wallet.lock().await;
+    let mut wallet_guard = wallet.write().await;
 
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
         .map_err(SyncError::WalletError)?;
@@ -446,7 +446,7 @@ where
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
-                let mut wallet_guard = wallet.lock().await;
+                let mut wallet_guard = wallet.write().await;
                 process_scan_results(
                     consensus_parameters,
                     &mut *wallet_guard,
@@ -462,7 +462,7 @@ where
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
-                let mut wallet_guard = wallet.lock().await;
+                let mut wallet_guard = wallet.write().await;
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
@@ -486,7 +486,7 @@ where
                         }
                     },
                     SyncMode::Shutdown => {
-                        let mut wallet_guard = wallet.lock().await;
+                        let mut wallet_guard = wallet.write().await;
                         let sync_status = match sync_status(&*wallet_guard).await {
                             Ok(status) => status,
                             Err(SyncStatusError::WalletError(e)) => {
@@ -523,7 +523,7 @@ where
                     },
                 }
 
-                scanner.update(&mut *wallet.lock().await, shutdown_mempool.clone()).await?;
+                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone()).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
@@ -538,7 +538,7 @@ where
         }
     }
 
-    let mut wallet_guard = wallet.lock().await;
+    let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
         Err(SyncStatusError::WalletError(e)) => {

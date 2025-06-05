@@ -157,15 +157,6 @@ impl LightWallet {
         Ok(TransactionSummaries::new(transaction_summaries))
     }
 
-    /// TODO: doc comment
-    // TODO: remove
-    pub async fn transaction_summaries_json_string(&self) -> String {
-        match self.transaction_summaries().await {
-            Ok(transactions) => json::JsonValue::from(transactions).pretty(2),
-            Err(e) => format!("Error: {e}"),
-        }
-    }
-
     // TODO: simplify type complexity
     // TODO: move to summary
     #[allow(clippy::type_complexity)]
@@ -651,15 +642,6 @@ impl LightWallet {
             value_transfers.reverse();
         }
         Ok(value_transfers)
-    }
-
-    /// TODO: doc comment
-    // TODO: remove
-    pub async fn value_transfers_json_string(&self) -> String {
-        match self.sorted_value_transfers(true).await {
-            Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
-            Err(e) => format!("Error: {e}"),
-        }
     }
 
     /// Creates value transfers for all notes in a transaction that are sent to another
