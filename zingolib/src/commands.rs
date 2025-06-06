@@ -1490,7 +1490,7 @@ impl Command for TransactionsCommand {
                 .to_string();
         }
         RT.block_on(async move {
-            match lightclient.transaction_summaries().await {
+            match lightclient.transaction_summaries(false).await {
                 Ok(transactions) => transactions.to_string(),
                 Err(e) => format!("Error: {e}"),
             }

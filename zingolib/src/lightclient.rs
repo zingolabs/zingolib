@@ -227,8 +227,15 @@ impl LightClient {
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
-    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
-        self.wallet.read().await.transaction_summaries().await
+    pub async fn transaction_summaries(
+        &self,
+        reverse_sort: bool,
+    ) -> Result<TransactionSummaries, SummaryError> {
+        self.wallet
+            .read()
+            .await
+            .transaction_summaries(reverse_sort)
+            .await
     }
 
     /// Wrapper for [crate::wallet::LightWallet::value_transfers].

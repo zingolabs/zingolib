@@ -29,7 +29,7 @@ use super::{
     output::SpendStatus,
 };
 
-// TODO: move data::summaries and value transfer / transaction summary methods here
+// TODO: move data::summaries here
 
 /// Scope enum with std::fmt::Display impl for use with summaries.
 #[derive(Clone, Debug, PartialEq)]
@@ -264,12 +264,12 @@ impl From<CoinSummary> for json::JsonValue {
     }
 }
 
-/// TODO: doc comment
+/// Transaction kind.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TransactionKind {
-    /// TODO: doc comment
+    /// Sent transaction.
     Sent(SendType),
-    /// TODO: doc comment
+    /// Received transaction.
     Received,
 }
 
@@ -284,20 +284,26 @@ impl std::fmt::Display for TransactionKind {
     }
 }
 
-/// TODO: doc comment
+/// Send type.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum SendType {
-    /// Transaction is sending funds to recipient other than the creator
+    /// Transaction is sending funds to recipient other than the creator.
     Send,
-    /// Transaction is only sending funds from transparent pool to the creator's shielded pool
+    /// Transaction is only sending funds from transparent pool to the creator's shielded pool.
     Shield,
-    /// Transaction is only sending funds to the creator's address(es) and is not a shield
+    /// Transaction is only sending funds to the creator's address(es) and is not a shield.
     SendToSelf,
 }
 
 impl LightWallet {
-    /// Provides a list of transaction summaries related to this wallet in order of blockheight
-    pub async fn transaction_summaries(&self) -> Result<TransactionSummaries, SummaryError> {
+    /// Returns summaries of all transactions in the wallet, sorted by confirmation status (confirmed first) and then
+    /// blockheight (lowest first).
+    ///
+    /// `reverse_sort` will sort by unconfirmed first and then highest first.
+    pub async fn transaction_summaries(
+        &self,
+        reverse_sort: bool,
+    ) -> Result<TransactionSummaries, SummaryError> {
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -483,7 +489,7 @@ impl LightWallet {
             .collect::<Result<Vec<_>, SummaryError>>()?;
 
         transaction_summaries.sort_by(|summary_a, summary_b| {
-            match summary_a.blockheight().cmp(&summary_b.blockheight()) {
+            match summary_a.status().cmp(&summary_b.status()) {
                 Ordering::Equal => {
                     // TODO: order tex transactions correctly by checking inputs / outputs are the wallet's refund addresses
                     summary_a.txid().cmp(&summary_b.txid())
@@ -492,17 +498,21 @@ impl LightWallet {
             }
         });
 
+        if reverse_sort {
+            transaction_summaries.reverse();
+        }
+
         Ok(TransactionSummaries::new(transaction_summaries))
     }
 
-    /// Provides a list of value transfers related to this capability
+    /// Provides a list of value transfers related to this capability.
     /// A value transfer is a group of all notes to a specific receiver in a transaction.
     pub async fn value_transfers(
         &self,
         sort_highest_to_lowest: bool,
     ) -> Result<ValueTransfers, SummaryError> {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
-        let transaction_summaries = self.transaction_summaries().await?.0;
+        let transaction_summaries = self.transaction_summaries(sort_highest_to_lowest).await?.0;
 
         for transaction in transaction_summaries.iter() {
             match transaction.kind() {
@@ -764,10 +774,6 @@ impl LightWallet {
                     }
                 }
             };
-        }
-
-        if sort_highest_to_lowest {
-            value_transfers.reverse();
         }
 
         Ok(ValueTransfers::new(value_transfers))

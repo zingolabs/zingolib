@@ -113,7 +113,7 @@ pub async fn assert_transaction_summary_exists(
     assert!(
         check_transaction_summary_exists(lightclient, expected).await,
         "wallet summaries: {}\n\n\nexpected: {}\n\n\n",
-        lightclient.transaction_summaries().await.unwrap(),
+        lightclient.transaction_summaries(false).await.unwrap(),
         expected,
     );
 }
@@ -124,7 +124,7 @@ pub async fn check_transaction_summary_exists(
     transaction_summary: &TransactionSummary,
 ) -> bool {
     lightclient
-        .transaction_summaries()
+        .transaction_summaries(false)
         .await
         .unwrap()
         .iter()
