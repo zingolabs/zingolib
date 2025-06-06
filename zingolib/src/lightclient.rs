@@ -26,12 +26,12 @@ use crate::{
     data::proposal::ZingoProposal,
     wallet::{
         LightWallet, WalletBase,
-        data::{
-            finsight::{TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress},
-            summaries::{TransactionSummaries, ValueTransfers},
-        },
         error::{KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
+        summary::data::{
+            TransactionSummaries, ValueTransfers,
+            finsight::{TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress},
+        },
     },
 };
 use error::LightClientError;

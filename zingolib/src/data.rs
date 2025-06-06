@@ -1,4 +1,5 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
+
 pub mod proposal;
 
 /// Return type for fns that poll the status of task handles.

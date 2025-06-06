@@ -19,12 +19,11 @@ use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
-use crate::wallet::data::summaries::{
-    BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
-    TransactionSummaryInterface as _,
-};
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
+use crate::wallet::summary::data::{
+    BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
+};
 use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 use lightclient::get_base_address;
 use regtest::RegtestManager;
@@ -154,25 +153,25 @@ pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
 ) -> bool {
-    first.status() == second.status()
-        && first.blockheight() == second.blockheight()
-        && first.kind() == second.kind()
-        && first.value() == second.value()
-        && first.fee() == second.fee()
-        && first.zec_price() == second.zec_price()
-        && check_note_summary_equality(first.orchard_notes(), second.orchard_notes())
-        && check_note_summary_equality(first.sapling_notes(), second.sapling_notes())
+    first.status == second.status
+        && first.blockheight == second.blockheight
+        && first.kind == second.kind
+        && first.value == second.value
+        && first.fee == second.fee
+        && first.zec_price == second.zec_price
+        && check_note_summary_equality(&first.orchard_notes, &second.orchard_notes)
+        && check_note_summary_equality(&first.sapling_notes, &second.sapling_notes)
         && check_transparent_coin_summary_equality(
-            first.transparent_coins(),
-            second.transparent_coins(),
+            &first.transparent_coins,
+            &second.transparent_coins,
         )
         && check_outgoing_note_summary_equality(
-            first.outgoing_orchard_notes(),
-            second.outgoing_orchard_notes(),
+            &first.outgoing_orchard_notes,
+            &second.outgoing_orchard_notes,
         )
         && check_outgoing_note_summary_equality(
-            first.outgoing_sapling_notes(),
-            second.outgoing_sapling_notes(),
+            &first.outgoing_sapling_notes,
+            &second.outgoing_sapling_notes,
         )
 }
 
@@ -181,9 +180,9 @@ fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSu
         return false;
     };
     for i in 0..first.len() {
-        if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_status(), second[i].spend_status())
-            && first[i].memo() == second[i].memo())
+        if !(first[i].value == second[i].value
+            && check_spend_status_equality(first[i].spend_status, second[i].spend_status)
+            && first[i].memo == second[i].memo)
         {
             return false;
         }
@@ -221,8 +220,8 @@ fn check_transparent_coin_summary_equality(
         return false;
     };
     for i in 0..first.len() {
-        if !(first[i].value() == second[i].value()
-            && check_spend_status_equality(first[i].spend_summary(), second[i].spend_summary()))
+        if !(first[i].value == second[i].value
+            && check_spend_status_equality(first[i].spend_summary, second[i].spend_summary))
         {
             return false;
         }

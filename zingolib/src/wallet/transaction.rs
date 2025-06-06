@@ -1,19 +1,17 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::value::ZatBalance;
 
-use crate::config::{
-    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-    ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-};
-
-use super::{
-    LightWallet,
-    error::{FeeError, RemovalError, SpendError},
-    summary::{SendType, TransactionKind},
-};
 use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface,
     SaplingNote, TransparentCoin, WalletTransaction,
+};
+
+use super::LightWallet;
+use super::error::{FeeError, RemovalError, SpendError};
+use super::summary::data::{SendType, TransactionKind};
+use crate::config::{
+    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+    ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
 };
 
 impl LightWallet {

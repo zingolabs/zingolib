@@ -23,7 +23,6 @@ use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use send::SendProgress;
 
-pub mod data;
 pub mod error;
 pub(crate) mod legacy;
 pub mod traits;

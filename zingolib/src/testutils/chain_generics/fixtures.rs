@@ -11,12 +11,12 @@ use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
-use crate::wallet::data::summaries::SelfSendValueTransfer;
-use crate::wallet::data::summaries::SentValueTransfer;
-use crate::wallet::data::summaries::ValueTransferKind;
 use crate::wallet::output::query::OutputPoolQuery;
 use crate::wallet::output::query::OutputQuery;
 use crate::wallet::output::query::OutputSpendStatusQuery;
+use crate::wallet::summary::data::SelfSendValueTransfer;
+use crate::wallet::summary::data::SentValueTransfer;
+use crate::wallet::summary::data::ValueTransferKind;
 
 /// Fixture for testing various vt transactions
 pub async fn create_various_value_transfers<CC>()
@@ -67,7 +67,7 @@ where
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Received })
+            .any(|vt| { vt.kind == ValueTransferKind::Received })
     );
 
     assert!(
@@ -76,7 +76,7 @@ where
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Sent(SentValueTransfer::Send) })
+            .any(|vt| { vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send) })
     );
 
     assert!(
@@ -86,7 +86,7 @@ where
             .unwrap()
             .iter()
             .any(|vt| {
-                vt.kind()
+                vt.kind
                     == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                         SelfSendValueTransfer::MemoToSelf,
                     ))
@@ -108,7 +108,7 @@ where
 
     assert_eq!(sender.value_transfers(true).await.unwrap().len(), 4);
     assert_eq!(
-        sender.value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
@@ -117,7 +117,7 @@ where
         .unwrap();
     assert_eq!(sender.value_transfers(true).await.unwrap().len(), 5);
     assert_eq!(
-        sender.value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
