@@ -8,7 +8,6 @@ use std::{
 use append_only_vec::AppendOnlyVec;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use tracing::{Level, event, instrument};
 use zcash_address::unified::Typecode;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
@@ -77,9 +76,7 @@ impl WalletCapability {
 impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
     const VERSION: u8 = 4;
 
-    #[instrument(level = "info", skip(reader))]
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing WalletCapability");
         let version = Self::get_version(&mut reader)?;
         let wc = match version {
             // in version 1, only spending keys are stored
@@ -219,17 +216,11 @@ impl ReadableWriteable<ChainType, ChainType> for WalletCapability {
 impl ReadableWriteable for orchard::keys::SpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
-    #[instrument(level = "info", skip(reader, _input))]
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing SpendingKey");
         let mut data = [0u8; 32];
         reader.read_exact(&mut data)?;
 
         Option::from(Self::from_bytes(data)).ok_or_else(|| {
-            event!(
-                Level::ERROR,
-                "Unable to deserialize a valid Orchard SpendingKey from bytes"
-            );
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Unable to deserialize a valid Orchard SpendingKey from bytes".to_owned(),
@@ -261,10 +252,7 @@ where
 {
     const VERSION: u8 = 1;
 
-    #[instrument(level = "info", skip(reader, _input))]
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing Capability");
-
         let _version = Self::get_version(&mut reader)?;
         let capability_type = reader.read_u8()?;
         Ok(match capability_type {
@@ -272,7 +260,6 @@ where
             KEY_TYPE_VIEW => Capability::View(V::read(&mut reader, ())?),
             KEY_TYPE_SPEND => Capability::Spend(S::read(&mut reader, ())?),
             x => {
-                event!(Level::ERROR, "Unknown wallet Capability type: {}", x);
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Unknown wallet Capability type: {}", x),

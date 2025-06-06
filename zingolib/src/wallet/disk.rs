@@ -10,7 +10,6 @@ use log::info;
 
 use bip0039::Mnemonic;
 
-use tracing::{Level, event, instrument};
 use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -121,25 +120,19 @@ impl LightWallet {
 
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    #[instrument(level = "info", skip(reader))]
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing wallet");
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
             32..=36 => Self::read_v32(reader, network, version),
-            _ => {
-                event!(Level::ERROR, "Failed to read wallet version {}", version);
-                Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "Failed to read wallet version {}. Do you have the latest version?\n{}",
-                        version,
-                        "Note: wallet files from zecwallet or beta zingo are not compatible"
-                    ),
-                ))
-            }
+            _ => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "Failed to read wallet version {}. Do you have the latest version?\n{}",
+                    version, "Note: wallet files from zecwallet or beta zingo are not compatible"
+                ),
+            )),
         }
     }
 

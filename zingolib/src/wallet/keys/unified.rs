@@ -6,7 +6,6 @@ use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use pepper_sync::keys::transparent::TransparentScope;
-use tracing::{Level, event, instrument};
 use zcash_address::unified::{Encoding as _, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
@@ -236,10 +235,7 @@ impl UnifiedKeyStore {
 impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
     const VERSION: u8 = 0;
 
-    #[instrument(level = "info", skip(reader, input))]
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing UnifiedKeyStore");
-
         let _version = Self::get_version(&mut reader)?;
         let key_type = reader.read_u8()?;
         Ok(match key_type {
@@ -251,7 +247,6 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
             }
             KEY_TYPE_EMPTY => UnifiedKeyStore::Empty,
             x => {
-                event!(Level::ERROR, "Unknown key type: {}", x);
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Unknown key type: {}", x),
@@ -297,29 +292,19 @@ impl ReadableWriteable for UnifiedSpendingKey {
 impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
     const VERSION: u8 = 0;
 
-    #[instrument(level = "info", skip(reader, input))]
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
-        event!(Level::INFO, "Started parsing Unified Full Viewing Key");
-
         let len = CompactSize::read(&mut reader)?;
         let mut ufvk = vec![0u8; len as usize];
         reader.read_exact(&mut ufvk)?;
         let ufvk_encoded = std::str::from_utf8(&ufvk)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
-        match UnifiedFullViewingKey::decode(&input, ufvk_encoded) {
-            Ok(key) => {
-                event!(Level::INFO, "Successfully parsed UFVK");
-                Ok(key)
-            }
-            Err(e) => {
-                event!(Level::ERROR, error = %e, "UFVK decoding error");
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("UFVK decoding error: {}", e),
-                ))
-            }
-        }
+        UnifiedFullViewingKey::decode(&input, ufvk_encoded).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("UFVK decoding error: {}", e),
+            )
+        })
     }
 
     fn write<W: Write>(&self, mut writer: W, input: ChainType) -> io::Result<()> {
