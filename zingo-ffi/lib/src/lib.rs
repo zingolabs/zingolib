@@ -243,7 +243,7 @@ pub fn save_to_b64() -> String {
         // we need to use STANDARD because swift is expecting the encoded String with padding
         // I tried with STANDARD_NO_PAD and the decoding return `nil`.
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.save() {
+            match lightclient.wallet.write().await.save() {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
                 Ok(None) => "Error: No need to save the wallet file".to_string(),
@@ -287,7 +287,7 @@ pub fn get_latest_block_server(server_uri: String) -> String {
 pub fn get_latest_block_wallet() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.lock().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.write().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -302,31 +302,12 @@ pub fn get_zennies_for_zingo_donation_address() -> String {
     zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
 }
 
-pub fn get_transaction_summaries() -> String {
-    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        RT.block_on(async move {
-            match lightclient
-                .wallet
-                .lock()
-                .await
-                .transaction_summaries()
-                .await
-            {
-                Ok(transactions) => json::JsonValue::from(transactions).pretty(2),
-                Err(e) => format!("Error: {e}"),
-            }
-        })
-    } else {
-        "Error: Lightclient is not initialized".to_string()
-    }
-}
-
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
             match lightclient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .sorted_value_transfers(true)
                 .await
@@ -411,7 +392,7 @@ pub fn stop_sync() -> String {
 pub fn status_sync() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match pepper_sync::sync_status(&*lightclient.wallet.lock().await).await {
+            match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
                 Ok(status) => json::JsonValue::from(status).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
@@ -447,7 +428,7 @@ pub fn info_server() -> String {
 pub fn get_seed() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.recovery_info() {
+            match lightclient.wallet.read().await.recovery_info() {
                 Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
                     .unwrap_or_else(|_| "error: get seed. failed to serialize".to_string()),
                 None => "error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
@@ -461,7 +442,7 @@ pub fn get_seed() -> String {
 pub fn get_ufvk() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.lock().await;
+            let wallet = lightclient.wallet.read().await;
             let ufvk: UnifiedFullViewingKey = match wallet
                 .unified_key_store
                 .get(&AccountId::ZERO)
@@ -506,7 +487,7 @@ pub fn change_server(server_uri: String) -> String {
 pub fn wallet_kind() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.lock().await;
+            let wallet = lightclient.wallet.read().await;
             if wallet.mnemonic().is_some() {
                 object! {"kind" => "Loaded from seed or mnemonic phrase)",
                         "transparent" => true,
@@ -702,7 +683,7 @@ pub fn get_balance() -> String {
         RT.block_on(async move {
             match lightclient
                 .wallet
-                .lock()
+                .read()
                 .await
                 .account_balance(AccountId::ZERO)
                 .await
@@ -775,7 +756,7 @@ pub fn zec_price(tor: String) -> String {
 
             match lightclient
                 .wallet
-                .lock()
+                .write()
                 .await
                 .update_current_price(tor_client)
                 .await
@@ -818,7 +799,7 @@ pub fn remove_transaction(txid: String) -> String {
         RT.block_on(async move {
             match lightclient
                 .wallet
-                .lock()
+                .write()
                 .await
                 .remove_unconfirmed_transaction(txid)
             {
@@ -849,7 +830,7 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
                         "balance" => bal.into_u64(),
                     }
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("error: {e}").into(),
             }
             .pretty(2)
         })
@@ -879,6 +860,9 @@ pub fn create_tor_client(data_dir: String) -> String {
 }
 
 // FIXME: add "remove_tor_client". (add to zingolib)
+pub fn remove_tor_client() -> String {
+    "Error: unimplemented".to_string()
+}
 
 pub fn get_unified_addresses() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
@@ -899,12 +883,11 @@ pub fn get_transparent_addresses() -> String {
 pub fn create_new_unified_address(receivers: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.lock().await;
+            let mut wallet = lightclient.wallet.write().await;
             let network = wallet.network;
             let receivers_available = ReceiverSelection {
                 orchard: receivers.contains('o'),
                 sapling: receivers.contains('z'),
-                transparent: false,
             };
             match wallet.generate_unified_address(receivers_available, AccountId::ZERO) {
                 Ok((id, unified_address)) => {
@@ -917,7 +900,7 @@ pub fn create_new_unified_address(receivers: String) -> String {
                         "encoded_address" => unified_address.encode(&network),
                     }
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
@@ -929,9 +912,9 @@ pub fn create_new_unified_address(receivers: String) -> String {
 pub fn create_new_transparent_address() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.lock().await;
+            let mut wallet = lightclient.wallet.write().await;
             let network = wallet.network;
-            match wallet.generate_transparent_address(AccountId::ZERO) {
+            match wallet.generate_transparent_address(AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
                         "account" => u32::from(id.account_id()),
@@ -940,7 +923,7 @@ pub fn create_new_transparent_address() -> String {
                         "encoded_address" => transparent::encode_address(&network,  transparent_address),
                     }
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })
@@ -952,7 +935,7 @@ pub fn create_new_transparent_address() -> String {
 pub fn check_my_address(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient.wallet.lock().await.is_wallet_address(&address) {
+            match lightclient.wallet.read().await.is_wallet_address(&address) {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => false },
                     |address_ref| match address_ref {
@@ -1010,7 +993,7 @@ pub fn check_my_address(address: String) -> String {
                         },
                     },
                 ),
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => format!("Error: {e}").into(),
             }
             .pretty(2)
         })

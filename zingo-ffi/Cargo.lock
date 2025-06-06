@@ -481,9 +481,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.7.3"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
+checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "basic-toml"
@@ -833,9 +833,9 @@ dependencies = [
 
 [[package]]
 name = "caret"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5440e59387a6f8291f2696a875656873e9d51e9fb7b38af81a25772a5f81b33"
+checksum = "887ce2cf6dd0aacf15ce11190546d4348dbebce576cc11b57010a023907f7aa9"
 
 [[package]]
 name = "cargo-platform"
@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -2435,9 +2435,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c293b6b3d21eca78250dc7dbebd6b9210ec5530e038cbfe0661b5c47ab06e8"
+checksum = "dc2fdfdbff08affe55bb779f33b053aa1fe5dd5b54c257343c17edfa55711bdb"
 dependencies = [
  "base64",
  "bytes",
@@ -3261,9 +3261,9 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "oneshot-fused-workaround"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e2f833c92b3bb159ddee62e27d611e056cd89373b4ba7ba6df8bcd00acdf1b5"
+checksum = "eaa302cded54727eedb3a0d246e14146fd2a36f4744e886169457b05ef3254e8"
 dependencies = [
  "futures",
 ]
@@ -3466,7 +3466,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4209,9 +4209,9 @@ dependencies = [
 
 [[package]]
 name = "retry-error"
-version = "0.6.3"
+version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cd5db9deeb62617010191df02a0887c96cc15d91514d32c208d6b8f76b9f20e"
+checksum = "322bb522344455926af0c63db415ef6dd70599ad3f69e847ab95dc4d5537d728"
 
 [[package]]
 name = "rfc6979"
@@ -4560,9 +4560,9 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safelog"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fba05ad561772e139a16a49088b2d332f659ef49953d56e09cf0f726784e5fdd"
+checksum = "f6ff608a21ec1d97035331c8944f01e3b57a083393cbb77b5a86b344aa02c827"
 dependencies = [
  "derive_more 2.0.1",
  "educe",
@@ -7787,7 +7787,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7799,7 +7799,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "http",
  "http-body",
@@ -7819,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7835,7 +7835,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7844,7 +7844,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "bip0039",
 ]
@@ -7852,7 +7852,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#b7eecae965cca9a96efbcd37f49a7ddc52b9a30b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#a80226078cc310c525163497216756f3d428478b"
 dependencies = [
  "append-only-vec",
  "bech32",
