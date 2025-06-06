@@ -7532,6 +7532,7 @@ dependencies = [
  "rustls 0.23.27",
  "rustyline",
  "shellwords",
+ "tracing-subscriber",
  "zcash_protocol",
  "zingolib",
 ]
@@ -7642,6 +7643,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tonic",
+ "tracing",
  "tracing-subscriber",
  "zcash_address",
  "zcash_client_backend",
