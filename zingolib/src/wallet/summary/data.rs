@@ -141,7 +141,7 @@ pub struct TransactionSummary {
 }
 
 impl TransactionSummary {
-    fn balance_delta(&self) -> Option<i64> {
+    pub fn balance_delta(&self) -> Option<i64> {
         match self.kind {
             TransactionKind::Sent(SendType::Send) => {
                 self.fee.map(|fee| -((self.value + fee) as i64))
@@ -152,7 +152,7 @@ impl TransactionSummary {
         }
     }
     /// Prepares the fields in the summary for display
-    fn prepare_for_display(
+    pub fn prepare_for_display(
         &self,
     ) -> (
         String,
