@@ -3,35 +3,27 @@ namespace zingo {
   string execute_command(string cmd, string args);
   string init_new(
       string serveruri,
-      string datadir,
-      string chainhint,
-      string tor
+      string chainhint
   );
 
   string init_from_seed(
       string serveruri,
       string seed,
       u64 birthday,
-      string datadir,
-      string chainhint,
-      string tor
+      string chainhint
   );
 
   string init_from_ufvk(
       string serveruri,
       string ufvk,
       u64 birthday,
-      string datadir,
-      string chainhint,
-      string tor
+      string chainhint
   );
 
   string init_from_b64(
       string serveruri,
       string datab64,
-      string datadir,
-      string chainhint,
-      string tor
+      string chainhint
   );
 
   string save_to_b64();
@@ -39,7 +31,6 @@ namespace zingo {
   string get_latest_block_wallet();
   string get_developer_donation_address();
   string get_zennies_for_zingo_donation_address();
-  string get_transaction_summaries();
   string get_value_transfers();
   string set_crypto_default_provider_to_ring();
   string poll_sync();
@@ -68,6 +59,7 @@ namespace zingo {
   string set_option_wallet();
   string get_option_wallet();
   string create_tor_client(string datadir);
+  string remove_tor_client();
   string get_unified_addresses();
   string get_transparent_addresses();
   string create_new_unified_address(string receivers);
