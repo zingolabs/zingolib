@@ -59,11 +59,11 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 3);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 3);
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
@@ -72,7 +72,7 @@ where
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
@@ -81,7 +81,7 @@ where
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
@@ -93,10 +93,7 @@ where
             })
     );
 
-    assert_eq!(
-        recipient.sorted_value_transfers(true).await.unwrap().len(),
-        1
-    );
+    assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
     dbg!("TEST 2");
     with_assertions::propose_send_bump_sync_all_recipients(
@@ -109,18 +106,18 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 4);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 4);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind(),
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
     with_assertions::assure_propose_shield_bump_sync(&mut environment, &mut sender, false)
         .await
         .unwrap();
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 5);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 5);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind(),
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
@@ -415,13 +412,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .lock()
-                    .await
-                    .get_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.lock().await.get_address(pool).as_str(),
                 tertiary_fund,
                 None,
             )],
@@ -455,13 +446,7 @@ where
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .lock()
-                    .await
-                    .get_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.lock().await.get_address(pool).as_str(),
                 try_amount,
                 None,
             )],

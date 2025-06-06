@@ -638,7 +638,7 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// helperized test print.
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub(crate) fn timestamped_test_log(text: &str) {
-    println!("{}: {}", crate::wallet::now(), text);
+    println!("{}: {}", crate::utils::now(), text);
 }
 
 /// Decodes unified address and re-encode as sapling address.

@@ -11,13 +11,13 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
+use pepper_sync::wallet::traits::SyncWallet as _;
+use zingo_status::confirmation_status::ConfirmationStatus;
+
 use super::LightWallet;
 use super::error::CalculateTransactionError;
 use super::error::KeyError;
 use super::error::TransmissionError;
-use crate::wallet::now;
-use pepper_sync::wallet::traits::SyncWallet as _;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// TODO: Add Doc Comment Here!
 // TODO: revisit send progress to separate json and handle errors properly
@@ -255,7 +255,7 @@ impl LightWallet {
                     self,
                     sent_transaction.transaction,
                     ConfirmationStatus::Transmitted(sent_transaction.height),
-                    now(),
+                    crate::utils::now(),
                 )?;
 
                 Ok(sent_transaction.txid)

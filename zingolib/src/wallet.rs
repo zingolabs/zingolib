@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
-use std::time::SystemTime;
 
 use bip0039::Mnemonic;
 
@@ -32,7 +31,6 @@ pub mod utils;
 
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
-pub mod describe;
 pub mod disk;
 pub mod keys;
 pub mod output;
@@ -42,15 +40,6 @@ pub mod summary;
 pub mod sync;
 pub mod transaction;
 mod zcb_traits;
-
-/// TODO: Add Doc Comment Here!
-// TODO: move to utils
-pub fn now() -> u32 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("should never fail when comparing with an instant so far in the past")
-        .as_secs() as u32
-}
 
 /// Wallet settings.
 #[derive(Debug, Clone)]

@@ -43,7 +43,7 @@ pub mod send_with_proposal {
             self.latest_proposal = None;
 
             Ok(wallet
-                .transmit_transactions(self.get_server_uri(), calculated_txids)
+                .transmit_transactions(self.server_uri(), calculated_txids)
                 .await?)
         }
 
@@ -60,7 +60,7 @@ pub mod send_with_proposal {
             self.latest_proposal = None;
 
             Ok(wallet
-                .transmit_transactions(self.get_server_uri(), calculated_txids)
+                .transmit_transactions(self.server_uri(), calculated_txids)
                 .await?)
         }
 
@@ -69,7 +69,7 @@ pub mod send_with_proposal {
             self.wallet
                 .lock()
                 .await
-                .transmit_transactions(self.get_server_uri(), NonEmpty::singleton(txid))
+                .transmit_transactions(self.server_uri(), NonEmpty::singleton(txid))
                 .await?;
 
             Ok(())

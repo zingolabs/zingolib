@@ -341,3 +341,42 @@ impl LightWallet {
         None
     }
 }
+
+#[cfg(any(test, feature = "test-elevation"))]
+mod test {
+    use zcash_protocol::PoolType;
+
+    use crate::wallet::LightWallet;
+
+    use super::unified::UnifiedAddressId;
+
+    impl LightWallet {
+        /// Returns an encoded address for a given `pool`.
+        ///
+        /// Zingolib test framework generates a second UA with a sapling only receiver for use when `pool` is set to sapling.
+        // TODO: add asserts to verify UA receivers
+        pub fn get_address(&self, pool: PoolType) -> String {
+            match pool {
+                PoolType::ORCHARD => self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 0,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .unwrap()
+                    .encode(&self.network),
+                PoolType::SAPLING => self
+                    .unified_addresses()
+                    .get(&UnifiedAddressId {
+                        address_index: 1,
+                        account_id: zip32::AccountId::ZERO,
+                    })
+                    .unwrap()
+                    .encode(&self.network),
+                PoolType::Transparent => {
+                    self.transparent_addresses.values().next().unwrap().clone()
+                }
+            }
+        }
+    }
+}

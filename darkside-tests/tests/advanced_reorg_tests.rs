@@ -66,7 +66,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -107,7 +107,7 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -233,7 +233,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -274,7 +274,7 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
@@ -400,7 +400,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -441,7 +441,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -589,7 +589,7 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -650,11 +650,11 @@ async fn reorg_changes_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
@@ -724,11 +724,11 @@ async fn reorg_changes_outgoing_tx_height() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -858,7 +858,7 @@ async fn reorg_expires_outgoing_tx_height() {
         expected_initial_balance
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -912,13 +912,10 @@ async fn reorg_expires_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!(
-        "{:?}",
-        light_client.sorted_value_transfers(true).await.unwrap()
-    );
+    println!("{:?}", light_client.value_transfers(true).await.unwrap());
 
     let send_height = light_client
-        .sorted_value_transfers(true)
+        .value_transfers(true)
         .await
         .unwrap()
         .iter()
@@ -971,11 +968,11 @@ async fn reorg_expires_outgoing_tx_height() {
         expected_initial_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -1071,7 +1068,7 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
@@ -1134,7 +1131,7 @@ async fn reorg_changes_outgoing_tx_index() {
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
@@ -1158,10 +1155,7 @@ async fn reorg_changes_outgoing_tx_index() {
     );
 
     println!("pre re-org value transfers:");
-    println!(
-        "{}",
-        light_client.sorted_value_transfers(true).await.unwrap()
-    );
+    println!("{}", light_client.value_transfers(true).await.unwrap());
     println!("pre re-org tx summaries:");
     println!("{}", light_client.transaction_summaries().await.unwrap());
 
@@ -1213,7 +1207,7 @@ async fn reorg_changes_outgoing_tx_index() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     println!("post re-org value transfers:");
     println!("{}", after_reorg_transactions);

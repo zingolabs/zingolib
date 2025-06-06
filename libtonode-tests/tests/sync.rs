@@ -127,7 +127,7 @@ async fn sync_test() {
     //     .unwrap();
 
     // println!("{}", recipient.transaction_summaries().await.unwrap());
-    println!("{}", recipient.value_transfers().await.unwrap());
+    println!("{}", recipient.value_transfers(false).await.unwrap());
     println!(
         "{}",
         recipient
