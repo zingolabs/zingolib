@@ -1030,7 +1030,7 @@ mod fast {
 
         recipient.sync_and_await().await.unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.unwrap().0;
+        let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
         transactions.iter().for_each(|tx| {
             dbg!(tx);
         });
@@ -1047,7 +1047,7 @@ mod fast {
             .await
             .unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.unwrap().0;
+        let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
         assert_eq!(
             transactions
                 .iter()
@@ -1952,7 +1952,7 @@ mod slow {
             .wallet
             .read()
             .await
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .0
@@ -2029,7 +2029,7 @@ mod slow {
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await.unwrap());
+        println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
             JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
@@ -2045,7 +2045,7 @@ mod slow {
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await.unwrap());
+        println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
             JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
@@ -2068,7 +2068,7 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        let transactions = faucet.transaction_summaries().await.unwrap().0;
+        let transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(transactions.iter().any(|transaction| {
             transaction
                 .outgoing_orchard_notes()
@@ -2079,7 +2079,7 @@ mod slow {
                 })
         }));
         faucet.rescan_and_await().await.unwrap();
-        let rescanned_transactions = faucet.transaction_summaries().await.unwrap().0;
+        let rescanned_transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(rescanned_transactions.iter().any(|transaction| {
             transaction
                 .outgoing_orchard_notes()
@@ -2236,15 +2236,15 @@ mod slow {
 
         // Assert transactions are as expected
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[0],
+            &recipient.transaction_summaries(false).await.unwrap().0[0],
             &summary_orchard_receipt,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[1],
+            &recipient.transaction_summaries(false).await.unwrap().0[1],
             &summary_external_sapling,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[2],
+            &recipient.transaction_summaries(false).await.unwrap().0[2],
             &summary_external_transparent,
         );
 
@@ -2477,13 +2477,13 @@ mod slow {
 
         // Final check
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[3],
+            &recipient.transaction_summaries(false).await.unwrap().0[3],
             &summary_orchard_receipt_2,
         );
         assert_transaction_summary_exists(&recipient, &summary_exteranl_transparent_2).await; // due to summaries of the same blockheight changing order
         assert_transaction_summary_exists(&recipient, &summary_external_sapling_2).await; // we check all summaries for these expected transactions
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[6],
+            &recipient.transaction_summaries(false).await.unwrap().0[6],
             &summary_external_transparent_3,
         );
         let second_wave_expected_funds = expected_funds + recipient_second_funding
@@ -2763,10 +2763,10 @@ mod slow {
         .unwrap();
         println!(
             "{}",
-            json::stringify_pretty(recipient.transaction_summaries().await.unwrap(), 4)
+            json::stringify_pretty(recipient.transaction_summaries(false).await.unwrap(), 4)
         );
         let mut txids = recipient
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .txids()
@@ -2812,7 +2812,7 @@ mod slow {
             .wallet
             .read()
             .await
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .0;
@@ -3241,9 +3241,9 @@ mod slow {
                 .unwrap();
             }
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             faucet.rescan_and_await().await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3282,9 +3282,9 @@ mod slow {
             .await
             .unwrap();
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             faucet.rescan_and_await().await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3305,10 +3305,10 @@ mod slow {
             )
             .await
             .unwrap();
-            let pre_rescan_transactions = recipient.transaction_summaries().await.unwrap();
+            let pre_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
             let pre_rescan_summaries = recipient.value_transfers(true).await.unwrap();
             recipient.rescan_and_await().await.unwrap();
-            let post_rescan_transactions = recipient.transaction_summaries().await.unwrap();
+            let post_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
             let post_rescan_summaries = recipient.value_transfers(true).await.unwrap();
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);

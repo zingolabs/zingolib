@@ -1157,7 +1157,10 @@ async fn reorg_changes_outgoing_tx_index() {
     println!("pre re-org value transfers:");
     println!("{}", light_client.value_transfers(true).await.unwrap());
     println!("pre re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
+    println!(
+        "{}",
+        light_client.transaction_summaries(false).await.unwrap()
+    );
 
     //
     // Create reorg
@@ -1212,7 +1215,10 @@ async fn reorg_changes_outgoing_tx_index() {
     println!("post re-org value transfers:");
     println!("{}", after_reorg_transactions);
     println!("post re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
+    println!(
+        "{}",
+        light_client.transaction_summaries(false).await.unwrap()
+    );
 
     // FIXME: assertion is wrong as re-org transaction has lost its outgoing tx data. darkside bug?
     // assert_eq!(after_reorg_transactions.0.len(), 3);
