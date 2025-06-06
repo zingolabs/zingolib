@@ -16,7 +16,7 @@ pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
     fn write<W: Write>(&self, writer: W, input: WriteInput) -> io::Result<()>;
 
     /// Reads a serialized version of the struct from `reader`, and returns the
-    /// deserialized struct. Else, returns an `io::Error` with `io::ErrorKind::InvalidData`.
+    /// struct version. Else, returns an `io::Error` with `io::ErrorKind::InvalidData`.
     #[instrument(level = "info", skip(reader))]
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
         let external_version = reader.read_u8()?;
