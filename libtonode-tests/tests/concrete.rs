@@ -13,7 +13,7 @@ use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::summary::{CoinSummary, NoteSummary};
+use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 
 fn check_expected_balance_with_fvks(
@@ -152,11 +152,8 @@ mod fast {
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
-            data::summaries::{
-                SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface as _,
-                ValueTransferKind,
-            },
             keys::unified::{ReceiverSelection, UnifiedAddressId},
+            summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
 
@@ -642,13 +639,13 @@ mod fast {
 
         let value_transfers = &recipient.value_transfers(true).await.unwrap();
 
-        assert!(value_transfers.iter().any(|vt| vt.kind()
+        assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                 SelfSendValueTransfer::Basic
             ))));
-        assert!(value_transfers.iter().any(|vt| vt.kind()
+        assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::Send)
-            && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+            && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
     /// This tests checks that messages_containing returns an empty vector when empty memos are included.
@@ -872,13 +869,13 @@ mod fast {
         assert!(
             all_messages
                 .windows(2)
-                .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() })
+                .all(|pair| { pair[0].blockheight <= pair[1].blockheight })
         );
         // ALL VTS (First one should be the most recent one)
         assert!(
             all_vts
                 .windows(2)
-                .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() })
+                .all(|pair| { pair[0].blockheight >= pair[1].blockheight })
         );
     }
 
@@ -933,7 +930,7 @@ mod fast {
         let mut value_transfers3 = recipient.value_transfers(false).await.unwrap();
         let mut value_transfers4 = recipient.value_transfers(false).await.unwrap();
 
-        assert_eq!(value_transfers[0].memos().len(), 4);
+        assert_eq!(value_transfers[0].memos.len(), 4);
 
         value_transfers3.reverse();
         value_transfers4.reverse();
@@ -1037,9 +1034,9 @@ mod fast {
         assert_eq!(
             transactions
                 .iter()
-                .find(|tx| tx.value() == 20_000)
+                .find(|tx| tx.value == 20_000)
                 .unwrap()
-                .status(),
+                .status,
             ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
         );
 
@@ -1051,9 +1048,9 @@ mod fast {
         assert_eq!(
             transactions
                 .iter()
-                .find(|tx| tx.value() == 20_000)
+                .find(|tx| tx.value == 20_000)
                 .unwrap()
-                .status(),
+                .status,
             ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
         );
     }
@@ -1450,14 +1447,12 @@ mod slow {
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::WalletSettings;
-    use zingolib::wallet::data::summaries::{
-        BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
-        TransactionSummaryInterface,
-    };
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
     use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::summary::{self, SendType, TransactionKind};
+    use zingolib::wallet::summary::data::{
+        BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind,
+    };
     use zip32::AccountId;
 
     use super::*;
@@ -1959,13 +1954,13 @@ mod slow {
             .first()
             .unwrap()
             .clone();
-        assert_eq!(transaction.blockheight(), 4.into());
+        assert_eq!(transaction.blockheight, 4.into());
         // TODO: add key id and/or recipient to basic summaries
         // assert_eq!(
         //     //,
         //     recipient_taddr
         // );
-        assert_eq!(transaction.value(), value);
+        assert_eq!(transaction.value, value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
@@ -2071,9 +2066,9 @@ mod slow {
         let transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(transactions.iter().any(|transaction| {
             transaction
-                .outgoing_orchard_notes()
+                .outgoing_orchard_notes
                 .iter()
-                .chain(transaction.outgoing_sapling_notes().iter())
+                .chain(transaction.outgoing_sapling_notes.iter())
                 .any(|note| {
                     note.recipient_unified_address == Some(recipient_unified_address.clone())
                 })
@@ -2082,9 +2077,9 @@ mod slow {
         let rescanned_transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(rescanned_transactions.iter().any(|transaction| {
             transaction
-                .outgoing_orchard_notes()
+                .outgoing_orchard_notes
                 .iter()
-                .chain(transaction.outgoing_sapling_notes().iter())
+                .chain(transaction.outgoing_sapling_notes.iter())
                 .any(|note| {
                     note.recipient_unified_address == Some(recipient_unified_address.clone())
                 })
@@ -2174,7 +2169,7 @@ mod slow {
                  recipient_unified_address: None,
                  output_index: 0,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
+                 scope: Scope::from(zip32::Scope::Internal),
              }])
             .outgoing_sapling_notes(vec![OutgoingNoteSummary {
                  output_index: 0,
@@ -2183,7 +2178,7 @@ mod slow {
                  recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
                  recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::External),
+                 scope: Scope::from(zip32::Scope::External),
              }])
             .outgoing_transparent_coins(vec![])
             .build()
