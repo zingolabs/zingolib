@@ -40,7 +40,7 @@ async fn simple_sync() {
     assert_eq!(
         light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -83,7 +83,7 @@ async fn reorg_receipt_sync_generic() {
     assert_eq!(
         light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -107,7 +107,7 @@ async fn reorg_receipt_sync_generic() {
     assert_eq!(
         light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -155,7 +155,7 @@ async fn sent_transaction_reorged_into_mempool() {
     assert_eq!(
         light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -201,7 +201,7 @@ async fn sent_transaction_reorged_into_mempool() {
         "Recipient pre-reorg: {}",
         &recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -211,7 +211,7 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender pre-reorg (unsynced): {}",
         &light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -232,7 +232,7 @@ async fn sent_transaction_reorged_into_mempool() {
         "Recipient post-reorg: {}",
         &recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -242,7 +242,7 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender post-reorg: {}",
         &light_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -256,7 +256,7 @@ async fn sent_transaction_reorged_into_mempool() {
     assert_eq!(
         loaded_client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await

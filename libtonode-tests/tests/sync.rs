@@ -56,7 +56,7 @@ async fn sync_mainnet_test() {
 
     lightclient.sync_and_await().await.unwrap();
 
-    let wallet = lightclient.wallet.lock().await;
+    let wallet = lightclient.wallet.read().await;
     // dbg!(&wallet.wallet_blocks);
     // dbg!(&wallet.nullifier_map);
     dbg!(&wallet.sync_state);
@@ -132,7 +132,7 @@ async fn sync_test() {
         "{}",
         recipient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await

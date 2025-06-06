@@ -7,7 +7,7 @@ use super::LightClient;
 impl LightClient {
     /// Wrapper for [`crate::wallet::LightWallet::send_progress`].
     pub async fn send_progress(&self) -> SendProgress {
-        self.wallet.lock().await.send_progress.clone()
+        self.wallet.read().await.send_progress.clone()
     }
 }
 
@@ -35,7 +35,7 @@ pub mod send_with_proposal {
             proposal: &Proposal<zip317::FeeRule, OutputRef>,
             sending_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
-            let mut wallet = self.wallet.lock().await;
+            let mut wallet = self.wallet.write().await;
             let calculated_txids = wallet
                 .calculate_transactions(proposal, sending_account)
                 .await
@@ -52,7 +52,7 @@ pub mod send_with_proposal {
             proposal: &Proposal<zip317::FeeRule, Infallible>,
             shielding_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
-            let mut wallet = self.wallet.lock().await;
+            let mut wallet = self.wallet.write().await;
             let calculated_txids = wallet
                 .calculate_transactions(proposal, shielding_account)
                 .await
@@ -67,7 +67,7 @@ pub mod send_with_proposal {
         /// Re-transmits a previously calculated transaction that failed to send.
         pub async fn resend(&self, txid: TxId) -> Result<(), TransmissionError> {
             self.wallet
-                .lock()
+                .write()
                 .await
                 .transmit_transactions(self.server_uri(), NonEmpty::singleton(txid))
                 .await?;
@@ -101,7 +101,7 @@ pub mod send_with_proposal {
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
             let proposal = self
                 .wallet
-                .lock()
+                .write()
                 .await
                 .create_send_proposal(request, account_id)
                 .await?;
@@ -116,7 +116,7 @@ pub mod send_with_proposal {
         ) -> Result<NonEmpty<TxId>, QuickShieldError> {
             let proposal = self
                 .wallet
-                .lock()
+                .write()
                 .await
                 .create_shield_proposal(account_id)
                 .await?;

@@ -54,7 +54,7 @@ macro_rules! check_client_balances {
 
         let balance = $client
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await

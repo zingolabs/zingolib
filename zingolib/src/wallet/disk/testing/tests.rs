@@ -26,7 +26,7 @@ impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightClient {
         let client = self.load_example_wallet_with_client().await;
-        let wallet = client.wallet.lock().await;
+        let wallet = client.wallet.read().await;
 
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
         for pool in [
@@ -179,7 +179,7 @@ async fn loaded_wallet_assert(
     expected_num_addresses: usize,
 ) {
     {
-        let wallet = lightclient.wallet.lock().await;
+        let wallet = lightclient.wallet.read().await;
         assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
         assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
@@ -191,7 +191,7 @@ async fn loaded_wallet_assert(
 
         let balance = lightclient
             .wallet
-            .lock()
+            .read()
             .await
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -230,12 +230,12 @@ async fn reload_wallet_from_buffer() {
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
-    let mid_client_network = mid_client.wallet.lock().await.network;
+    let mid_client_network = mid_client.wallet.read().await.network;
 
     let mut mid_buffer: Vec<u8> = vec![];
     mid_client
         .wallet
-        .lock()
+        .write()
         .await
         .write(&mut mid_buffer, &mid_client.config.chain)
         .unwrap();
@@ -247,7 +247,7 @@ async fn reload_wallet_from_buffer() {
         true,
     )
     .unwrap();
-    let wallet = client.wallet.lock().await;
+    let wallet = client.wallet.read().await;
 
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 

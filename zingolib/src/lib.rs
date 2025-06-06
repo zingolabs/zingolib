@@ -26,16 +26,3 @@ extern crate rust_embed;
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;
-
-/// TODO: Add Doc Comment Here!
-// TODO:  use `get_latest_block` gRPC, also should be removed from zingolib, runtimes should be handled by consumers
-pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> std::io::Result<u64> {
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(async move {
-            crate::grpc_connector::get_info(lightwalletd_uri)
-                .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
-        })
-        .map(|ld_info| ld_info.block_height)
-}
