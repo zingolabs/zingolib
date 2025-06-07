@@ -1,17 +1,9 @@
 //! Types and impls for conveniently displaying information to the user or converting to JSON for interfacing with a larger stack.
+use std::collections::HashSet;
 /// A "snapshot" of the state of the items in the wallet at the time the summary was constructed.
 /// Not to be used for internal logic in the system.
 use std::{cmp::Ordering, collections::HashMap};
 
-use data::finsight::{
-    TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress, ValuesSentToAddress,
-};
-use data::{
-    BasicCoinSummary, BasicNoteSummary, CoinSummary, NoteSummaries, NoteSummary,
-    OutgoingCoinSummary, OutgoingNoteSummary, Scope, SelfSendValueTransfer, SendType,
-    SentValueTransfer, TransactionKind, TransactionSummaries, TransactionSummary, ValueTransfer,
-    ValueTransferKind, ValueTransfers,
-};
 use zcash_primitives::memo::Memo;
 use zcash_protocol::PoolType;
 
@@ -22,6 +14,15 @@ use pepper_sync::wallet::{
 
 use super::LightWallet;
 use super::error::{KeyError, SummaryError};
+use data::finsight::{
+    TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress, ValuesSentToAddress,
+};
+use data::{
+    BasicCoinSummary, BasicNoteSummary, CoinSummary, NoteSummaries, NoteSummary,
+    OutgoingCoinSummary, OutgoingNoteSummary, Scope, SelfSendValueTransfer, SendType,
+    SentValueTransfer, TransactionKind, TransactionSummaries, TransactionSummary, ValueTransfer,
+    ValueTransferKind, ValueTransfers,
+};
 
 pub mod data;
 
@@ -243,12 +244,12 @@ impl LightWallet {
         let mut value_transfers: Vec<ValueTransfer> = Vec::new();
         let transaction_summaries = self.transaction_summaries(sort_highest_to_lowest).await?.0;
 
-        for transaction in transaction_summaries.iter() {
+        for transaction in transaction_summaries {
             match transaction.kind {
                 TransactionKind::Sent(SendType::Send) => {
                     // create 1 sent value transfer for each non-self recipient address
                     // if recipient_ua is available it overrides recipient_address
-                    value_transfers.append(&mut self.create_send_value_transfers(transaction)?);
+                    value_transfers.append(&mut self.create_send_value_transfers(&transaction)?);
 
                     // create 1 memo-to-self if any number of memos are received in the sending transaction
                     if transaction
@@ -403,7 +404,7 @@ impl LightWallet {
                     }
 
                     // in the case Zennies For Zingo! is active
-                    value_transfers.append(&mut self.create_send_value_transfers(transaction)?);
+                    value_transfers.append(&mut self.create_send_value_transfers(&transaction)?);
                 }
                 TransactionKind::Received => {
                     // create 1 received value transfer for each pool received to
@@ -668,7 +669,7 @@ impl LightWallet {
             .chain(transaction.outgoing_sapling_notes.iter())
             .collect::<Vec<_>>();
         let outgoing_coins = &transaction.outgoing_transparent_coins;
-        let mut addresses = HashMap::new();
+        let mut addresses = HashSet::new();
 
         transaction
             .outgoing_orchard_notes
@@ -679,7 +680,7 @@ impl LightWallet {
                         .recipient_unified_address
                         .clone()
                         .unwrap_or(note.recipient.clone());
-                    addresses.insert(encoded_address, note.output_index);
+                    addresses.insert(encoded_address);
                 }
 
                 Ok::<(), KeyError>(())
@@ -697,21 +698,21 @@ impl LightWallet {
                         .recipient_unified_address
                         .clone()
                         .unwrap_or(note.recipient.clone());
-                    addresses.insert(encoded_address, note.output_index);
+                    addresses.insert(encoded_address);
                 }
 
                 Ok::<(), KeyError>(())
             })?;
         outgoing_coins.iter().try_for_each(|coin| {
             if self.is_wallet_address(&coin.recipient)?.is_none() {
-                addresses.insert(coin.recipient.clone(), coin.output_index);
+                addresses.insert(coin.recipient.clone());
             }
 
             Ok::<(), KeyError>(())
         })?;
-        let mut addresses_vec = addresses.into_iter().collect::<Vec<_>>();
-        addresses_vec.sort_by_key(|(_address, output_index)| *output_index);
-        addresses_vec.iter().for_each(|(address, _output_index)| {
+        let mut addresses = addresses.into_iter().collect::<Vec<_>>();
+        addresses.sort();
+        addresses.into_iter().for_each(|address| {
             let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
                 .iter()
                 .filter(|&&note| {
@@ -720,13 +721,13 @@ impl LightWallet {
                     } else {
                         note.recipient.clone()
                     };
-                    query_address == *address
+                    query_address == address
                 })
                 .cloned()
                 .collect();
             let outgoing_coins_to_address: Vec<&OutgoingCoinSummary> = outgoing_coins
                 .iter()
-                .filter(|&coin| coin.recipient.clone() == *address)
+                .filter(|&coin| coin.recipient.clone() == address)
                 .collect();
             let value: u64 = outgoing_notes_to_address
                 .iter()
@@ -746,7 +747,7 @@ impl LightWallet {
                 zec_price: transaction.zec_price,
                 kind: ValueTransferKind::Sent(SentValueTransfer::Send),
                 value,
-                recipient_address: Some(address.clone()),
+                recipient_address: Some(address),
                 pool_received: None,
                 memos,
             });
