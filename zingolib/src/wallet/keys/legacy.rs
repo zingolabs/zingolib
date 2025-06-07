@@ -251,6 +251,7 @@ where
     S: ReadableWriteable<(), ()>,
 {
     const VERSION: u8 = 1;
+
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let capability_type = reader.read_u8()?;

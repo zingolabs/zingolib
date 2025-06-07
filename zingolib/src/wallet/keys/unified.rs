@@ -234,6 +234,7 @@ impl UnifiedKeyStore {
 
 impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
     const VERSION: u8 = 0;
+
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let key_type = reader.read_u8()?;

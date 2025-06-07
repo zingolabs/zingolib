@@ -17,3 +17,4 @@ log = { workspace = true }
 rustls = { workspace = true }
 rustyline = { workspace = true }
 shellwords = { workspace = true }
+tracing-subscriber.workspace = true
