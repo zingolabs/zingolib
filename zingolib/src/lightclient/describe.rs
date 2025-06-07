@@ -16,6 +16,7 @@ impl LightClient {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
+                    "zcash_version" => i.zcashd_build,
                     "git_commit" => i.git_commit,
                     "server_uri" => self.get_server_uri().to_string(),
                     "vendor" => i.vendor,
@@ -23,7 +24,8 @@ impl LightClient {
                     "chain_name" => i.chain_name,
                     "sapling_activation_height" => i.sapling_activation_height,
                     "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
+                    "latest_block_height" => i.block_height,
+                    "donation_address" => i.donation_address,
                 };
                 o.pretty(2)
             }
