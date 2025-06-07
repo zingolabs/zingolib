@@ -309,7 +309,7 @@ pub fn get_value_transfers() -> String {
                 .wallet
                 .read()
                 .await
-                .sorted_value_transfers(true)
+                .value_transfers(true)
                 .await
             {
                 Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
