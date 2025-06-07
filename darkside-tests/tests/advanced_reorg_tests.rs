@@ -13,8 +13,8 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingolib::wallet::data::summaries::ValueTransferKind;
-use zingolib::{config::RegtestNetwork, wallet::data::summaries::SentValueTransfer};
+use zingolib::wallet::summary::data::ValueTransferKind;
+use zingolib::{config::RegtestNetwork, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
         lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
@@ -66,11 +66,11 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -107,11 +107,11 @@ async fn reorg_changes_incoming_tx_height() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].blockheight(),
+        after_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(206)
     );
 }
@@ -233,11 +233,11 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -274,11 +274,11 @@ async fn reorg_changes_incoming_tx_index() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].blockheight(),
+        after_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 }
@@ -400,11 +400,11 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -441,7 +441,7 @@ async fn reorg_expires_incoming_tx() {
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -589,11 +589,11 @@ async fn reorg_changes_outgoing_tx_height() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -650,19 +650,19 @@ async fn reorg_changes_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
-            .find_map(|v| match v.kind() {
+            .find_map(|v| match v.kind {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                    if let Some(addr) = v.recipient_address() {
-                        if addr == recipient_string && v.value() == 100_000 {
-                            Some(v.blockheight())
+                    if let Some(addr) = v.recipient_address.as_ref() {
+                        if addr == recipient_string && v.value == 100_000 {
+                            Some(v.blockheight)
                         } else {
                             None
                         }
@@ -724,11 +724,11 @@ async fn reorg_changes_outgoing_tx_height() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -858,11 +858,11 @@ async fn reorg_expires_outgoing_tx_height() {
         expected_initial_balance
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -912,21 +912,18 @@ async fn reorg_expires_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!(
-        "{:?}",
-        light_client.sorted_value_transfers(true).await.unwrap()
-    );
+    println!("{:?}", light_client.value_transfers(true).await.unwrap());
 
     let send_height = light_client
-        .sorted_value_transfers(true)
+        .value_transfers(true)
         .await
         .unwrap()
         .iter()
-        .find_map(|v| match v.kind() {
+        .find_map(|v| match v.kind {
             ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                if let Some(addr) = v.recipient_address() {
-                    if addr == recipient_string && v.value() == 100_000 {
-                        Some(v.blockheight())
+                if let Some(addr) = v.recipient_address.as_ref() {
+                    if addr == recipient_string && v.value == 100_000 {
+                        Some(v.blockheight)
                     } else {
                         None
                     }
@@ -971,11 +968,11 @@ async fn reorg_expires_outgoing_tx_height() {
         expected_initial_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -1071,11 +1068,11 @@ async fn reorg_changes_outgoing_tx_index() {
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -1134,15 +1131,15 @@ async fn reorg_changes_outgoing_tx_index() {
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
-            .find_map(|v| match v.kind() {
+            .find_map(|v| match v.kind {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                    if let Some(addr) = v.recipient_address() {
-                        if addr == recipient_string && v.value() == 100_000 {
-                            Some(v.blockheight())
+                    if let Some(addr) = v.recipient_address.as_ref() {
+                        if addr == recipient_string && v.value == 100_000 {
+                            Some(v.blockheight)
                         } else {
                             None
                         }
@@ -1158,12 +1155,12 @@ async fn reorg_changes_outgoing_tx_index() {
     );
 
     println!("pre re-org value transfers:");
+    println!("{}", light_client.value_transfers(true).await.unwrap());
+    println!("pre re-org tx summaries:");
     println!(
         "{}",
-        light_client.sorted_value_transfers(true).await.unwrap()
+        light_client.transaction_summaries(false).await.unwrap()
     );
-    println!("pre re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
 
     //
     // Create reorg
@@ -1213,12 +1210,15 @@ async fn reorg_changes_outgoing_tx_index() {
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     println!("post re-org value transfers:");
     println!("{}", after_reorg_transactions);
     println!("post re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
+    println!(
+        "{}",
+        light_client.transaction_summaries(false).await.unwrap()
+    );
 
     // FIXME: assertion is wrong as re-org transaction has lost its outgoing tx data. darkside bug?
     // assert_eq!(after_reorg_transactions.0.len(), 3);

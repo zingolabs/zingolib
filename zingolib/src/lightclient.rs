@@ -26,13 +26,16 @@ use crate::{
     data::proposal::ZingoProposal,
     wallet::{
         LightWallet, WalletBase,
-        error::{KeyError, WalletError},
+        error::{KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
+        summary::data::{
+            TransactionSummaries, ValueTransfers,
+            finsight::{TotalMemoBytesToAddress, TotalSendsToAddress, TotalValueToAddress},
+        },
     },
 };
 use error::LightClientError;
 
-pub mod describe;
 pub mod error;
 pub mod propose;
 pub mod save;
@@ -113,7 +116,7 @@ impl LightClient {
         })
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Create a LightClient from an existing wallet file.
     pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
         let wallet_path = if config.wallet_path_exists() {
             config.get_wallet_path()
@@ -140,6 +143,53 @@ impl LightClient {
     /// Returns tor client.
     pub fn tor_client(&self) -> Option<&tor::Client> {
         self.tor_client.as_ref()
+    }
+
+    /// Returns URI of the server the lightclient is connected to.
+    pub fn server_uri(&self) -> http::Uri {
+        self.config.get_lightwalletd_uri()
+    }
+
+    /// Set the server uri.
+    pub fn set_server(&self, server: http::Uri) {
+        *self.config.lightwalletd_uri.write().unwrap() = server
+    }
+
+    /// Creates a tor client for current price updates.
+    ///
+    /// If `tor_dir` is `None` it will be set to the wallet's data directory.
+    pub async fn create_tor_client(
+        &mut self,
+        tor_dir: Option<PathBuf>,
+    ) -> Result<(), LightClientError> {
+        let tor_dir =
+            tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
+        tokio::fs::create_dir_all(tor_dir.as_path()).await?;
+        self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
+
+        Ok(())
+    }
+
+    /// Returns server information.
+    // TODO: return concrete struct with from json impl
+    pub async fn do_info(&self) -> String {
+        match crate::grpc_connector::get_info(self.server_uri()).await {
+            Ok(i) => {
+                let o = json::object! {
+                    "version" => i.version,
+                    "git_commit" => i.git_commit,
+                    "server_uri" => self.server_uri().to_string(),
+                    "vendor" => i.vendor,
+                    "taddr_support" => i.taddr_support,
+                    "chain_name" => i.chain_name,
+                    "sapling_activation_height" => i.sapling_activation_height,
+                    "consensus_branch_id" => i.consensus_branch_id,
+                    "latest_block_height" => i.block_height
+                };
+                o.pretty(2)
+            }
+            Err(e) => e,
+        }
     }
 
     /// Wrapper for [crate::wallet::LightWallet::generate_unified_address].
@@ -176,24 +226,57 @@ impl LightClient {
         self.wallet.read().await.transparent_addresses_json()
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server
+    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
+    pub async fn transaction_summaries(
+        &self,
+        reverse_sort: bool,
+    ) -> Result<TransactionSummaries, SummaryError> {
+        self.wallet
+            .read()
+            .await
+            .transaction_summaries(reverse_sort)
+            .await
     }
 
-    /// Creates a tor client for current price updates.
-    ///
-    /// If `tor_dir` is `None` it will be set to the wallet's data directory.
-    pub async fn create_tor_client(
-        &mut self,
-        tor_dir: Option<PathBuf>,
-    ) -> Result<(), LightClientError> {
-        let tor_dir =
-            tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
-        tokio::fs::create_dir_all(tor_dir.as_path()).await?;
-        self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
+    /// Wrapper for [crate::wallet::LightWallet::value_transfers].
+    pub async fn value_transfers(
+        &self,
+        sort_highest_to_lowest: bool,
+    ) -> Result<ValueTransfers, SummaryError> {
+        self.wallet
+            .read()
+            .await
+            .value_transfers(sort_highest_to_lowest)
+            .await
+    }
 
-        Ok(())
+    /// Wrapper for [crate::wallet::LightWallet::messages_containing].
+    pub async fn messages_containing(
+        &self,
+        filter: Option<&str>,
+    ) -> Result<ValueTransfers, SummaryError> {
+        self.wallet.read().await.messages_containing(filter).await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::do_total_memobytes_to_address].
+    pub async fn do_total_memobytes_to_address(
+        &self,
+    ) -> Result<TotalMemoBytesToAddress, SummaryError> {
+        self.wallet
+            .read()
+            .await
+            .do_total_memobytes_to_address()
+            .await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::do_total_spends_to_address].
+    pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
+        self.wallet.read().await.do_total_spends_to_address().await
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::do_total_value_to_address].
+    pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
+        self.wallet.read().await.do_total_value_to_address().await
     }
 }
 

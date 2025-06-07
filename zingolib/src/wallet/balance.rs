@@ -357,3 +357,80 @@ impl LightWallet {
         (orchard_balance + sapling_balance).ok_or(BalanceError::Overflow)
     }
 }
+
+#[cfg(any(test, feature = "test-elevation"))]
+mod test {
+    // FIXME: zingo2 rewrite as an integration test
+    // #[tokio::test]
+    // async fn confirmed_balance_excluding_dust() {
+    //     let wallet = LightWallet::new(
+    //         ZingoConfigBuilder::default().create().chain,
+    //         WalletBase::FreshEntropy,
+    //         1.into(),
+    //     )
+    //     .unwrap();
+    //     let confirmed_tx_record = TransactionRecordBuilder::default()
+    //         .status(ConfirmationStatus::Confirmed(80.into()))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .sapling_notes(
+    //             SaplingNoteBuilder::default()
+    //                 .note(
+    //                     SaplingCryptoNoteBuilder::default()
+    //                         .value(sapling_crypto::value::NoteValue::from_raw(3_000))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .note(
+    //                     OrchardCryptoNoteBuilder::default()
+    //                         .value(orchard::value::NoteValue::from_raw(5_001))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .orchard_notes(
+    //             OrchardNoteBuilder::default()
+    //                 .note(
+    //                     OrchardCryptoNoteBuilder::default()
+    //                         .value(orchard::value::NoteValue::from_raw(2_000))
+    //                         .clone(),
+    //                 )
+    //                 .clone(),
+    //         )
+    //         .build();
+    //     let mempool_tx_record = TransactionRecordBuilder::default()
+    //         .status(ConfirmationStatus::Mempool(95.into()))
+    //         .transparent_outputs(TransparentOutputBuilder::default())
+    //         .sapling_notes(SaplingNoteBuilder::default())
+    //         .orchard_notes(OrchardNoteBuilder::default())
+    //         .build();
+    //     {
+    //         let mut tx_map = wallet
+    //             .transaction_context
+    //             .transaction_metadata_set
+    //             .write()
+    //             .await;
+    //         tx_map
+    //             .transaction_records_by_id
+    //             .insert_transaction_record(confirmed_tx_record);
+    //         tx_map
+    //             .transaction_records_by_id
+    //             .insert_transaction_record(mempool_tx_record);
+    //     }
+
+    //     assert_eq!(
+    //         wallet.confirmed_balance_excluding_dust::<Sapling>().await,
+    //         Some(400_000)
+    //     );
+    //     assert_eq!(
+    //         wallet.confirmed_balance_excluding_dust::<Orchard>().await,
+    //         Some(1_605_001)
+    //     );
+    // }
+}

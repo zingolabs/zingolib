@@ -1,12 +1,17 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::value::ZatBalance;
 
-use super::{
-    LightWallet,
-    error::{FeeError, RemovalError, SpendError},
-};
 use pepper_sync::wallet::{
-    KeyIdInterface, NoteInterface, OutputId, OutputInterface, TransparentCoin, WalletTransaction,
+    KeyIdInterface, NoteInterface, OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface,
+    SaplingNote, TransparentCoin, WalletTransaction,
+};
+
+use super::LightWallet;
+use super::error::{FeeError, RemovalError, SpendError};
+use super::summary::data::{SendType, TransactionKind};
+use crate::config::{
+    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+    ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
 };
 
 impl LightWallet {
@@ -133,6 +138,68 @@ impl LightWallet {
         self.save_required = true;
 
         Ok(())
+    }
+
+    /// Determine the kind of transaction from the current state of wallet data.
+    pub(crate) fn transaction_kind(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> Result<TransactionKind, SpendError> {
+        let zfz_address = match self.network {
+            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
+            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        };
+
+        let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
+        let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
+        let orchard_spends = self.find_spends::<OrchardNote>(transaction, false)?;
+
+        if transparent_spends.is_empty()
+            && sapling_spends.is_empty()
+            && orchard_spends.is_empty()
+            && transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
+        {
+            Ok(TransactionKind::Received)
+        } else if !transparent_spends.is_empty()
+            && sapling_spends.is_empty()
+            && orchard_spends.is_empty()
+            && transaction.outgoing_sapling_notes().is_empty()
+            && transaction.outgoing_orchard_notes().is_empty()
+            && (!transaction.orchard_notes().is_empty() || !transaction.sapling_notes().is_empty())
+        {
+            Ok(TransactionKind::Sent(SendType::Shield))
+        } else if transaction
+            .transaction()
+            .transparent_bundle()
+            .is_none_or(|bundle| bundle.vout.len() == transaction.transparent_coins().len())
+            && transaction
+                .outgoing_sapling_notes()
+                .iter()
+                .all(|outgoing_note| {
+                    self.is_sapling_external_wallet_address(&outgoing_note.note().recipient())
+                        .is_some()
+                        || outgoing_note.key_id().scope == zip32::Scope::Internal
+                        || outgoing_note
+                            .encoded_recipient_full_unified_address(&self.network)
+                            .is_some_and(|unified_address| unified_address == *zfz_address)
+                })
+            && transaction
+                .outgoing_orchard_notes()
+                .iter()
+                .all(|outgoing_note| {
+                    self.is_orchard_wallet_address(&outgoing_note.note().recipient())
+                        .is_some()
+                        || outgoing_note
+                            .encoded_recipient_full_unified_address(&self.network)
+                            .is_some_and(|unified_address| unified_address == *zfz_address)
+                })
+        {
+            Ok(TransactionKind::Sent(SendType::SendToSelf))
+        } else {
+            Ok(TransactionKind::Sent(SendType::Send))
+        }
     }
 }
 

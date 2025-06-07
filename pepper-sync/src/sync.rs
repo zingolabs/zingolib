@@ -932,9 +932,13 @@ async fn process_mempool_transaction<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
 {
-    let block_height = BlockHeight::from_u32(
-        u32::try_from(raw_transaction.height + 1).expect("should be valid u32"),
-    );
+    let block_height = if raw_transaction.height == 0 {
+        BlockHeight::from_u32(0)
+    } else {
+        BlockHeight::from_u32(
+            u32::try_from(raw_transaction.height + 1).expect("should be valid u32"),
+        )
+    };
     let transaction = zcash_primitives::transaction::Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),

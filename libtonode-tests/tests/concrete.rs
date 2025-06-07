@@ -13,7 +13,7 @@ use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
-use zingolib::wallet::summary::{CoinSummary, NoteSummary};
+use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
 
 fn check_expected_balance_with_fvks(
@@ -152,11 +152,8 @@ mod fast {
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
-            data::summaries::{
-                SelfSendValueTransfer, SentValueTransfer, TransactionSummaryInterface as _,
-                ValueTransferKind,
-            },
             keys::unified::{ReceiverSelection, UnifiedAddressId},
+            summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
 
@@ -640,15 +637,15 @@ mod fast {
 
         recipient.send_stored_proposal().await.unwrap();
 
-        let value_transfers = &recipient.sorted_value_transfers(true).await.unwrap();
+        let value_transfers = &recipient.value_transfers(true).await.unwrap();
 
-        assert!(value_transfers.iter().any(|vt| vt.kind()
+        assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                 SelfSendValueTransfer::Basic
             ))));
-        assert!(value_transfers.iter().any(|vt| vt.kind()
+        assert!(value_transfers.iter().any(|vt| vt.kind
             == ValueTransferKind::Sent(SentValueTransfer::Send)
-            && vt.recipient_address() == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS)));
+            && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
     /// This tests checks that messages_containing returns an empty vector when empty memos are included.
@@ -860,7 +857,7 @@ mod fast {
             .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
             .await
             .unwrap();
-        let all_vts = &recipient.sorted_value_transfers(true).await.unwrap();
+        let all_vts = &recipient.value_transfers(true).await.unwrap();
         let all_messages = &recipient.messages_containing(None).await.unwrap();
 
         // Make assertions
@@ -872,13 +869,13 @@ mod fast {
         assert!(
             all_messages
                 .windows(2)
-                .all(|pair| { pair[0].blockheight() <= pair[1].blockheight() })
+                .all(|pair| { pair[0].blockheight <= pair[1].blockheight })
         );
         // ALL VTS (First one should be the most recent one)
         assert!(
             all_vts
                 .windows(2)
-                .all(|pair| { pair[0].blockheight() >= pair[1].blockheight() })
+                .all(|pair| { pair[0].blockheight >= pair[1].blockheight })
         );
     }
 
@@ -927,13 +924,13 @@ mod fast {
         environment.bump_chain().await;
         recipient.sync_and_await().await.unwrap();
 
-        let value_transfers = &recipient.sorted_value_transfers(true).await.unwrap();
-        let value_transfers1 = &recipient.sorted_value_transfers(true).await.unwrap();
-        let value_transfers2 = &recipient.sorted_value_transfers(true).await.unwrap();
-        let mut value_transfers3 = recipient.sorted_value_transfers(false).await.unwrap();
-        let mut value_transfers4 = recipient.sorted_value_transfers(false).await.unwrap();
+        let value_transfers = &recipient.value_transfers(true).await.unwrap();
+        let value_transfers1 = &recipient.value_transfers(true).await.unwrap();
+        let value_transfers2 = &recipient.value_transfers(true).await.unwrap();
+        let mut value_transfers3 = recipient.value_transfers(false).await.unwrap();
+        let mut value_transfers4 = recipient.value_transfers(false).await.unwrap();
 
-        assert_eq!(value_transfers[0].memos().len(), 4);
+        assert_eq!(value_transfers[0].memos.len(), 4);
 
         value_transfers3.reverse();
         value_transfers4.reverse();
@@ -1001,7 +998,7 @@ mod fast {
             assert_eq!(sender.wallet.read().await.wallet_transactions.len(), 3usize);
 
             // FIXME: add tex addresses to encoded memos
-            // let val_tranfers = sender.sorted_value_transfers(true).await.unwrap();
+            // let val_tranfers = sender.value_transfers(true).await.unwrap();
             // assert_eq!(
             //     val_tranfers[0].recipient_address().unwrap(),
             //     tex_addr_from_first.encode()
@@ -1030,16 +1027,16 @@ mod fast {
 
         recipient.sync_and_await().await.unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.unwrap().0;
+        let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
         transactions.iter().for_each(|tx| {
             dbg!(tx);
         });
         assert_eq!(
             transactions
                 .iter()
-                .find(|tx| tx.value() == 20_000)
+                .find(|tx| tx.value == 20_000)
                 .unwrap()
-                .status(),
+                .status,
             ConfirmationStatus::Mempool(BlockHeight::from_u32(6))
         );
 
@@ -1047,13 +1044,13 @@ mod fast {
             .await
             .unwrap();
 
-        let transactions = &recipient.transaction_summaries().await.unwrap().0;
+        let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
         assert_eq!(
             transactions
                 .iter()
-                .find(|tx| tx.value() == 20_000)
+                .find(|tx| tx.value == 20_000)
                 .unwrap()
-                .status(),
+                .status,
             ConfirmationStatus::Confirmed(BlockHeight::from_u32(6))
         );
     }
@@ -1449,15 +1446,13 @@ mod slow {
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
-    use zingolib::wallet::WalletSettings;
-    use zingolib::wallet::data::summaries::{
-        BasicNoteSummary, OutgoingNoteSummary, TransactionSummaryBuilder,
-        TransactionSummaryInterface,
-    };
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
     use zingolib::wallet::output::SpendStatus;
-    use zingolib::wallet::summary::{self, SendType, TransactionKind};
+    use zingolib::wallet::summary::data::{
+        BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
+    };
+    use zingolib::wallet::{WalletSettings, summary};
     use zip32::AccountId;
 
     use super::*;
@@ -1512,7 +1507,7 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(4)
+            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(4)
         );
     }
     #[tokio::test]
@@ -1952,20 +1947,20 @@ mod slow {
             .wallet
             .read()
             .await
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .0
             .first()
             .unwrap()
             .clone();
-        assert_eq!(transaction.blockheight(), 4.into());
+        assert_eq!(transaction.blockheight, 4.into());
         // TODO: add key id and/or recipient to basic summaries
         // assert_eq!(
         //     //,
         //     recipient_taddr
         // );
-        assert_eq!(transaction.value(), value);
+        assert_eq!(transaction.value, value);
 
         // 4. We can't spend the funds, as they're transparent. We need to shield first
         let sent_value = 20_000;
@@ -2029,10 +2024,10 @@ mod slow {
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await.unwrap());
+        println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(2)
+            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
         );
         recipient.rescan_and_await().await.unwrap();
         println!(
@@ -2045,10 +2040,10 @@ mod slow {
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries().await.unwrap());
+        println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.sorted_value_transfers(true).await.unwrap()).pretty(2)
+            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
         );
         // TODO: Add asserts!
     }
@@ -2068,23 +2063,23 @@ mod slow {
         zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
             .await
             .unwrap();
-        let transactions = faucet.transaction_summaries().await.unwrap().0;
+        let transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(transactions.iter().any(|transaction| {
             transaction
-                .outgoing_orchard_notes()
+                .outgoing_orchard_notes
                 .iter()
-                .chain(transaction.outgoing_sapling_notes().iter())
+                .chain(transaction.outgoing_sapling_notes.iter())
                 .any(|note| {
                     note.recipient_unified_address == Some(recipient_unified_address.clone())
                 })
         }));
         faucet.rescan_and_await().await.unwrap();
-        let rescanned_transactions = faucet.transaction_summaries().await.unwrap().0;
+        let rescanned_transactions = faucet.transaction_summaries(false).await.unwrap().0;
         assert!(rescanned_transactions.iter().any(|transaction| {
             transaction
-                .outgoing_orchard_notes()
+                .outgoing_orchard_notes
                 .iter()
-                .chain(transaction.outgoing_sapling_notes().iter())
+                .chain(transaction.outgoing_sapling_notes.iter())
                 .any(|note| {
                     note.recipient_unified_address == Some(recipient_unified_address.clone())
                 })
@@ -2104,30 +2099,29 @@ mod slow {
         let (ref regtest_manager, _cph, mut faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
-        let summary_orchard_receipt = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(5))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(recipient_initial_funds)
-            .zec_price(None)
-            .kind(TransactionKind::Received)
-            .fee(Some(10_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_orchard_receipt = TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(5)),
+            blockheight: BlockHeight::from_u32(5),
+            kind: TransactionKind::Received,
+            value: recipient_initial_funds,
+            fee: Some(10_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_initial_funds,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![])
-            .outgoing_sapling_notes(vec![])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![],
+            outgoing_sapling_notes: vec![],
+            outgoing_transparent_coins: vec![],
+        };
 
         // Send to faucet (external) sapling
         let first_send_to_sapling = 20_000;
@@ -2148,80 +2142,77 @@ mod slow {
         )
         .await
         .unwrap();
-        let summary_external_sapling = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(6))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(first_send_to_sapling)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(20_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_external_sapling = TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(6)),
+            blockheight: BlockHeight::from_u32(6),
+            kind: TransactionKind::Sent(SendType::Send),
+            value: first_send_to_sapling,
+            fee: Some(20_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_960_000,
                 SpendStatus::TransmittedSpent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes:vec![OutgoingNoteSummary {
                  value: 99_960_000,
                  memo: None,
                  recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  output_index: 0,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
-             }])
-            .outgoing_sapling_notes(vec![OutgoingNoteSummary {
+                 scope: summary::data::Scope::from(zip32::Scope::Internal),
+             }],
+            outgoing_sapling_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: first_send_to_sapling,
                  memo: None,
                  recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
                  recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::External),
-             }])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+                 scope: summary::data::Scope::from(zip32::Scope::External),
+             }],
+            outgoing_transparent_coins: vec![],
+        };
 
         // Send to faucet (external) transparent
         let first_send_to_transparent = 20_000;
-        let summary_external_transparent = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(7))
-            // We're not monitoring the mempool for this test
-            .status(ConfirmationStatus::Transmitted(BlockHeight::from_u32(7)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(first_send_to_transparent)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(15_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_external_transparent = TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Transmitted(BlockHeight::from_u32(7)),
+            blockheight: BlockHeight::from_u32(7),
+            kind: TransactionKind::Sent(SendType::Send),
+            value: first_send_to_transparent,
+            fee: Some(15_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_925_000,
                 SpendStatus::Unspent,
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: 99_925_000,
                  memo: None,
                  recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
-             }])
-            .outgoing_sapling_notes(vec![])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+                 scope: summary::data::Scope::from(zip32::Scope::Internal),
+             }],
+            outgoing_sapling_notes: vec![],
+            outgoing_transparent_coins: vec![],
+        };
 
         from_inputs::quick_send(
             &mut recipient,
@@ -2236,15 +2227,15 @@ mod slow {
 
         // Assert transactions are as expected
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[0],
+            &recipient.transaction_summaries(false).await.unwrap().0[0],
             &summary_orchard_receipt,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[1],
+            &recipient.transaction_summaries(false).await.unwrap().0[1],
             &summary_external_sapling,
         );
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[2],
+            &recipient.transaction_summaries(false).await.unwrap().0[2],
             &summary_external_transparent,
         );
 
@@ -2280,30 +2271,29 @@ mod slow {
             .unwrap();
 
         let recipient_second_funding = 1_000_000;
-        let summary_orchard_receipt_2 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(8))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(recipient_second_funding)
-            .zec_price(None)
-            .kind(TransactionKind::Received)
-            .fee(Some(10_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_orchard_receipt_2 = TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(8)),
+            blockheight: BlockHeight::from_u32(8),
+            kind: TransactionKind::Received,
+            value: recipient_second_funding,
+            fee: Some(10_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 recipient_second_funding,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
                 Some("Second wave incoming".to_string()),
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![])
-            .outgoing_sapling_notes(vec![])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![],
+            outgoing_sapling_notes: vec![],
+            outgoing_transparent_coins: vec![],
+        };
         from_inputs::quick_send(
             &mut faucet,
             vec![(
@@ -2324,38 +2314,37 @@ mod slow {
 
         // Send to external (faucet) transparent
         let second_send_to_transparent = 20_000;
-        let summary_exteranl_transparent_2 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(9))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(second_send_to_transparent)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(15_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_external_transparent_2 = TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)),
+            blockheight: BlockHeight::from_u32(9),
+            kind: TransactionKind::Sent(SendType::Send),
+            value: second_send_to_transparent,
+            fee: Some(15_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 965_000,
                 SpendStatus::Spent(
                     utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
                 ),
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: 965_000,
                  memo: None,
                  recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
-             }])
-            .outgoing_sapling_notes(vec![])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+                 scope: summary::data::Scope::from(zip32::Scope::Internal),
+             }],
+            outgoing_sapling_notes: vec![],
+            outgoing_transparent_coins: vec![],
+        };
         from_inputs::quick_send(
             &mut recipient,
             vec![(
@@ -2369,44 +2358,45 @@ mod slow {
 
         // Send to faucet (external) sapling 2
         let second_send_to_sapling = 20_000;
-        let summary_external_sapling_2 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(9))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(second_send_to_sapling)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(20_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_external_sapling_2 =
+
+TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(9)),
+            blockheight: BlockHeight::from_u32(9),
+            kind: TransactionKind::Sent(SendType::Send),
+            value: second_send_to_sapling,
+            fee: Some(20_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 99_885_000,
                 SpendStatus::Unspent,
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: 99_885_000,
                  memo: None,
                  recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
-             }])
-            .outgoing_sapling_notes(vec![OutgoingNoteSummary {
+                 scope: summary::data::Scope::from(zip32::Scope::Internal),
+             }],
+            outgoing_sapling_notes: vec![OutgoingNoteSummary {
                 output_index: 0,
                  value: second_send_to_sapling,
                 memo: None,
                  recipient: "zregtestsapling1sa4rckrf4zs6ny3l3ljnezupacvxfnjjn90lpeaa4ddtjeyww2ypzqr3jxfsta3t8dn3jk8cm4f".to_string(),
                  recipient_unified_address: Some("uregtest183rtm3qhxxermx3nxwa706va0xnypt3td648tayetchlp28hue08vrcnwq02ryyk5rh3y0xhftay8a5ynjdg8kr3juq5x0d9ygd5ffht".to_string()),
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::External),
-            }])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+                 scope: summary::data::Scope::from(zip32::Scope::External),
+            }],
+            outgoing_transparent_coins: vec![],
+        };
         from_inputs::quick_send(
             &mut recipient,
             vec![(
@@ -2427,36 +2417,37 @@ mod slow {
 
         // Third external transparent
         let external_transparent_3 = 20_000;
-        let summary_external_transparent_3 = TransactionSummaryBuilder::new()
-            .blockheight(BlockHeight::from_u32(10))
-            .status(ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)))
-            .datetime(0)
-            .txid(utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap())
-            .value(external_transparent_3)
-            .zec_price(None)
-            .kind(TransactionKind::Sent(SendType::Send))
-            .fee(Some(15_000))
-            .orchard_notes(vec![BasicNoteSummary::from_parts(
+        let summary_external_transparent_3 =
+
+TransactionSummary {
+            txid: utils::conversion::txid_from_hex_encoded_str(TEST_TXID).unwrap(),
+            datetime: 0,
+            status: ConfirmationStatus::Confirmed(BlockHeight::from_u32(10)),
+            blockheight: BlockHeight::from_u32(10),
+            kind: TransactionKind::Sent(SendType::Send),
+            value: external_transparent_3,
+            fee: Some(15_000),
+            zec_price: None,
+            orchard_notes: vec![BasicNoteSummary::from_parts(
                 930_000,
                 SpendStatus::Unspent,
                 0,
                 None,
-            )])
-            .sapling_notes(vec![])
-            .transparent_coins(vec![])
-            .outgoing_orchard_notes(vec![OutgoingNoteSummary {
+            )],
+            sapling_notes: vec![],
+            transparent_coins: vec![],
+            outgoing_orchard_notes: vec![OutgoingNoteSummary {
                  output_index: 0,
                  value: 930_000,
                  memo: None,
                  recipient: "uregtest1sj5ym8x03ya948f8558qa3t0cvc75x8jygxv7fzyjmgunuhegu2r39dy2zskf8cgq2dqcl8x0wxjc8p6k2kjf2jpl0m7zttrzqhm9kmf".to_string(),
                  recipient_unified_address: None,
                  account_id: AccountId::ZERO,
-                 scope: summary::Scope::from(zip32::Scope::Internal),
-             }])
-            .outgoing_sapling_notes(vec![])
-            .outgoing_transparent_coins(vec![])
-            .build()
-            .unwrap();
+                 scope: summary::data::Scope::from(zip32::Scope::Internal),
+             }],
+            outgoing_sapling_notes: vec![],
+            outgoing_transparent_coins: vec![],
+        };
         from_inputs::quick_send(
             &mut recipient,
             vec![(
@@ -2477,13 +2468,13 @@ mod slow {
 
         // Final check
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[3],
+            &recipient.transaction_summaries(false).await.unwrap().0[3],
             &summary_orchard_receipt_2,
         );
-        assert_transaction_summary_exists(&recipient, &summary_exteranl_transparent_2).await; // due to summaries of the same blockheight changing order
+        assert_transaction_summary_exists(&recipient, &summary_external_transparent_2).await; // due to summaries of the same blockheight changing order
         assert_transaction_summary_exists(&recipient, &summary_external_sapling_2).await; // we check all summaries for these expected transactions
         assert_transaction_summary_equality(
-            &recipient.transaction_summaries().await.unwrap().0[6],
+            &recipient.transaction_summaries(false).await.unwrap().0[6],
             &summary_external_transparent_3,
         );
         let second_wave_expected_funds = expected_funds + recipient_second_funding
@@ -2550,7 +2541,7 @@ mod slow {
 
         println!(
             "{}",
-            JsonValue::from(faucet.sorted_value_transfers(true).await.unwrap()).pretty(4)
+            JsonValue::from(faucet.value_transfers(true).await.unwrap()).pretty(4)
         );
         println!(
             "{}",
@@ -2763,10 +2754,10 @@ mod slow {
         .unwrap();
         println!(
             "{}",
-            json::stringify_pretty(recipient.transaction_summaries().await.unwrap(), 4)
+            json::stringify_pretty(recipient.transaction_summaries(false).await.unwrap(), 4)
         );
         let mut txids = recipient
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .txids()
@@ -2812,26 +2803,26 @@ mod slow {
             .wallet
             .read()
             .await
-            .transaction_summaries()
+            .transaction_summaries(false)
             .await
             .unwrap()
             .0;
 
-        assert_eq!(transactions.first().unwrap().blockheight(), 5.into());
+        assert_eq!(transactions.first().unwrap().blockheight, 5.into());
         assert_eq!(
-            transactions.first().unwrap().txid().to_string(),
+            transactions.first().unwrap().txid.to_string(),
             funding_txid.unwrap()
         );
-        assert_eq!(transactions.first().unwrap().value(), funding_value);
+        assert_eq!(transactions.first().unwrap().value, funding_value);
 
-        assert_eq!(transactions.get(1).unwrap().blockheight(), 6.into());
-        assert_eq!(transactions.get(1).unwrap().txid().to_string(), spent_txid);
-        assert_eq!(transactions.get(1).unwrap().value(), spent_value);
+        assert_eq!(transactions.get(1).unwrap().blockheight, 6.into());
+        assert_eq!(transactions.get(1).unwrap().txid.to_string(), spent_txid);
+        assert_eq!(transactions.get(1).unwrap().value, spent_value);
         assert!(
             transactions
                 .get(1)
                 .unwrap()
-                .outgoing_sapling_notes()
+                .outgoing_sapling_notes
                 .iter()
                 .any(|note| {
                     note.recipient
@@ -2842,7 +2833,7 @@ mod slow {
             transactions
                 .get(1)
                 .unwrap()
-                .outgoing_sapling_notes()
+                .outgoing_sapling_notes
                 .iter()
                 .any(|note| { note.value == spent_value })
         );
@@ -3241,9 +3232,9 @@ mod slow {
                 .unwrap();
             }
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             faucet.rescan_and_await().await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3282,9 +3273,9 @@ mod slow {
             .await
             .unwrap();
 
-            let pre_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             faucet.rescan_and_await().await.unwrap();
-            let post_rescan_summaries = faucet.transaction_summaries().await.unwrap();
+            let post_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }
         #[tokio::test]
@@ -3305,11 +3296,11 @@ mod slow {
             )
             .await
             .unwrap();
-            let pre_rescan_transactions = recipient.transaction_summaries().await.unwrap();
-            let pre_rescan_summaries = recipient.sorted_value_transfers(true).await.unwrap();
+            let pre_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
+            let pre_rescan_summaries = recipient.value_transfers(true).await.unwrap();
             recipient.rescan_and_await().await.unwrap();
-            let post_rescan_transactions = recipient.transaction_summaries().await.unwrap();
-            let post_rescan_summaries = recipient.sorted_value_transfers(true).await.unwrap();
+            let post_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
+            let post_rescan_summaries = recipient.value_transfers(true).await.unwrap();
             assert_eq!(pre_rescan_transactions, post_rescan_transactions);
             assert_eq!(pre_rescan_summaries, post_rescan_summaries);
         }

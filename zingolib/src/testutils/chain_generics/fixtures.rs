@@ -11,12 +11,12 @@ use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
-use crate::wallet::data::summaries::SelfSendValueTransfer;
-use crate::wallet::data::summaries::SentValueTransfer;
-use crate::wallet::data::summaries::ValueTransferKind;
 use crate::wallet::output::query::OutputPoolQuery;
 use crate::wallet::output::query::OutputQuery;
 use crate::wallet::output::query::OutputSpendStatusQuery;
+use crate::wallet::summary::data::SelfSendValueTransfer;
+use crate::wallet::summary::data::SentValueTransfer;
+use crate::wallet::summary::data::ValueTransferKind;
 
 /// Fixture for testing various vt transactions
 pub async fn create_various_value_transfers<CC>()
@@ -59,44 +59,41 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 3);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 3);
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Received })
+            .any(|vt| { vt.kind == ValueTransferKind::Received })
     );
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Sent(SentValueTransfer::Send) })
+            .any(|vt| { vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send) })
     );
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
             .any(|vt| {
-                vt.kind()
+                vt.kind
                     == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                         SelfSendValueTransfer::MemoToSelf,
                     ))
             })
     );
 
-    assert_eq!(
-        recipient.sorted_value_transfers(true).await.unwrap().len(),
-        1
-    );
+    assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
     dbg!("TEST 2");
     with_assertions::propose_send_bump_sync_all_recipients(
@@ -109,18 +106,18 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 4);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 4);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
     with_assertions::assure_propose_shield_bump_sync(&mut environment, &mut sender, false)
         .await
         .unwrap();
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 5);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 5);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
@@ -415,13 +412,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .read()
-                    .await
-                    .get_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.read().await.get_address(pool).as_str(),
                 tertiary_fund,
                 None,
             )],
@@ -455,13 +446,7 @@ where
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .read()
-                    .await
-                    .get_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.read().await.get_address(pool).as_str(),
                 try_amount,
                 None,
             )],

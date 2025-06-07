@@ -33,12 +33,7 @@ impl NetworkSeedVersion {
             PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Orchard),
         ] {
-            assert_eq!(
-                wallet
-                    .get_address(pool)
-                    .expect("can find the first address"),
-                self.example_wallet_address(pool)
-            );
+            assert_eq!(wallet.get_address(pool), self.example_wallet_address(pool));
         }
         drop(wallet);
 

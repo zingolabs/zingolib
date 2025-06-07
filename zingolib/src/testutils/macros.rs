@@ -50,8 +50,6 @@ macro_rules! get_base_address_macro {
 #[macro_export]
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
-        use zingolib::wallet::data::summaries::TransactionSummaryInterface as _;
-
         let balance = $client
             .wallet
             .read()
@@ -80,7 +78,7 @@ macro_rules! check_client_balances {
             balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent
         );
-        let summaries = $client.transaction_summaries().await.unwrap();
+        let summaries = $client.transaction_summaries(false).await.unwrap();
         let summaries_balance = summaries
             .iter()
             .map(|summary| {

@@ -11,7 +11,7 @@ use zcash_client_backend::proto::service::TreeState;
 
 pub(crate) use zingo_netutils::GrpcConnector;
 
-/// TODO: Add Doc Comment Here!
+/// Get server info.
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
     let client = Arc::new(GrpcConnector::new(uri.clone()));
 

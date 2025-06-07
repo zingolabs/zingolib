@@ -201,7 +201,7 @@ mod test {
         let mut wallet = client.wallet.write().await;
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
-        let self_address = wallet.get_address(pool).unwrap();
+        let self_address = wallet.get_address(pool);
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
         let request = transaction_request_from_send_inputs(receivers)
