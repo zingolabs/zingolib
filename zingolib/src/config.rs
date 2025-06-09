@@ -250,6 +250,7 @@ impl Default for ZingoConfigBuilder {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }
@@ -668,6 +669,8 @@ impl ActivationHeights {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use crate::wallet::WalletSettings;
 
     /// Validate that the load_clientconfig function creates a valid config from an empty uri
@@ -693,6 +696,7 @@ mod tests {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
         );
@@ -725,6 +729,7 @@ mod tests {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
         )

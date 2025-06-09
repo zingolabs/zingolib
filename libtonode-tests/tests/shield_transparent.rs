@@ -12,16 +12,10 @@ async fn shield_transparent() {
             faucet: {}
             recipient: {}",
         &faucet
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -42,16 +36,10 @@ async fn shield_transparent() {
             faucet: {}
             recipient: {}",
         &faucet
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -65,16 +53,10 @@ async fn shield_transparent() {
             faucet: {}
             recipient: {}",
         &faucet
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -98,16 +80,10 @@ async fn shield_transparent() {
             faucet: {}
             recipient: {}",
         &faucet
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),

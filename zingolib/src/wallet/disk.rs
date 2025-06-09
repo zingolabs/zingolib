@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, Error, ErrorKind, Read, Write},
+    num::NonZeroU32,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -333,6 +334,7 @@ impl LightWallet {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
         };
 
@@ -510,12 +512,14 @@ impl LightWallet {
         let wallet_settings = if version >= 33 {
             WalletSettings {
                 sync_config: SyncConfig::read(&mut reader)?,
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             }
         } else {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             }
         };
 

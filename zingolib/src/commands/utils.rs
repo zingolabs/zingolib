@@ -122,7 +122,7 @@ pub(super) fn parse_send_all_args(
 // - 1 argument for a single address. &["<address>"]
 // NOTE: zennies_for_zingo can only be set in a JSON
 // string.
-pub(super) fn parse_spendable_balance_args(
+pub(super) fn parse_max_send_value_args(
     args: &[&str],
 ) -> Result<(ZcashAddress, bool), CommandError> {
     if args.len() > 2 {

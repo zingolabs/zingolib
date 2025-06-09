@@ -171,14 +171,7 @@ pub mod test {
 
         let sync_result = lc.sync_and_await().await.unwrap();
         println!("{}", sync_result);
-        println!(
-            "{:?}",
-            lc.wallet
-                .read()
-                .await
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-        );
+        println!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }
 

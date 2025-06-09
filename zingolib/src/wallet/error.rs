@@ -141,8 +141,11 @@ pub enum BalanceError {
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
     /// Summation overflow
-    #[error("overflow occured during summation")]
+    #[error("overflow occured during summation.")]
     Overflow,
+    /// Shard store checkpoint not found.
+    #[error("shard store checkpoint not found at anchor height {0}.")]
+    CheckpointNotFound(BlockHeight),
 }
 
 /// Errors associated with key and address derivation

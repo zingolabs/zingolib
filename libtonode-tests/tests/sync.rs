@@ -34,6 +34,7 @@ async fn sync_mainnet_test() {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
     )
@@ -81,6 +82,7 @@ async fn sync_status() {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
     )
@@ -131,9 +133,6 @@ async fn sync_test() {
     println!(
         "{}",
         recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()

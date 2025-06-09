@@ -129,6 +129,8 @@ pub mod send_with_proposal {
     mod test {
         //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
+        use std::num::NonZeroU32;
+
         use bip0039::Mnemonic;
         use pepper_sync::sync::SyncConfig;
 
@@ -162,6 +164,7 @@ pub mod send_with_proposal {
                             transparent_address_discovery:
                                 pepper_sync::sync::TransparentAddressDiscovery::minimal(),
                         },
+                        min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     },
                 )
                 .unwrap(),

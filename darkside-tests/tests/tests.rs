@@ -39,9 +39,6 @@ async fn simple_sync() {
     assert_eq!(result.blocks_scanned, 3);
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -82,9 +79,6 @@ async fn reorg_receipt_sync_generic() {
 
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -106,9 +100,6 @@ async fn reorg_receipt_sync_generic() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -154,9 +145,6 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -200,9 +188,6 @@ async fn sent_transaction_reorged_into_mempool() {
     println!(
         "Recipient pre-reorg: {}",
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
@@ -210,9 +195,6 @@ async fn sent_transaction_reorged_into_mempool() {
     println!(
         "Sender pre-reorg (unsynced): {}",
         &light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
@@ -231,9 +213,6 @@ async fn sent_transaction_reorged_into_mempool() {
     println!(
         "Recipient post-reorg: {}",
         &recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
@@ -241,9 +220,6 @@ async fn sent_transaction_reorged_into_mempool() {
     println!(
         "Sender post-reorg: {}",
         &light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
@@ -255,9 +231,6 @@ async fn sent_transaction_reorged_into_mempool() {
     loaded_client.sync_and_await().await.unwrap();
     assert_eq!(
         loaded_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
