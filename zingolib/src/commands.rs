@@ -697,7 +697,7 @@ impl Command for MaxSendValueCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Display the maximum value the wallet can currently send to the given address.
-            
+
             This value is calculated from the shielded spendable balance minus any fees required to send those funds to
             the given `address`. If the wallet is still syncing, the spendable balance may be less than the confirmed
             balance - minus the fee - due to notes being above the minimum confirmation threshold or not being able to
