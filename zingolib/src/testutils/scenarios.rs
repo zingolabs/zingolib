@@ -26,6 +26,7 @@ mod config_templaters;
 
 /// TODO: Add Doc Comment Here!
 pub mod setup {
+    use std::num::NonZeroU32;
     use std::path::PathBuf;
 
     use bip0039::Mnemonic;
@@ -223,6 +224,7 @@ pub mod setup {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     },
+                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
                 },
                 1.try_into().unwrap(),
             )

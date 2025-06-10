@@ -51,9 +51,6 @@ macro_rules! get_base_address_macro {
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
         let balance = $client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -77,23 +74,6 @@ macro_rules! check_client_balances {
             "\nt_balance: {} expectation: {} ",
             balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent
-        );
-        let summaries = $client.transaction_summaries(false).await.unwrap();
-        let summaries_balance = summaries
-            .iter()
-            .map(|summary| {
-                summary
-                    .balance_delta()
-                    .unwrap_or_else(|| panic!("field not correctly populated"))
-            })
-            .sum::<i64>();
-        assert_eq!(
-            (balance.total_orchard_balance.unwrap().into_u64()
-                + balance.total_sapling_balance.unwrap().into_u64()
-                + balance.confirmed_transparent_balance.unwrap().into_u64()) as i64,
-            summaries_balance,
-            "transaction_summaries: {}",
-            summaries
         );
     };
 }

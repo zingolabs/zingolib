@@ -59,9 +59,8 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             request,
-            NonZeroU32::MIN,
             // TODO: update anchor height selection
-            // NonZeroU32::try_from(3).expect("hard coded non-zero integer"),
+            NonZeroU32::MIN,
         )
         .map_err(ProposeSendError::Proposal)
     }

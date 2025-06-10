@@ -3,23 +3,25 @@
 use std::convert::Infallible;
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
+use shardtree::error::ShardTreeError;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::PoolType;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::output::OutputRef;
 
 /// Top level wallet errors
+// TODO: unify errors and error variants
 #[derive(Debug, thiserror::Error)]
 pub enum WalletError {
     /// Key error
-    #[error("{0}")]
+    #[error("Key error. {0}")]
     KeyError(#[from] KeyError),
     /// Mnemonic not found.
     #[error("Mnemonic not found.")]
     MnemonicNotFound,
     /// Mnemonic error
-    #[error("{0}")]
+    #[error("Mnemonic error. {0}")]
     MnemonicError(#[from] bip0039::Error),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
@@ -45,6 +47,15 @@ pub enum WalletError {
     /// Maximum number of accounts already in use.
     #[error("Maximum number of accounts already in use.")]
     AccountCreationFailed,
+    /// Shard store checkpoint not found.
+    #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
+    CheckpointNotFound {
+        shielded_protocol: ShieldedProtocol,
+        height: BlockHeight,
+    },
+    /// Shard tree error.
+    #[error("shard tree error. {0}")]
+    ShardTreeError(#[from] ShardTreeError<Infallible>),
 }
 
 /// Price error
@@ -72,12 +83,12 @@ pub enum RemovalError {
 /// Summary error
 #[derive(Debug, thiserror::Error)]
 pub enum SummaryError {
-    /// Address parse error
-    #[error("address parse error. {0}")]
-    ParseError(#[from] zcash_address::ParseError),
     /// Key error.
     #[error("key error. {0}")]
     KeyError(#[from] KeyError),
+    /// Address parse error
+    #[error("address parse error. {0}")]
+    ParseError(#[from] zcash_address::ParseError),
     /// Spend error
     #[error("spend error. {0}")]
     SpendError(#[from] SpendError),
@@ -141,8 +152,14 @@ pub enum BalanceError {
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
     /// Summation overflow
-    #[error("overflow occured during summation")]
+    #[error("overflow occured during summation.")]
     Overflow,
+    /// Shard store checkpoint not found.
+    #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
+    CheckpointNotFound {
+        shielded_protocol: ShieldedProtocol,
+        height: BlockHeight,
+    },
 }
 
 /// Errors associated with key and address derivation

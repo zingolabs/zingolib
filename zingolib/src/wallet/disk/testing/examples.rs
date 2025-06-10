@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use bytes::Buf;
 
 use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
@@ -284,6 +286,7 @@ impl NetworkSeedVersion {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                         },
+                        min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     },
                     1.try_into().unwrap(),
                 )

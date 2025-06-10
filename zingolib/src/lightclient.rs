@@ -26,7 +26,8 @@ use crate::{
     data::proposal::ZingoProposal,
     wallet::{
         LightWallet, WalletBase,
-        error::{KeyError, SummaryError, WalletError},
+        balance::AccountBalance,
+        error::{BalanceError, KeyError, SummaryError, WalletError},
         keys::unified::{ReceiverSelection, UnifiedAddressId},
         summary::data::{
             TransactionSummaries, ValueTransfers,
@@ -229,6 +230,14 @@ impl LightClient {
     /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
     pub async fn transparent_addresses_json(&self) -> JsonValue {
         self.wallet.read().await.transparent_addresses_json()
+    }
+
+    /// Wrapper for [crate::wallet::LightWallet::account_balance].
+    pub async fn account_balance(
+        &self,
+        account_id: zip32::AccountId,
+    ) -> Result<AccountBalance, BalanceError> {
+        self.wallet.read().await.account_balance(account_id)
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].

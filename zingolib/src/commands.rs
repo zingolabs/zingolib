@@ -73,11 +73,12 @@ impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Change the lightwalletd server to receive blockchain data from
+
             Usage:
-            changeserver [server_uri]
+            change_server [server_uri]
 
             Example:
-            changeserver https://mainnet.lightwalletd.com:9067
+            change_server https://mainnet.lightwalletd.com:9067
         "#}
     }
 
@@ -433,8 +434,9 @@ impl Command for SendProgressCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Get the progress of any send transactions that are currently computing
+
             Usage:
-            sendprogress
+            send_progress
         "#}
     }
 
@@ -644,13 +646,7 @@ impl Command for BalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .read()
-                .await
-                .account_balance(zip32::AccountId::ZERO)
-                .await
-            {
+            match lightclient.account_balance(zip32::AccountId::ZERO).await {
                 Ok(bal) => bal.to_string(),
                 Err(e) => format!("Error: {e}"),
             }
@@ -662,44 +658,83 @@ struct SpendableBalanceCommand {}
 impl Command for SpendableBalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Display the wallet's spendable balance.
-            Calculated as the confirmed shielded balance minus the fee required to send all funds to
-            the given address.
-            An address must be specified as fees, and therefore spendable balance, depends on the receiver
-            type.
-            zennies_for_zingo must also be specified as "true"|"false".  If set to "true" 1_000_000 ZAT will
-            earmarked to the zingolabs developer fund with each transaction.
+            Display the wallet's spendable balance for each shielded pool.
 
             Usage:
-            spendablebalance <address>
-            OR
-            spendablebalance { "address": "<address>", "zennies_for_zingo": <true|false> }
+            spendable_balance
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Display the wallet's spendable balance."
+        "Display the wallet's spendable balance for each shielded pool."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
+            let orchard_spendable_balance =
+                match wallet.spendable_balance::<OrchardNote>(zip32::AccountId::ZERO) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            let sapling_spendable_balance =
+                match wallet.spendable_balance::<SaplingNote>(zip32::AccountId::ZERO) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            object! {
+                "orchard_spendable_balance" => orchard_spendable_balance.into_u64(),
+                "sapling_spendable_balance" => sapling_spendable_balance.into_u64(),
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct MaxSendValueCommand {}
+impl Command for MaxSendValueCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Display the maximum value the wallet can currently send to the given address.
+
+            This value is calculated from the shielded spendable balance minus any fees required to send those funds to
+            the given `address`. If the wallet is still syncing, the spendable balance may be less than the confirmed
+            balance - minus the fee - due to notes being above the minimum confirmation threshold or not being able to
+            construct a witness from the current state of the wallet's note commitment tree.
+            If `zennies_for_zingo` is set true, an additional payment of 1_000_000 ZAT to the ZingoLabs developer address
+            will be taken into account.
+
+            Usage:
+            max_send_value <address>
+            OR
+            max_send_value { "address": "<address>", "zennies_for_zingo": <true|false> }
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Display the maximum value the wallet can currently send to a given address."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        let (address, zennies_for_zingo) = match utils::parse_spendable_balance_args(args) {
+        let (address, zennies_for_zingo) = match utils::parse_max_send_value_args(args) {
             Ok(address_and_zennies) => address_and_zennies,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help spendablebalance' for correct usage and examples.",
+                    "Error: {}\nTry 'help max_send_value' for correct usage and examples.",
                     e
                 );
             }
         };
         RT.block_on(async move {
             match lightclient
-                .get_spendable_shielded_balance(address, zennies_for_zingo, zip32::AccountId::ZERO)
+                .max_send_value(address, zennies_for_zingo, zip32::AccountId::ZERO)
                 .await
             {
                 Ok(bal) => {
                     object! {
-                        "balance" => bal.into_u64(),
+                        "max_send_value" => bal.into_u64(),
                     }
                 }
                 Err(e) => {
@@ -946,7 +981,7 @@ impl Command for ExportUfvkCommand {
             Note: If you want to backup spend capability, use the 'recovery_info' command instead.
 
             Usage:
-            exportufvk
+            export_ufvk
         "#}
     }
 
@@ -1051,11 +1086,11 @@ impl Command for SendAllCommand {
             Warning:
                 Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
             Usage:
-                sendall <address> "<optional memo>"
+                send_all <address> "<optional memo>"
                 OR
-                sendall '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
+                send_all '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
             Example:
-                sendall ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
+                send_all ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
                 confirm
 
         "#}
@@ -1417,7 +1452,7 @@ impl Command for ValueTransfersCommand {
             A value transfer is a group of all notes to a specific receiver in a transaction.
 
             Usage:
-            valuetransfers
+            value_transfers
         "#}
     }
 
@@ -1994,22 +2029,28 @@ impl Command for QuitCommand {
 
 /// TODO: Add Doc Comment Here!
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
+    let entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         ("version", Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
-        ("changeserver", Box::new(ChangeServerCommand {})),
+        ("change_server", Box::new(ChangeServerCommand {})),
         ("rescan", Box::new(RescanCommand {})),
         ("clear", Box::new(ClearCommand {})),
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
+        ("spendable_balance", Box::new(SpendableBalanceCommand {})),
+        ("max_send_value", Box::new(MaxSendValueCommand {})),
+        ("send_all", Box::new(SendAllCommand {})),
+        ("quicksend", Box::new(QuickSendCommand {})),
+        ("quickshield", Box::new(QuickShieldCommand {})),
+        ("confirm", Box::new(ConfirmCommand {})),
         ("addresses", Box::new(UnifiedAddressesCommand {})),
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("sendprogress", Box::new(SendProgressCommand {})),
-        ("valuetransfers", Box::new(ValueTransfersCommand {})),
+        ("send_progress", Box::new(SendProgressCommand {})),
+        ("value_transfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
@@ -2018,7 +2059,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
-        ("exportufvk", Box::new(ExportUfvkCommand {})),
+        ("export_ufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
@@ -2036,13 +2077,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("delete", Box::new(DeleteCommand {})),
         ("remove_transaction", Box::new(RemoveTransactionCommand {})),
     ];
-    {
-        entries.push(("spendablebalance", Box::new(SpendableBalanceCommand {})));
-        entries.push(("sendall", Box::new(SendAllCommand {})));
-        entries.push(("quicksend", Box::new(QuickSendCommand {})));
-        entries.push(("quickshield", Box::new(QuickShieldCommand {})));
-        entries.push(("confirm", Box::new(ConfirmCommand {})));
-    }
+
     entries.into_iter().collect()
 }
 

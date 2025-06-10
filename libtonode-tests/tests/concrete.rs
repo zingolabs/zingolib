@@ -1186,7 +1186,7 @@ mod fast {
         let addresses = recipient.unified_addresses_json().await;
         let address_5000_nonememo_tuples = addresses
             .members()
-            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 5_000, None))
+            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 10_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
@@ -1199,20 +1199,17 @@ mod fast {
         .await
         .unwrap();
         let balance_b = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
         assert_eq!(
             balance_b,
             AccountBalance {
-                total_sapling_balance: Some(5000.try_into().unwrap()),
-                confirmed_sapling_balance: Some(5000.try_into().unwrap()),
+                total_sapling_balance: Some(10_000.try_into().unwrap()),
+                confirmed_sapling_balance: Some(10_000.try_into().unwrap()),
                 unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
-                total_orchard_balance: Some(15000.try_into().unwrap()),
-                confirmed_orchard_balance: Some(15000.try_into().unwrap()),
+                total_orchard_balance: Some(30_000.try_into().unwrap()),
+                confirmed_orchard_balance: Some(30_000.try_into().unwrap()),
                 unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
                 total_transparent_balance: Some(0.try_into().unwrap()),
                 confirmed_transparent_balance: Some(0.try_into().unwrap()),
@@ -1425,6 +1422,8 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     }
 }
 mod slow {
+    use std::num::NonZeroU32;
+
     use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
     use pepper_sync::wallet::{
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
@@ -1498,9 +1497,6 @@ mod slow {
         println!(
             "{}",
             &recipient
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
@@ -1785,6 +1781,7 @@ mod slow {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
         )
@@ -1816,9 +1813,6 @@ mod slow {
         .await
         .unwrap();
         let original_recipient_balance = original_recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -1867,18 +1861,12 @@ mod slow {
             let mut watch_client = build_fvk_client(fvks, zingo_config.clone());
             // assert empty wallet before rescan
             let balance = watch_client
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap();
             check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
             watch_client.rescan_and_await().await.unwrap();
             let balance = watch_client
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap();
@@ -2017,9 +2005,6 @@ mod slow {
         println!(
             "{}",
             &recipient
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
@@ -2033,9 +2018,6 @@ mod slow {
         println!(
             "{}",
             &recipient
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
@@ -2252,7 +2234,6 @@ mod slow {
             assert_eq!(
                 recipient_wallet
                     .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
-                    .await
                     .unwrap(),
                 expected_funds.try_into().unwrap()
             );
@@ -2260,7 +2241,6 @@ mod slow {
             assert_eq!(
                 recipient_wallet
                     .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
-                    .await
                     .unwrap(),
                 0.try_into().unwrap()
             );
@@ -2488,7 +2468,6 @@ TransactionSummary {
                 .read()
                 .await
                 .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
-                .await
                 .unwrap(),
             second_wave_expected_funds.try_into().unwrap(),
         );
@@ -2500,7 +2479,7 @@ TransactionSummary {
         let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         let faucet_to_recipient_amount = 20_000u64;
-        let recipient_to_faucet_amount = 5_000u64;
+        let recipient_to_faucet_amount = 10_000u64;
         // check start state
         faucet.sync_and_await().await.unwrap();
         let wallet_fully_scanned_height = faucet
@@ -2546,9 +2525,6 @@ TransactionSummary {
         println!(
             "{}",
             &faucet
-                .wallet
-                .read()
-                .await
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
@@ -2599,7 +2575,7 @@ TransactionSummary {
         )
         .await;
 
-        let amount_to_send = 5_000;
+        let amount_to_send = 10_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
         from_inputs::quick_send(
             &mut faucet,
@@ -2611,9 +2587,6 @@ TransactionSummary {
             .await
             .unwrap();
         let balance = faucet
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -2876,9 +2849,6 @@ TransactionSummary {
 
         // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
         let balance = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -3118,7 +3088,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
+        check_client_balances!(recipient, o: for_orchard s: 0 t: 0 );
 
         from_inputs::quick_send(
             &mut recipient,
@@ -3138,7 +3108,7 @@ TransactionSummary {
         .await
         .unwrap();
         let remaining_orchard = for_orchard - (6 * fee);
-        check_client_balances!(recipient, o: remaining_orchard s: for_sapling t: 0);
+        check_client_balances!(recipient, o: remaining_orchard s: 0 t: 0);
     }
     // FIXME: zingo2 yet to implement transaction filter in sync engine. its also not clear how this test exceeds the tx filter.
     // #[tokio::test]
@@ -3437,9 +3407,6 @@ TransactionSummary {
             scenarios::faucet_funded_recipient_default(value).await;
 
         let bal = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -3457,9 +3424,6 @@ TransactionSummary {
         .await
         .unwrap();
         let bal = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -3483,9 +3447,6 @@ TransactionSummary {
         .unwrap();
 
         let bal = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -3506,9 +3467,6 @@ TransactionSummary {
         .unwrap();
 
         let bal = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -4023,9 +3981,6 @@ TransactionSummary {
             );
         }
         let balance = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -4070,9 +4025,6 @@ TransactionSummary {
             );
         }
         let balance = recipient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
@@ -4532,7 +4484,7 @@ mod send_all {
             Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
             recipient
-                .get_spendable_shielded_balance(external_uaddress, true, zip32::AccountId::ZERO)
+                .max_send_value(external_uaddress, true, zip32::AccountId::ZERO)
                 .await
                 .unwrap(),
             expected_balance
@@ -4607,7 +4559,6 @@ mod send_all {
                 .read()
                 .await
                 .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
-                .await
                 .unwrap()
                 .into_u64(),
             0
@@ -4618,7 +4569,6 @@ mod send_all {
                 .read()
                 .await
                 .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
-                .await
                 .unwrap()
                 .into_u64(),
             0

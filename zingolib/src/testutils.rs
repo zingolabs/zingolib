@@ -5,6 +5,7 @@
 
 pub mod scenarios;
 
+use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
 use json::JsonValue;
@@ -76,6 +77,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
         )
         .unwrap(),

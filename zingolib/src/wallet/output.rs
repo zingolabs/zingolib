@@ -2,10 +2,12 @@
 
 use std::num::NonZeroU32;
 
+use shardtree::store::ShardStore;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
+use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
@@ -222,14 +224,41 @@ impl LightWallet {
     ///
     /// Any notes with output IDs in `exclude` will not be returned.
     /// Any notes without a nullifier or commitment tree position will not be returned.
-    // TODO: implement checking the witness can be constructed also
     pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
         account: zip32::AccountId,
-    ) -> Vec<&'a N> {
-        self.wallet_transactions
+    ) -> Result<Vec<&'a N>, WalletError> {
+        if self
+            .shard_trees
+            .orchard
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(WalletError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Orchard,
+                height: anchor_height,
+            });
+        }
+        if self
+            .shard_trees
+            .sapling
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(WalletError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Sapling,
+                height: anchor_height,
+            });
+        }
+
+        Ok(self
+            .wallet_transactions
             .values()
             .flat_map(|transaction| {
                 if transaction
@@ -241,8 +270,30 @@ impl LightWallet {
                     Vec::new()
                 }
             })
-            .filter(|&note| note.nullifier().is_some() && note.position().is_some())
-            .collect()
+            .filter(|&note| {
+                note.nullifier().is_some()
+                    && note
+                        .position()
+                        .is_some_and(|position| match N::SHIELDED_PROTOCOL {
+                            ShieldedProtocol::Orchard => match self
+                                .shard_trees
+                                .orchard
+                                .witness_at_checkpoint_id(position, &anchor_height)
+                            {
+                                Ok(witness) => witness.is_some(),
+                                Err(_) => false,
+                            },
+                            ShieldedProtocol::Sapling => match self
+                                .shard_trees
+                                .sapling
+                                .witness_at_checkpoint_id(position, &anchor_height)
+                            {
+                                Ok(witness) => witness.is_some(),
+                                Err(_) => false,
+                            },
+                        })
+            })
+            .collect())
     }
 
     /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
@@ -304,7 +355,7 @@ impl LightWallet {
         };
 
         let mut selected_notes: Vec<&'a N> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude, account);
+        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude, account)?;
         unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());

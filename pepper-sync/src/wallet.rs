@@ -1056,7 +1056,8 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     }
 }
 
-// TODO: allow consumer to define shard store
+// TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
+// handling will need to replace expects
 /// Type alias for sapling memory shard store
 pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 

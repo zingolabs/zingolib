@@ -1,10 +1,12 @@
 //! Balance methods and types for `crate::wallet::LightWallet`.
 
 use pepper_sync::wallet::{
-    KeyIdInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin, WalletTransaction,
+    KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
+    WalletTransaction,
 };
+use shardtree::store::ShardStore;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zcash_protocol::{PoolType, value::Zatoshis};
+use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
 
 use crate::utils;
 
@@ -129,18 +131,18 @@ fn format_zatoshis(zatoshis: Zatoshis) -> String {
 
 impl LightWallet {
     /// Returns account balance.
-    pub async fn account_balance(
+    pub fn account_balance(
         &self,
         account_id: zip32::AccountId,
     ) -> Result<AccountBalance, BalanceError> {
         let confirmed_orchard_balance =
-            match self.confirmed_balance::<OrchardNote>(account_id).await {
+            match self.confirmed_balance_excluding_dust::<OrchardNote>(account_id) {
                 Ok(zats) => Some(zats),
                 Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
                 Err(e) => return Err(e),
             };
         let unconfirmed_orchard_balance =
-            match self.unconfirmed_balance::<OrchardNote>(account_id).await {
+            match self.unconfirmed_balance_excluding_dust::<OrchardNote>(account_id) {
                 Ok(zats) => Some(zats),
                 Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
                 Err(e) => return Err(e),
@@ -149,13 +151,13 @@ impl LightWallet {
             confirmed_orchard_balance.and_then(|confirmed| unconfirmed_orchard_balance + confirmed);
 
         let confirmed_sapling_balance =
-            match self.confirmed_balance::<SaplingNote>(account_id).await {
+            match self.confirmed_balance_excluding_dust::<SaplingNote>(account_id) {
                 Ok(zats) => Some(zats),
                 Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
                 Err(e) => return Err(e),
             };
         let unconfirmed_sapling_balance =
-            match self.unconfirmed_balance::<SaplingNote>(account_id).await {
+            match self.unconfirmed_balance_excluding_dust::<SaplingNote>(account_id) {
                 Ok(zats) => Some(zats),
                 Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
                 Err(e) => return Err(e),
@@ -164,19 +166,17 @@ impl LightWallet {
             confirmed_sapling_balance.and_then(|confirmed| unconfirmed_sapling_balance + confirmed);
 
         let confirmed_transparent_balance =
-            match self.confirmed_balance::<TransparentCoin>(account_id).await {
+            match self.confirmed_balance_excluding_dust::<TransparentCoin>(account_id) {
                 Ok(zats) => Some(zats),
                 Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
                 Err(e) => return Err(e),
             };
-        let unconfirmed_transparent_balance = match self
-            .unconfirmed_balance::<TransparentCoin>(account_id)
-            .await
-        {
-            Ok(zats) => Some(zats),
-            Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
-            Err(e) => return Err(e),
-        };
+        let unconfirmed_transparent_balance =
+            match self.unconfirmed_balance_excluding_dust::<TransparentCoin>(account_id) {
+                Ok(zats) => Some(zats),
+                Err(BalanceError::KeyError(KeyError::NoViewCapability)) => None,
+                Err(e) => return Err(e),
+            };
         let total_transparent_balance = confirmed_transparent_balance
             .and_then(|confirmed| unconfirmed_transparent_balance + confirmed);
 
@@ -193,8 +193,8 @@ impl LightWallet {
         })
     }
 
-    /// Returns the total balance of the all outputs of a given pool type and `account_id` matching the output and transaction
-    /// criteria specified by the `filter_function`.
+    /// Returns the total balance of the all unspent outputs of a given pool type and `account_id` matching the output
+    /// and transaction criteria specified by the `filter_function`.
     ///
     /// # Error
     ///
@@ -202,7 +202,7 @@ impl LightWallet {
     /// - no keys are found for the given `account_id`
     /// - the UFVK does not have viewing capability for the given pool type
     /// - the balance summation exceeds the valid range of zatoshis
-    pub async fn get_filtered_balance<Op, F>(
+    pub fn get_filtered_balance<Op, F>(
         &self,
         filter_function: F,
         account_id: zip32::AccountId,
@@ -254,7 +254,8 @@ impl LightWallet {
         )?)
     }
 
-    /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool and `account_id`.
+    /// Returns the total balance of the all unspent outputs of a given pool type and `account_id` matching the output
+    /// and transaction criteria specified by the mutable `filter_function`.
     ///
     /// # Error
     ///
@@ -262,7 +263,67 @@ impl LightWallet {
     /// - no keys are found for the given `account_id`
     /// - the UFVK does not have viewing capability for the given pool type
     /// - the balance summation exceeds the valid range of zatoshis
-    pub async fn confirmed_balance<Op>(
+    pub fn get_filtered_balance_mut<Op, F>(
+        &self,
+        mut filter_function: F,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, BalanceError>
+    where
+        Op: OutputInterface,
+        F: FnMut(&Op, &WalletTransaction) -> bool,
+    {
+        match &self
+            .unified_key_store
+            .get(&account_id)
+            .ok_or(KeyError::NoAccountKeys)?
+        {
+            UnifiedKeyStore::Spend(_) => (),
+            UnifiedKeyStore::View(ufvk) => match Op::POOL_TYPE {
+                PoolType::Transparent => {
+                    if ufvk.transparent().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    };
+                }
+                PoolType::SAPLING => {
+                    if ufvk.sapling().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    };
+                }
+                PoolType::ORCHARD => {
+                    if ufvk.orchard().is_none() {
+                        return Err(KeyError::NoViewCapability.into());
+                    };
+                }
+            },
+            UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
+        }
+
+        Ok(utils::conversion::zatoshis_from_u64(
+            self.wallet_transactions
+                .values()
+                .fold(0, |acc, transaction| {
+                    acc + Op::transaction_outputs(transaction)
+                        .iter()
+                        .filter(|&output| {
+                            filter_function(output, transaction)
+                                && output.spending_transaction().is_none()
+                                && output.key_id().account_id() == account_id
+                        })
+                        .map(|output| output.value())
+                        .sum::<u64>()
+                }),
+        )?)
+    }
+
+    /// Returns total balance of unspent notes in confirmed blocks for a given shielded pool and `account_id`.
+    ///
+    /// # Error
+    ///
+    /// Returns an error if:
+    /// - no keys are found for the given `account_id`
+    /// - the UFVK does not have viewing capability for the given pool type
+    /// - the balance summation exceeds the valid range of zatoshis
+    pub fn confirmed_balance<Op>(
         &self,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, BalanceError>
@@ -273,11 +334,10 @@ impl LightWallet {
             |_, transaction: &WalletTransaction| transaction.status().is_confirmed(),
             account_id,
         )
-        .await
     }
 
-    /// Returns total wallet balance of unspent notes not yet confirmed on the block chain for a given shielded pool
-    /// and `account_id`.
+    /// Returns total balance of unspent notes in confirmed blocks for a given shielded pool and `account_id`,
+    /// excluding any notes with value less than marginal fee (5_000).
     ///
     /// # Error
     ///
@@ -285,30 +345,7 @@ impl LightWallet {
     /// - no keys are found for the given `account_id`
     /// - the UFVK does not have viewing capability for the given pool type
     /// - the balance summation exceeds the valid range of zatoshis
-    pub async fn unconfirmed_balance<Op>(
-        &self,
-        account_id: zip32::AccountId,
-    ) -> Result<Zatoshis, BalanceError>
-    where
-        Op: OutputInterface,
-    {
-        self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| !transaction.status().is_confirmed(),
-            account_id,
-        )
-        .await
-    }
-
-    /// Returns total wallet balance of unspent notes in confirmed blocks for a given shielded pool excluding any notes
-    /// with value less than marginal fee (5_000).
-    ///
-    /// # Error
-    ///
-    /// Returns an error if:
-    /// - no keys are found for the given `account_id`
-    /// - the UFVK does not have viewing capability for the given pool type
-    /// - the balance summation exceeds the valid range of zatoshis
-    pub async fn confirmed_balance_excluding_dust<Op>(
+    pub fn confirmed_balance_excluding_dust<Op>(
         &self,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, BalanceError>
@@ -321,34 +358,165 @@ impl LightWallet {
             },
             account_id,
         )
-        .await
     }
 
-    /// Returns total balance of all shielded pools excluding any notes with value less than marginal fee
-    /// that are confirmed on the block chain (the block has at least 1 confirmation).
-    /// Does not include transparent funds.
+    /// Returns total balance of unspent notes not yet confirmed on the block chain for a given shielded pool and
+    /// `account_id`.
+    ///
+    /// # Error
+    ///
+    /// Returns an error if:
+    /// - no keys are found for the given `account_id`
+    /// - the UFVK does not have viewing capability for the given pool type
+    /// - the balance summation exceeds the valid range of zatoshis
+    pub fn unconfirmed_balance<Op>(
+        &self,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, BalanceError>
+    where
+        Op: OutputInterface,
+    {
+        self.get_filtered_balance::<Op, _>(
+            |_, transaction: &WalletTransaction| !transaction.status().is_confirmed(),
+            account_id,
+        )
+    }
+
+    /// Returns total balance of unspent notes not yet confirmed on the block chain for a given shielded pool and
+    /// `account_id`, excluding any notes with value less than marginal fee (5_000).
+    ///
+    /// # Error
+    ///
+    /// Returns an error if:
+    /// - no keys are found for the given `account_id`
+    /// - the UFVK does not have viewing capability for the given pool type
+    /// - the balance summation exceeds the valid range of zatoshis
+    pub fn unconfirmed_balance_excluding_dust<Op>(
+        &self,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, BalanceError>
+    where
+        Op: OutputInterface,
+    {
+        self.get_filtered_balance::<Op, _>(
+            |note, transaction: &WalletTransaction| {
+                Op::value(note) > MARGINAL_FEE.into_u64() && !transaction.status().is_confirmed()
+            },
+            account_id,
+        )
+    }
+
+    /// Returns total balance of spendable notes for a given shielded pool and `account_id`.
+    ///
+    /// Spendable notes are:
+    /// - confirmed
+    /// - not dust (note value larger than 5_000 zats)
+    /// - the wallet can build a witness for the note's commitment
+    /// - satisfy the number of minimum confirmations set by the wallet
+    /// - the nullifier derived from the note has not yet been found in a transaction input on chain
+    ///
+    /// # Error
+    ///
+    /// Returns an error if:
+    /// - no keys are found for the given `account_id`
+    /// - the UFVK does not have viewing capability for the given pool type
+    /// - the balance summation exceeds the valid range of zatoshis
+    pub fn spendable_balance<N>(
+        &mut self,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, BalanceError>
+    where
+        N: NoteInterface,
+    {
+        let Some(wallet_height) = self.sync_state.wallet_height() else {
+            return Ok(Zatoshis::ZERO);
+        };
+        let anchor_height = wallet_height + 1 - u32::from(self.wallet_settings.min_confirmations);
+        if anchor_height == 0.into() {
+            return Ok(Zatoshis::ZERO);
+        }
+        if self
+            .shard_trees
+            .orchard
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(BalanceError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Orchard,
+                height: anchor_height,
+            });
+        }
+        if self
+            .shard_trees
+            .sapling
+            .store()
+            .get_checkpoint(&anchor_height)
+            .expect("infallible")
+            .is_none()
+        {
+            return Err(BalanceError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Sapling,
+                height: anchor_height,
+            });
+        }
+
+        let mut shard_trees = std::mem::take(&mut self.shard_trees);
+        let spendable_balance = self.get_filtered_balance_mut::<N, _>(
+            |note, transaction: &WalletTransaction| {
+                N::value(note) > MARGINAL_FEE.into_u64()
+                    && transaction.status().is_confirmed()
+                    && transaction.status().get_height() <= anchor_height
+                    && note
+                        .position()
+                        .is_some_and(|position| match N::SHIELDED_PROTOCOL {
+                            ShieldedProtocol::Orchard => {
+                                match shard_trees
+                                    .orchard
+                                    .witness_at_checkpoint_id_caching(position, &anchor_height)
+                                {
+                                    Ok(witness) => witness.is_some(),
+                                    Err(_) => false,
+                                }
+                            }
+                            ShieldedProtocol::Sapling => {
+                                match shard_trees
+                                    .sapling
+                                    .witness_at_checkpoint_id_caching(position, &anchor_height)
+                                {
+                                    Ok(witness) => witness.is_some(),
+                                    Err(_) => false,
+                                }
+                            }
+                        })
+            },
+            account_id,
+        )?;
+        self.shard_trees = shard_trees;
+
+        Ok(spendable_balance)
+    }
+
+    /// Returns total spendable balance of all shielded pools of a given `account_id`.
+    ///
+    /// See [`Self::spendable_balance`] for more information.
     ///
     /// # Error
     ///
     /// Returns an error if:
     /// - no keys are found for the given `account_id`
     /// - the balance summation exceeds the valid range of zatoshis
-    pub async fn confirmed_shielded_balance_excluding_dust(
-        &self,
+    pub fn shielded_spendable_balance(
+        &mut self,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, BalanceError> {
-        let orchard_balance = match self
-            .confirmed_balance_excluding_dust::<OrchardNote>(account_id)
-            .await
-        {
+        let orchard_balance = match self.spendable_balance::<OrchardNote>(account_id) {
             Ok(zats) => Ok(zats),
             Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
             Err(e) => Err(e),
         }?;
-        let sapling_balance = match self
-            .confirmed_balance_excluding_dust::<SaplingNote>(account_id)
-            .await
-        {
+        let sapling_balance = match self.spendable_balance::<SaplingNote>(account_id) {
             Ok(zats) => Ok(zats),
             Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
             Err(e) => Err(e),

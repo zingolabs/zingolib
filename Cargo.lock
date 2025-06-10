@@ -2514,9 +2514,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30821f91f0fa8660edca547918dc59812893b497d07c1144f326f07fdd94aba9"
 dependencies = [
  "either",
- "proptest",
- "rand 0.8.5",
- "rand_core 0.6.4",
 ]
 
 [[package]]

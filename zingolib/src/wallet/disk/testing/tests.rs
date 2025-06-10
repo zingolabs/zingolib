@@ -190,9 +190,6 @@ async fn loaded_wallet_assert(
         }
 
         let balance = lightclient
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();

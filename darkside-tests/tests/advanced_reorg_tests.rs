@@ -47,9 +47,6 @@ async fn reorg_changes_incoming_tx_height() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -88,9 +85,6 @@ async fn reorg_changes_incoming_tx_height() {
     // Assert that balance holds
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -214,9 +208,6 @@ async fn reorg_changes_incoming_tx_index() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -255,9 +246,6 @@ async fn reorg_changes_incoming_tx_index() {
     // Assert that balance holds
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -381,9 +369,6 @@ async fn reorg_expires_incoming_tx() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -422,9 +407,6 @@ async fn reorg_expires_incoming_tx() {
     // Assert that balance holds
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -570,9 +552,6 @@ async fn reorg_changes_outgoing_tx_height() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -638,9 +617,6 @@ async fn reorg_changes_outgoing_tx_height() {
 
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -715,9 +691,6 @@ async fn reorg_changes_outgoing_tx_height() {
     // Assert that balance holds
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -849,9 +822,6 @@ async fn reorg_expires_outgoing_tx_height() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -900,9 +870,6 @@ async fn reorg_expires_outgoing_tx_height() {
 
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -959,9 +926,6 @@ async fn reorg_expires_outgoing_tx_height() {
     // sent transaction was never mined and has expired.
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -1049,9 +1013,6 @@ async fn reorg_changes_outgoing_tx_index() {
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -1117,9 +1078,6 @@ async fn reorg_changes_outgoing_tx_index() {
 
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
@@ -1201,9 +1159,6 @@ async fn reorg_changes_outgoing_tx_index() {
     // Assert that balance holds
     assert_eq!(
         light_client
-            .wallet
-            .read()
-            .await
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap(),
