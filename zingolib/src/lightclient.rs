@@ -171,6 +171,11 @@ impl LightClient {
         Ok(())
     }
 
+    /// Removes the tor client.
+    pub async fn remove_tor_client(&mut self) {
+        self.tor_client = None;
+    }
+
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
