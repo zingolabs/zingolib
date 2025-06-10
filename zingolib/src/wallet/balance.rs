@@ -6,7 +6,7 @@ use pepper_sync::wallet::{
 };
 use shardtree::store::ShardStore;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zcash_protocol::{PoolType, value::Zatoshis};
+use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
 
 use crate::utils;
 
@@ -459,15 +459,28 @@ impl LightWallet {
                 N::value(note) > MARGINAL_FEE.into_u64()
                     && transaction.status().is_confirmed()
                     && transaction.status().get_height() <= anchor_height
-                    && note.position().is_some_and(|position| {
-                        match shard_trees
-                            .orchard
-                            .witness_at_checkpoint_id_caching(position, &anchor_height)
-                        {
-                            Ok(witness) => witness.is_some(),
-                            Err(_) => false,
-                        }
-                    })
+                    && note
+                        .position()
+                        .is_some_and(|position| match N::SHIELDED_PROTOCOL {
+                            ShieldedProtocol::Orchard => {
+                                match shard_trees
+                                    .orchard
+                                    .witness_at_checkpoint_id_caching(position, &anchor_height)
+                                {
+                                    Ok(witness) => witness.is_some(),
+                                    Err(_) => false,
+                                }
+                            }
+                            ShieldedProtocol::Sapling => {
+                                match shard_trees
+                                    .sapling
+                                    .witness_at_checkpoint_id_caching(position, &anchor_height)
+                                {
+                                    Ok(witness) => witness.is_some(),
+                                    Err(_) => false,
+                                }
+                            }
+                        })
             },
             account_id,
         )?;

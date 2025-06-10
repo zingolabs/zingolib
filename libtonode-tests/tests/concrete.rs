@@ -1186,7 +1186,7 @@ mod fast {
         let addresses = recipient.unified_addresses_json().await;
         let address_5000_nonememo_tuples = addresses
             .members()
-            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 5_000, None))
+            .map(|ua| (ua["encoded_address"].as_str().unwrap(), 10_000, None))
             .collect::<Vec<(&str, u64, Option<&str>)>>();
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
@@ -1205,11 +1205,11 @@ mod fast {
         assert_eq!(
             balance_b,
             AccountBalance {
-                total_sapling_balance: Some(5000.try_into().unwrap()),
-                confirmed_sapling_balance: Some(5000.try_into().unwrap()),
+                total_sapling_balance: Some(10_000.try_into().unwrap()),
+                confirmed_sapling_balance: Some(10_000.try_into().unwrap()),
                 unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
-                total_orchard_balance: Some(15000.try_into().unwrap()),
-                confirmed_orchard_balance: Some(15000.try_into().unwrap()),
+                total_orchard_balance: Some(30_000.try_into().unwrap()),
+                confirmed_orchard_balance: Some(30_000.try_into().unwrap()),
                 unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
                 total_transparent_balance: Some(0.try_into().unwrap()),
                 confirmed_transparent_balance: Some(0.try_into().unwrap()),
@@ -2479,7 +2479,7 @@ TransactionSummary {
         let (regtest_manager, _cph, mut faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
         let faucet_to_recipient_amount = 20_000u64;
-        let recipient_to_faucet_amount = 5_000u64;
+        let recipient_to_faucet_amount = 10_000u64;
         // check start state
         faucet.sync_and_await().await.unwrap();
         let wallet_fully_scanned_height = faucet
@@ -2575,7 +2575,7 @@ TransactionSummary {
         )
         .await;
 
-        let amount_to_send = 5_000;
+        let amount_to_send = 10_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
         from_inputs::quick_send(
             &mut faucet,
@@ -3088,7 +3088,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
+        check_client_balances!(recipient, o: for_orchard s: 0 t: 0 );
 
         from_inputs::quick_send(
             &mut recipient,
@@ -3108,7 +3108,7 @@ TransactionSummary {
         .await
         .unwrap();
         let remaining_orchard = for_orchard - (6 * fee);
-        check_client_balances!(recipient, o: remaining_orchard s: for_sapling t: 0);
+        check_client_balances!(recipient, o: remaining_orchard s: 0 t: 0);
     }
     // FIXME: zingo2 yet to implement transaction filter in sync engine. its also not clear how this test exceeds the tx filter.
     // #[tokio::test]
