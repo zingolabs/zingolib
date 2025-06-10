@@ -439,18 +439,26 @@ impl LightWallet {
             .orchard
             .store()
             .get_checkpoint(&anchor_height)
-            .is_err()
+            .expect("infallible")
+            .is_none()
         {
-            return Err(BalanceError::CheckpointNotFound(anchor_height));
+            return Err(BalanceError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Orchard,
+                height: anchor_height,
+            });
         }
         if self
             .shard_trees
             .sapling
             .store()
             .get_checkpoint(&anchor_height)
-            .is_err()
+            .expect("infallible")
+            .is_none()
         {
-            return Err(BalanceError::CheckpointNotFound(anchor_height));
+            return Err(BalanceError::CheckpointNotFound {
+                shielded_protocol: ShieldedProtocol::Sapling,
+                height: anchor_height,
+            });
         }
 
         let mut shard_trees = std::mem::take(&mut self.shard_trees);
