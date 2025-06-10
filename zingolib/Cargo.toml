@@ -27,10 +27,6 @@ testvectors = { workspace = true, optional = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true }
-# incrementalmerkletree = { workspace = true, features = [
-#     "test-dependencies",
-#     "legacy-api",
-# ] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",

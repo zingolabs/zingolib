@@ -413,6 +413,7 @@ impl LightWallet {
     /// - not dust (note value larger than 5_000 zats)
     /// - the wallet can build a witness for the note's commitment
     /// - satisfy the number of minimum confirmations set by the wallet
+    /// - the nullifier derived from the note has not yet been found in a transaction input on chain
     ///
     /// # Error
     ///
