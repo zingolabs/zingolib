@@ -491,7 +491,7 @@ impl LightWallet {
 
     /// Returns total spendable balance of all shielded pools of a given `account_id`.
     ///
-    /// See [`self::spendable_balance`] for more information.
+    /// See [`Self::spendable_balance`] for more information.
     ///
     /// # Error
     ///
