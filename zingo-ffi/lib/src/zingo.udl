@@ -55,7 +55,8 @@ namespace zingo {
   string zec_price(string tor);
   string resend_transaction(string txid);
   string remove_transaction(string txid);
-  string get_spendable_balance(string address, string zennies);
+  string get_spendable_balance_with_address(string address, string zennies);
+  string get_spendable_balance_total();
   string set_option_wallet();
   string get_option_wallet();
   string create_tor_client(string datadir);

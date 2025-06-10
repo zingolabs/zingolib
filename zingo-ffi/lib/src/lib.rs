@@ -72,6 +72,7 @@ fn construct_uri_load_config(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -154,6 +155,7 @@ pub fn init_from_seed(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
     ) {
         Ok(w) => w,
@@ -188,6 +190,7 @@ pub fn init_from_ufvk(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
     ) {
         Ok(w) => w,
@@ -682,9 +685,6 @@ pub fn get_balance() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
             match lightclient
-                .wallet
-                .read()
-                .await
                 .account_balance(AccountId::ZERO)
                 .await
             {
@@ -811,7 +811,7 @@ pub fn remove_transaction(txid: String) -> String {
     }
 }
 
-pub fn get_spendable_balance(address: String, zennies: String) -> String {
+pub fn get_spendable_balance_with_address(address: String, zennies: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         let Ok(address) = address_from_str(&address) else {
             return "Error: unknown address format".to_string();
@@ -821,8 +821,28 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
         };
         RT.block_on(async move {
             match lightclient
-                .get_spendable_shielded_balance(address, zennies, AccountId::ZERO)
+                .max_send_value(address, zennies, AccountId::ZERO)
                 .await
+            {
+                Ok(bal) => {
+                    object! { "balance" => bal.into_u64() }.pretty(2)
+                }
+                Err(e) => format!("error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_spendable_balance_total() -> String {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
+        RT.block_on(async move {
+            match lightclient
+                .wallet
+                .write()
+                .await
+                .shielded_spendable_balance(AccountId::ZERO)
             {
                 Ok(bal) => {
                     object! { "balance" => bal.into_u64() }.pretty(2)
@@ -855,9 +875,13 @@ pub fn create_tor_client(data_dir: String) -> String {
     }
 }
 
-// FIXME: add "remove_tor_client". (add to zingolib)
 pub fn remove_tor_client() -> String {
-    "Error: unimplemented".to_string()
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move { lightclient.remove_tor_client().await });
+        "Successfully removed tor client.".to_string()
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
 
 pub fn get_unified_addresses() -> String {
