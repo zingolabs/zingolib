@@ -578,26 +578,29 @@ impl InputSource for LightWallet {
             .collect::<Vec<_>>();
         let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
 
-        let selected_sapling_notes = if sources.contains(&ShieldedProtocol::Sapling) {
-            self.select_spendable_notes_by_pool::<SaplingNote>(
-                &mut remaining_value_needed,
-                anchor_height,
-                &exclude_sapling,
-                account,
-            )?
-        } else {
-            Vec::new()
-        };
-        let selected_orchard_notes = if sources.contains(&ShieldedProtocol::Orchard) {
-            self.select_spendable_notes_by_pool::<OrchardNote>(
-                &mut remaining_value_needed,
-                anchor_height,
-                &exclude_orchard,
-                account,
-            )?
-        } else {
-            Vec::new()
-        };
+        // prioritises selecting spendable notes that are guaranteed to be unspent first
+        let mut selected_sapling_notes = Vec::new();
+        let mut selected_orchard_notes = Vec::new();
+        for include_potentially_spent_notes in [false, true] {
+            if sources.contains(&ShieldedProtocol::Sapling) {
+                selected_sapling_notes.extend(self.select_spendable_notes_by_pool::<SaplingNote>(
+                    &mut remaining_value_needed,
+                    anchor_height,
+                    &exclude_sapling,
+                    account,
+                    include_potentially_spent_notes,
+                )?);
+            }
+            if sources.contains(&ShieldedProtocol::Orchard) {
+                selected_orchard_notes.extend(self.select_spendable_notes_by_pool::<OrchardNote>(
+                    &mut remaining_value_needed,
+                    anchor_height,
+                    &exclude_orchard,
+                    account,
+                    false,
+                )?);
+            }
+        }
 
         /* TODO: Priority
         if selected

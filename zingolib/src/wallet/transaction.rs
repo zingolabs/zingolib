@@ -1,4 +1,5 @@
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::ZatBalance;
 
 use pepper_sync::wallet::{
@@ -206,17 +207,30 @@ impl LightWallet {
 /// Returns all unspent notes of the specified pool and `account` in the given `transaction`.
 ///
 /// Any output IDs in `exclude` will not be returned.
+/// `spend_horizon` is the block height from which all nullifiers have been mapped, guaranteeing a note from a block
+/// equal to or above this height is unspent.
+/// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
+/// cannot guarantee the notes are unspent. In this case, the `spend_horizon` is not used.
 pub(crate) fn transaction_unspent_notes<'a, N: NoteInterface + 'a>(
     transaction: &'a WalletTransaction,
     exclude: &'a [OutputId],
     account: zip32::AccountId,
+    spend_horizon: BlockHeight,
+    include_potentially_unspent_notes: bool,
 ) -> impl Iterator<Item = &'a N> + 'a {
+    let guaranteed_unspent = if include_potentially_unspent_notes {
+        true
+    } else {
+        transaction.status().get_height() >= spend_horizon
+    };
+
     N::transaction_outputs(transaction)
         .iter()
         .filter(move |&note| {
             note.spending_transaction().is_none()
                 && !exclude.contains(&note.output_id())
                 && note.key_id().account_id() == account
+                && guaranteed_unspent
         })
 }
 

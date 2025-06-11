@@ -415,6 +415,9 @@ impl LightWallet {
     /// - satisfy the number of minimum confirmations set by the wallet
     /// - the nullifier derived from the note has not yet been found in a transaction input on chain
     ///
+    /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
+    /// cannot guarantee the notes are unspent.
+    ///
     /// # Error
     ///
     /// Returns an error if:
@@ -424,10 +427,14 @@ impl LightWallet {
     pub fn spendable_balance<N>(
         &mut self,
         account_id: zip32::AccountId,
+        include_potentially_spent_notes: bool,
     ) -> Result<Zatoshis, BalanceError>
     where
         N: NoteInterface,
     {
+        let Some(spend_horizon) = self.spend_horizon() else {
+            return Ok(Zatoshis::ZERO);
+        };
         let Some(wallet_height) = self.sync_state.wallet_height() else {
             return Ok(Zatoshis::ZERO);
         };
@@ -490,6 +497,11 @@ impl LightWallet {
                                 }
                             }
                         })
+                    && if include_potentially_spent_notes {
+                        true
+                    } else {
+                        transaction.status().get_height() >= spend_horizon
+                    }
             },
             account_id,
         )?;
@@ -510,13 +522,18 @@ impl LightWallet {
     pub fn shielded_spendable_balance(
         &mut self,
         account_id: zip32::AccountId,
+        include_potentially_spent_notes: bool,
     ) -> Result<Zatoshis, BalanceError> {
-        let orchard_balance = match self.spendable_balance::<OrchardNote>(account_id) {
+        let orchard_balance = match self
+            .spendable_balance::<OrchardNote>(account_id, include_potentially_spent_notes)
+        {
             Ok(zats) => Ok(zats),
             Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
             Err(e) => Err(e),
         }?;
-        let sapling_balance = match self.spendable_balance::<SaplingNote>(account_id) {
+        let sapling_balance = match self
+            .spendable_balance::<SaplingNote>(account_id, include_potentially_spent_notes)
+        {
             Ok(zats) => Ok(zats),
             Err(BalanceError::KeyError(KeyError::NoViewCapability)) => Ok(Zatoshis::ZERO),
             Err(e) => Err(e),

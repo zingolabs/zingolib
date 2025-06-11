@@ -658,7 +658,10 @@ struct SpendableBalanceCommand {}
 impl Command for SpendableBalanceCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Display the wallet's spendable balance for each shielded pool.
+            Display the wallet's spendable balance.
+
+            Potentially spendable balance includes notes that are not guaranteed to be unspent due to the wallet not
+            being fully synced to the blockchain.
 
             Usage:
             spendable_balance
@@ -667,25 +670,25 @@ impl Command for SpendableBalanceCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Display the wallet's spendable balance for each shielded pool."
+        "Display the wallet's spendable balance."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             let mut wallet = lightclient.wallet.write().await;
-            let orchard_spendable_balance =
-                match wallet.spendable_balance::<OrchardNote>(zip32::AccountId::ZERO) {
+            let spendable_balance =
+                match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, false) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
-            let sapling_spendable_balance =
-                match wallet.spendable_balance::<SaplingNote>(zip32::AccountId::ZERO) {
+            let potentially_spendable_balance =
+                match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, true) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
             object! {
-                "orchard_spendable_balance" => orchard_spendable_balance.into_u64(),
-                "sapling_spendable_balance" => sapling_spendable_balance.into_u64(),
+                "spendable_balance" => spendable_balance.into_u64(),
+                "potentially_spendable_balance" => potentially_spendable_balance.into_u64(),
             }
             .pretty(2)
         })
