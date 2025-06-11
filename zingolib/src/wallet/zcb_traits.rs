@@ -566,12 +566,12 @@ impl InputSource for LightWallet {
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
-        let exclude_sapling = exclude
+        let mut exclude_sapling = exclude
             .iter()
             .filter(|&note_id| note_id.pool_type() == PoolType::SAPLING)
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
-        let exclude_orchard = exclude
+        let mut exclude_orchard = exclude
             .iter()
             .filter(|&note_id| note_id.pool_type() == PoolType::ORCHARD)
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
@@ -583,22 +583,34 @@ impl InputSource for LightWallet {
         let mut selected_orchard_notes = Vec::new();
         for include_potentially_spent_notes in [false, true] {
             if sources.contains(&ShieldedProtocol::Sapling) {
-                selected_sapling_notes.extend(self.select_spendable_notes_by_pool::<SaplingNote>(
-                    &mut remaining_value_needed,
-                    anchor_height,
-                    &exclude_sapling,
-                    account,
-                    include_potentially_spent_notes,
-                )?);
+                let notes = self
+                    .select_spendable_notes_by_pool::<SaplingNote>(
+                        &mut remaining_value_needed,
+                        anchor_height,
+                        &exclude_sapling,
+                        account,
+                        include_potentially_spent_notes,
+                    )?
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+                selected_sapling_notes.extend(notes);
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
-                selected_orchard_notes.extend(self.select_spendable_notes_by_pool::<OrchardNote>(
-                    &mut remaining_value_needed,
-                    anchor_height,
-                    &exclude_orchard,
-                    account,
-                    false,
-                )?);
+                let notes = self
+                    .select_spendable_notes_by_pool::<OrchardNote>(
+                        &mut remaining_value_needed,
+                        anchor_height,
+                        &exclude_orchard,
+                        account,
+                        include_potentially_spent_notes,
+                    )?
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+                selected_orchard_notes.extend(notes);
             }
         }
 
