@@ -582,6 +582,7 @@ impl InputSource for LightWallet {
         let mut selected_sapling_notes = Vec::new();
         let mut selected_orchard_notes = Vec::new();
         for include_potentially_spent_notes in [false, true] {
+            // prioritise note selection for the given `sources`
             if sources.contains(&ShieldedProtocol::Sapling) {
                 let notes = self
                     .select_spendable_notes_by_pool::<SaplingNote>(
@@ -612,6 +613,34 @@ impl InputSource for LightWallet {
                 exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
                 selected_orchard_notes.extend(notes);
             }
+
+            let notes = self
+                .select_spendable_notes_by_pool::<SaplingNote>(
+                    &mut remaining_value_needed,
+                    anchor_height,
+                    &exclude_sapling,
+                    account,
+                    include_potentially_spent_notes,
+                )?
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+            selected_sapling_notes.extend(notes);
+
+            let notes = self
+                .select_spendable_notes_by_pool::<OrchardNote>(
+                    &mut remaining_value_needed,
+                    anchor_height,
+                    &exclude_orchard,
+                    account,
+                    include_potentially_spent_notes,
+                )?
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+            selected_orchard_notes.extend(notes);
         }
 
         /* TODO: Priority
