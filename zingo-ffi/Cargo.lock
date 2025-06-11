@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -2242,9 +2242,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f154ce46856750ed433c8649605bf7ed2de3bc35fd9d2a9f30cddd873c80cb08"
+checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
 name = "hex"
@@ -3011,9 +3011,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.7.4"
+version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "memmap2"
@@ -3463,7 +3463,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4163,9 +4163,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.19"
+version = "0.12.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2f8e5513d63f2e5b386eb5106dc67eaf3f84e95258e210489136b8b92ad6119"
+checksum = "eabf4c97d9130e2bf606614eb937e86edac8292eaa6f422f995d7e8de1eb1813"
 dependencies = [
  "base64",
  "bytes",
@@ -4178,11 +4178,8 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
- "ipnet",
  "js-sys",
  "log",
- "mime",
- "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -7784,7 +7781,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7796,7 +7793,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "http",
  "http-body",
@@ -7816,7 +7813,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7832,7 +7829,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7841,7 +7838,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "bip0039",
 ]
@@ -7849,7 +7846,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e5297b772d774ecc0e1025d783bc5ac93fc23c52"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=stabilise_spend_before_sync#9e0867efb23f536d911c0554c469efa88eb02923"
 dependencies = [
  "append-only-vec",
  "bech32",

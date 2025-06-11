@@ -811,6 +811,7 @@ pub fn remove_transaction(txid: String) -> String {
     }
 }
 
+// we don't use this anymore...
 pub fn get_spendable_balance_with_address(address: String, zennies: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         let Ok(address) = address_from_str(&address) else {
@@ -825,7 +826,7 @@ pub fn get_spendable_balance_with_address(address: String, zennies: String) -> S
                 .await
             {
                 Ok(bal) => {
-                    object! { "balance" => bal.into_u64() }.pretty(2)
+                    object! { "spendable_balance" => bal.into_u64() }.pretty(2)
                 }
                 Err(e) => format!("error: {e}"),
             }
@@ -838,17 +839,22 @@ pub fn get_spendable_balance_with_address(address: String, zennies: String) -> S
 pub fn get_spendable_balance_total() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .write()
-                .await
-                .shielded_spendable_balance(AccountId::ZERO)
-            {
-                Ok(bal) => {
-                    object! { "balance" => bal.into_u64() }.pretty(2)
-                }
-                Err(e) => format!("error: {e}"),
+            let mut wallet = lightclient.wallet.write().await;
+            let spendable_balance =
+                match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            let potentially_spendable_balance =
+                match wallet.shielded_spendable_balance(AccountId::ZERO, true) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            object! {
+                "spendable_balance" => spendable_balance.into_u64(),
+                "potentially_spendable_balance" => potentially_spendable_balance.into_u64(),
             }
+            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
