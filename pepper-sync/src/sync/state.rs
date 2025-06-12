@@ -21,7 +21,7 @@ use crate::{
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
     wallet::{
-        InitialSyncState, Locator, SyncState, TreeBounds, WalletTransaction,
+        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
         traits::{SyncBlocks, SyncWallet},
     },
 };
@@ -57,13 +57,23 @@ where
     Ok(wallet_height)
 }
 
-/// Returns the locators for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
-fn find_locators(sync_state: &SyncState, block_range: &Range<BlockHeight>) -> BTreeSet<Locator> {
+/// Returns the scan_targets for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
+fn find_scan_targets(
+    sync_state: &SyncState,
+    block_range: &Range<BlockHeight>,
+) -> BTreeSet<ScanTarget> {
     sync_state
-        .locators
+        .scan_targets
         .range(
-            (block_range.start, TxId::from_bytes([0; 32]))
-                ..(block_range.end, TxId::from_bytes([0; 32])),
+            ScanTarget {
+                block_height: block_range.start,
+                txid: TxId::from_bytes([0; 32]),
+                narrow_scan_area: false,
+            }..ScanTarget {
+                block_height: block_range.end,
+                txid: TxId::from_bytes([0; 32]),
+                narrow_scan_area: false,
+            },
         )
         .cloned()
         .collect()
@@ -78,12 +88,12 @@ pub(super) async fn update_scan_ranges(
 ) {
     reset_scan_ranges(sync_state);
     create_scan_range(wallet_height, chain_height, sync_state).await;
-    let locators = sync_state.locators.clone();
+    let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Orchard,
-        locators.into_iter(),
+        scan_targets.into_iter(),
     );
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
 
@@ -249,26 +259,31 @@ fn set_chain_tip_scan_range(
     punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
 
-/// Punches in the `shielded_protocol` shard block ranges surrounding each locator with `ScanPriority::FoundNote`.
-pub(super) fn set_found_note_scan_ranges<L: Iterator<Item = Locator>>(
+/// Punches in the `shielded_protocol` shard block ranges surrounding each scan target with `ScanPriority::FoundNote`.
+pub(super) fn set_found_note_scan_ranges<T: Iterator<Item = ScanTarget>>(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
-    locators: L,
+    scan_targets: T,
 ) {
-    for locator in locators {
-        set_found_note_scan_range(consensus_parameters, sync_state, shielded_protocol, locator);
+    for scan_target in scan_targets {
+        set_found_note_scan_range(
+            consensus_parameters,
+            sync_state,
+            shielded_protocol,
+            scan_target,
+        );
     }
 }
 
-/// Punches in the `shielded_protocol` shard block range surrounding the `locator` with `ScanPriority::FoundNote`.
+/// Punches in the `shielded_protocol` shard block range surrounding the scan target with `ScanPriority::FoundNote`.
 pub(super) fn set_found_note_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedProtocol,
-    locator: Locator,
+    scan_target: ScanTarget,
 ) {
-    let block_height = locator.0;
+    let block_height = scan_target.block_height;
     let block_range = determine_block_range(
         consensus_parameters,
         sync_state,
@@ -594,7 +609,7 @@ where
             .ok();
         let end_seam_block = wallet.get_wallet_block(scan_range.block_range().end).ok();
 
-        let locators = find_locators(wallet.get_sync_state()?, scan_range.block_range());
+        let scan_targets = find_scan_targets(wallet.get_sync_state()?, scan_range.block_range());
         let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
             .get_transparent_addresses()?
             .iter()
@@ -605,7 +620,7 @@ where
             scan_range,
             start_seam_block,
             end_seam_block,
-            locators,
+            scan_targets,
             transparent_addresses,
         )))
     } else {
@@ -854,10 +869,11 @@ pub(super) fn update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
             shielded_protocol,
-            (
-                wallet_transaction.status().get_height(),
-                wallet_transaction.txid(),
-            ),
+            ScanTarget {
+                block_height: wallet_transaction.status().get_height(),
+                txid: wallet_transaction.txid(),
+                narrow_scan_area: false,
+            },
         );
     }
 }

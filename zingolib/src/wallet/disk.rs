@@ -34,7 +34,7 @@ use pepper_sync::{
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     sync::{SyncConfig, TransparentAddressDiscovery},
     wallet::{
-        KeyIdInterface, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock,
+        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock,
         WalletTransaction,
     },
 };
@@ -44,7 +44,7 @@ impl LightWallet {
     /// - Update receiver selection
     /// - Generate initial addresses
     pub const fn serialized_version() -> u64 {
-        36
+        37
     }
 
     /// Serialize into `writer`
@@ -106,11 +106,10 @@ impl LightWallet {
         Vector::write(
             &mut writer,
             &self.outpoint_map.iter().collect::<Vec<_>>(),
-            |w, &(&output_id, &locator)| {
+            |w, &(&output_id, &scan_target)| {
                 output_id.txid().write(&mut *w)?;
                 w.write_u16::<LittleEndian>(output_id.output_index())?;
-                w.write_u32::<LittleEndian>(locator.0.into())?;
-                locator.1.write(w)
+                scan_target.write(w)
             },
         )?;
         self.shard_trees.write(&mut writer)?;
@@ -126,7 +125,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=36 => Self::read_v32(reader, network, version),
+            32..=37 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -309,7 +308,11 @@ impl LightWallet {
                     transaction
                         .status
                         .get_confirmed_height()
-                        .map(|height| (height, transaction.txid))
+                        .map(|height| ScanTarget {
+                            block_height: height,
+                            txid: transaction.txid,
+                            narrow_scan_area: true,
+                        })
                 })
                 .collect::<Vec<_>>(),
         );
@@ -496,13 +499,20 @@ impl LightWallet {
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
             let output_index = r.read_u16::<LittleEndian>()?;
-            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let locator_txid = TxId::read(&mut r)?;
+            let scan_target = if version >= 37 {
+                ScanTarget::read(r)?
+            } else {
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                let txid = TxId::read(&mut r)?;
 
-            Ok((
-                OutputId::new(outpoint_txid, output_index),
-                (locator_height, locator_txid),
-            ))
+                ScanTarget {
+                    block_height,
+                    txid,
+                    narrow_scan_area: true,
+                }
+            };
+
+            Ok((OutputId::new(outpoint_txid, output_index), scan_target))
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();

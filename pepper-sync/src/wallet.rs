@@ -54,7 +54,20 @@ pub mod serialization;
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
 /// output/spend discovery or for targetted rescan.
-pub type Locator = (BlockHeight, TxId);
+///
+/// `narrow_scan_area` is used to narrow the surrounding area scanned around the target from a shard to 100 blocks.
+/// For example, this is useful when targetting transparent outputs as scanning the whole shard will not affect the
+/// spendability of the scan target but will significantly reduce memory usage and/or storage as well as prioritise
+/// creating spendable notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ScanTarget {
+    /// Block height.
+    pub block_height: BlockHeight,
+    /// Txid.
+    pub txid: TxId,
+    /// Narrow surrounding scan area of target.
+    pub narrow_scan_area: bool,
+}
 
 /// Initial sync state.
 ///
@@ -116,8 +129,8 @@ pub struct SyncState {
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
     /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
     pub(crate) orchard_shard_ranges: Vec<Range<BlockHeight>>,
-    /// Locators for relevant transactions to the wallet.
-    pub(crate) locators: BTreeSet<Locator>,
+    /// Scan targets for relevant transactions to the wallet.
+    pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
 }
@@ -129,7 +142,7 @@ impl SyncState {
             scan_ranges: Vec::new(),
             sapling_shard_ranges: Vec::new(),
             orchard_shard_ranges: Vec::new(),
-            locators: BTreeSet::new(),
+            scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
         }
     }
@@ -305,9 +318,9 @@ impl From<OutputId> for OutPoint {
 #[derive(Debug)]
 pub struct NullifierMap {
     /// Sapling nullifer map
-    pub sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    pub sapling: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
     /// Orchard nullifer map
-    pub orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    pub orchard: BTreeMap<orchard::note::Nullifier, ScanTarget>,
 }
 
 impl NullifierMap {

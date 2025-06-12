@@ -4,10 +4,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
-    wallet::traits::{
-        SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+    wallet::{
+        NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock,
+        traits::{
+            SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+        },
     },
-    wallet::{Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock},
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
@@ -181,11 +183,11 @@ impl SyncNullifiers for LightWallet {
 }
 
 impl SyncOutPoints for LightWallet {
-    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, Locator>, Self::Error> {
+    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, ScanTarget>, Self::Error> {
         Ok(&self.outpoint_map)
     }
 
-    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, Locator>, Self::Error> {
+    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, ScanTarget>, Self::Error> {
         Ok(&mut self.outpoint_map)
     }
 }

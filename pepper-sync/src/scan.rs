@@ -13,7 +13,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
-    wallet::{Locator, NullifierMap, OutputId, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
@@ -73,14 +73,14 @@ impl InitialScanData {
 struct ScanData {
     nullifiers: NullifierMap,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    decrypted_locators: BTreeSet<Locator>,
+    decrypted_scan_targets: BTreeSet<ScanTarget>,
     decrypted_note_data: DecryptedNoteData,
     witness_data: WitnessData,
 }
 
 pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
-    pub(crate) outpoints: BTreeMap<OutputId, Locator>,
+    pub(crate) outpoints: BTreeMap<OutputId, ScanTarget>,
     pub(crate) scanned_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
@@ -104,9 +104,9 @@ impl DecryptedNoteData {
 /// Scans a given range and returns all data relevant to the specified keys.
 ///
 /// `start_seam_block` and `end_seam_block` are the blocks adjacent to the `scan_range` for verification of continuity.
-/// `locators` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
+/// `scan_targets` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
 /// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
-/// then `locators` will start empty.
+/// then `scan_targets` will start empty.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -122,7 +122,7 @@ where
         scan_range,
         start_seam_block,
         end_seam_block,
-        mut locators,
+        mut scan_targets,
         transparent_addresses,
     } = scan_task;
 
@@ -167,19 +167,19 @@ where
     let ScanData {
         nullifiers,
         wallet_blocks,
-        mut decrypted_locators,
+        mut decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
     } = scan_data;
 
-    locators.append(&mut decrypted_locators);
+    scan_targets.append(&mut decrypted_scan_targets);
 
     let mut outpoints = BTreeMap::new();
     let wallet_transactions = scan_transactions(
         fetch_request_sender,
         consensus_parameters,
         ufvks,
-        locators,
+        scan_targets,
         decrypted_note_data,
         &wallet_blocks,
         &mut outpoints,

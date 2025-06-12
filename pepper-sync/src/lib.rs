@@ -23,7 +23,7 @@
 //! 1. For first time sync, creates a single scan range from birthday to chain height.
 //! 2. If synced previously, merge all previously scanned ranges together and create a new scan range from wallet
 //!    height to chain height (the part of the chain that has been mined since last sync).
-//! 3. Use locators from transparent address discovery and targetted scanning to set "found note" priority ranges.
+//! 3. Use scan targets from transparent address discovery and targetted scanning to set "found note" priority ranges.
 //! 4. Finds the upper range bound of the latest orchard and sapling shard ranges and splits the scan range at the lowest
 //!    height of the two, setting the upper scan range to priority "chain tip". This ensures that both the sapling and orchard
 //!    note commitments are scanned in the latest incomplete shard at the chain tip.

@@ -11,10 +11,10 @@ use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
-use pepper_sync::wallet::{KeyIdInterface, ShardTrees};
+use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
-    wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
 use zingo_price::PriceList;
 
@@ -125,7 +125,7 @@ pub struct LightWallet {
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
-    pub outpoint_map: BTreeMap<OutputId, Locator>,
+    pub outpoint_map: BTreeMap<OutputId, ScanTarget>,
     /// Shard trees
     pub shard_trees: ShardTrees,
     /// Sync state
@@ -352,6 +352,7 @@ impl LightWallet {
             let network = self.network;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &network)?;
+            println!("WALLET BYTES: {}", wallet_bytes.len());
             self.save_required = false;
             Ok(Some(wallet_bytes))
         } else {
@@ -450,7 +451,11 @@ impl LightWallet {
                     transaction
                         .status()
                         .get_confirmed_height()
-                        .map(|height| (height, transaction.txid()))
+                        .map(|height| ScanTarget {
+                            block_height: height,
+                            txid: transaction.txid(),
+                            narrow_scan_area: true,
+                        })
                 })
                 .collect::<Vec<_>>(),
         );
