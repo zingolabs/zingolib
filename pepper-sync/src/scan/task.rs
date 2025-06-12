@@ -29,7 +29,7 @@ use crate::{
     sync,
     wallet::{
         ScanTarget, WalletBlock,
-        traits::{SyncBlocks, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
 
@@ -194,7 +194,7 @@ where
         shutdown_mempool: Arc<AtomicBool>,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         self.check_batcher_error()?;
 
@@ -270,7 +270,7 @@ where
 
     fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {

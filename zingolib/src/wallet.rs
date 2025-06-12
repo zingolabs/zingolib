@@ -438,7 +438,7 @@ impl LightWallet {
 
     /// Clears all wallet data obtained from the block chain including the sync state.
     ///
-    /// Adds locators to the new sync state to prioritise scanning relevant parts of the chain on rescan.
+    /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
         self.sync_state = SyncState::new();
