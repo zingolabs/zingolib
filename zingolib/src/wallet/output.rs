@@ -224,12 +224,19 @@ impl LightWallet {
     ///
     /// Any notes with output IDs in `exclude` will not be returned.
     /// Any notes without a nullifier or commitment tree position will not be returned.
+    /// Any notes that the wallet cannot construct a witness for with the current sync state will not be returned.
+    /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
+    /// cannot guarantee the notes are unspent.
     pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
         account: zip32::AccountId,
+        include_potentially_spent_notes: bool,
     ) -> Result<Vec<&'a N>, WalletError> {
+        let Some(spend_horizon) = self.spend_horizon() else {
+            return Err(WalletError::NoSyncData);
+        };
         if self
             .shard_trees
             .orchard
@@ -265,7 +272,14 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_unspent_notes::<N>(transaction, exclude, account).collect()
+                    transaction_unspent_notes::<N>(
+                        transaction,
+                        exclude,
+                        account,
+                        spend_horizon,
+                        include_potentially_spent_notes,
+                    )
+                    .collect()
                 } else {
                     Vec::new()
                 }
@@ -336,18 +350,18 @@ impl LightWallet {
             .collect()
     }
 
-    /// Selects spendable notes for a given pool and `account` confirmed at or below `anchor_height` up to the total value of
-    /// `remaining_value_needed`.
+    /// Selects spendable notes for a given pool and `account` confirmed at or below `anchor_height` up to the total
+    /// value of `remaining_value_needed`.
     ///
-    /// Any notes with output IDs in `exclude` will not be selected.
-    /// Selects notes with smallest value that satisfies the target value. Otherwise, selects the note with the largest
-    /// value and repeats.
+    /// Selects notes with smallest value that satisfies the target value, without creating dust as change. Otherwise,
+    /// selects the note with the largest value and repeats.
     pub(crate) fn select_spendable_notes_by_pool<'a, N: NoteInterface>(
         &'a self,
         remaining_value_needed: &mut RemainingNeeded,
         anchor_height: BlockHeight,
         exclude: &'a [OutputId],
         account: zip32::AccountId,
+        include_potentially_spent_notes: bool,
     ) -> Result<Vec<&'a N>, WalletError> {
         let target_value = match remaining_value_needed {
             RemainingNeeded::Positive(value) => *value,
@@ -355,7 +369,12 @@ impl LightWallet {
         };
 
         let mut selected_notes: Vec<&'a N> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<N>(anchor_height, exclude, account)?;
+        let mut unselected_notes = self.spendable_notes::<N>(
+            anchor_height,
+            exclude,
+            account,
+            include_potentially_spent_notes,
+        )?;
         unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
@@ -387,8 +406,9 @@ impl LightWallet {
 
             match unselected_notes.get(unselected_note_index) {
                 Some(&smallest_unselected) => {
-                    // selected a note to test if it has enough value to complete the transaction on its own
-                    if smallest_unselected.value() >= updated_target_value {
+                    // select a note to test if it has enough value to complete the transaction without creating dust as change
+                    if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64()
+                    {
                         selected_notes.push(smallest_unselected);
                         unselected_notes.remove(unselected_note_index);
                     } else {

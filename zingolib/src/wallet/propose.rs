@@ -3,13 +3,13 @@
 use std::num::NonZeroU32;
 
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector,
+    data_api::{scanning::ScanPriority, wallet::input_selection::GreedyInputSelector},
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
 use zcash_protocol::{
     ShieldedProtocol,
-    consensus::Parameters,
+    consensus::{BlockHeight, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -176,6 +176,28 @@ impl LightWallet {
             }
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
+    }
+
+    /// Returns the block height at which all blocks equal to and above this height are scanned.
+    /// Returns `None` if `self.scan_ranges` is empty.
+    ///
+    /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
+    /// unspent.
+    pub(crate) fn spend_horizon(&self) -> Option<BlockHeight> {
+        if let Some(scan_range) = self
+            .sync_state
+            .scan_ranges()
+            .iter()
+            .rev()
+            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        {
+            Some(scan_range.block_range().end)
+        } else {
+            self.sync_state
+                .scan_ranges()
+                .first()
+                .map(|range| range.block_range().start)
+        }
     }
 }
 

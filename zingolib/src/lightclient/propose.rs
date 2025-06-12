@@ -135,7 +135,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
         let mut wallet = self.wallet.write().await;
-        let confirmed_balance = wallet.shielded_spendable_balance(account_id)?;
+        let confirmed_balance = wallet.shielded_spendable_balance(account_id, false)?;
         let mut spendable_balance = confirmed_balance;
 
         loop {
