@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -2839,9 +2839,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.172"
+version = "0.2.173"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
+checksum = "d8cfeafaffdbc32176b64fb251369d52ea9f0a8fbc6f8759edffef7b525d64bb"
 
 [[package]]
 name = "libloading"
@@ -3463,7 +3463,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7789,7 +7789,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7801,7 +7801,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "http",
  "http-body",
@@ -7821,7 +7821,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7837,7 +7837,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7846,7 +7846,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "bip0039",
 ]
@@ -7854,7 +7854,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=fix_memory_issues#9db45c593d208e2c6958c19cb7de84dc18a36042"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
 dependencies = [
  "append-only-vec",
  "bech32",
