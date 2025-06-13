@@ -17,12 +17,12 @@ use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
 use crate::sync::MAX_VERIFICATION_WINDOW;
 use crate::wallet::{
-    Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 use crate::{Orchard, Sapling, SyncDomain, client};
 
-use super::{FetchRequest, witness};
+use super::{FetchRequest, ScanTarget, witness};
 
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
@@ -213,10 +213,10 @@ pub trait SyncNullifiers: SyncWallet {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
             .sapling
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
         nullifier_map
             .orchard
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
     }
@@ -225,15 +225,15 @@ pub trait SyncNullifiers: SyncWallet {
 /// Trait for interfacing outpoints with wallet data
 pub trait SyncOutPoints: SyncWallet {
     /// Get wallet outpoint map
-    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, Locator>, Self::Error>;
+    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, ScanTarget>, Self::Error>;
 
     /// Get mutable reference to wallet outpoint map
-    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, Locator>, Self::Error>;
+    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, ScanTarget>, Self::Error>;
 
     /// Append outpoints to wallet outpoint map
     fn append_outpoints(
         &mut self,
-        outpoints: &mut BTreeMap<OutputId, Locator>,
+        outpoints: &mut BTreeMap<OutputId, ScanTarget>,
     ) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?.append(outpoints);
 
@@ -243,7 +243,7 @@ pub trait SyncOutPoints: SyncWallet {
     /// Removes all mapped outpoints above the given `block_height`.
     fn truncate_outpoints(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
     }

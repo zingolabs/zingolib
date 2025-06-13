@@ -21,7 +21,7 @@ use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
+    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
 
@@ -56,7 +56,7 @@ where
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
-    let mut decrypted_locators = BTreeSet::new();
+    let mut decrypted_scan_targets = BTreeSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut witness_data = WitnessData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
@@ -85,10 +85,18 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                decrypted_locators.insert((block_height, output_id.txid()));
+                decrypted_scan_targets.insert(ScanTarget {
+                    block_height,
+                    txid: output_id.txid(),
+                    narrow_scan_area: false,
+                });
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                decrypted_locators.insert((block_height, output_id.txid()));
+                decrypted_scan_targets.insert(ScanTarget {
+                    block_height,
+                    txid: output_id.txid(),
+                    narrow_scan_area: false,
+                });
             });
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
@@ -160,7 +168,7 @@ where
     Ok(ScanData {
         nullifiers,
         wallet_blocks,
-        decrypted_locators,
+        decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
     })
@@ -419,9 +427,14 @@ fn collect_nullifiers(
         .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
         .into_iter()
         .for_each(|nullifier| {
-            nullifier_map
-                .sapling
-                .insert(nullifier, (block_height, transaction.txid()));
+            nullifier_map.sapling.insert(
+                nullifier,
+                ScanTarget {
+                    block_height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: false,
+                },
+            );
         });
     transaction
         .actions
@@ -438,9 +451,14 @@ fn collect_nullifiers(
         .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
         .into_iter()
         .for_each(|nullifier| {
-            nullifier_map
-                .orchard
-                .insert(nullifier, (block_height, transaction.txid()));
+            nullifier_map.orchard.insert(
+                nullifier,
+                ScanTarget {
+                    block_height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: false,
+                },
+            );
         });
     Ok(())
 }

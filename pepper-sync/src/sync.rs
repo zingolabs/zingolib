@@ -37,7 +37,7 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{
-    KeyIdInterface, Locator, NoteInterface, NullifierMap, OutputId, OutputInterface, SyncMode,
+    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, ScanTarget, SyncMode,
     SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
@@ -376,7 +376,7 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    transparent::update_addresses_and_locators(
+    transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         &mut *wallet_guard,
         fetch_request_sender.clone(),
@@ -727,13 +727,13 @@ where
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?;
     let transparent_output_ids = spend::collect_transparent_output_ids(wallet_transactions);
-    let transparent_spend_locators = spend::detect_transparent_spends(
+    let transparent_spend_scan_targets = spend::detect_transparent_spends(
         &mut pending_transaction_outpoints,
         transparent_output_ids,
     );
     let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions);
-    let (sapling_spend_locators, orchard_spend_locators) = spend::detect_shielded_spends(
+    let (sapling_spend_scan_targets, orchard_spend_scan_targets) = spend::detect_shielded_spends(
         &mut pending_transaction_nullifiers,
         sapling_derived_nullifiers,
         orchard_derived_nullifiers,
@@ -745,9 +745,9 @@ where
         && pending_transaction.orchard_notes().is_empty()
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
-        && transparent_spend_locators.is_empty()
-        && sapling_spend_locators.is_empty()
-        && orchard_spend_locators.is_empty()
+        && transparent_spend_scan_targets.is_empty()
+        && sapling_spend_scan_targets.is_empty()
+        && orchard_spend_scan_targets.is_empty()
     {
         return Ok(());
     }
@@ -759,14 +759,14 @@ where
         wallet
             .get_wallet_transactions_mut()
             .map_err(SyncError::WalletError)?,
-        transparent_spend_locators,
+        transparent_spend_scan_targets,
     );
     spend::update_spent_notes(
         wallet
             .get_wallet_transactions_mut()
             .map_err(SyncError::WalletError)?,
-        sapling_spend_locators,
-        orchard_spend_locators,
+        sapling_spend_scan_targets,
+        orchard_spend_scan_targets,
     );
 
     Ok(())
@@ -782,9 +782,9 @@ where
 /// wallet. However, in the case where a relevant spending transaction at a given height contains no decryptable
 /// incoming notes (change), only the nullifier will be mapped and this transaction will be scanned when the
 /// transaction containing the spent notes is scanned instead.
-pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[Locator]) {
+pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[ScanTarget]) {
     for scan_target in scan_targets {
-        sync_state.locators.insert(*scan_target);
+        sync_state.scan_targets.insert(*scan_target);
     }
 }
 
@@ -1017,7 +1017,7 @@ async fn update_wallet_data<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
     nullifiers: NullifierMap,
-    mut outpoints: BTreeMap<OutputId, Locator>,
+    mut outpoints: BTreeMap<OutputId, ScanTarget>,
     transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -1132,19 +1132,19 @@ where
 
     wallet
         .get_outpoints_mut()?
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()?
         .sapling
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()?
         .orchard
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_sync_state_mut()?
-        .locators
-        .retain(|(height, _)| *height > fully_scanned_height);
+        .scan_targets
+        .retain(|scan_target| scan_target.block_height > fully_scanned_height);
     remove_irrelevant_blocks(wallet)?;
 
     Ok(())

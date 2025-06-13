@@ -28,8 +28,8 @@ use crate::{
     keys::transparent::TransparentAddressId,
     sync,
     wallet::{
-        Locator, WalletBlock,
-        traits::{SyncBlocks, SyncWallet},
+        ScanTarget, WalletBlock,
+        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
 
@@ -194,7 +194,7 @@ where
         shutdown_mempool: Arc<AtomicBool>,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         self.check_batcher_error()?;
 
@@ -270,7 +270,7 @@ where
 
     fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
@@ -602,7 +602,7 @@ pub(crate) struct ScanTask {
     pub(crate) scan_range: ScanRange,
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,
-    pub(crate) locators: BTreeSet<Locator>,
+    pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
 }
 
@@ -611,7 +611,7 @@ impl ScanTask {
         scan_range: ScanRange,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-        locators: BTreeSet<Locator>,
+        scan_targets: BTreeSet<ScanTarget>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
     ) -> Self {
         Self {
@@ -619,7 +619,7 @@ impl ScanTask {
             scan_range,
             start_seam_block,
             end_seam_block,
-            locators,
+            scan_targets,
             transparent_addresses,
         }
     }
@@ -649,9 +649,12 @@ impl ScanTask {
             Vec::new()
         };
 
-        let mut lower_task_locators = self.locators;
-        let upper_task_locators =
-            lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
+        let mut lower_task_scan_targets = self.scan_targets;
+        let upper_task_scan_targets = lower_task_scan_targets.split_off(&ScanTarget {
+            block_height,
+            txid: TxId::from_bytes([0; 32]),
+            narrow_scan_area: false,
+        });
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
             Some(
@@ -687,7 +690,7 @@ impl ScanTask {
                     .expect("block height should be within block range"),
                 start_seam_block: self.start_seam_block,
                 end_seam_block: upper_task_first_block,
-                locators: lower_task_locators,
+                scan_targets: lower_task_scan_targets,
                 transparent_addresses: self.transparent_addresses.clone(),
             },
             ScanTask {
@@ -698,7 +701,7 @@ impl ScanTask {
                     .expect("block height should be within block range"),
                 start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
-                locators: upper_task_locators,
+                scan_targets: upper_task_scan_targets,
                 transparent_addresses: self.transparent_addresses,
             },
         ))

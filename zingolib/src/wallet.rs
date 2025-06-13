@@ -11,10 +11,10 @@ use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
-use pepper_sync::wallet::{KeyIdInterface, ShardTrees};
+use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
-    wallet::{Locator, NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
 use zingo_price::PriceList;
 
@@ -125,7 +125,7 @@ pub struct LightWallet {
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
-    pub outpoint_map: BTreeMap<OutputId, Locator>,
+    pub outpoint_map: BTreeMap<OutputId, ScanTarget>,
     /// Shard trees
     pub shard_trees: ShardTrees,
     /// Sync state
@@ -437,7 +437,7 @@ impl LightWallet {
 
     /// Clears all wallet data obtained from the block chain including the sync state.
     ///
-    /// Adds locators to the new sync state to prioritise scanning relevant parts of the chain on rescan.
+    /// Adds scan targets to the new sync state to prioritise scanning relevant parts of the chain on rescan.
     /// Addresses are not cleared.
     pub fn clear_all(&mut self) {
         self.sync_state = SyncState::new();
@@ -450,7 +450,11 @@ impl LightWallet {
                     transaction
                         .status()
                         .get_confirmed_height()
-                        .map(|height| (height, transaction.txid()))
+                        .map(|height| ScanTarget {
+                            block_height: height,
+                            txid: transaction.txid(),
+                            narrow_scan_area: true,
+                        })
                 })
                 .collect::<Vec<_>>(),
         );
