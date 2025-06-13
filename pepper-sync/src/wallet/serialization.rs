@@ -134,7 +134,7 @@ impl SyncState {
                 ScanTarget::read(r)?
             } else {
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-                let txid = TxId::read(&mut *r)?;
+                let txid = TxId::read(r)?;
 
                 ScanTarget {
                     block_height,
@@ -174,11 +174,7 @@ impl SyncState {
         Vector::write(
             &mut writer,
             &self.scan_targets.iter().collect::<Vec<_>>(),
-            |w, &scan_target| {
-                w.write_u32::<LittleEndian>(scan_target.block_height.into())?;
-                scan_target.txid.write(&mut *w)?;
-                w.write_u8(scan_target.narrow_scan_area as u8)
-            },
+            |w, &scan_target| scan_target.write(w),
         )
     }
 }

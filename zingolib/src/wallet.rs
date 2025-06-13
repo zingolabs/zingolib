@@ -352,7 +352,6 @@ impl LightWallet {
             let network = self.network;
             let mut wallet_bytes: Vec<u8> = vec![];
             self.write(&mut wallet_bytes, &network)?;
-            println!("WALLET BYTES: {}", wallet_bytes.len());
             self.save_required = false;
             Ok(Some(wallet_bytes))
         } else {

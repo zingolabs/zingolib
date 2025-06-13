@@ -43,7 +43,7 @@ async fn sync_mainnet_test() {
         LightWallet::new(
             config.chain,
             WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase("daughter safe tonight pull clarify discover gesture sting carry shine cup tourist say six ignore benefit wise argue issue above invest milk holiday source".to_string()).unwrap(),
+                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
             1_500_000.into(),
