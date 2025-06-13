@@ -72,6 +72,7 @@ fn construct_uri_load_config(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -154,6 +155,7 @@ pub fn init_from_seed(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
     ) {
         Ok(w) => w,
@@ -188,6 +190,7 @@ pub fn init_from_ufvk(
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
     ) {
         Ok(w) => w,
@@ -309,7 +312,7 @@ pub fn get_value_transfers() -> String {
                 .wallet
                 .read()
                 .await
-                .sorted_value_transfers(true)
+                .value_transfers(true)
                 .await
             {
                 Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
@@ -494,7 +497,7 @@ pub fn wallet_kind() -> String {
                         "sapling" => true,
                         "orchard" => true,
                 }
-                .pretty(4)
+                .pretty(2)
             } else {
                 match wallet
                     .unified_key_store
@@ -507,21 +510,21 @@ pub fn wallet_kind() -> String {
                         "sapling" => true,
                         "orchard" => true,
                     }
-                    .pretty(4),
+                    .pretty(2),
                     UnifiedKeyStore::View(ufvk) => object! {
                         "kind" => "Loaded from unified full viewing key",
                         "transparent" => ufvk.transparent().is_some(),
                         "sapling" => ufvk.sapling().is_some(),
                         "orchard" => ufvk.orchard().is_some(),
                     }
-                    .pretty(4),
+                    .pretty(2),
                     UnifiedKeyStore::Empty => object! {
                         "kind" => "No keys found",
                         "transparent" => false,
                         "sapling" => false,
                         "orchard" => false,
                     }
-                    .pretty(4),
+                    .pretty(2),
                 }
             }
         })
@@ -557,19 +560,19 @@ pub fn parse_address(address: String) -> String {
                     "chain_name" => chain_name_string,
                     "address_kind" => "sapling",
                 }
-                .to_string(),
+                .pretty(2),
                 Address::Transparent(_) => object! {
                     "status" => "success",
                     "chain_name" => chain_name_string,
                     "address_kind" => "transparent",
                 }
-                .to_string(),
+                .pretty(2),
                 Address::Tex(_) => object! {
                     "status" => "success",
                     "chain_name" => chain_name_string,
                     "address_kind" => "tex",
                 }
-                .to_string(),
+                .pretty(2),
                 Address::Unified(ua) => {
                     let mut receivers_available = vec![];
                     if ua.sapling().is_some() {
@@ -587,7 +590,7 @@ pub fn parse_address(address: String) -> String {
                             "receivers_available" => receivers_available,
                             "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
                         }
-                        .to_string()
+                        .pretty(2)
                     } else {
                         object! {
                             "status" => "success",
@@ -595,7 +598,7 @@ pub fn parse_address(address: String) -> String {
                             "address_kind" => "unified",
                             "receivers_available" => receivers_available,
                         }
-                        .to_string()
+                        .pretty(2)
                     }
                 }
             }
@@ -605,7 +608,7 @@ pub fn parse_address(address: String) -> String {
                 "chain_name" => json::JsonValue::Null,
                 "address_kind" => json::JsonValue::Null,
             }
-            .to_string()
+            .pretty(2)
         }
     }
 }
@@ -653,7 +656,7 @@ pub fn parse_ufvk(ufvk: String) -> String {
                     }
                 }
             },
-            4,
+            2,
         )
     }
 }
@@ -682,9 +685,6 @@ pub fn get_balance() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
             match lightclient
-                .wallet
-                .read()
-                .await
                 .account_balance(AccountId::ZERO)
                 .await
             {
@@ -761,10 +761,9 @@ pub fn zec_price(tor: String) -> String {
                 .update_current_price(tor_client)
                 .await
             {
-                Ok(price) => object! { "current_price" => price },
-                Err(e) => format!("Error: {e}").into(),
+                Ok(price) => object! { "current_price" => price }.pretty(2),
+                Err(e) => format!("Error: {e}"),
             }
-            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -812,7 +811,8 @@ pub fn remove_transaction(txid: String) -> String {
     }
 }
 
-pub fn get_spendable_balance(address: String, zennies: String) -> String {
+// we don't use this anymore...
+pub fn get_spendable_balance_with_address(address: String, zennies: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         let Ok(address) = address_from_str(&address) else {
             return "Error: unknown address format".to_string();
@@ -822,15 +822,37 @@ pub fn get_spendable_balance(address: String, zennies: String) -> String {
         };
         RT.block_on(async move {
             match lightclient
-                .get_spendable_shielded_balance(address, zennies, AccountId::ZERO)
+                .max_send_value(address, zennies, AccountId::ZERO)
                 .await
             {
                 Ok(bal) => {
-                    object! {
-                        "balance" => bal.into_u64(),
-                    }
+                    object! { "spendable_balance" => bal.into_u64() }.pretty(2)
                 }
-                Err(e) => format!("error: {e}").into(),
+                Err(e) => format!("error: {e}"),
+            }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_spendable_balance_total() -> String {
+    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
+            let spendable_balance =
+                match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            let potentially_spendable_balance =
+                match wallet.shielded_spendable_balance(AccountId::ZERO, true) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
+            object! {
+                "spendable_balance" => spendable_balance.into_u64(),
+                "potentially_spendable_balance" => potentially_spendable_balance.into_u64(),
             }
             .pretty(2)
         })
@@ -859,9 +881,13 @@ pub fn create_tor_client(data_dir: String) -> String {
     }
 }
 
-// FIXME: add "remove_tor_client". (add to zingolib)
 pub fn remove_tor_client() -> String {
-    "Error: unimplemented".to_string()
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move { lightclient.remove_tor_client().await });
+        "Successfully removed tor client.".to_string()
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
 }
 
 pub fn get_unified_addresses() -> String {
@@ -898,11 +924,10 @@ pub fn create_new_unified_address(receivers: String) -> String {
                         "has_sapling" => unified_address.has_sapling(),
                         "has_transparent" => unified_address.has_transparent(),
                         "encoded_address" => unified_address.encode(&network),
-                    }
+                    }.pretty(2)
                 }
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => format!("Error: {e}"),
             }
-            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -921,11 +946,10 @@ pub fn create_new_transparent_address() -> String {
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
                         "encoded_address" => transparent::encode_address(&network,  transparent_address),
-                    }
+                    }.pretty(2)
                 }
-                Err(e) => format!("Error: {e}").into(),
+                Err(e) => format!("Error: {e}"),
             }
-            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -992,10 +1016,9 @@ pub fn check_my_address(address: String) -> String {
                             "encoded_address" => encoded_address,
                         },
                     },
-                ),
-                Err(e) => format!("Error: {e}").into(),
+                ).pretty(2),
+                Err(e) => format!("Error: {e}"),
             }
-            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
