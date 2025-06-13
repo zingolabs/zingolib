@@ -120,6 +120,9 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
             .enumerate()
             .filter(|(_, scan_range)| scan_range.priority() == scan_priority)
             .collect::<Vec<_>>();
+        if filtered_ranges.is_empty() {
+            break;
+        }
         let mut peekable_ranges = filtered_ranges.iter().peekable();
         while let Some((index, range)) = peekable_ranges.next() {
             if let Some((next_index, next_range)) = peekable_ranges.peek() {
@@ -555,19 +558,9 @@ fn split_out_scan_range(
 fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    select_lowest_unscanned_range: bool,
+    nonlinear_sync: bool,
 ) -> Option<ScanRange> {
-    let (index, highest_priority_scan_range) = if select_lowest_unscanned_range {
-        sync_state
-            .scan_ranges
-            .iter()
-            .cloned()
-            .enumerate()
-            .find(|(_, scan_range)| {
-                scan_range.priority() != ScanPriority::Scanned
-                    && scan_range.priority() != ScanPriority::Ignored
-            })
-    } else {
+    let (index, highest_priority_scan_range) = if nonlinear_sync {
         // scan ranges are sorted from lowest to highest priority
         // scan ranges with the same priority are sorted in reverse block height order
         // the highest priority scan range is the last in the list, the highest priority with lowest starting block height
@@ -577,6 +570,16 @@ fn select_scan_range(
             .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
         scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
         scan_ranges_priority_sorted.pop()
+    } else {
+        sync_state
+            .scan_ranges
+            .iter()
+            .cloned()
+            .enumerate()
+            .find(|(_, scan_range)| {
+                scan_range.priority() != ScanPriority::Scanned
+                    && scan_range.priority() != ScanPriority::Ignored
+            })
     }?;
 
     if highest_priority_scan_range.priority() == ScanPriority::Scanned
@@ -638,12 +641,12 @@ where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
 {
     let nullifier_map = wallet.get_nullifiers()?;
-    let disable_non_linear_sync =
-        nullifier_map.orchard.len() + nullifier_map.sapling.len() > MAX_NULLIFIER_MAP_SIZE;
+    let nonlinear_sync =
+        nullifier_map.orchard.len() + nullifier_map.sapling.len() <= MAX_NULLIFIER_MAP_SIZE;
     if let Some(scan_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,
-        disable_non_linear_sync,
+        nonlinear_sync,
     ) {
         let start_seam_block = wallet
             .get_wallet_block(scan_range.block_range().start - 1)
