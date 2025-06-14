@@ -239,7 +239,7 @@ impl std::fmt::Display for PerformanceLevel {
 pub struct SyncConfig {
     /// Transparent address discovery configuration.
     pub transparent_address_discovery: TransparentAddressDiscovery,
-    /// Performance
+    /// Performance level
     pub performance_level: PerformanceLevel,
 }
 
