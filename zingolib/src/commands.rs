@@ -1621,8 +1621,8 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-struct Settings {}
-impl Command for Settings {
+struct SettingsCommand {}
+impl Command for SettingsCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Show or set wallet settings.
