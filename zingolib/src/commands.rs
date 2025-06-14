@@ -1651,7 +1651,7 @@ impl Command for SettingsCommand {
             if args.is_empty() {
                 return format!(
                     r#"
-                performance: {}
+performance: {}
             "#,
                     wallet.wallet_settings.sync_config.performance_level
                 );
