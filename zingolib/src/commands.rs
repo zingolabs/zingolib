@@ -1632,7 +1632,7 @@ impl Command for SettingsCommand {
 
             Settings:
             performance [ low | medium | high | maximum ]
-            
+
             Usage:
             settings
             settings performance high
