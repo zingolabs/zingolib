@@ -9,6 +9,7 @@ use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
 use pepper_sync::keys::transparent;
+use pepper_sync::sync::PerformanceLevel;
 use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
@@ -1620,147 +1621,61 @@ impl Command for SendsToAddressCommand {
     }
 }
 
-// TODO: zingo2
-// struct SetOptionCommand {}
-// impl Command for SetOptionCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Set a wallet option
-//             Usage:
-//             setoption <optionname>=<optionvalue>
-//             List of available options:
-//             download_memos : none | wallet | all
+struct Settings {}
+impl Command for Settings {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Show or set wallet settings.
 
-//         "#}
-//     }
+            If there are no arguments the full list of current settings will be shown.
+            To set, pass the setting as an argument followed by the value.
 
-//     fn short_help(&self) -> &'static str {
-//         "Set a wallet option"
-//     }
+            Settings:
+            performance [ low | medium | high | maximum ]
+            
+            Usage:
+            settings
+            settings performance high
 
-//     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-//         if args.len() != 1 {
-//             return format!("Error: Need exactly 1 argument\n\n{}", self.help());
-//         }
+        "#}
+    }
 
-//         let option = args[0];
-//         let values: Vec<&str> = option.split('=').collect();
+    fn short_help(&self) -> &'static str {
+        "Show or set wallet settings."
+    }
 
-//         if values.len() != 2 {
-//             return "Error: Please set option value like: <optionname>=<optionvalue>".to_string();
-//         }
+    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
 
-//         let option_name = values[0];
-//         let option_value = values[1];
+            if args.is_empty() {
+                return format!(
+                    r#"
+                performance: {}
+            "#,
+                    wallet.wallet_settings.sync_config.performance_level
+                );
+            }
 
-//         RT.block_on(async move {
-//             match option_name {
-//                 "download_memos" => match option_value {
-//                     "none" => {
-//                         lightclient
-//                             .wallet
-//                             .set_download_memo(MemoDownloadOption::NoMemos)
-//                             .await
-//                     }
-//                     "wallet" => {
-//                         lightclient
-//                             .wallet
-//                             .set_download_memo(MemoDownloadOption::WalletMemos)
-//                             .await
-//                     }
-//                     "all" => {
-//                         lightclient
-//                             .wallet
-//                             .set_download_memo(MemoDownloadOption::AllMemos)
-//                             .await
-//                     }
-//                     _ => {
-//                         return format!(
-//                             "Error: Couldn't understand {} value {}",
-//                             option_name, option_value
-//                         )
-//                     }
-//                 },
-//                 "transaction_filter_threshold" => match option_value.parse() {
-//                     Ok(number) => {
-//                         lightclient
-//                             .wallet
-//                             .wallet_options
-//                             .write()
-//                             .await
-//                             .transaction_size_filter = Some(number)
-//                     }
-//                     Err(e) => return format!("Error {e}, couldn't parse {option_value} as number"),
-//                 },
-//                 _ => return format!("Error: Couldn't understand {}", option_name),
-//             }
+            match args[0] {
+                "performance" => match args[1] {
+                    "low" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Low,
+                    "medium" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium,
+                    "high" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::High,
+                    "maximum" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Maximum,
+                _ => {
+            return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
+                .to_string();}
+                },
+                _ => {
+            return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
+                .to_string();}
+            }
 
-//             let r = object! {
-//                 "success" => true
-//             };
-
-//             r.pretty(2)
-//         })
-//     }
-// }
-
-// TODO: zingo2
-// struct GetOptionCommand {}
-// impl Command for GetOptionCommand {
-//     fn help(&self) -> &'static str {
-//         indoc! {r#"
-//             Get a wallet option
-//             Argument is either "download_memos" and "transaction_filter_threshold"
-
-//             Usage:
-//             getoption <optionname>
-
-//         "#}
-//     }
-
-//     fn short_help(&self) -> &'static str {
-//         "Get a wallet option"
-//     }
-
-//     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-//         if args.len() != 1 {
-//             return format!("Error: Need exactly 1 argument\n\n{}", self.help());
-//         }
-
-//         let option_name = args[0];
-
-//         RT.block_on(async move {
-//             let value = match option_name {
-//                 "download_memos" => match lightclient
-//                     .wallet
-//                     .wallet_options
-//                     .read()
-//                     .await
-//                     .download_memos
-//                 {
-//                     MemoDownloadOption::NoMemos => "none".to_string(),
-//                     MemoDownloadOption::WalletMemos => "wallet".to_string(),
-//                     MemoDownloadOption::AllMemos => "all".to_string(),
-//                 },
-//                 "transaction_filter_threshold" => lightclient
-//                     .wallet
-//                     .wallet_options
-//                     .read()
-//                     .await
-//                     .transaction_size_filter
-//                     .map(|filter| filter.to_string())
-//                     .unwrap_or("No filter".to_string()),
-//                 _ => return format!("Error: Couldn't understand {}", option_name),
-//             };
-
-//             let r = object! {
-//                 option_name => value
-//             };
-
-//             r.pretty(2)
-//         })
-//     }
-// }
+            "Successfully updated settings.".to_string()
+        })
+    }
+}
 
 struct HeightCommand {}
 impl Command for HeightCommand {
@@ -2069,6 +1984,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
+        ("settings", Box::new(SettingsCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("coins", Box::new(CoinsCommand {})),

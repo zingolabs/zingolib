@@ -223,6 +223,17 @@ impl PerformanceLevel {
     }
 }
 
+impl std::fmt::Display for PerformanceLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Maximum => write!(f, "maximum"),
+        }
+    }
+}
+
 /// Sync configuration.
 #[derive(Default, Debug, Clone)]
 pub struct SyncConfig {
