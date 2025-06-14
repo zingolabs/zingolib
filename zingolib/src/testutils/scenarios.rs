@@ -223,6 +223,7 @@ pub mod setup {
                 WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        performance_level: pepper_sync::sync::PerformanceLevel::High,
                     },
                     min_confirmations: NonZeroU32::try_from(1).unwrap(),
                 },

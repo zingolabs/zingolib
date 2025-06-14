@@ -1424,7 +1424,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 mod slow {
     use std::num::NonZeroU32;
 
-    use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+    use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
     use pepper_sync::wallet::{
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
@@ -1780,6 +1780,7 @@ mod slow {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },

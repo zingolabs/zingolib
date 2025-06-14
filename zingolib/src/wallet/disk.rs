@@ -44,7 +44,7 @@ impl LightWallet {
     /// - Update receiver selection
     /// - Generate initial addresses
     pub const fn serialized_version() -> u64 {
-        37
+        38
     }
 
     /// Serialize into `writer`
@@ -115,6 +115,7 @@ impl LightWallet {
         self.shard_trees.write(&mut writer)?;
         self.sync_state.write(&mut writer)?;
         self.wallet_settings.sync_config.write(&mut writer)?;
+        writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
         self.price_list.write(&mut writer)
     }
 
@@ -125,7 +126,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=37 => Self::read_v32(reader, network, version),
+            32..=38 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -336,6 +337,7 @@ impl LightWallet {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::sync::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -522,12 +524,18 @@ impl LightWallet {
         let wallet_settings = if version >= 33 {
             WalletSettings {
                 sync_config: SyncConfig::read(&mut reader)?,
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                min_confirmations: if version >= 38 {
+                    NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
+                        .expect("only valid non-zero u32s stored")
+                } else {
+                    NonZeroU32::try_from(1).expect("only valid non-zero u32s stored")
+                },
             }
         } else {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::sync::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             }

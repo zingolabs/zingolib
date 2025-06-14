@@ -22,11 +22,10 @@ use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
-    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    sync,
+    sync::{self, PerformanceLevel},
     wallet::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
@@ -88,9 +87,16 @@ where
         }
     }
 
-    pub(crate) fn launch(&mut self) {
-        self.spawn_batcher();
-        self.spawn_workers();
+    pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
+        let max_batch_outputs = match performance_level {
+            PerformanceLevel::Low => 2usize.pow(11),
+            PerformanceLevel::Medium => 2usize.pow(12),
+            PerformanceLevel::High => 2usize.pow(12),
+            PerformanceLevel::Maximum => 2usize.pow(13),
+        };
+
+        self.spawn_batcher(max_batch_outputs);
+        self.spawn_workers(max_batch_outputs);
     }
 
     pub(crate) fn worker_poolsize(&self) -> usize {
@@ -100,13 +106,13 @@ where
     /// Spawns the batcher.
     ///
     /// When the batcher is running it will wait for a scan task.
-    pub(crate) fn spawn_batcher(&mut self) {
+    pub(crate) fn spawn_batcher(&mut self, max_batch_outputs: usize) {
         tracing::debug!("Spawning batcher");
         let mut batcher = Batcher::new(
             self.consensus_parameters.clone(),
             self.fetch_request_sender.clone(),
         );
-        batcher.run();
+        batcher.run(max_batch_outputs);
         self.batcher = Some(batcher);
     }
 
@@ -132,7 +138,7 @@ where
     /// Spawns a worker.
     ///
     /// When the worker is running it will wait for a scan task.
-    pub(crate) fn spawn_worker(&mut self) {
+    pub(crate) fn spawn_worker(&mut self, max_batch_outputs: usize) {
         tracing::debug!("Spawning worker {}", self.unique_id);
         let mut worker = ScanWorker::new(
             self.unique_id,
@@ -141,7 +147,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run();
+        worker.run(max_batch_outputs);
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -149,9 +155,9 @@ where
     /// Spawns the initial pool of workers.
     ///
     /// Poolsize is set by [`self::MAX_WORKER_POOLSIZE`].
-    pub(crate) fn spawn_workers(&mut self) {
+    pub(crate) fn spawn_workers(&mut self, max_batch_outputs: usize) {
         for _ in 0..MAX_WORKER_POOLSIZE {
-            self.spawn_worker();
+            self.spawn_worker(max_batch_outputs);
         }
     }
 
@@ -192,6 +198,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
+        performance_level: PerformanceLevel,
     ) -> Result<(), SyncError<W::Error>>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -227,7 +234,7 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet)
+                self.update_batcher(wallet, performance_level)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
@@ -236,7 +243,7 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet)
+                self.update_batcher(wallet, performance_level)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
@@ -268,15 +275,21 @@ where
         }
     }
 
-    fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
+    fn update_batcher<W>(
+        &mut self,
+        wallet: &mut W,
+        performance_level: PerformanceLevel,
+    ) -> Result<(), W::Error>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
-            if let Some(scan_task) =
-                sync::state::create_scan_task(&self.consensus_parameters, wallet)?
-            {
+            if let Some(scan_task) = sync::state::create_scan_task(
+                &self.consensus_parameters,
+                wallet,
+                performance_level,
+            )? {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.shutdown();
@@ -320,7 +333,7 @@ where
     ///
     /// Waits for a scan task and then fetches compact blocks to form fixed output batches. The scan task is split if
     /// needed and the compact blocks are added to each scan task and sent to the scan workers for scanning.
-    fn run(&mut self) {
+    fn run(&mut self, max_batch_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (batch_sender, batch_receiver) = mpsc::channel::<ScanTask>(1);
 
@@ -405,7 +418,7 @@ where
                         .vtx
                         .iter()
                         .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
+                    if sapling_output_count + orchard_output_count > max_batch_outputs {
                         let (full_batch, new_batch) = scan_task
                             .clone()
                             .split(
@@ -535,7 +548,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self) {
+    fn run(&mut self, max_batch_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -552,6 +565,7 @@ where
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
+                    max_batch_outputs,
                 )
                 .await;
 

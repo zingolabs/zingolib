@@ -7,8 +7,6 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::LocatedPrunableTree;
 use zcash_primitives::consensus::BlockHeight;
 
-use crate::MAX_BATCH_OUTPUTS;
-
 #[cfg(not(feature = "darkside_test"))]
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
@@ -16,7 +14,6 @@ use {
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;
-const LOCATED_TREE_SIZE: usize = MAX_BATCH_OUTPUTS / 8;
 
 /// Required data for updating [`shardtree::ShardTree`]
 #[derive(Debug)]
@@ -54,16 +51,17 @@ pub struct LocatedTreeData<H> {
 pub(crate) fn build_located_trees<H>(
     initial_position: Position,
     leaves_and_retentions: Vec<(H, Retention<BlockHeight>)>,
+    located_tree_size: usize,
 ) -> Vec<LocatedTreeData<H>>
 where
     H: Copy + PartialEq + incrementalmerkletree::Hashable + Sync + Send,
 {
     let (sender, receiver) = crossbeam_channel::unbounded();
     rayon::scope_fifo(|scope| {
-        for (i, chunk) in leaves_and_retentions.chunks(LOCATED_TREE_SIZE).enumerate() {
+        for (i, chunk) in leaves_and_retentions.chunks(located_tree_size).enumerate() {
             let sender = sender.clone();
             scope.spawn_fifo(move |_scope| {
-                let start_position = initial_position + ((i * LOCATED_TREE_SIZE) as u64);
+                let start_position = initial_position + ((i * located_tree_size) as u64);
                 let tree = LocatedPrunableTree::from_iter(
                     start_position..(start_position + chunk.len() as u64),
                     incrementalmerkletree::Level::from(SHARD_HEIGHT),

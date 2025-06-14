@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use bip0039::Mnemonic;
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{
@@ -33,6 +33,7 @@ async fn sync_mainnet_test() {
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
@@ -101,6 +102,7 @@ async fn sync_status() {
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },

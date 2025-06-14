@@ -60,8 +60,6 @@ pub use sync::sync_status;
 
 use zcash_protocol::ShieldedProtocol;
 
-pub(crate) const MAX_BATCH_OUTPUTS: usize = 2usize.pow(12);
-
 pub(crate) trait SyncDomain {
     const SHIELDED_PROTOCOL: ShieldedProtocol;
 }

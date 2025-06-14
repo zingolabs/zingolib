@@ -26,10 +26,9 @@ use crate::{
     },
 };
 
-use super::{VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
+use super::{PerformanceLevel, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
 const NARROW_SCAN_AREA: u32 = 100;
-const MAX_NULLIFIER_MAP_SIZE: usize = 250_000;
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
@@ -636,13 +635,21 @@ fn select_scan_range(
 pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    performance_level: PerformanceLevel,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
 {
     let nullifier_map = wallet.get_nullifiers()?;
-    let nonlinear_sync =
-        nullifier_map.orchard.len() + nullifier_map.sapling.len() <= MAX_NULLIFIER_MAP_SIZE;
+    let max_nullifier_map_size = match performance_level {
+        PerformanceLevel::Low => Some(0),
+        PerformanceLevel::Medium => Some(400_000),
+        PerformanceLevel::High => Some(2_000_000),
+        PerformanceLevel::Maximum => None,
+    };
+    // chain tip will still be scanned even if non-linear sync is disabled
+    let nonlinear_sync = max_nullifier_map_size
+        .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() <= max);
     if let Some(scan_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,
