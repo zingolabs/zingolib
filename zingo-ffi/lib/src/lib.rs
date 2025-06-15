@@ -27,7 +27,7 @@ use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 use pepper_sync::keys::transparent;
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use zingolib::commands::RT;
 use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
@@ -71,6 +71,7 @@ fn construct_uri_load_config(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
@@ -154,6 +155,7 @@ pub fn init_from_seed(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
@@ -189,6 +191,7 @@ pub fn init_from_ufvk(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },

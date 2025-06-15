@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -3463,7 +3463,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4100,6 +4100,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ref-cast"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0ae411dbe946a674d89546582cea4ba2bb8defac896622d6496f14c23ba5cf"
+dependencies = [
+ "ref-cast-impl",
+]
+
+[[package]]
+name = "ref-cast-impl"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1165225c21bff1f3bbce98f5a1f889949bc902d3575308cc7b0de30b4f6d27c7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.103",
+]
+
+[[package]]
 name = "regchest_utils"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingo-regchest?branch=dev#b9729cd1a1a78cbd28f1f94285ccac2bdd8e763d"
@@ -4380,9 +4400,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.37.1"
+version = "1.37.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faa7de2ba56ac291bd90c6b9bece784a52ae1411f9506544b3eae36dd2356d50"
+checksum = "b203a6425500a03e0919c42d3c47caca51e79f1132046626d2c8871c5092035d"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -4627,6 +4647,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "schemars"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f"
+dependencies = [
+ "dyn-clone",
+ "ref-cast",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4826,15 +4858,16 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.12.0"
+version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6b6f7f2fcb69f747921f79f3926bd1e203fce4fef62c268dd3abfb6d86029aa"
+checksum = "bf65a400f8f66fb7b0552869ad70157166676db75ed8181f8104ea91cf9d0b42"
 dependencies = [
  "base64",
  "chrono",
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.9.0",
+ "schemars",
  "serde",
  "serde_derive",
  "serde_json",
@@ -4844,9 +4877,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.12.0"
+version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d00caa5193a3c8362ac2b73be6b9e768aa5a4b2f721d8f4b339600c3cb51f8e"
+checksum = "81679d9ed988d5e9a5e6531dc3f2c28efbd639cbd1dfb628df08edea6004da77"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -5008,12 +5041,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "slab"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
-dependencies = [
- "autocfg",
-]
+checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
 
 [[package]]
 name = "slotmap"
@@ -7789,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7801,7 +7831,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "http",
  "http-body",
@@ -7821,7 +7851,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7837,7 +7867,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7846,7 +7876,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip0039",
 ]
@@ -7854,7 +7884,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#eae34880ee2182558725cfa71bbc38de7a4cc01a"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "append-only-vec",
  "bech32",
