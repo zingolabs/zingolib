@@ -71,7 +71,7 @@ fn construct_uri_load_config(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
@@ -155,7 +155,7 @@ pub fn init_from_seed(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
@@ -191,7 +191,7 @@ pub fn init_from_ufvk(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
