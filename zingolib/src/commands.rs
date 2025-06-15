@@ -8,8 +8,8 @@ use std::str::FromStr;
 use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
+use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
-use pepper_sync::sync::PerformanceLevel;
 use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};

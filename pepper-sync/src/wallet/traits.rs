@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use tokio::sync::mpsc;
-use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
@@ -15,7 +14,7 @@ use zip32::DiversifierIndex;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::sync::MAX_VERIFICATION_WINDOW;
+use crate::sync::{MAX_VERIFICATION_WINDOW, ScanRange};
 use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };

@@ -44,7 +44,7 @@ mod zcb_traits;
 #[derive(Debug, Clone)]
 pub struct WalletSettings {
     /// Sync configuration.
-    pub sync_config: pepper_sync::sync::SyncConfig,
+    pub sync_config: pepper_sync::config::SyncConfig,
     /// Minimum confirmations.
     pub min_confirmations: NonZeroU32,
 }

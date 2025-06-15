@@ -3,7 +3,7 @@
 use std::num::NonZeroU32;
 
 use zcash_client_backend::{
-    data_api::{scanning::ScanPriority, wallet::input_selection::GreedyInputSelector},
+    data_api::wallet::input_selection::GreedyInputSelector,
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
@@ -19,7 +19,7 @@ use super::{
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
 use crate::config::ChainType;
-use pepper_sync::keys::transparent::TransparentScope;
+use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.

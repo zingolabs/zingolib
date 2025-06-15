@@ -1424,7 +1424,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 mod slow {
     use std::num::NonZeroU32;
 
-    use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
     use pepper_sync::wallet::{
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,

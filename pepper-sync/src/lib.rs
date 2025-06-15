@@ -46,6 +46,7 @@
 //!
 
 pub(crate) mod client;
+pub mod config;
 pub mod error;
 pub mod keys;
 pub(crate) mod scan;

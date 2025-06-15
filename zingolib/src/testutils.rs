@@ -10,8 +10,8 @@ use std::{io::Read, string::String, time::Duration};
 
 use json::JsonValue;
 
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
@@ -76,7 +76,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                    performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },

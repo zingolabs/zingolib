@@ -14,7 +14,7 @@ use log::{error, info};
 
 use zcash_protocol::consensus::BlockHeight;
 
-use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;

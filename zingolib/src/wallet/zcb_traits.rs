@@ -8,7 +8,6 @@ use zcash_client_backend::{
         Account, AccountBirthday, AccountPurpose, BlockMetadata, InputSource, NullifierQuery,
         ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TransactionDataRequest,
         WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite, chain::CommitmentTreeRoot,
-        scanning::ScanRange,
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
 };
@@ -177,7 +176,9 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn suggest_scan_ranges(&self) -> Result<Vec<ScanRange>, Self::Error> {
+    fn suggest_scan_ranges(
+        &self,
+    ) -> Result<Vec<zcash_client_backend::data_api::scanning::ScanRange>, Self::Error> {
         unimplemented!()
     }
 

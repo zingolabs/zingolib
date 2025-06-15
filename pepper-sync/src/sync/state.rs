@@ -8,7 +8,6 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{
     ShieldedProtocol,
@@ -17,16 +16,18 @@ use zcash_protocol::{
 
 use crate::{
     client::{self, FetchRequest},
+    config::PerformanceLevel,
     error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
+    sync::ScanRange,
     wallet::{
         InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
 
-use super::{PerformanceLevel, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
+use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
 const NARROW_SCAN_AREA: u32 = 100;
 

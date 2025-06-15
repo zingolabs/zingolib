@@ -13,19 +13,17 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::compact_formats::CompactBlock,
-};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
     client::{self, FetchRequest},
+    config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    sync::{self, PerformanceLevel},
+    sync::{self, ScanPriority, ScanRange},
     wallet::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},

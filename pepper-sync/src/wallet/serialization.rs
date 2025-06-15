@@ -12,10 +12,7 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    serialization::shardtree::{read_shard, write_shard},
-};
+use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
@@ -37,7 +34,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::MAX_VERIFICATION_WINDOW,
+    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
