@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -3463,7 +3463,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7819,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7831,7 +7831,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "http",
  "http-body",
@@ -7851,7 +7851,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7867,7 +7867,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7876,7 +7876,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "bip0039",
 ]
@@ -7884,7 +7884,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#12cd0fbce90f4edac9d5ed848b12ad2ae47215a8"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=low_memory_nonlinear_scanning#55ce1a6ade113e9bcecc2ec524188b29718c6897"
 dependencies = [
  "append-only-vec",
  "bech32",
