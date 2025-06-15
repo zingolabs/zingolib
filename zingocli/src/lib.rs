@@ -14,7 +14,7 @@ use log::{error, info};
 
 use zcash_protocol::consensus::BlockHeight;
 
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
@@ -464,6 +464,7 @@ pub fn startup(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },

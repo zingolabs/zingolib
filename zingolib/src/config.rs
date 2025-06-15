@@ -249,6 +249,7 @@ impl Default for ZingoConfigBuilder {
                 sync_config: pepper_sync::sync::SyncConfig {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::sync::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -695,6 +696,7 @@ mod tests {
                 sync_config: pepper_sync::sync::SyncConfig {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::sync::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -728,6 +730,7 @@ mod tests {
                 sync_config: pepper_sync::sync::SyncConfig {
                     transparent_address_discovery:
                         pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::sync::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },

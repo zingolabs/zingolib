@@ -26,10 +26,9 @@ use crate::{
     },
 };
 
-use super::{VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
+use super::{PerformanceLevel, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
 const NARROW_SCAN_AREA: u32 = 100;
-const MAX_NULLIFIER_MAP_SIZE: usize = 250_000;
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
@@ -561,15 +560,26 @@ fn select_scan_range(
     nonlinear_sync: bool,
 ) -> Option<ScanRange> {
     let (index, highest_priority_scan_range) = if nonlinear_sync {
-        // scan ranges are sorted from lowest to highest priority
-        // scan ranges with the same priority are sorted in reverse block height order
-        // the highest priority scan range is the last in the list, the highest priority with lowest starting block height
+        // scan ranges are sorted from lowest to highest priority.
+        // scan ranges with the same priority are sorted in block height order.
+        // the highest priority scan range is the last in the list, the highest priority with highest starting block height.
+        // if the highest priority is `historic` the range with the lowest starting block height is chosen instead.
         let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
             sync_state.scan_ranges.iter().cloned().enumerate().collect();
-        scan_ranges_priority_sorted
-            .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
         scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
-        scan_ranges_priority_sorted.pop()
+        scan_ranges_priority_sorted
+            .last()
+            .map(|(index, highest_priority_range)| {
+                if highest_priority_range.priority() == ScanPriority::Historic {
+                    scan_ranges_priority_sorted
+                        .iter()
+                        .find(|(_, range)| range.priority() == ScanPriority::Historic)
+                        .expect("range with historic priority exists in this scope")
+                        .clone()
+                } else {
+                    (*index, highest_priority_range.clone())
+                }
+            })
     } else {
         sync_state
             .scan_ranges
@@ -636,13 +646,21 @@ fn select_scan_range(
 pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    performance_level: PerformanceLevel,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
 {
     let nullifier_map = wallet.get_nullifiers()?;
-    let nonlinear_sync =
-        nullifier_map.orchard.len() + nullifier_map.sapling.len() <= MAX_NULLIFIER_MAP_SIZE;
+    let max_nullifier_map_size = match performance_level {
+        PerformanceLevel::Low => Some(0),
+        PerformanceLevel::Medium => Some(400_000),
+        PerformanceLevel::High => Some(2_000_000),
+        PerformanceLevel::Maximum => None,
+    };
+    // non-linear sync is enabled even when max nullifier map size is set to 0 allowing chain tip to still be scanned
+    let nonlinear_sync = max_nullifier_map_size
+        .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() <= max);
     if let Some(scan_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,

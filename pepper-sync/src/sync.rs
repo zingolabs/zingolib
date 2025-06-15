@@ -163,14 +163,29 @@ impl From<SyncResult> for json::JsonValue {
     }
 }
 
-/// Sync configuration.
-#[derive(Default, Debug, Clone)]
-pub struct SyncConfig {
-    /// Transparent address discovery configuration.
-    pub transparent_address_discovery: TransparentAddressDiscovery,
+/// Performance level.
+///
+/// The higher the performance level the higher the memory usage and storage.
+// TODO: revisit after implementing nullifier refetching
+#[derive(Default, Debug, Clone, Copy)]
+pub enum PerformanceLevel {
+    /// - number of outputs per batch is halved
+    /// - nullifier map only contains chain tip
+    Low,
+    /// - nullifier map has a small maximum size
+    Medium,
+    /// - nullifier map has a large maximum size
+    #[default]
+    High,
+    /// - number of outputs per batch is doubled
+    /// - nullifier map has no maximum size
+    ///
+    /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
+    /// wallets with a lot of transactions.
+    Maximum,
 }
 
-impl SyncConfig {
+impl PerformanceLevel {
     fn serialized_version() -> u8 {
         0
     }
@@ -179,8 +194,71 @@ impl SyncConfig {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
+        Ok(match reader.read_u8()? {
+            0 => Self::Low,
+            1 => Self::Medium,
+            2 => Self::High,
+            3 => Self::Maximum,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read valid performance level",
+                ));
+            }
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+
+        writer.write_u8(match self {
+            Self::Low => 0,
+            Self::Medium => 1,
+            Self::High => 2,
+            Self::Maximum => 3,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for PerformanceLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Maximum => write!(f, "maximum"),
+        }
+    }
+}
+
+/// Sync configuration.
+#[derive(Default, Debug, Clone)]
+pub struct SyncConfig {
+    /// Transparent address discovery configuration.
+    pub transparent_address_discovery: TransparentAddressDiscovery,
+    /// Performance level
+    pub performance_level: PerformanceLevel,
+}
+
+impl SyncConfig {
+    fn serialized_version() -> u8 {
+        1
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let version = reader.read_u8()?;
+
         let gap_limit = reader.read_u8()?;
         let scopes = reader.read_u8()?;
+        let performance_level = if version >= 1 {
+            PerformanceLevel::read(reader)?
+        } else {
+            PerformanceLevel::High
+        };
         Ok(Self {
             transparent_address_discovery: TransparentAddressDiscovery {
                 gap_limit,
@@ -190,6 +268,7 @@ impl SyncConfig {
                     refund: scopes & 0b100 != 0,
                 },
             },
+            performance_level,
         })
     }
 
@@ -208,6 +287,7 @@ impl SyncConfig {
             scopes |= 0b100;
         };
         writer.write_u8(scopes)?;
+        self.performance_level.write(writer)?;
 
         Ok(())
     }
@@ -437,7 +517,7 @@ where
         fetch_request_sender.clone(),
         ufvks.clone(),
     );
-    scanner.launch();
+    scanner.launch(config.performance_level);
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
@@ -523,7 +603,7 @@ where
                     },
                 }
 
-                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone()).await?;
+                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), config.performance_level).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions

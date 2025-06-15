@@ -46,7 +46,6 @@ pub struct WalletSettings {
     /// Sync configuration.
     pub sync_config: pepper_sync::sync::SyncConfig,
     /// Minimum confirmations.
-    // TODO: read/write
     pub min_confirmations: NonZeroU32,
 }
 
