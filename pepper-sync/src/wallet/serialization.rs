@@ -99,7 +99,7 @@ impl SyncState {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let priority = match r.read_u8()? {
-                0 => Ok(ScanPriority::Ignored),
+                0 => Ok(ScanPriority::Scanning),
                 1 => Ok(ScanPriority::Scanned),
                 2 => Ok(ScanPriority::Historic),
                 3 => Ok(ScanPriority::OpenAdjacent),

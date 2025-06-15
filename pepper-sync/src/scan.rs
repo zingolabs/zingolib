@@ -13,6 +13,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    sync::ScanPriority,
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -85,6 +86,7 @@ pub(crate) struct ScanResults {
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    pub(crate) map_nullifiers: bool,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -125,6 +127,7 @@ where
         end_seam_block,
         mut scan_targets,
         transparent_addresses,
+        map_nullifiers,
     } = scan_task;
 
     if compact_blocks
@@ -139,6 +142,10 @@ where
             != u64::from(scan_range.block_range().end - 1)
     {
         panic!("compact blocks do not match scan range!")
+    }
+
+    if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+        todo!()
     }
 
     let initial_scan_data = InitialScanData::new(
@@ -220,5 +227,6 @@ where
         wallet_transactions,
         sapling_located_trees,
         orchard_located_trees,
+        map_nullifiers,
     })
 }

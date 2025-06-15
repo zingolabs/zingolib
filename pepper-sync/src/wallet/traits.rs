@@ -196,7 +196,7 @@ pub trait SyncNullifiers: SyncWallet {
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;
 
     /// Append nullifiers to wallet nullifier map
-    fn append_nullifiers(&mut self, mut nullifiers: NullifierMap) -> Result<(), Self::Error> {
+    fn append_nullifiers(&mut self, nullifiers: &mut NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
             .sapling
             .append(&mut nullifiers.sapling);

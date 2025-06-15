@@ -30,8 +30,8 @@
 //! 5. Set the first 10 blocks after the highest previously scanned blocks to "verify" priority to check for re-org.
 //!
 //! Scanning:
-//! 1. Take the highest priority scan range and split off an orchard shard range off the lower end. setting to "ignored"
-//!    (a.k.a scanning) priority and sending this to the "batcher" task.
+//! 1. Take the highest priority scan range and split off an orchard shard range off the lower end. setting to "scanning"
+//!    priority and sending this to the "batcher" task.
 //! 2. The batcher takes this scan range (containing all note commitments to an orchard shard) and fetches the compact
 //!    blocks, splitting the blocks into multiple batches with a fixed number of outputs.
 //! 3. Each batch is sent to an idle "scan worker" which scans a batch and returns scan results to the main sync process.

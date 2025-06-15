@@ -30,12 +30,16 @@ use super::state;
 /// The spend scan targets are used to set the surrounding shard block ranges to be prioritised for scanning and then to
 /// fetch and scan the transactions with detected spends in the case that they evaded trial decryption.
 /// Finally, all notes that were detected as spent are updated with the located spending transaction.
+///
+/// `additional_nullifier_map` is useful for also detecting spends for nullifiers that are not being mapped to the
+/// wallet's main nullifier map.
 pub(super) async fn update_shielded_spends<P, W>(
     consensus_parameters: &P,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+    additional_nullifier_map: Option<&mut NullifierMap>,
 ) -> Result<(), SyncError<W::Error>>
 where
     P: consensus::Parameters,
@@ -47,13 +51,23 @@ where
             .map_err(SyncError::WalletError)?,
     );
 
-    let (sapling_spend_scan_targets, orchard_spend_scan_targets) = detect_shielded_spends(
+    let (mut sapling_spend_scan_targets, mut orchard_spend_scan_targets) = detect_shielded_spends(
         wallet
             .get_nullifiers_mut()
             .map_err(SyncError::WalletError)?,
-        sapling_derived_nullifiers,
-        orchard_derived_nullifiers,
+        sapling_derived_nullifiers.clone(),
+        orchard_derived_nullifiers.clone(),
     );
+    if let Some(nullifier_map) = additional_nullifier_map {
+        let (mut additional_sapling_spend_scan_targets, mut additional_orchard_spend_scan_targets) =
+            detect_shielded_spends(
+                nullifier_map,
+                sapling_derived_nullifiers,
+                orchard_derived_nullifiers,
+            );
+        sapling_spend_scan_targets.append(&mut additional_sapling_spend_scan_targets);
+        orchard_spend_scan_targets.append(&mut additional_orchard_spend_scan_targets);
+    }
 
     let sync_state = wallet
         .get_sync_state_mut()
