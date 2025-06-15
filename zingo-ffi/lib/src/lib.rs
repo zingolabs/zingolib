@@ -27,7 +27,7 @@ use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 use pepper_sync::keys::transparent;
-use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use zingolib::commands::RT;
 use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
