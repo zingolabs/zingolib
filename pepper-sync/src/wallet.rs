@@ -179,7 +179,10 @@ impl SyncState {
         if let Some(last_scanned_range) = self
             .scan_ranges
             .iter()
-            .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+            .filter(|scan_range| {
+                scan_range.priority() == ScanPriority::Scanned
+                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+            })
             .last()
         {
             Some(last_scanned_range.block_range().end - 1)

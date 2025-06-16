@@ -378,6 +378,7 @@ fn punch_scan_priority(
 
     for (index, scan_range) in sync_state.scan_ranges().iter().enumerate() {
         if scan_range.priority() == ScanPriority::Scanned
+            || scan_range.priority() == ScanPriority::ScannedWithoutMapping
             || scan_range.priority() == ScanPriority::Scanning
             || scan_range.priority() >= scan_priority
         {
@@ -570,7 +571,7 @@ fn select_scan_range(
         .enumerate()
         .find(|(_, scan_range)| {
             scan_range.priority() != ScanPriority::Scanned
-                || scan_range.priority() != ScanPriority::Scanning
+                && scan_range.priority() != ScanPriority::Scanning
         })?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -783,7 +784,10 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
     sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+        })
         .map(|scan_range| scan_range.block_range())
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
@@ -798,7 +802,10 @@ where
         .get_sync_state()?
         .scan_ranges()
         .iter()
-        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+        })
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .fold((0, 0), |acc, tree_bounds| {
             (

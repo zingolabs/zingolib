@@ -40,11 +40,10 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 36:
-    /// - Update receiver selection
-    /// - Generate initial addresses
+    /// Changes in version 39:
+    /// - sync state updated serialized version
     pub const fn serialized_version() -> u64 {
-        38
+        39
     }
 
     /// Serialize into `writer`

@@ -1190,7 +1190,10 @@ where
     let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+        })
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
