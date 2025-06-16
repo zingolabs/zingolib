@@ -670,8 +670,6 @@ pub(crate) fn create_scan_task<W>(
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
 {
-    // nullifier mapping is enabled a single time even when max nullifier map size is set to 0 allowing chain tip to
-    // still be mapped for increased chance of early spendable notes
     let nullifier_map = wallet.get_nullifiers()?;
     let max_nullifier_map_size = match performance_level {
         PerformanceLevel::Low => Some(0),
@@ -680,7 +678,7 @@ where
         PerformanceLevel::Maximum => None,
     };
     let mut map_nullifiers = max_nullifier_map_size
-        .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() <= max);
+        .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() < max);
 
     if let Some(scan_range) = select_scan_range(
         consensus_parameters,
@@ -714,8 +712,12 @@ where
                 .collect();
 
             // it will be inefficient to map nullifiers for historic as they will not be retained after spend detection.
+            // chain tip nullifiers are still mapped even in lowest performance setting to allow instant spendability
+            // of new notes.
             if scan_range.priority() == ScanPriority::Historic {
                 map_nullifiers = false;
+            } else if scan_range.priority() == ScanPriority::ChainTip {
+                map_nullifiers = true;
             }
 
             Ok(Some(ScanTask::from_parts(

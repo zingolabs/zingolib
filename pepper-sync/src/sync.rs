@@ -817,7 +817,7 @@ where
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-                map_nullifiers,
+                mut map_nullifiers,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
@@ -871,6 +871,18 @@ where
                 .await?;
                 add_scanned_blocks(wallet, scanned_blocks, &scan_range)
                     .map_err(SyncError::WalletError)?;
+
+                // nullifiers are effectively mapped in this case as they would not be retained
+                if scan_range.block_range().start
+                    == wallet
+                        .get_sync_state()
+                        .map_err(SyncError::WalletError)?
+                        .fully_scanned_height()
+                        .expect("scan ranges non-empty in this scope")
+                        + 1
+                {
+                    map_nullifiers = true;
+                }
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
