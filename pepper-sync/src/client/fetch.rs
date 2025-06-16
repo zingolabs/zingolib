@@ -117,6 +117,13 @@ async fn fetch_from_server(
                 .send(block_stream)
                 .expect("receiver should never be dropped");
         }
+        FetchRequest::NullifierRange(sender, block_range) => {
+            tracing::debug!("Fetching nullifiers. {:?}", &block_range);
+            let block_stream = get_block_range_nullifiers(client, block_range).await;
+            sender
+                .send(block_stream)
+                .expect("receiver should never be dropped");
+        }
         #[cfg(not(feature = "darkside_test"))]
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
             tracing::debug!(
@@ -205,6 +212,27 @@ async fn get_block_range(
     });
 
     Ok(client.get_block_range(request).await?.into_inner())
+}
+
+async fn get_block_range_nullifiers(
+    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    block_range: Range<BlockHeight>,
+) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
+    let request = tonic::Request::new(BlockRange {
+        start: Some(BlockId {
+            height: u64::from(block_range.start),
+            hash: vec![],
+        }),
+        end: Some(BlockId {
+            height: u64::from(block_range.end) - 1,
+            hash: vec![],
+        }),
+    });
+
+    Ok(client
+        .get_block_range_nullifiers(request)
+        .await?
+        .into_inner())
 }
 
 #[cfg(not(feature = "darkside_test"))]

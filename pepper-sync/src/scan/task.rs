@@ -358,7 +358,11 @@ where
                 let mut first_batch = true;
 
                 let mut block_stream = if fetch_nullifiers_only {
-                    todo!()
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
                 } else {
                     client::get_compact_block_range(
                         fetch_request_sender.clone(),
@@ -370,7 +374,11 @@ where
                     Ok(b) => b,
                     Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
                         block_stream = if fetch_nullifiers_only {
-                            todo!()
+                            client::get_nullifier_range(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                            )
+                            .await?
                         } else {
                             client::get_compact_block_range(
                                 fetch_request_sender.clone(),

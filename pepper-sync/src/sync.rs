@@ -284,6 +284,7 @@ impl ScanRange {
         ))
     }
 }
+
 /// Syncs a wallet to the latest state of the blockchain.
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
@@ -292,8 +293,8 @@ impl ScanRange {
 /// error. This allows more flexibility and safety with sync task handles etc.
 /// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
 /// times in quick sucession without the sync engine interrupting.
-/// Setting `sync_mode` back to `Running` will resume scanning.
-/// Setting `sync_mode` to `Shutdown` will stop the sync process.
+/// Set `sync_mode` back to `Running` to resume scanning.
+/// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
