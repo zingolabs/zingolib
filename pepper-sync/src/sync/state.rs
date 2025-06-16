@@ -587,7 +587,7 @@ fn select_scan_range(
             // if the highest priority is `Historic` the range with the lowest starting block height is chosen instead.
             // if nullifiers are not being mapped to the wallet's main nullifier map due to performance constraints
             // (`map_nullifiers` is set `false`) then the lowest scan range with the highest priority is chosen to allow
-            // notes to be spendable quickly on rescan.
+            // notes to be spendable quickly on rescan, otherwise spends would not be detected.
             let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
                 sync_state.scan_ranges.iter().cloned().enumerate().collect();
             if !map_nullifiers {
@@ -607,6 +607,8 @@ fn select_scan_range(
                                 .expect("range with Historic priority exists in this scope")
                                 .clone()
                         } else {
+                            // in this case, scan ranges are already sorted from highest to lowest and we are taking
+                            // the last range (lowest)
                             (*index, highest_priority_range.clone())
                         }
                     } else {
