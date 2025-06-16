@@ -559,11 +559,15 @@ fn split_out_scan_range(
 
 /// Selects and prepares the next scan range for scanning.
 ///
-/// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its initial priority.
+/// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its
+/// initial priority.
 /// Returns `None` if there are no more ranges to scan.
+///
+/// Set `map_nullifiers` to `false` if the nullifiers are not going to be mapped to the wallet's main nullifier map.
 fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
+    map_nullifiers: bool,
 ) -> Option<ScanRange> {
     let (first_unscanned_index, first_unscanned_range) = sync_state
         .scan_ranges
@@ -581,19 +585,30 @@ fn select_scan_range(
             // scan ranges with the same priority are sorted in block height order.
             // the highest priority scan range is the last in the list, the highest priority with highest starting block height.
             // if the highest priority is `Historic` the range with the lowest starting block height is chosen instead.
+            // if nullifiers are not being mapped to the wallet's main nullifier map due to performance constraints
+            // (`map_nullifiers` is set `false`) then the lowest scan range with the highest priority is chosen to allow
+            // notes to be spendable quickly on rescan.
             let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
                 sync_state.scan_ranges.iter().cloned().enumerate().collect();
+            if !map_nullifiers {
+                scan_ranges_priority_sorted
+                    .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
+            }
             scan_ranges_priority_sorted.sort_by_key(|(_, scan_range)| scan_range.priority());
 
             scan_ranges_priority_sorted
                 .last()
                 .map(|(index, highest_priority_range)| {
                     if highest_priority_range.priority() == ScanPriority::Historic {
-                        scan_ranges_priority_sorted
-                            .iter()
-                            .find(|(_, range)| range.priority() == ScanPriority::Historic)
-                            .expect("range with Historic priority exists in this scope")
-                            .clone()
+                        if map_nullifiers {
+                            scan_ranges_priority_sorted
+                                .iter()
+                                .find(|(_, range)| range.priority() == ScanPriority::Historic)
+                                .expect("range with Historic priority exists in this scope")
+                                .clone()
+                        } else {
+                            (*index, highest_priority_range.clone())
+                        }
                     } else {
                         (*index, highest_priority_range.clone())
                     }
@@ -667,8 +682,11 @@ where
     let mut map_nullifiers = max_nullifier_map_size
         .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() <= max);
 
-    if let Some(scan_range) = select_scan_range(consensus_parameters, wallet.get_sync_state_mut()?)
-    {
+    if let Some(scan_range) = select_scan_range(
+        consensus_parameters,
+        wallet.get_sync_state_mut()?,
+        map_nullifiers,
+    ) {
         if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
