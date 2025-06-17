@@ -835,7 +835,7 @@ where
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    true, // nullifiers are effectively mapped in this case as they would not be retained
+                    true,
                 );
             } else {
                 update_wallet_data(
@@ -872,23 +872,12 @@ where
                 add_scanned_blocks(wallet, scanned_blocks, &scan_range)
                     .map_err(SyncError::WalletError)?;
 
-                let was_lowest_unscanned_range = scan_range.block_range().start
-                    == wallet
-                        .get_sync_state()
-                        .map_err(SyncError::WalletError)?
-                        .fully_scanned_height()
-                        .expect("scan ranges non-empty in this scope")
-                        + 1;
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    if was_lowest_unscanned_range {
-                        true // nullifiers are effectively mapped in this case as they would not be retained
-                    } else {
-                        map_nullifiers
-                    },
+                    map_nullifiers,
                 );
                 state::merge_scan_ranges(
                     wallet

@@ -579,15 +579,18 @@ fn select_scan_range(
         })?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
+            // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
+            // unscanned range.
             (first_unscanned_index, first_unscanned_range.clone())
         } else {
             // scan ranges are sorted from lowest to highest priority.
             // scan ranges with the same priority are sorted in block height order.
-            // the highest priority scan range is the last in the list, the highest priority with highest starting block height.
-            // if the highest priority is `Historic` the range with the lowest starting block height is chosen instead.
+            // the highest priority scan range is the selected from the end of the list, the highest priority with highest
+            // starting block height.
+            // if the highest priority is `Historic` the range with the lowest starting block height is selected instead.
             // if nullifiers are not being mapped to the wallet's main nullifier map due to performance constraints
-            // (`map_nullifiers` is set `false`) then the lowest scan range with the highest priority is chosen to allow
-            // notes to be spendable quickly on rescan, otherwise spends would not be detected.
+            // (`map_nullifiers` is set `false`) then the range with the highest priority and lowest starting block
+            // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected.
             let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
                 sync_state.scan_ranges.iter().cloned().enumerate().collect();
             if !map_nullifiers {
@@ -607,11 +610,12 @@ fn select_scan_range(
                                 .expect("range with Historic priority exists in this scope")
                                 .clone()
                         } else {
-                            // in this case, scan ranges are already sorted from highest to lowest and we are taking
+                            // in this case, scan ranges are already sorted from highest to lowest and we are selecting
                             // the last range (lowest)
                             (*index, highest_priority_range.clone())
                         }
                     } else {
+                        // select the last range in the list
                         (*index, highest_priority_range.clone())
                     }
                 })?
@@ -682,48 +686,64 @@ where
     let mut map_nullifiers = max_nullifier_map_size
         .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() < max);
 
-    if let Some(scan_range) = select_scan_range(
+    if let Some(selected_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,
         map_nullifiers,
     ) {
-        if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+        if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
             // for final spend detection.
-            // it will be inefficient to map the nullifiers as they will not be retained after spend detection.
             Ok(Some(ScanTask::from_parts(
-                scan_range,
+                selected_range,
                 None,
                 None,
                 BTreeSet::new(),
                 HashMap::new(),
-                false,
+                true,
             )))
         } else {
             let start_seam_block = wallet
-                .get_wallet_block(scan_range.block_range().start - 1)
+                .get_wallet_block(selected_range.block_range().start - 1)
                 .ok();
-            let end_seam_block = wallet.get_wallet_block(scan_range.block_range().end).ok();
+            let end_seam_block = wallet
+                .get_wallet_block(selected_range.block_range().end)
+                .ok();
 
             let scan_targets =
-                find_scan_targets(wallet.get_sync_state()?, scan_range.block_range());
+                find_scan_targets(wallet.get_sync_state()?, selected_range.block_range());
             let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
                 .get_transparent_addresses()?
                 .iter()
                 .map(|(id, address)| (address.clone(), *id))
                 .collect();
 
-            // it will be inefficient to map nullifiers for historic as they will not be retained after spend detection.
             // chain tip nullifiers are still mapped even in lowest performance setting to allow instant spendability
             // of new notes.
-            if scan_range.priority() == ScanPriority::Historic {
-                map_nullifiers = false;
-            } else if scan_range.priority() == ScanPriority::ChainTip {
+            if selected_range.priority() == ScanPriority::ChainTip {
                 map_nullifiers = true;
+            } else {
+                // map nullifiers if the scanning the lowest range to be scanned for final spend detection.
+                // this will set the range to `Scanned` (as opose to `ScannedWithoutMapping`) and prevent immediate
+                // re-fetching of the nullifiers in this range.
+                // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
+                // scanning.
+                for scan_range in wallet.get_sync_state()?.scan_ranges() {
+                    if scan_range.priority() != ScanPriority::Scanned
+                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                        && scan_range.priority() != ScanPriority::Scanning
+                    {
+                        break;
+                    }
+
+                    if scan_range.block_range() == selected_range.block_range() {
+                        map_nullifiers = true;
+                    }
+                }
             }
 
             Ok(Some(ScanTask::from_parts(
-                scan_range,
+                selected_range,
                 start_seam_block,
                 end_seam_block,
                 scan_targets,
