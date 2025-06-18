@@ -661,9 +661,6 @@ impl Command for SpendableBalanceCommand {
         indoc! {r#"
             Display the wallet's spendable balance.
 
-            Potentially spendable balance includes notes that are not guaranteed to be unspent due to the wallet not
-            being fully synced to the blockchain.
-
             Usage:
             spendable_balance
 
@@ -676,14 +673,51 @@ impl Command for SpendableBalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let wallet = lightclient.wallet.read().await;
             let spendable_balance =
                 match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, false) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
+            object! {
+                "spendable_balance" => spendable_balance.into_u64(),
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct SpendableBalanceCachingCommand {}
+impl Command for SpendableBalanceCachingCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Display the wallet's spendable balance and cache the witness for faster spending and future calls to
+            spendable balance.
+
+            Potentially spendable balance includes notes that are not guaranteed to be unspent due to the wallet not
+            being fully synced to the blockchain.
+
+            Usage:
+            spendable_balance_caching
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Display the wallet's spendable balance and cache the witness for faster spending and future calls to
+            spendable balance."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
+            let spendable_balance =
+                match wallet.shielded_spendable_balance_caching(zip32::AccountId::ZERO, false) {
+                    Ok(bal) => bal,
+                    Err(e) => return format!("Error: {e}"),
+                };
             let potentially_spendable_balance =
-                match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, true) {
+                match wallet.shielded_spendable_balance_caching(zip32::AccountId::ZERO, true) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
@@ -1958,6 +1992,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("help", Box::new(HelpCommand {})),
         ("balance", Box::new(BalanceCommand {})),
         ("spendable_balance", Box::new(SpendableBalanceCommand {})),
+        (
+            "spendable_balance_caching",
+            Box::new(SpendableBalanceCachingCommand {}),
+        ),
         ("max_send_value", Box::new(MaxSendValueCommand {})),
         ("send_all", Box::new(SendAllCommand {})),
         ("quicksend", Box::new(QuickSendCommand {})),
