@@ -154,12 +154,6 @@ pub enum BalanceError {
     /// Summation overflow
     #[error("overflow occured during summation.")]
     Overflow,
-    /// Shard store checkpoint not found.
-    #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
-    CheckpointNotFound {
-        shielded_protocol: ShieldedProtocol,
-        height: BlockHeight,
-    },
 }
 
 /// Errors associated with key and address derivation
