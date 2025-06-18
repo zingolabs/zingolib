@@ -849,7 +849,7 @@ pub fn get_spendable_balance_total() -> String {
                     Err(e) => return format!("Error: {e}"),
                 };
             let potentially_spendable_balance =
-                match wallet.shielded_spendable_balance(AccountId::ZERO, true) {
+                match wallet.shielded_spendable_balance_caching(AccountId::ZERO, true) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
