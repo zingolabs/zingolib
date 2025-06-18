@@ -958,7 +958,7 @@ async fn process_mempool_transaction<W>(
     raw_transaction: RawTransaction,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let block_height = if raw_transaction.height == 0 {
         BlockHeight::from_u32(0)
