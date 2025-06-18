@@ -1194,6 +1194,7 @@ where
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::Scanning
         })
         .flat_map(|scanned_range| {
             vec![
