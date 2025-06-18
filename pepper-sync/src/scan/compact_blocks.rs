@@ -1,5 +1,4 @@
 use std::{
-    array::TryFromSliceError,
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap},
 };
@@ -9,7 +8,7 @@ use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
 use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
+    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
@@ -29,7 +28,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
-use super::{DecryptedNoteData, InitialScanData, ScanData};
+use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
 
 mod runners;
 
@@ -416,55 +415,6 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 
         Ok(leaves_and_retentions)
     }
-}
-
-/// Converts the nullifiers from a compact transaction and adds them to the nullifier map
-fn collect_nullifiers(
-    nullifier_map: &mut NullifierMap,
-    block_height: BlockHeight,
-    transaction: &CompactTx,
-) -> Result<(), ScanError> {
-    transaction
-        .spends
-        .iter()
-        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
-        .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map.sapling.insert(
-                nullifier,
-                ScanTarget {
-                    block_height,
-                    txid: transaction.txid(),
-                    narrow_scan_area: false,
-                },
-            );
-        });
-    transaction
-        .actions
-        .iter()
-        .map(|action| {
-            orchard::note::Nullifier::from_bytes(
-                action.nullifier.as_slice().try_into().map_err(|_| {
-                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
-                })?,
-            )
-            .into_option()
-            .ok_or(ScanError::InvalidOrchardNullifier)
-        })
-        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map.orchard.insert(
-                nullifier,
-                ScanTarget {
-                    block_height,
-                    txid: transaction.txid(),
-                    narrow_scan_area: false,
-                },
-            );
-        });
-    Ok(())
 }
 
 pub(crate) async fn calculate_block_tree_bounds(

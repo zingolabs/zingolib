@@ -31,8 +31,8 @@ use crate::{
     },
 };
 use pepper_sync::{
+    config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
     keys::transparent::{self, TransparentAddressId, TransparentScope},
-    sync::{SyncConfig, TransparentAddressDiscovery},
     wallet::{
         KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock,
         WalletTransaction,
@@ -40,11 +40,10 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 36:
-    /// - Update receiver selection
-    /// - Generate initial addresses
+    /// Changes in version 39:
+    /// - sync state updated serialized version
     pub const fn serialized_version() -> u64 {
-        38
+        39
     }
 
     /// Serialize into `writer`
@@ -126,7 +125,7 @@ impl LightWallet {
         info!("Reading wallet version {}", version);
         match version {
             ..32 => Self::read_v0(reader, network, version),
-            32..=38 => Self::read_v32(reader, network, version),
+            32..=39 => Self::read_v32(reader, network, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -337,7 +336,7 @@ impl LightWallet {
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                    performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -535,7 +534,7 @@ impl LightWallet {
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                    performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             }

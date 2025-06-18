@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use bytes::Buf;
 
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::super::LightWallet;
@@ -285,7 +285,7 @@ impl NetworkSeedVersion {
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                            performance_level: pepper_sync::sync::PerformanceLevel::High,
+                            performance_level: PerformanceLevel::High,
                         },
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     },

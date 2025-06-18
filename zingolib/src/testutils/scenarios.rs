@@ -30,7 +30,7 @@ pub mod setup {
     use std::path::PathBuf;
 
     use bip0039::Mnemonic;
-    use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
     use tokio::time::sleep;
 
     use zcash_protocol::{PoolType, ShieldedProtocol};
@@ -223,7 +223,7 @@ pub mod setup {
                 WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::sync::PerformanceLevel::High,
+                        performance_level: PerformanceLevel::High,
                     },
                     min_confirmations: NonZeroU32::try_from(1).unwrap(),
                 },

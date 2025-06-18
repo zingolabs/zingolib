@@ -19,10 +19,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::compact_formats::CompactBlock,
-};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -43,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::MAX_VERIFICATION_WINDOW,
+    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
     witness,
 };
 
@@ -182,7 +179,10 @@ impl SyncState {
         if let Some(last_scanned_range) = self
             .scan_ranges
             .iter()
-            .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+            .filter(|scan_range| {
+                scan_range.priority() == ScanPriority::Scanned
+                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+            })
             .last()
         {
             Some(last_scanned_range.block_range().end - 1)

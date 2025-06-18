@@ -1,11 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    array::TryFromSliceError,
+    collections::{BTreeMap, BTreeSet, HashMap},
+};
 
 use orchard::tree::MerkleHashOrchard;
 use task::ScanTask;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
-use zcash_client_backend::proto::compact_formats::CompactBlock;
+use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
@@ -13,6 +16,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},
+    sync::ScanPriority,
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
     witness::{self, LocatedTreeData, WitnessData},
 };
@@ -85,6 +89,7 @@ pub(crate) struct ScanResults {
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
+    pub(crate) map_nullifiers: bool,
 }
 
 pub(crate) struct DecryptedNoteData {
@@ -107,7 +112,6 @@ impl DecryptedNoteData {
 /// `scan_targets` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
 /// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
 /// then `scan_targets` will start empty.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan<P>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
@@ -125,6 +129,7 @@ where
         end_seam_block,
         mut scan_targets,
         transparent_addresses,
+        map_nullifiers,
     } = scan_task;
 
     if compact_blocks
@@ -139,6 +144,25 @@ where
             != u64::from(scan_range.block_range().end - 1)
     {
         panic!("compact blocks do not match scan range!")
+    }
+
+    if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+        let mut nullifiers = NullifierMap::new();
+        for block in compact_blocks.iter() {
+            for transaction in block.vtx.iter() {
+                collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
+            }
+        }
+
+        return Ok(ScanResults {
+            nullifiers,
+            outpoints: BTreeMap::new(),
+            scanned_blocks: BTreeMap::new(),
+            wallet_transactions: HashMap::new(),
+            sapling_located_trees: Vec::new(),
+            orchard_located_trees: Vec::new(),
+            map_nullifiers,
+        });
     }
 
     let initial_scan_data = InitialScanData::new(
@@ -220,5 +244,55 @@ where
         wallet_transactions,
         sapling_located_trees,
         orchard_located_trees,
+        map_nullifiers,
     })
+}
+
+/// Converts the nullifiers from a compact transaction and adds them to the nullifier map
+fn collect_nullifiers(
+    nullifier_map: &mut NullifierMap,
+    block_height: BlockHeight,
+    transaction: &CompactTx,
+) -> Result<(), ScanError> {
+    transaction
+        .spends
+        .iter()
+        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
+        .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
+        .into_iter()
+        .for_each(|nullifier| {
+            nullifier_map.sapling.insert(
+                nullifier,
+                ScanTarget {
+                    block_height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: false,
+                },
+            );
+        });
+    transaction
+        .actions
+        .iter()
+        .map(|action| {
+            orchard::note::Nullifier::from_bytes(
+                action.nullifier.as_slice().try_into().map_err(|_| {
+                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
+                })?,
+            )
+            .into_option()
+            .ok_or(ScanError::InvalidOrchardNullifier)
+        })
+        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
+        .into_iter()
+        .for_each(|nullifier| {
+            nullifier_map.orchard.insert(
+                nullifier,
+                ScanTarget {
+                    block_height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: false,
+                },
+            );
+        });
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, time::Duration};
 
 use bip0039::Mnemonic;
-use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{

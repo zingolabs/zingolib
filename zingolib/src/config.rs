@@ -48,7 +48,7 @@ pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
 /// Re-export pepper-sync SyncConfig for use with load_clientconfig
 ///
-pub use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+pub use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 
 /// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
@@ -246,10 +246,10 @@ impl Default for ZingoConfigBuilder {
             logfile_name: None,
             chain: ChainType::Mainnet,
             wallet_settings: WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -693,10 +693,10 @@ mod tests {
             Some(temp_path),
             crate::config::ChainType::Mainnet,
             WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
@@ -727,10 +727,10 @@ mod tests {
             Some(temp_path),
             crate::config::ChainType::Mainnet,
             WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::sync::PerformanceLevel::High,
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },

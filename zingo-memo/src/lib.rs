@@ -103,7 +103,7 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
         }),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Received memo from a future version of this protocol.\n\
+            "Received encoded memo data from a different wallet or a future wallet version.\n\
             Please ensure your software is up-to-date",
         )),
     }

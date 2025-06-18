@@ -9,13 +9,14 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use crate::client::{self, FetchRequest};
+use crate::config::TransparentAddressDiscovery;
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
 use crate::wallet::traits::SyncWallet;
 use crate::wallet::{KeyIdInterface, ScanTarget};
 
-use super::{MAX_VERIFICATION_WINDOW, TransparentAddressDiscovery};
+use super::MAX_VERIFICATION_WINDOW;
 
 /// Discovers all addresses in use by the wallet and returns scan_targets for any new relevant transactions to scan transparent
 /// bundles.

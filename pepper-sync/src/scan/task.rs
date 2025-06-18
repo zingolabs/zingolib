@@ -13,19 +13,17 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::compact_formats::CompactBlock,
-};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
     client::{self, FetchRequest},
+    config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    sync::{self, PerformanceLevel},
+    sync::{self, ScanPriority, ScanRange},
     wallet::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
@@ -35,6 +33,7 @@ use crate::{
 use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
+const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(19);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -222,7 +221,7 @@ where
                     if sync_state
                         .scan_ranges()
                         .iter()
-                        .any(|scan_range| scan_range.priority() == ScanPriority::Ignored)
+                        .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
                     {
                         // the last scan ranges with `Verify` priority are currently being scanned.
                         return Ok(());
@@ -348,24 +347,45 @@ where
             let mut previous_task_last_block: Option<WalletBlock> = None;
 
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
+                let fetch_nullifiers_only =
+                    scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
+
                 let mut retry_height = scan_task.scan_range.block_range().start;
                 let mut sapling_output_count = 0;
                 let mut orchard_output_count = 0;
+                let mut sapling_nullifier_count = 0;
+                let mut orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
-                let mut block_stream = client::get_compact_block_range(
-                    fetch_request_sender.clone(),
-                    scan_task.scan_range.block_range().clone(),
-                )
-                .await?;
+                let mut block_stream = if fetch_nullifiers_only {
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                } else {
+                    client::get_compact_block_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                };
                 while let Some(compact_block) = match block_stream.message().await {
                     Ok(b) => b,
                     Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
-                        block_stream = client::get_compact_block_range(
-                            fetch_request_sender.clone(),
-                            retry_height..scan_task.scan_range.block_range().end,
-                        )
-                        .await?;
+                        block_stream = if fetch_nullifiers_only {
+                            client::get_nullifier_range(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                            )
+                            .await?
+                        } else {
+                            client::get_compact_block_range(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                            )
+                            .await?
+                        };
 
                         block_stream.message().await?
                     }
@@ -373,52 +393,66 @@ where
                         return Err(e.into());
                     }
                 } {
-                    if let Some(block) = previous_task_last_block.as_ref() {
-                        if scan_task.start_seam_block.is_none()
-                            && scan_task.scan_range.block_range().start == block.block_height() + 1
-                        {
-                            scan_task.start_seam_block = previous_task_last_block.clone();
+                    if !fetch_nullifiers_only {
+                        if let Some(block) = previous_task_last_block.as_ref() {
+                            if scan_task.start_seam_block.is_none()
+                                && scan_task.scan_range.block_range().start
+                                    == block.block_height() + 1
+                            {
+                                scan_task.start_seam_block = previous_task_last_block.clone();
+                            }
                         }
-                    }
-                    if let Some(block) = previous_task_first_block.as_ref() {
-                        if scan_task.end_seam_block.is_none()
-                            && scan_task.scan_range.block_range().end == block.block_height()
-                        {
-                            scan_task.end_seam_block = previous_task_first_block.clone();
+                        if let Some(block) = previous_task_first_block.as_ref() {
+                            if scan_task.end_seam_block.is_none()
+                                && scan_task.scan_range.block_range().end == block.block_height()
+                            {
+                                scan_task.end_seam_block = previous_task_first_block.clone();
+                            }
                         }
+                        if first_batch {
+                            previous_task_first_block = Some(
+                                WalletBlock::from_compact_block(
+                                    &consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    &compact_block,
+                                )
+                                .await?,
+                            );
+                            first_batch = false;
+                        }
+                        if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
+                            previous_task_last_block = Some(
+                                WalletBlock::from_compact_block(
+                                    &consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    &compact_block,
+                                )
+                                .await?,
+                            );
+                        }
+
+                        sapling_output_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.outputs.len());
+                        orchard_output_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                    } else {
+                        sapling_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.spends.len());
+                        orchard_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
                     }
 
-                    if first_batch {
-                        previous_task_first_block = Some(
-                            WalletBlock::from_compact_block(
-                                &consensus_parameters,
-                                fetch_request_sender.clone(),
-                                &compact_block,
-                            )
-                            .await?,
-                        );
-                        first_batch = false;
-                    }
-                    if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        previous_task_last_block = Some(
-                            WalletBlock::from_compact_block(
-                                &consensus_parameters,
-                                fetch_request_sender.clone(),
-                                &compact_block,
-                            )
-                            .await?,
-                        );
-                    }
-
-                    sapling_output_count += compact_block
-                        .vtx
-                        .iter()
-                        .fold(0, |acc, transaction| acc + transaction.outputs.len());
-                    orchard_output_count += compact_block
-                        .vtx
-                        .iter()
-                        .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    if sapling_output_count + orchard_output_count > max_batch_outputs {
+                    if sapling_output_count + orchard_output_count > max_batch_outputs
+                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS
+                    {
                         let (full_batch, new_batch) = scan_task
                             .clone()
                             .split(
@@ -433,6 +467,8 @@ where
                         scan_task = new_batch;
                         sapling_output_count = 0;
                         orchard_output_count = 0;
+                        sapling_nullifier_count = 0;
+                        orchard_nullifier_count = 0;
                     }
 
                     retry_height = compact_block.height() + 1;
@@ -618,6 +654,7 @@ pub(crate) struct ScanTask {
     pub(crate) end_seam_block: Option<WalletBlock>,
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) map_nullifiers: bool,
 }
 
 impl ScanTask {
@@ -627,6 +664,7 @@ impl ScanTask {
         end_seam_block: Option<WalletBlock>,
         scan_targets: BTreeSet<ScanTarget>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
+        map_nullifiers: bool,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -635,6 +673,7 @@ impl ScanTask {
             end_seam_block,
             scan_targets,
             transparent_addresses,
+            map_nullifiers,
         }
     }
 
@@ -706,6 +745,7 @@ impl ScanTask {
                 end_seam_block: upper_task_first_block,
                 scan_targets: lower_task_scan_targets,
                 transparent_addresses: self.transparent_addresses.clone(),
+                map_nullifiers: self.map_nullifiers,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -717,6 +757,7 @@ impl ScanTask {
                 end_seam_block: self.end_seam_block,
                 scan_targets: upper_task_scan_targets,
                 transparent_addresses: self.transparent_addresses,
+                map_nullifiers: self.map_nullifiers,
             },
         ))
     }

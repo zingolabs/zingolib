@@ -132,7 +132,7 @@ pub mod send_with_proposal {
         use std::num::NonZeroU32;
 
         use bip0039::Mnemonic;
-        use pepper_sync::sync::SyncConfig;
+        use pepper_sync::config::SyncConfig;
 
         use crate::{
             lightclient::sync::test::sync_example_wallet,
@@ -162,8 +162,8 @@ pub mod send_with_proposal {
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery:
-                                pepper_sync::sync::TransparentAddressDiscovery::minimal(),
-                            performance_level: pepper_sync::sync::PerformanceLevel::High,
+                                pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                            performance_level: pepper_sync::config::PerformanceLevel::High,
                         },
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     },

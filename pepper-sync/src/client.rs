@@ -48,6 +48,11 @@ pub enum FetchRequest {
         oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
         Range<BlockHeight>,
     ),
+    /// Gets the specified range of nullifiers from the server (end exclusive).
+    NullifierRange(
+        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        Range<BlockHeight>,
+    ),
     /// Gets the tree states for a specified block height.
     TreeState(
         oneshot::Sender<Result<TreeState, tonic::Status>>,
@@ -120,6 +125,26 @@ pub(crate) async fn get_compact_block_range(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
+        .expect("receiver should never be dropped");
+    let block_stream = reply_receiver
+        .await
+        .expect("sender should never be dropped")?;
+
+    Ok(block_stream)
+}
+
+/// Gets the specified range of nullifiers from the server (end exclusive).
+///
+/// Nullifiers are stored in compact blocks where the actions contain only nullifiers.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub(crate) async fn get_nullifier_range(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    block_range: Range<BlockHeight>,
+) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::NullifierRange(reply_sender, block_range))
         .expect("receiver should never be dropped");
     let block_stream = reply_receiver
         .await

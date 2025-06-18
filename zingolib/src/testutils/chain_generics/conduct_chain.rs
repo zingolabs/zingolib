@@ -59,6 +59,7 @@ pub trait ConductChain {
         let mut recipient = self.create_client().await;
 
         self.bump_chain().await;
+
         faucet.sync_and_await().await.unwrap();
 
         from_inputs::quick_send(

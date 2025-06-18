@@ -2,18 +2,16 @@
 
 use std::cmp;
 use std::collections::{BTreeMap, HashMap};
-use std::io::{Read, Write};
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -25,6 +23,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
+use crate::config::SyncConfig;
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
@@ -163,216 +162,126 @@ impl From<SyncResult> for json::JsonValue {
     }
 }
 
-/// Performance level.
-///
-/// The higher the performance level the higher the memory usage and storage.
-// TODO: revisit after implementing nullifier refetching
-#[derive(Default, Debug, Clone, Copy)]
-pub enum PerformanceLevel {
-    /// - number of outputs per batch is halved
-    /// - nullifier map only contains chain tip
-    Low,
-    /// - nullifier map has a small maximum size
-    Medium,
-    /// - nullifier map has a large maximum size
-    #[default]
-    High,
-    /// - number of outputs per batch is doubled
-    /// - nullifier map has no maximum size
-    ///
-    /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
-    /// wallets with a lot of transactions.
-    Maximum,
+/// Scanning range priority levels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScanPriority {
+    /// Block ranges that are currently being scanned.
+    Scanning,
+    /// Block ranges that have already been scanned will not be re-scanned.
+    Scanned,
+    /// Block ranges that have already been scanned. The nullifiers from this range were not mapped after scanning and
+    /// spend detection to reduce memory consumption and/or storage for non-linear scanning. These nullifiers will need
+    /// to be re-fetched for final spend detection when merging this range is the lowest unscanned range in the
+    /// wallet's list of scan ranges.
+    ScannedWithoutMapping,
+    /// Block ranges to be scanned to advance the fully-scanned height.
+    Historic,
+    /// Block ranges adjacent to heights at which the user opened the wallet.
+    OpenAdjacent,
+    /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
+    FoundNote,
+    /// Blocks that must be scanned to complete the latest note commitment tree shard.
+    ChainTip,
+    /// A previously scanned range that must be verified to check it is still in the
+    /// main chain, has highest priority.
+    Verify,
 }
 
-impl PerformanceLevel {
-    fn serialized_version() -> u8 {
-        0
-    }
-
-    /// Deserialize into `reader`
-    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
-
-        Ok(match reader.read_u8()? {
-            0 => Self::Low,
-            1 => Self::Medium,
-            2 => Self::High,
-            3 => Self::Maximum,
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "failed to read valid performance level",
-                ));
-            }
-        })
-    }
-
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-
-        writer.write_u8(match self {
-            Self::Low => 0,
-            Self::Medium => 1,
-            Self::High => 2,
-            Self::Maximum => 3,
-        })?;
-
-        Ok(())
-    }
+/// A range of blocks to be scanned, along with its associated priority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanRange {
+    block_range: Range<BlockHeight>,
+    priority: ScanPriority,
 }
 
-impl std::fmt::Display for PerformanceLevel {
+impl std::fmt::Display for ScanRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Low => write!(f, "low"),
-            Self::Medium => write!(f, "medium"),
-            Self::High => write!(f, "high"),
-            Self::Maximum => write!(f, "maximum"),
+        write!(
+            f,
+            "{:?}({}..{})",
+            self.priority, self.block_range.start, self.block_range.end,
+        )
+    }
+}
+
+impl ScanRange {
+    /// Constructs a scan range from its constituent parts.
+    pub fn from_parts(block_range: Range<BlockHeight>, priority: ScanPriority) -> Self {
+        assert!(
+            block_range.end >= block_range.start,
+            "{:?} is invalid for ScanRange({:?})",
+            block_range,
+            priority,
+        );
+        ScanRange {
+            block_range,
+            priority,
         }
     }
-}
 
-/// Sync configuration.
-#[derive(Default, Debug, Clone)]
-pub struct SyncConfig {
-    /// Transparent address discovery configuration.
-    pub transparent_address_discovery: TransparentAddressDiscovery,
-    /// Performance level
-    pub performance_level: PerformanceLevel,
-}
-
-impl SyncConfig {
-    fn serialized_version() -> u8 {
-        1
+    /// Returns the range of block heights to be scanned.
+    pub fn block_range(&self) -> &Range<BlockHeight> {
+        &self.block_range
     }
 
-    /// Deserialize into `reader`
-    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let version = reader.read_u8()?;
+    /// Returns the priority with which the scan range should be scanned.
+    pub fn priority(&self) -> ScanPriority {
+        self.priority
+    }
 
-        let gap_limit = reader.read_u8()?;
-        let scopes = reader.read_u8()?;
-        let performance_level = if version >= 1 {
-            PerformanceLevel::read(reader)?
+    /// Returns whether or not the scan range is empty.
+    pub fn is_empty(&self) -> bool {
+        self.block_range.is_empty()
+    }
+
+    /// Returns the number of blocks in the scan range.
+    pub fn len(&self) -> usize {
+        usize::try_from(u32::from(self.block_range.end) - u32::from(self.block_range.start))
+            .unwrap()
+    }
+
+    /// Shifts the start of the block range to the right if `block_height >
+    /// self.block_range().start`. Returns `None` if the resulting range would
+    /// be empty (or the range was already empty).
+    pub fn truncate_start(&self, block_height: BlockHeight) -> Option<Self> {
+        if block_height >= self.block_range.end || self.is_empty() {
+            None
         } else {
-            PerformanceLevel::High
-        };
-        Ok(Self {
-            transparent_address_discovery: TransparentAddressDiscovery {
-                gap_limit,
-                scopes: TransparentAddressDiscoveryScopes {
-                    external: scopes & 0b1 != 0,
-                    internal: scopes & 0b10 != 0,
-                    refund: scopes & 0b100 != 0,
-                },
+            Some(ScanRange {
+                block_range: self.block_range.start.max(block_height)..self.block_range.end,
+                priority: self.priority,
+            })
+        }
+    }
+
+    /// Shifts the end of the block range to the left if `block_height <
+    /// self.block_range().end`. Returns `None` if the resulting range would
+    /// be empty (or the range was already empty).
+    pub fn truncate_end(&self, block_height: BlockHeight) -> Option<Self> {
+        if block_height <= self.block_range.start || self.is_empty() {
+            None
+        } else {
+            Some(ScanRange {
+                block_range: self.block_range.start..self.block_range.end.min(block_height),
+                priority: self.priority,
+            })
+        }
+    }
+
+    /// Splits this scan range at the specified height, such that the provided height becomes the
+    /// end of the first range returned and the start of the second. Returns `None` if
+    /// `p <= self.block_range().start || p >= self.block_range().end`.
+    pub fn split_at(&self, p: BlockHeight) -> Option<(Self, Self)> {
+        (p > self.block_range.start && p < self.block_range.end).then_some((
+            ScanRange {
+                block_range: self.block_range.start..p,
+                priority: self.priority,
             },
-            performance_level,
-        })
-    }
-
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-        writer.write_u8(self.transparent_address_discovery.gap_limit)?;
-        let mut scopes = 0;
-        if self.transparent_address_discovery.scopes.external {
-            scopes |= 0b1;
-        };
-        if self.transparent_address_discovery.scopes.internal {
-            scopes |= 0b10;
-        };
-        if self.transparent_address_discovery.scopes.refund {
-            scopes |= 0b100;
-        };
-        writer.write_u8(scopes)?;
-        self.performance_level.write(writer)?;
-
-        Ok(())
-    }
-}
-
-/// Transparent address configuration.
-///
-/// Sets which `scopes` will be searched for addresses in use, scanning relevant transactions, up to a given `gap_limit`.
-#[derive(Debug, Clone)]
-pub struct TransparentAddressDiscovery {
-    /// Sets the gap limit for transparent address discovery.
-    pub gap_limit: u8,
-    /// Sets the scopes for transparent address discovery.
-    pub scopes: TransparentAddressDiscoveryScopes,
-}
-
-impl Default for TransparentAddressDiscovery {
-    fn default() -> Self {
-        Self {
-            gap_limit: 10,
-            scopes: TransparentAddressDiscoveryScopes::default(),
-        }
-    }
-}
-
-impl TransparentAddressDiscovery {
-    /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
-    pub fn minimal() -> Self {
-        Self {
-            gap_limit: 1,
-            scopes: TransparentAddressDiscoveryScopes::default(),
-        }
-    }
-
-    /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
-    pub fn recovery() -> Self {
-        Self {
-            gap_limit: 20,
-            scopes: TransparentAddressDiscoveryScopes::recovery(),
-        }
-    }
-
-    /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
-    /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
-    pub fn disabled() -> Self {
-        Self {
-            gap_limit: 0,
-            scopes: TransparentAddressDiscoveryScopes {
-                external: false,
-                internal: false,
-                refund: false,
+            ScanRange {
+                block_range: p..self.block_range.end,
+                priority: self.priority,
             },
-        }
-    }
-}
-
-/// Sets the active scopes for transparent address recovery.
-#[derive(Debug, Clone)]
-pub struct TransparentAddressDiscoveryScopes {
-    /// External.
-    pub external: bool,
-    /// Internal.
-    pub internal: bool,
-    /// Refund.
-    pub refund: bool,
-}
-
-impl Default for TransparentAddressDiscoveryScopes {
-    fn default() -> Self {
-        Self {
-            external: true,
-            internal: false,
-            refund: true,
-        }
-    }
-}
-
-impl TransparentAddressDiscoveryScopes {
-    /// Constructor with all all scopes active.
-    pub fn recovery() -> Self {
-        Self {
-            external: true,
-            internal: true,
-            refund: true,
-        }
+        ))
     }
 }
 
@@ -384,8 +293,8 @@ impl TransparentAddressDiscoveryScopes {
 /// error. This allows more flexibility and safety with sync task handles etc.
 /// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
 /// times in quick sucession without the sync engine interrupting.
-/// Setting `sync_mode` back to `Running` will resume scanning.
-/// Setting `sync_mode` to `Shutdown` will stop the sync process.
+/// Set `sync_mode` back to `Running` to resume scanning.
+/// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
@@ -902,43 +811,82 @@ where
     match scan_results {
         Ok(results) => {
             let ScanResults {
-                nullifiers,
+                mut nullifiers,
                 outpoints,
                 scanned_blocks,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
+                map_nullifiers,
             } = results;
-            update_wallet_data(
-                consensus_parameters,
-                wallet,
-                fetch_request_sender.clone(),
-                ufvks,
-                &scan_range,
-                nullifiers,
-                outpoints,
-                wallet_transactions,
-                sapling_located_trees,
-                orchard_located_trees,
-            )
-            .await?;
-            spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
-            spend::update_shielded_spends(
-                consensus_parameters,
-                wallet,
-                fetch_request_sender,
-                ufvks,
-                &scanned_blocks,
-            )
-            .await?;
-            add_scanned_blocks(wallet, scanned_blocks, &scan_range)
-                .map_err(SyncError::WalletError)?;
-            state::set_scanned_scan_range(
-                wallet
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-                scan_range.block_range().clone(),
-            );
+
+            if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender,
+                    ufvks,
+                    &scanned_blocks,
+                    Some(&mut nullifiers),
+                )
+                .await?;
+                state::set_scanned_scan_range(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    scan_range.block_range().clone(),
+                    true,
+                );
+            } else {
+                update_wallet_data(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scan_range,
+                    if map_nullifiers {
+                        Some(&mut nullifiers)
+                    } else {
+                        None
+                    },
+                    outpoints,
+                    wallet_transactions,
+                    sapling_located_trees,
+                    orchard_located_trees,
+                )
+                .await?;
+                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender,
+                    ufvks,
+                    &scanned_blocks,
+                    if map_nullifiers {
+                        None
+                    } else {
+                        Some(&mut nullifiers)
+                    },
+                )
+                .await?;
+                add_scanned_blocks(wallet, scanned_blocks, &scan_range)
+                    .map_err(SyncError::WalletError)?;
+
+                state::set_scanned_scan_range(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    scan_range.block_range().clone(),
+                    map_nullifiers,
+                );
+                state::merge_scan_ranges(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    ScanPriority::ScannedWithoutMapping,
+                );
+            }
+
             state::merge_scan_ranges(
                 wallet
                     .get_sync_state_mut()
@@ -960,7 +908,7 @@ where
                     .wallet_height()
                     .expect("scan ranges should be non-empty in this scope");
 
-                // reset scan range from `Ignored` to `Verify`
+                // reset scan range from `Scanning` to `Verify`
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
@@ -1096,7 +1044,7 @@ async fn update_wallet_data<W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
-    nullifiers: NullifierMap,
+    nullifiers: Option<&mut NullifierMap>,
     mut outpoints: BTreeMap<OutputId, ScanTarget>,
     transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
@@ -1132,9 +1080,11 @@ where
     wallet
         .extend_wallet_transactions(transactions)
         .map_err(SyncError::WalletError)?;
-    wallet
-        .append_nullifiers(nullifiers)
-        .map_err(SyncError::WalletError)?;
+    if let Some(nullifiers) = nullifiers {
+        wallet
+            .append_nullifiers(nullifiers)
+            .map_err(SyncError::WalletError)?;
+    }
     wallet
         .append_outpoints(&mut outpoints)
         .map_err(SyncError::WalletError)?;
@@ -1241,7 +1191,11 @@ where
     let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::Scanning
+        })
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
