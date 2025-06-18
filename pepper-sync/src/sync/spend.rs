@@ -17,7 +17,7 @@ use crate::{
     scan::{DecryptedNoteData, transactions::scan_transactions},
     wallet::{
         NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction,
-        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncTransactions},
+        traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
 };
 
@@ -43,7 +43,7 @@ pub(super) async fn update_shielded_spends<P, W>(
 ) -> Result<(), SyncError<W::Error>>
 where
     P: consensus::Parameters,
-    W: SyncBlocks + SyncTransactions + SyncNullifiers,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
 {
     let (sapling_derived_nullifiers, orchard_derived_nullifiers) = collect_derived_nullifiers(
         wallet
@@ -100,12 +100,12 @@ where
     .await?;
 
     update_spent_notes(
-        wallet
-            .get_wallet_transactions_mut()
-            .map_err(SyncError::WalletError)?,
+        wallet,
         sapling_spend_scan_targets,
         orchard_spend_scan_targets,
-    );
+        true,
+    )
+    .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -229,33 +229,71 @@ pub(super) fn detect_shielded_spends(
 
 /// Update the spending transaction for all notes where the derived nullifier matches the nullifier in the spend scan target map.
 /// The items in the spend scan target map are taken directly from the nullifier map during spend detection.
-pub(super) fn update_spent_notes(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+pub(super) fn update_spent_notes<W>(
+    wallet: &mut W,
     sapling_spend_scan_targets: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
     orchard_spend_scan_targets: BTreeMap<orchard::note::Nullifier, ScanTarget>,
-) {
-    wallet_transactions
-        .values_mut()
-        .flat_map(|tx| tx.sapling_notes_mut())
-        .for_each(|note| {
-            if let Some(scan_target) = note
-                .nullifier
-                .and_then(|nf| sapling_spend_scan_targets.get(&nf))
-            {
-                note.spending_transaction = Some(scan_target.txid);
-            }
-        });
-    wallet_transactions
-        .values_mut()
-        .flat_map(|tx| tx.orchard_notes_mut())
-        .for_each(|note| {
-            if let Some(scan_target) = note
-                .nullifier
-                .and_then(|nf| orchard_spend_scan_targets.get(&nf))
-            {
-                note.spending_transaction = Some(scan_target.txid);
-            }
-        });
+    remove_marks: bool,
+) -> Result<(), W::Error>
+where
+    W: SyncTransactions + SyncShardTrees,
+{
+    let mut shard_trees = std::mem::take(wallet.get_shard_trees_mut()?);
+    let wallet_transactions = wallet.get_wallet_transactions_mut()?;
+    for transaction in wallet_transactions.values_mut() {
+        let transaction_height = transaction.status.get_confirmed_height();
+        transaction
+            .sapling_notes_mut()
+            .into_iter()
+            .for_each(|note| {
+                if let Some(scan_target) = note
+                    .nullifier
+                    .and_then(|nf| sapling_spend_scan_targets.get(&nf))
+                {
+                    note.spending_transaction = Some(scan_target.txid);
+
+                    if remove_marks {
+                        if let Some(height) = transaction_height {
+                            if let Some(position) = note.position {
+                                shard_trees
+                                    .sapling
+                                    .remove_mark(position, Some(&height))
+                                    .expect("infallible");
+                            }
+                        }
+                    }
+                }
+            });
+    }
+    for transaction in wallet_transactions.values_mut() {
+        let transaction_height = transaction.status.get_confirmed_height();
+        transaction
+            .orchard_notes_mut()
+            .into_iter()
+            .for_each(|note| {
+                if let Some(scan_target) = note
+                    .nullifier
+                    .and_then(|nf| orchard_spend_scan_targets.get(&nf))
+                {
+                    note.spending_transaction = Some(scan_target.txid);
+
+                    if remove_marks {
+                        if let Some(height) = transaction_height {
+                            if let Some(position) = note.position {
+                                shard_trees
+                                    .orchard
+                                    .remove_mark(position, Some(&height))
+                                    .expect("infallible");
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
+    *wallet.get_shard_trees_mut()? = shard_trees;
+
+    Ok(())
 }
 
 /// Helper function for handling spend detection and the spend status of coins.

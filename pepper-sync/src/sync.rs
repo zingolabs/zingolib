@@ -685,7 +685,7 @@ pub fn scan_pending_transaction<W>(
     datetime: u32,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     if matches!(status, ConfirmationStatus::Confirmed(_)) {
         panic!("this fn is for unconfirmed transactions only");
@@ -751,12 +751,12 @@ where
         transparent_spend_scan_targets,
     );
     spend::update_spent_notes(
-        wallet
-            .get_wallet_transactions_mut()
-            .map_err(SyncError::WalletError)?,
+        wallet,
         sapling_spend_scan_targets,
         orchard_spend_scan_targets,
-    );
+        false,
+    )
+    .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -958,7 +958,7 @@ async fn process_mempool_transaction<W>(
     raw_transaction: RawTransaction,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let block_height = if raw_transaction.height == 0 {
         BlockHeight::from_u32(0)
