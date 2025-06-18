@@ -27,7 +27,7 @@ use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 use pepper_sync::keys::transparent;
-use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use zingolib::commands::RT;
 use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
@@ -844,7 +844,7 @@ pub fn get_spendable_balance_total() -> String {
         RT.block_on(async move {
             let mut wallet = lightclient.wallet.write().await;
             let spendable_balance =
-                match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
+                match wallet.shielded_spendable_balance_caching(AccountId::ZERO, false) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
