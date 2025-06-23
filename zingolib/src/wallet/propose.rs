@@ -59,8 +59,7 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             request,
-            // TODO: update anchor height selection
-            NonZeroU32::MIN,
+            self.wallet_settings.min_confirmations,
         )
         .map_err(ProposeSendError::Proposal)
     }
