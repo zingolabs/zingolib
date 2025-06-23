@@ -251,7 +251,7 @@ impl Default for ZingoConfigBuilder {
                         pepper_sync::config::TransparentAddressDiscovery::minimal(),
                     performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             },
             no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use indoc::indoc;
@@ -1621,8 +1622,11 @@ impl Command for SettingsCommand {
             If there are no arguments the full list of current settings will be shown.
             To set, pass the setting as an argument followed by the value.
 
+            Minimum confirmations must be 1 or greater.
+
             Settings:
             performance [ low | medium | high | maximum ]
+            min_confirmations 3
 
             Usage:
             settings
@@ -1643,8 +1647,10 @@ impl Command for SettingsCommand {
                 return format!(
                     r#"
 performance: {}
+min confirmations: {}
             "#,
-                    wallet.wallet_settings.sync_config.performance_level
+                    wallet.wallet_settings.sync_config.performance_level,
+                    wallet.wallet_settings.min_confirmations,
                 );
             }
 
@@ -1654,14 +1660,32 @@ performance: {}
                     "medium" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium,
                     "high" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::High,
                     "maximum" => wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Maximum,
-                _ => {
-            return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
-                .to_string();}
-                },
+                    _ => {
+                return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
+                    .to_string();}
+                    },
+                "min_confirmations" => {
+                    let min_confirmations = match args[1].parse::<u32>() {
+                        Ok(m) => match NonZeroU32::try_from(m) {
+                            Ok(m) => m,
+                            Err(_) => {
+                                return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
+                                    .to_string();
+                            }
+                        },
+                        Err(_) => {
+                            return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
+                                .to_string();
+                        }
+                    };
+                    wallet.wallet_settings.min_confirmations = min_confirmations
+                }
                 _ => {
             return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
                 .to_string();}
             }
+
+            wallet.save_required = true;
 
             "Successfully updated settings.".to_string()
         })

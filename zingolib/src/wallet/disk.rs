@@ -338,7 +338,7 @@ impl LightWallet {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             },
         };
 
@@ -527,7 +527,7 @@ impl LightWallet {
                     NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
                         .expect("only valid non-zero u32s stored")
                 } else {
-                    NonZeroU32::try_from(1).expect("only valid non-zero u32s stored")
+                    NonZeroU32::try_from(3).expect("only valid non-zero u32s stored")
                 },
             }
         } else {
@@ -536,7 +536,7 @@ impl LightWallet {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             }
         };
 

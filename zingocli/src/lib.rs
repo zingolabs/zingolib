@@ -466,7 +466,7 @@ pub fn startup(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::High,
             },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
         1.try_into().unwrap(),
     )

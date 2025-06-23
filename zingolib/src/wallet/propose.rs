@@ -1,7 +1,5 @@
 //! creating proposals from wallet data
 
-use std::num::NonZeroU32;
-
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
     fees::{DustAction, DustOutputPolicy},
@@ -59,8 +57,7 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             request,
-            // TODO: update anchor height selection
-            NonZeroU32::MIN,
+            self.wallet_settings.min_confirmations,
         )
         .map_err(ProposeSendError::Proposal)
     }
