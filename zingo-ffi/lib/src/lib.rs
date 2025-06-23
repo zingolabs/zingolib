@@ -842,20 +842,14 @@ pub fn get_spendable_balance_with_address(address: String, zennies: String) -> S
 pub fn get_spendable_balance_total() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let wallet = lightclient.wallet.write().await;
             let spendable_balance =
-                match wallet.shielded_spendable_balance_caching(AccountId::ZERO, false) {
-                    Ok(bal) => bal,
-                    Err(e) => return format!("Error: {e}"),
-                };
-            let potentially_spendable_balance =
-                match wallet.shielded_spendable_balance_caching(AccountId::ZERO, true) {
+                match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
             object! {
                 "spendable_balance" => spendable_balance.into_u64(),
-                "potentially_spendable_balance" => potentially_spendable_balance.into_u64(),
             }
             .pretty(2)
         })
