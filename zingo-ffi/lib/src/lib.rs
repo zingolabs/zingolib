@@ -73,7 +73,7 @@ fn construct_uri_load_config(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::Medium,
             },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -157,7 +157,7 @@ pub fn init_from_seed(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::Medium,
             },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
     ) {
         Ok(w) => w,
@@ -193,7 +193,7 @@ pub fn init_from_ufvk(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::Medium,
             },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
     ) {
         Ok(w) => w,
