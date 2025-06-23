@@ -309,15 +309,15 @@ impl LightWallet {
         &self,
         address: &sapling_crypto::PaymentAddress,
     ) -> Option<(zip32::AccountId, DiversifierIndex)> {
-        for (account_id, unified_key) in self.unified_key_store.iter() {
-            if let Some((diversifier_index, _)) =
-                sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)
-                    .ok()
-                    .and_then(|fvk| fvk.decrypt_diversifier(address))
-            {
-                return Some((*account_id, diversifier_index));
-            }
-        }
+        // for (account_id, unified_key) in self.unified_key_store.iter() {
+        //     if let Some((diversifier_index, _)) =
+        //         sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)
+        //             .ok()
+        //             .and_then(|fvk| fvk.decrypt_diversifier(address))
+        //     {
+        //         return Some((*account_id, diversifier_index));
+        //     }
+        // }
 
         None
     }
@@ -327,16 +327,16 @@ impl LightWallet {
         &self,
         address: &orchard::Address,
     ) -> Option<(zip32::AccountId, zip32::Scope, DiversifierIndex)> {
-        for (account_id, unified_key) in self.unified_key_store.iter() {
-            let Ok(fvk) = orchard::keys::FullViewingKey::try_from(unified_key) else {
-                continue;
-            };
-            for scope in [zip32::Scope::External, zip32::Scope::Internal] {
-                if let Some(diversifier_index) = fvk.to_ivk(scope).diversifier_index(address) {
-                    return Some((*account_id, scope, diversifier_index));
-                }
-            }
-        }
+        // for (account_id, unified_key) in self.unified_key_store.iter() {
+        //     let Ok(fvk) = orchard::keys::FullViewingKey::try_from(unified_key) else {
+        //         continue;
+        //     };
+        //     for scope in [zip32::Scope::External, zip32::Scope::Internal] {
+        //         if let Some(diversifier_index) = fvk.to_ivk(scope).diversifier_index(address) {
+        //             return Some((*account_id, scope, diversifier_index));
+        //         }
+        //     }
+        // }
 
         None
     }
