@@ -1673,7 +1673,7 @@ min confirmations: {}
                                     .to_string();
                             }
                         },
-                        Err(_) => { 
+                        Err(_) => {
                             return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
                                 .to_string();
                         }
