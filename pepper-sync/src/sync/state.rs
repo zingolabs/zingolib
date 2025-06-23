@@ -169,7 +169,7 @@ async fn create_scan_range(
 
 /// Resets scan ranges to recover from previous sync interruptions.
 ///
-/// A range that was previously scanning when sync was last interrupted is set to `FoundNote` to be prioritised for
+/// A range that was previously scanning when sync was last interrupted is set to `ChainTip` to be prioritised for
 /// scanning.
 fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
@@ -179,11 +179,7 @@ fn reset_scan_ranges(sync_state: &mut SyncState) {
         .cloned()
         .collect::<Vec<_>>();
     for scan_range in previously_scanning_scan_ranges {
-        set_scan_priority(
-            sync_state,
-            scan_range.block_range(),
-            ScanPriority::FoundNote,
-        );
+        set_scan_priority(sync_state, scan_range.block_range(), ScanPriority::ChainTip);
     }
 }
 
