@@ -2749,7 +2749,7 @@ TransactionSummary {
                 None,
                 PoolType::Shielded(ShieldedProtocol::Orchard),
                 RegtestNetwork::all_upgrades_active(),
-                false,
+                true,
             )
             .await;
         let network = recipient.wallet.read().await.network;
