@@ -2,6 +2,8 @@
 
 use nonempty::NonEmpty;
 
+use pepper_sync::sync::ScanPriority;
+use pepper_sync::wallet::NoteInterface;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -12,6 +14,7 @@ use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
 use pepper_sync::wallet::traits::SyncWallet as _;
+use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
@@ -264,6 +267,67 @@ impl LightWallet {
         self.save_required = true;
 
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
+    }
+
+    pub(crate) fn can_build_witness<N>(&self, block_height: BlockHeight) -> bool
+    where
+        N: NoteInterface,
+    {
+        if self
+            .sync_state
+            .scan_ranges()
+            .iter()
+            .any(|scan_range| scan_range.priority() == ScanPriority::ChainTip)
+        {
+            return false;
+        }
+
+        match N::SHIELDED_PROTOCOL {
+            ShieldedProtocol::Orchard => {
+                let mut note_shard_ranges = self
+                    .sync_state
+                    .orchard_shard_ranges()
+                    .iter()
+                    .filter(|&shard_range| shard_range.contains(&block_height));
+
+                note_shard_ranges.all(|note_shard_range| {
+                    self.sync_state
+                        .scan_ranges()
+                        .iter()
+                        .filter(|&scan_range| {
+                            scan_range.priority() == ScanPriority::Scanned
+                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                        })
+                        .map(|scan_range| scan_range.block_range())
+                        .any(|block_range| {
+                            block_range.contains(&note_shard_range.start)
+                                && block_range.contains(&(note_shard_range.end - 1))
+                        })
+                })
+            }
+            ShieldedProtocol::Sapling => {
+                let mut note_shard_ranges = self
+                    .sync_state
+                    .sapling_shard_ranges()
+                    .iter()
+                    .filter(|&shard_range| shard_range.contains(&block_height));
+
+                note_shard_ranges.all(|note_shard_range| {
+                    self.sync_state
+                        .scan_ranges()
+                        .iter()
+                        .filter(|&scan_range| {
+                            scan_range.priority() == ScanPriority::Scanned
+                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                        })
+                        .map(|scan_range| scan_range.block_range())
+                        .any(|block_range| {
+                            block_range.contains(&note_shard_range.start)
+                                && block_range.contains(&(note_shard_range.end - 1))
+                        })
+                })
+            }
+        }
     }
 }
 

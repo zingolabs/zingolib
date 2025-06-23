@@ -149,6 +149,16 @@ impl SyncState {
         &self.scan_ranges
     }
 
+    /// Sapling shard ranges
+    pub fn sapling_shard_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.sapling_shard_ranges
+    }
+
+    /// Orchard shard ranges
+    pub fn orchard_shard_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.orchard_shard_ranges
+    }
+
     /// Returns true if all scan ranges are scanned.
     pub(crate) fn scan_complete(&self) -> bool {
         self.scan_ranges

@@ -279,33 +279,16 @@ impl LightWallet {
                         spend_horizon,
                         include_potentially_spent_notes,
                     )
-                    .collect()
+                    .collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 }
-            })
-            .filter(|&note| {
-                note.nullifier().is_some()
-                    && note
-                        .position()
-                        .is_some_and(|position| match N::SHIELDED_PROTOCOL {
-                            ShieldedProtocol::Orchard => match self
-                                .shard_trees
-                                .orchard
-                                .witness_at_checkpoint_id(position, &anchor_height)
-                            {
-                                Ok(witness) => witness.is_some(),
-                                Err(_) => false,
-                            },
-                            ShieldedProtocol::Sapling => match self
-                                .shard_trees
-                                .sapling
-                                .witness_at_checkpoint_id(position, &anchor_height)
-                            {
-                                Ok(witness) => witness.is_some(),
-                                Err(_) => false,
-                            },
-                        })
+                .into_iter()
+                .filter(|&note| {
+                    note.nullifier().is_some()
+                        && note.position().is_some()
+                        && self.can_build_witness::<N>(transaction.status().get_height())
+                })
             })
             .collect())
     }
