@@ -1686,7 +1686,7 @@ min confirmations: {}
             }
 
             wallet.save_required = true;
-            
+
             "Successfully updated settings.".to_string()
         })
     }
