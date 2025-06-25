@@ -66,4 +66,5 @@ namespace zingo {
   string create_new_unified_address(string receivers);
   string create_new_transparent_address();
   string check_my_address(string address);
+  string get_wallet_save_required();
 };

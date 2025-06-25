@@ -1021,3 +1021,14 @@ pub fn check_my_address(address: String) -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn get_wallet_save_required() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet.read().await;
+            object! { "save_required" => wallet.save_required}.pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
