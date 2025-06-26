@@ -868,7 +868,7 @@ pub fn get_option_wallet() -> String {
 
 pub fn create_tor_client(data_dir: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        if lightclient.tor_client.is_some() {
+        if lightclient.tor_client().is_some() {
             return "Error: Tor client already exists.".to_string();
         }
 
@@ -885,7 +885,7 @@ pub fn create_tor_client(data_dir: String) -> String {
 
 pub fn remove_tor_client() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        if lightclient.tor_client.is_none() {
+        if lightclient.tor_client().is_none() {
             return "Error: Tor client is not active.".to_string();
         }
 
