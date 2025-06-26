@@ -868,10 +868,15 @@ pub fn get_option_wallet() -> String {
 
 pub fn create_tor_client(data_dir: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        match RT.block_on(async move { lightclient.create_tor_client(Some(data_dir.into())).await })
-        {
+        if lightclient.tor_client.is_some() {
+            return "Error: Tor client already exists.".to_string();
+        }
+
+        match RT.block_on(async move {
+            lightclient.create_tor_client(Some(data_dir.into())).await
+        }) {
             Ok(_) => "Successfully created tor client.".to_string(),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => format!("Error creating tor client: {e}"),
         }
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -880,7 +885,14 @@ pub fn create_tor_client(data_dir: String) -> String {
 
 pub fn remove_tor_client() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        RT.block_on(async move { lightclient.remove_tor_client().await });
+        if lightclient.tor_client.is_none() {
+            return "Error: Tor client is not active.".to_string();
+        }
+
+        RT.block_on(async move {
+            lightclient.remove_tor_client().await;
+        });
+
         "Successfully removed tor client.".to_string()
     } else {
         "Error: Lightclient is not initialized".to_string()
