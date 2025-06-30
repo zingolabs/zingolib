@@ -27,7 +27,7 @@ use zcash_primitives::zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 use pepper_sync::keys::transparent;
-use pepper_sync::sync::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use zingolib::commands::RT;
 use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
@@ -73,7 +73,7 @@ fn construct_uri_load_config(
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::Medium,
             },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -152,13 +152,7 @@ pub fn init_from_seed(
             no_of_accounts: config.no_of_accounts,
         },
         BlockHeight::from_u32(birthday as u32),
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
+        config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
@@ -188,13 +182,7 @@ pub fn init_from_ufvk(
         config.chain,
         WalletBase::Ufvk(ufvk),
         BlockHeight::from_u32(birthday as u32),
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
+        config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
         Err(e) => return format!("Error: {e}"),
@@ -842,20 +830,14 @@ pub fn get_spendable_balance_with_address(address: String, zennies: String) -> S
 pub fn get_spendable_balance_total() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let wallet = lightclient.wallet.write().await;
             let spendable_balance =
                 match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
-            let potentially_spendable_balance =
-                match wallet.shielded_spendable_balance(AccountId::ZERO, true) {
-                    Ok(bal) => bal,
-                    Err(e) => return format!("Error: {e}"),
-                };
             object! {
                 "spendable_balance" => spendable_balance.into_u64(),
-                "potentially_spendable_balance" => potentially_spendable_balance.into_u64(),
             }
             .pretty(2)
         })
@@ -874,10 +856,15 @@ pub fn get_option_wallet() -> String {
 
 pub fn create_tor_client(data_dir: String) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        match RT.block_on(async move { lightclient.create_tor_client(Some(data_dir.into())).await })
-        {
+        if lightclient.tor_client().is_some() {
+            return "Error: Tor client already exists.".to_string();
+        }
+
+        match RT.block_on(async move {
+            lightclient.create_tor_client(Some(data_dir.into())).await
+        }) {
             Ok(_) => "Successfully created tor client.".to_string(),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => format!("Error creating tor client: {e}"),
         }
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -886,7 +873,14 @@ pub fn create_tor_client(data_dir: String) -> String {
 
 pub fn remove_tor_client() -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        RT.block_on(async move { lightclient.remove_tor_client().await });
+        if lightclient.tor_client().is_none() {
+            return "Error: Tor client is not active.".to_string();
+        }
+
+        RT.block_on(async move {
+            lightclient.remove_tor_client().await;
+        });
+
         "Successfully removed tor client.".to_string()
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -1022,6 +1016,62 @@ pub fn check_my_address(address: String) -> String {
                 ).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_wallet_save_required() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet.read().await;
+            object! { "save_required" => wallet.save_required }.pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn set_config_wallet_to_test() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
+            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(1).unwrap();
+            wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium;
+            wallet.save_required = true;
+            "Successfully set config wallet to test. (1 - Medium)".to_string()
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn set_config_wallet_to_prod() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let mut wallet = lightclient.wallet.write().await;
+            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(3).unwrap();
+            wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium;
+            wallet.save_required = true;
+            "Successfully set config wallet to prod. (3 - Medium)".to_string()
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn get_config_wallet_performance() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet.read().await;
+            let performance_level = match wallet.wallet_settings.sync_config.performance_level {
+                PerformanceLevel::Low => "Low",
+                PerformanceLevel::Medium => "Medium",
+                PerformanceLevel::High => "High",
+                PerformanceLevel::Maximum => "Maximum",
+            };
+            object! { "performance_level" => performance_level }.pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
