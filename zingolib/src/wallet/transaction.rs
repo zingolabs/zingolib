@@ -179,7 +179,7 @@ impl LightWallet {
                 .outgoing_sapling_notes()
                 .iter()
                 .all(|outgoing_note| {
-                    self.is_sapling_external_wallet_address(&outgoing_note.note().recipient())
+                    self.is_sapling_address_in_unified_addresses(&outgoing_note.note().recipient())
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
@@ -190,8 +190,9 @@ impl LightWallet {
                 .outgoing_orchard_notes()
                 .iter()
                 .all(|outgoing_note| {
-                    self.is_orchard_wallet_address(&outgoing_note.note().recipient())
+                    self.is_orchard_address_in_unified_addresses(&outgoing_note.note().recipient())
                         .is_some()
+                        || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
                             .encoded_recipient_full_unified_address(&self.network)
                             .is_some_and(|unified_address| unified_address == *zfz_address)

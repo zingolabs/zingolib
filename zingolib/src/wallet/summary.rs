@@ -671,38 +671,17 @@ impl LightWallet {
         let outgoing_coins = &transaction.outgoing_transparent_coins;
         let mut addresses = HashSet::new();
 
-        transaction
-            .outgoing_orchard_notes
-            .iter()
-            .try_for_each(|note| {
-                if self.is_wallet_address(&note.recipient)?.is_none() {
-                    let encoded_address = note
-                        .recipient_unified_address
-                        .clone()
-                        .unwrap_or(note.recipient.clone());
-                    addresses.insert(encoded_address);
-                }
+        outgoing_notes.iter().try_for_each(|&note| {
+            if note.scope == Scope::External && self.is_wallet_address(&note.recipient)?.is_none() {
+                let encoded_address = note
+                    .recipient_unified_address
+                    .clone()
+                    .unwrap_or(note.recipient.clone());
+                addresses.insert(encoded_address);
+            }
 
-                Ok::<(), KeyError>(())
-            })?;
-        transaction
-            .outgoing_sapling_notes
-            .iter()
-            .try_for_each(|note| {
-                // added scope check to circumvent sapling-crypto bug:
-                // https://github.com/zcash/sapling-crypto/issues/160.
-                if self.is_wallet_address(&note.recipient)?.is_none()
-                    && note.scope != Scope::Internal
-                {
-                    let encoded_address = note
-                        .recipient_unified_address
-                        .clone()
-                        .unwrap_or(note.recipient.clone());
-                    addresses.insert(encoded_address);
-                }
-
-                Ok::<(), KeyError>(())
-            })?;
+            Ok::<(), KeyError>(())
+        })?;
         outgoing_coins.iter().try_for_each(|coin| {
             if self.is_wallet_address(&coin.recipient)?.is_none() {
                 addresses.insert(coin.recipient.clone());

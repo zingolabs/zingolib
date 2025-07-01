@@ -904,7 +904,12 @@ impl Command for CheckAddressCommand {
                 .to_string() }.pretty(2)            ;
         }
         RT.block_on(async move {
-            match lightclient.wallet.read().await.is_wallet_address(args[0]) {
+            match lightclient
+                .wallet
+                .read()
+                .await
+                .is_address_derived_by_keys(args[0])
+            {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => "false".to_string() },
                     |address_ref| match address_ref {
