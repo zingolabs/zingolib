@@ -824,17 +824,40 @@ where
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
-                    fetch_request_sender,
+                    fetch_request_sender.clone(),
                     ufvks,
                     &scanned_blocks,
                     Some(&mut nullifiers),
                 )
                 .await?;
 
-                // add block boundaries for sync status calculations
-                wallet
-                    .append_wallet_blocks(scanned_blocks)
-                    .map_err(SyncError::WalletError)?;
+                // add missing block bounds in the case that nullifier batch limit was reached and scan range was split
+                let mut missing_block_bounds = BTreeMap::new();
+                for block_bound in [
+                    scan_range.block_range().start,
+                    scan_range.block_range().end - 1,
+                ] {
+                    if wallet.get_wallet_block(block_bound).is_err() {
+                        missing_block_bounds.insert(
+                            block_bound,
+                            WalletBlock::from_compact_block(
+                                consensus_parameters,
+                                fetch_request_sender.clone(),
+                                &client::get_compact_block(
+                                    fetch_request_sender.clone(),
+                                    block_bound,
+                                )
+                                .await?,
+                            )
+                            .await?,
+                        );
+                    }
+                }
+                if !missing_block_bounds.is_empty() {
+                    wallet
+                        .append_wallet_blocks(missing_block_bounds)
+                        .map_err(SyncError::WalletError)?;
+                }
 
                 state::set_scanned_scan_range(
                     wallet
