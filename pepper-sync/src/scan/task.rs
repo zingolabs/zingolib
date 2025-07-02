@@ -33,7 +33,7 @@ use crate::{
 use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
-const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(19);
+const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -89,9 +89,9 @@ where
     pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
         let max_batch_outputs = match performance_level {
             PerformanceLevel::Low => 2usize.pow(11),
-            PerformanceLevel::Medium => 2usize.pow(12),
-            PerformanceLevel::High => 2usize.pow(12),
-            PerformanceLevel::Maximum => 2usize.pow(13),
+            PerformanceLevel::Medium => 2usize.pow(13),
+            PerformanceLevel::High => 2usize.pow(13),
+            PerformanceLevel::Maximum => 2usize.pow(15),
         };
 
         self.spawn_batcher(max_batch_outputs);
