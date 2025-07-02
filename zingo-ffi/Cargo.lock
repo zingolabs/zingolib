@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "darkside-tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "bip0039",
  "futures-util",
@@ -2685,6 +2685,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b86e202f00093dcba4275d4636b93ef9dd75d025ae560d2521b45ea28ab49013"
+dependencies = [
+ "bitflags 2.9.1",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3464,7 +3475,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4184,9 +4195,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.21"
+version = "0.12.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c8cea6b35bcceb099f30173754403d2eba0a5dc18cea3630fccd88251909288"
+checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
 dependencies = [
  "base64",
  "bytes",
@@ -5432,17 +5443,19 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.45.1"
+version = "1.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
+checksum = "1140bb80481756a8cbe10541f37433b459c5aa1e727b4c020fbfebdc25bf3ec4"
 dependencies = [
  "backtrace",
  "bytes",
+ "io-uring",
  "libc",
  "mio 1.0.4",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
+ "slab",
  "socket2",
  "tokio-macros",
  "windows-sys 0.52.0",
@@ -7833,7 +7846,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -7845,7 +7858,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "http",
  "http-body",
@@ -7865,7 +7878,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -7881,7 +7894,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -7890,7 +7903,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "bip0039",
 ]
@@ -7898,7 +7911,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#598349b2c5db415ee62892ab54d50850fd3fe9b9"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#fb8e27744a9209cbbfcf00ca6e756f9075e72881"
 dependencies = [
  "append-only-vec",
  "bech32",
