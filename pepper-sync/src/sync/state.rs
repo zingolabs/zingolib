@@ -29,7 +29,7 @@ use crate::{
 
 use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
-const NARROW_SCAN_AREA: u32 = 50_000;
+const NARROW_SCAN_AREA: u32 = 10_000;
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
