@@ -14,7 +14,7 @@ use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
-    client::FetchRequest,
+    client::{self, FetchRequest},
     error::{ScanError, ServerError},
     sync::ScanPriority,
     wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
@@ -154,10 +154,44 @@ where
             }
         }
 
+        // fetch block boundaries
+        let mut scanned_blocks = BTreeMap::new();
+        let first_block_height = BlockHeight::from_u32(
+            compact_blocks
+                .first()
+                .expect("compact blocks should be non-empty")
+                .height as u32,
+        );
+        let last_block_height = BlockHeight::from_u32(
+            compact_blocks
+                .last()
+                .expect("compact blocks should be non-empty")
+                .height as u32,
+        );
+        scanned_blocks.insert(
+            first_block_height,
+            WalletBlock::from_compact_block(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &client::get_compact_block(fetch_request_sender.clone(), first_block_height)
+                    .await?,
+            )
+            .await?,
+        );
+        scanned_blocks.insert(
+            last_block_height,
+            WalletBlock::from_compact_block(
+                consensus_parameters,
+                fetch_request_sender.clone(),
+                &client::get_compact_block(fetch_request_sender.clone(), last_block_height).await?,
+            )
+            .await?,
+        );
+
         return Ok(ScanResults {
             nullifiers,
             outpoints: BTreeMap::new(),
-            scanned_blocks: BTreeMap::new(),
+            scanned_blocks,
             wallet_transactions: HashMap::new(),
             sapling_located_trees: Vec::new(),
             orchard_located_trees: Vec::new(),

@@ -830,6 +830,12 @@ where
                     Some(&mut nullifiers),
                 )
                 .await?;
+
+                // add block boundaries for sync status calculations
+                wallet
+                    .append_wallet_blocks(scanned_blocks)
+                    .map_err(SyncError::WalletError)?;
+
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
