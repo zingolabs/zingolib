@@ -78,7 +78,7 @@ rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17"
 rusqlite = "0.32"
-rust_decimal = "1.37.1"
+rust_decimal = "1.37.2"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
