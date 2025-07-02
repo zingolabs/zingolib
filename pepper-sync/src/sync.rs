@@ -1185,17 +1185,16 @@ where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
     let sync_state = wallet.get_sync_state()?;
+    let fully_scanned_height = sync_state
+        .fully_scanned_height()
+        .expect("scan ranges must be non-empty");
     let highest_scanned_height = sync_state
         .highest_scanned_height()
-        .expect("should be non-empty");
-    let scanned_range_bounds = sync_state
+        .expect("scan ranges must be non-empty");
+    let fully_scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| {
-            scan_range.priority() == ScanPriority::Scanned
-                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::Scanning
-        })
+        .filter(|scan_range| scan_range.block_range().end <= fully_scanned_height + 1)
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
@@ -1211,8 +1210,9 @@ where
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
         *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
-            || scanned_range_bounds.contains(height)
+            || fully_scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
+            || *height > fully_scanned_height
     });
 
     Ok(())
