@@ -29,7 +29,7 @@ use crate::{
 
 use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
 
-const NARROW_SCAN_AREA: u32 = 10_000;
+const NARROW_SCAN_AREA: u32 = 100_000;
 
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::SubtreeRoot;
@@ -679,7 +679,7 @@ where
     let nullifier_map = wallet.get_nullifiers()?;
     let max_nullifier_map_size = match performance_level {
         PerformanceLevel::Low => Some(0),
-        PerformanceLevel::Medium => Some(250_000),
+        PerformanceLevel::Medium => Some(0),
         PerformanceLevel::High => Some(2_000_000),
         PerformanceLevel::Maximum => None,
     };
