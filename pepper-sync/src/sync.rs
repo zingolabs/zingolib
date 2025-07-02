@@ -879,12 +879,6 @@ where
                     scan_range.block_range().clone(),
                     map_nullifiers,
                 );
-                state::merge_scan_ranges(
-                    wallet
-                        .get_sync_state_mut()
-                        .map_err(SyncError::WalletError)?,
-                    ScanPriority::ScannedWithoutMapping,
-                );
             }
 
             state::merge_scan_ranges(

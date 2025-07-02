@@ -33,7 +33,6 @@ use crate::{
 use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
-const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(19);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -353,8 +352,6 @@ where
                 let mut retry_height = scan_task.scan_range.block_range().start;
                 let mut sapling_output_count = 0;
                 let mut orchard_output_count = 0;
-                let mut sapling_nullifier_count = 0;
-                let mut orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
                 let mut block_stream = if fetch_nullifiers_only {
@@ -370,6 +367,7 @@ where
                     )
                     .await?
                 };
+
                 while let Some(compact_block) = match block_stream.message().await {
                     Ok(b) => b,
                     Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
@@ -439,36 +437,23 @@ where
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    } else {
-                        sapling_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        orchard_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    }
 
-                    if sapling_output_count + orchard_output_count > max_batch_outputs
-                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS
-                    {
-                        let (full_batch, new_batch) = scan_task
-                            .clone()
-                            .split(
-                                &consensus_parameters,
-                                fetch_request_sender.clone(),
-                                compact_block.height(),
-                            )
-                            .await?;
+                        if sapling_output_count + orchard_output_count > max_batch_outputs {
+                            let (full_batch, new_batch) = scan_task
+                                .clone()
+                                .split(
+                                    &consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    compact_block.height(),
+                                )
+                                .await?;
 
-                        let _ignore_error = batch_sender.send(full_batch).await;
+                            let _ignore_error = batch_sender.send(full_batch).await;
 
-                        scan_task = new_batch;
-                        sapling_output_count = 0;
-                        orchard_output_count = 0;
-                        sapling_nullifier_count = 0;
-                        orchard_nullifier_count = 0;
+                            scan_task = new_batch;
+                            sapling_output_count = 0;
+                            orchard_output_count = 0;
+                        }
                     }
 
                     retry_height = compact_block.height() + 1;
