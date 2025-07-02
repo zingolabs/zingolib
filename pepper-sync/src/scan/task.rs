@@ -91,7 +91,7 @@ where
             PerformanceLevel::Low => 2usize.pow(11),
             PerformanceLevel::Medium => 2usize.pow(13),
             PerformanceLevel::High => 2usize.pow(13),
-            PerformanceLevel::Maximum => 2usize.pow(14),
+            PerformanceLevel::Maximum => 2usize.pow(15),
         };
 
         self.spawn_batcher(max_batch_outputs);
