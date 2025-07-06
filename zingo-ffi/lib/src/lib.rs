@@ -956,7 +956,11 @@ pub fn create_new_transparent_address() -> String {
 pub fn check_my_address(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient.wallet.read().await.is_wallet_address(&address) {
+            match lightclient
+                .wallet
+                .read()
+                .await
+                .is_address_derived_by_keys(&address) {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => false },
                     |address_ref| match address_ref {
