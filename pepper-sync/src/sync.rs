@@ -1529,7 +1529,6 @@ where
         .filter(|transaction| {
             matches!(transaction.status(), ConfirmationStatus::Mempool(_))
                 && transaction.status().get_height()
-                    // TODO: mempool can be zero?!
                     <= wallet_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
         })
         .map(|transaction| transaction.txid())
