@@ -19,7 +19,7 @@ use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client};
+use crate::{Orchard, Sapling, SyncDomain, client, reset_spends};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -145,7 +145,6 @@ pub trait SyncTransactions: SyncWallet {
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), Self::Error> {
-        // TODO: Replace with `extract_if()` when it's in stable rust
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
@@ -154,31 +153,7 @@ pub trait SyncTransactions: SyncWallet {
             .collect();
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;
-        wallet_transactions
-            .values_mut()
-            .flat_map(|tx| tx.sapling_notes_mut())
-            .filter(|note| {
-                note.spending_transaction.map_or_else(
-                    || false,
-                    |spending_txid| invalid_txids.contains(&spending_txid),
-                )
-            })
-            .for_each(|note| {
-                note.spending_transaction = None;
-            });
-        wallet_transactions
-            .values_mut()
-            .flat_map(|tx| tx.orchard_notes_mut())
-            .filter(|note| {
-                note.spending_transaction.map_or_else(
-                    || false,
-                    |spending_txid| invalid_txids.contains(&spending_txid),
-                )
-            })
-            .for_each(|note| {
-                note.spending_transaction = None;
-            });
-
+        reset_spends(wallet_transactions, invalid_txids.clone());
         invalid_txids.iter().for_each(|invalid_txid| {
             wallet_transactions.remove(invalid_txid);
         });
