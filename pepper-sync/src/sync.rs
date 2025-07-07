@@ -48,8 +48,7 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-const EXPIRY_HEIGHT: u32 = 40;
-const MEMPOOL_INVALID_SPEND_HEIGHT: u32 = 3;
+const MEMPOOL_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -1037,23 +1036,24 @@ async fn process_mempool_transaction<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    let block_height = if raw_transaction.height == 0 {
-        BlockHeight::from_u32(0)
-    } else {
-        BlockHeight::from_u32(
-            u32::try_from(raw_transaction.height + 1).expect("should be valid u32"),
-        )
-    };
+    // does not use raw transaction height due to lightwalletd off-by-one bug and potential to be zero
+    let mempool_height = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+        .expect("wallet height must exist after sync is initialised")
+        + 1;
+
     let transaction = zcash_primitives::transaction::Transaction::read(
         &raw_transaction.data[..],
-        consensus::BranchId::for_height(consensus_parameters, block_height),
+        consensus::BranchId::for_height(consensus_parameters, mempool_height),
     )
     .map_err(ServerError::InvalidTransaction)?;
 
     tracing::debug!(
         "mempool received txid {} at height {}",
         transaction.txid(),
-        block_height
+        mempool_height
     );
 
     if let Some(tx) = wallet
@@ -1061,7 +1061,7 @@ where
         .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
     {
-        if tx.status().is_confirmed() {
+        if tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)) {
             return Ok(());
         }
     }
@@ -1071,7 +1071,7 @@ where
         ufvks,
         wallet,
         transaction,
-        ConfirmationStatus::Mempool(block_height),
+        ConfirmationStatus::Mempool(mempool_height),
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("infalliable for such long time periods")
@@ -1528,7 +1528,9 @@ where
         .values()
         .filter(|transaction| {
             matches!(transaction.status(), ConfirmationStatus::Mempool(_))
-                && transaction.status().get_height() <= wallet_height - MEMPOOL_INVALID_SPEND_HEIGHT
+                && transaction.status().get_height()
+                    // TODO: mempool can be zero?!
+                    <= wallet_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
         })
         .map(|transaction| transaction.txid())
         .chain(
@@ -1537,7 +1539,7 @@ where
                 .filter(|transaction| {
                     (matches!(transaction.status(), ConfirmationStatus::Calculated(_))
                         || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
-                        && transaction.status().get_height() <= wallet_height - EXPIRY_HEIGHT
+                        && wallet_height >= transaction.transaction().expiry_height()
                 })
                 .map(|transaction| transaction.txid()),
         )
