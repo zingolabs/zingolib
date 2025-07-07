@@ -96,8 +96,8 @@ impl LightWallet {
     }
 
     /// Removes transaction with the given `txid` from the wallet.
-    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` allowing these
-    /// outputs to be re-selected for spending in future sends.
+    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` restoring the
+    /// wallet balance and allowing these outputs to be re-selected for spending in future sends.
     ///
     /// # Error
     ///
@@ -111,31 +111,8 @@ impl LightWallet {
             return Err(RemovalError::TransactionNotFound);
         };
 
-        // TODO: could be added as an API to pepper-sync
-        self.wallet_transactions
-            .values_mut()
-            .flat_map(|transaction| transaction.transparent_coins_mut())
-            .filter(|output| (output.spending_transaction() == Some(txid)))
-            .for_each(|output| {
-                output.set_spending_transaction(None);
-            });
-        self.wallet_transactions
-            .values_mut()
-            .flat_map(|transaction| transaction.sapling_notes_mut())
-            .filter(|output| (output.spending_transaction() == Some(txid)))
-            .for_each(|output| {
-                output.set_spending_transaction(None);
-            });
-        self.wallet_transactions
-            .values_mut()
-            .flat_map(|transaction| transaction.orchard_notes_mut())
-            .filter(|output| (output.spending_transaction() == Some(txid)))
-            .for_each(|output| {
-                output.set_spending_transaction(None);
-            });
-        self.wallet_transactions
-            .remove(&txid)
-            .expect("transaction checked to exist");
+        pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
+        self.wallet_transactions.remove(&txid);
         self.save_required = true;
 
         Ok(())

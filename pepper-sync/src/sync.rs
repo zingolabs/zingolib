@@ -48,8 +48,10 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
+const EXPIRY_HEIGHT: u32 = 40;
+const MEMPOOL_INVALID_SPEND_HEIGHT: u32 = 3;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
@@ -416,6 +418,8 @@ where
         .expect("scan ranges must be non-empty")
         + 1;
 
+    reset_invalid_spends(&mut *wallet_guard)?;
+
     drop(wallet_guard);
 
     // create channel for receiving scan results and launch scanner
@@ -775,6 +779,50 @@ pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[ScanTarget])
     for scan_target in scan_targets {
         sync_state.scan_targets.insert(*scan_target);
     }
+}
+
+/// Resets the spending transaction field of all outputs that were previously spent but became unspent due to a
+/// spending transactions becoming invalid.
+///
+/// `invalid_txids` are the id's of the invalidated spending transactions. Any outputs in the `wallet_transactions`
+/// matching these spending transactions will be reset back to `None`.
+pub fn reset_spends(
+    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    invalid_txids: Vec<TxId>,
+) {
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.orchard_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.sapling_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.transparent_coins_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
 }
 
 /// Returns true if the scanner and mempool are shutdown.
@@ -1459,6 +1507,42 @@ async fn mempool_monitor(
             }
         }
     }
+
+    Ok(())
+}
+
+fn reset_invalid_spends<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncTransactions,
+{
+    let wallet_height = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+        .expect("wallet height must exist after scan ranges have been updated");
+    let wallet_transactions = wallet
+        .get_wallet_transactions_mut()
+        .map_err(SyncError::WalletError)?;
+
+    let invalid_txids = wallet_transactions
+        .values()
+        .filter(|transaction| {
+            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+                && transaction.status().get_height() <= wallet_height - MEMPOOL_INVALID_SPEND_HEIGHT
+        })
+        .map(|transaction| transaction.txid())
+        .chain(
+            wallet_transactions
+                .values()
+                .filter(|transaction| {
+                    (matches!(transaction.status(), ConfirmationStatus::Calculated(_))
+                        || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
+                        && transaction.status().get_height() <= wallet_height - EXPIRY_HEIGHT
+                })
+                .map(|transaction| transaction.txid()),
+        )
+        .collect::<Vec<_>>();
+    reset_spends(wallet_transactions, invalid_txids);
 
     Ok(())
 }
