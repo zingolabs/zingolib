@@ -833,9 +833,9 @@ dependencies = [
 
 [[package]]
 name = "caret"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "887ce2cf6dd0aacf15ce11190546d4348dbebce576cc11b57010a023907f7aa9"
+checksum = "061dc3258f029feaf9ff02b43c6af5ea67a7dfaed5d2aef36204c812e614ef9c"
 
 [[package]]
 name = "cargo-platform"
@@ -3270,9 +3270,9 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "oneshot-fused-workaround"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaa302cded54727eedb3a0d246e14146fd2a36f4744e886169457b05ef3254e8"
+checksum = "ff2948fd2414b613f9a97f8401270bd5d7638265ab940475cdbcfa28a0273d58"
 dependencies = [
  "futures",
 ]
@@ -4235,9 +4235,9 @@ dependencies = [
 
 [[package]]
 name = "retry-error"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "322bb522344455926af0c63db415ef6dd70599ad3f69e847ab95dc4d5537d728"
+checksum = "ce97442758392c7e2a7716e06c514de75f0fe4b5a4b76e14ba1e5edfb7ba3512"
 
 [[package]]
 name = "rfc6979"
@@ -4586,9 +4586,9 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safelog"
-version = "0.4.6"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ff608a21ec1d97035331c8944f01e3b57a083393cbb77b5a86b344aa02c827"
+checksum = "5d343b15e1705331c25689e0fa87e8514fb33bd3c9beeb45658a7c355f317de2"
 dependencies = [
  "derive_more 2.0.1",
  "educe",
