@@ -240,7 +240,7 @@ pub(crate) async fn get_utxo_metadata(
     start_height: BlockHeight,
 ) -> Result<Vec<GetAddressUtxosReply>, ServerError> {
     if transparent_addresses.is_empty() {
-        panic!("addresses must be non-empty!");
+        return Ok(Vec::new());
     }
 
     let (reply_sender, reply_receiver) = oneshot::channel();

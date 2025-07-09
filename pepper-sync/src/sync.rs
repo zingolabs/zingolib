@@ -678,7 +678,7 @@ where
 /// Used both internally for scanning mempool transactions and externally for scanning calculated and transmitted
 /// transactions during send.
 ///
-/// Fails if `status` is of `Confirmed` variant.
+/// Panics if `status` is of `Confirmed` variant.
 pub fn scan_pending_transaction<W>(
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,

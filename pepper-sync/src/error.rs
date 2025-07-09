@@ -35,9 +35,6 @@ where
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
-    /// Missing scan range block bound.
-    #[error("Missing scan range block bound at height {0}.")]
-    MissingBlockBound(BlockHeight),
     /// Wallet error.
     #[error("wallet error. {0}")]
     WalletError(E),
@@ -52,9 +49,6 @@ where
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
-    /// Missing scan range block bound.
-    #[error("Missing scan range block bound at height {0}.")]
-    MissingBlockBound(BlockHeight),
     /// Wallet error.
     #[error("wallet error. {0}")]
     WalletError(E),
