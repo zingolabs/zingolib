@@ -67,7 +67,7 @@ where
                     incrementalmerkletree::Level::from(SHARD_HEIGHT),
                     chunk.iter().copied(),
                 );
-                sender.send(tree).expect("receiver should not be dropped");
+                let _ignore_error = sender.send(tree);
             })
         }
     });

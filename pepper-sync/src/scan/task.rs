@@ -179,10 +179,7 @@ where
             .expect("worker should exist");
 
         let mut worker = self.workers.swap_remove(worker_index);
-        worker
-            .shutdown()
-            .await
-            .expect("worker should not be able to panic");
+        worker.shutdown().await.expect("worker task panicked");
     }
 
     /// Updates the scanner.

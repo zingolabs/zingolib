@@ -161,24 +161,27 @@ pub enum ContinuityError {
 /// Errors associated with connecting to the server and receiving invalid data.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
-    /// Server request failed
+    /// Server request failed.
     #[error("server request failed. {0}")]
     RequestFailed(#[from] tonic::Status),
-    /// Server returned invalid frontier
+    /// Server returned invalid frontier.
     #[error("server returned invalid frontier. {0}")]
     InvalidFrontier(std::io::Error),
-    /// Server returned invalid transaction
+    /// Server returned invalid transaction.
     #[error("server returned invalid transaction. {0}")]
     InvalidTransaction(std::io::Error),
-    /// Server returned invalid subtree root
+    /// Server returned invalid subtree root.
     // TODO: add more info
-    #[error("server returned invalid subtree root")]
+    #[error("server returned invalid subtree root.")]
     InvalidSubtreeRoot,
     /// Server returned blocks that could not be verified against wallet block data. Exceeded max verification window.
     #[error(
         "server returned blocks that could not be verified against wallet block data. exceeded max verification window."
     )]
     ChainVerificationError,
+    /// Fetcher task was dropped.
+    #[error("fetcher task was dropped.")]
+    FetcherDropped,
 }
 
 /// Sync mode error.
