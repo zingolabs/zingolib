@@ -101,28 +101,22 @@ async fn fetch_from_server(
         FetchRequest::ChainTip(sender) => {
             tracing::debug!("Fetching chain tip.");
             let block_id = get_latest_block(client).await;
-            sender
-                .send(block_id)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(block_id);
         }
         FetchRequest::CompactBlock(sender, block_height) => {
             tracing::debug!("Fetching compact block. {:?}", &block_height);
             let block = get_block(client, block_height).await;
-            sender.send(block).expect("sender should never be dropped");
+            let _ignore_error = sender.send(block);
         }
         FetchRequest::CompactBlockRange(sender, block_range) => {
             tracing::debug!("Fetching compact blocks. {:?}", &block_range);
             let block_stream = get_block_range(client, block_range).await;
-            sender
-                .send(block_stream)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
             tracing::debug!("Fetching nullifiers. {:?}", &block_range);
             let block_stream = get_block_range_nullifiers(client, block_range).await;
-            sender
-                .send(block_stream)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(block_stream);
         }
         #[cfg(not(feature = "darkside_test"))]
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
@@ -133,23 +127,17 @@ async fn fetch_from_server(
             );
             let subtree_roots =
                 get_subtree_roots(client, start_index, shielded_protocol, max_entries).await;
-            sender
-                .send(subtree_roots)
-                .expect("sender should never be dropped");
+            let _ignore_error = sender.send(subtree_roots);
         }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::debug!("Fetching tree state. {:?}", &block_height);
             let tree_state = get_tree_state(client, block_height).await;
-            sender
-                .send(tree_state)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(tree_state);
         }
         FetchRequest::Transaction(sender, txid) => {
             tracing::debug!("Fetching transaction. {:?}", txid);
             let transaction = get_transaction(client, txid).await;
-            sender
-                .send(transaction)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(transaction);
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
             tracing::debug!(
@@ -158,9 +146,7 @@ async fn fetch_from_server(
                 &addresses
             );
             let utxo_metadata = get_address_utxos(client, addresses, start_height, 0).await;
-            sender
-                .send(utxo_metadata)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(utxo_metadata);
         }
         FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
             tracing::debug!(
@@ -169,9 +155,7 @@ async fn fetch_from_server(
                 &address
             );
             let raw_transaction_stream = get_taddress_txs(client, address, block_range).await;
-            sender
-                .send(raw_transaction_stream)
-                .expect("receiver should never be dropped");
+            let _ignore_error = sender.send(raw_transaction_stream);
         }
     }
 }
