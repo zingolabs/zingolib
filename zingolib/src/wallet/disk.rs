@@ -527,7 +527,7 @@ impl LightWallet {
                     NonZeroU32::try_from(reader.read_u32::<LittleEndian>()?)
                         .expect("only valid non-zero u32s stored")
                 } else {
-                    NonZeroU32::try_from(3).expect("only valid non-zero u32s stored")
+                    NonZeroU32::try_from(3).expect("hard-coded non-zero integer")
                 },
             }
         } else {

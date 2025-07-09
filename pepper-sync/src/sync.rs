@@ -238,7 +238,7 @@ impl ScanRange {
     /// Returns the number of blocks in the scan range.
     pub fn len(&self) -> usize {
         usize::try_from(u32::from(self.block_range.end) - u32::from(self.block_range.start))
-            .unwrap()
+            .expect("due to number of max blocks should always be valid usize")
     }
 
     /// Shifts the start of the block range to the right if `block_height >
@@ -991,7 +991,7 @@ where
                     ScanPriority::Verify,
                 );
 
-                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verifaction range
+                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
                 let scan_range_to_verify = state::set_verify_scan_range(
                     sync_state,
                     height - 1,

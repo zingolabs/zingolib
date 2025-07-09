@@ -849,6 +849,8 @@ where
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
         })
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
         .fold((0, 0), |acc, tree_bounds| {
             (
                 acc.0
@@ -906,23 +908,22 @@ where
 /// Gets the initial and final tree sizes of a `scanned_range`.
 ///
 /// Panics if `scanned_range` wallet block bounds are not found in the wallet.
-fn scanned_range_tree_bounds<W>(wallet: &W, scanned_range: Range<BlockHeight>) -> TreeBounds
+fn scanned_range_tree_bounds<W>(
+    wallet: &W,
+    scanned_range: Range<BlockHeight>,
+) -> Result<TreeBounds, W::Error>
 where
     W: SyncBlocks,
 {
-    let start_block = wallet
-        .get_wallet_block(scanned_range.start)
-        .expect("scanned range boundary blocks should be retained in the wallet");
-    let end_block = wallet
-        .get_wallet_block(scanned_range.end - 1)
-        .expect("scanned range boundary blocks should be retained in the wallet");
+    let start_block = wallet.get_wallet_block(scanned_range.start)?;
+    let end_block = wallet.get_wallet_block(scanned_range.end - 1)?;
 
-    TreeBounds {
+    Ok(TreeBounds {
         sapling_initial_tree_size: start_block.tree_bounds().sapling_initial_tree_size,
         sapling_final_tree_size: end_block.tree_bounds().sapling_final_tree_size,
         orchard_initial_tree_size: start_block.tree_bounds().orchard_initial_tree_size,
         orchard_final_tree_size: end_block.tree_bounds().orchard_final_tree_size,
-    }
+    })
 }
 
 /// Creates block ranges that contain all outputs for the shards associated with `subtree_roots` and adds them to
