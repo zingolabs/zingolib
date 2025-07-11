@@ -3,42 +3,71 @@ namespace zingo {
   string execute_command(string cmd, string args);
   string init_new(
       string serveruri,
-      string datadir,
-      string chainhint,
-      boolean monitor_mempool
+      string chainhint
   );
 
   string init_from_seed(
       string serveruri,
       string seed,
       u64 birthday,
-      string datadir,
-      string chainhint,
-      boolean monitor_mempool
+      string chainhint
   );
 
   string init_from_ufvk(
       string serveruri,
       string ufvk,
       u64 birthday,
-      string datadir,
-      string chainhint,
-      boolean monitor_mempool
+      string chainhint
   );
 
   string init_from_b64(
       string serveruri,
       string datab64,
-      string datadir,
-      string chainhint,
-      boolean monitor_mempool
+      string chainhint
   );
 
   string save_to_b64();
   string get_latest_block_server(string serveruri);
+  string get_latest_block_wallet();
   string get_developer_donation_address();
   string get_zennies_for_zingo_donation_address();
-  string get_transaction_summaries();
-  string get_value_transfers(string recent_vts_to_retrive);
+  string get_value_transfers();
   string set_crypto_default_provider_to_ring();
+  string poll_sync();
+  string run_sync();
+  string pause_sync();
+  string stop_sync();
+  string status_sync();
+  string run_rescan();
+  string info_server();
+  string get_seed();
+  string get_ufvk();
+  string change_server(string serveruri);
+  string wallet_kind();
+  string parse_address(string address);
+  string parse_ufvk(string ufvk);
+  string get_version();
+  string get_messages(string address);
+  string get_balance();
+  string get_total_memobytes_to_address();
+  string get_total_value_to_address();
+  string get_total_spends_to_address();
+  string zec_price(string tor);
+  string resend_transaction(string txid);
+  string remove_transaction(string txid);
+  string get_spendable_balance_with_address(string address, string zennies);
+  string get_spendable_balance_total();
+  string set_option_wallet();
+  string get_option_wallet();
+  string create_tor_client(string datadir);
+  string remove_tor_client();
+  string get_unified_addresses();
+  string get_transparent_addresses();
+  string create_new_unified_address(string receivers);
+  string create_new_transparent_address();
+  string check_my_address(string address);
+  string get_wallet_save_required();
+  string set_config_wallet_to_test();
+  string set_config_wallet_to_prod();
+  string get_config_wallet_performance();
 };
