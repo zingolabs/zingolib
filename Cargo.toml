@@ -107,7 +107,10 @@ tracing-subscriber = "0.3"
 crossbeam-channel = "0.5"
 rayon = "1"
 
+# Zingolabs
+zingo-infra-services = { git = "https://github.com/Oscar-Pepper/infrastructure.git", branch = "improve_activation_heights" }
 
+# Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-netutils = { path = "zingo-netutils" }

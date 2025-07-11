@@ -592,6 +592,13 @@ mod fast {
         );
     }
 
+    // temporary for infrastrucutre integration
+    #[tokio::test]
+    async fn basic_scenario() {
+        let (_regtest_manager, _cph, _faucet, _recipient, _) =
+            scenarios::faucet_funded_recipient_default(100_000).await;
+    }
+
     #[tokio::test]
     async fn send_not_fully_synced() {
         let (regtest_manager, _cph, _faucet, mut recipient, _, _, _) =

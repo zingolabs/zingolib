@@ -13,7 +13,11 @@
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
 
+use std::path::PathBuf;
+
+use portpicker::Port;
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zingo_infra_services::network::{ActivationHeights, localhost_uri};
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
@@ -21,8 +25,6 @@ use crate::testutils::increase_height_and_wait_for_client;
 use crate::testutils::regtest::{ChildProcessHandler, RegtestManager};
 use setup::ClientBuilder;
 use testvectors::{BASE_HEIGHT, seeds::HOSPITAL_MUSEUM_SEED};
-
-mod config_templaters;
 
 /// TODO: Add Doc Comment Here!
 pub mod setup {
@@ -34,7 +36,9 @@ pub mod setup {
     use tokio::time::sleep;
 
     use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zingo_infra_services::network::ActivationHeights;
 
+    use crate::config::{ChainType, ZingoConfig, load_clientconfig};
     use crate::testutils::RegtestManager;
     use crate::testutils::paths::get_regtest_dir;
     use crate::testutils::poll_server_height;
@@ -86,27 +90,6 @@ pub mod setup {
             }
         }
 
-        fn configure_scenario(
-            &mut self,
-            mine_to_pool: Option<PoolType>,
-            regtest_network: &crate::config::RegtestNetwork,
-            lightwalletd_feature: bool,
-        ) {
-            let mine_to_address = match mine_to_pool {
-                Some(PoolType::Shielded(ShieldedProtocol::Orchard)) => {
-                    Some(REG_O_ADDR_FROM_ABANDONART)
-                }
-                Some(PoolType::Shielded(ShieldedProtocol::Sapling)) => {
-                    Some(REG_Z_ADDR_FROM_ABANDONART)
-                }
-                Some(PoolType::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
-                None => None,
-            };
-            self.test_env
-                .create_zcash_conf(mine_to_address, regtest_network, lightwalletd_feature);
-            self.test_env.create_lightwalletd_conf();
-        }
-
         async fn launch_scenario(&mut self, clean: bool) {
             self.child_process_handler = Some(self.regtest_manager.launch(clean).unwrap_or_else(
                 |e| match e {
@@ -129,7 +112,7 @@ pub mod setup {
 
         /// TODO: Add Doc Comment Here!
         pub async fn new_load_1153_saplingcb_regtest_chain(
-            regtest_network: &crate::config::RegtestNetwork,
+            activation_heights: ActivationHeights,
         ) -> Self {
             let mut sb = ScenarioBuilder::build_scenario(None, None);
             let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
@@ -145,11 +128,12 @@ pub mod setup {
                 .output()
                 .expect("copy operation into fresh dir from known dir to succeed");
             dbg!(&sb.test_env.regtest_manager.zcashd_config);
-            sb.configure_scenario(
-                Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
-                regtest_network,
-                false,
-            );
+            // FIXME
+            // sb.configure_scenario(
+            //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+            //     activation_heights,
+            //     false,
+            // );
             sb.launch_scenario(false).await;
             sb
         }
@@ -159,7 +143,7 @@ pub mod setup {
             mine_to_pool: Option<PoolType>,
             zingo_wallet_dir: Option<PathBuf>,
             set_lightwalletd_port: Option<portpicker::Port>,
-            regtest_network: &crate::config::RegtestNetwork,
+            activation_heights: ActivationHeights,
             lightwalletd_feature: bool,
         ) -> Self {
             let mut sb = if let Some(conf) = zingo_wallet_dir {
@@ -167,18 +151,18 @@ pub mod setup {
             } else {
                 ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
             };
-            sb.configure_scenario(mine_to_pool, regtest_network, lightwalletd_feature);
+            // FIXME
+            // sb.configure_scenario(mine_to_pool, regtest_network, lightwalletd_feature);
             sb.launch_scenario(true).await;
             sb
         }
     }
 
-    /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
-    /// take a seed, and generate a client from the seed (planted in the chain).
+    /// Struct for building lightclients for integration testing
     pub struct ClientBuilder {
-        /// TODO: Add Doc Comment Here!
+        /// Indexer URI
         pub server_id: http::Uri,
-        /// TODO: Add Doc Comment Here!
+        /// Directory for wallet files
         pub zingo_datadir: PathBuf,
         client_number: u8,
     }
@@ -196,8 +180,8 @@ pub mod setup {
 
         pub fn make_unique_data_dir_and_load_config(
             &mut self,
-            regtest_network: crate::config::RegtestNetwork,
-        ) -> crate::config::ZingoConfig {
+            activation_heights: ActivationHeights,
+        ) -> ZingoConfig {
             //! Each client requires a unique data_dir, we use the
             //! client_number counter for this.
             self.client_number += 1;
@@ -206,20 +190,20 @@ pub mod setup {
                 self.zingo_datadir.to_string_lossy(),
                 self.client_number
             );
-            self.create_clientconfig(PathBuf::from(conf_path), regtest_network)
+            self.create_clientconfig(PathBuf::from(conf_path), activation_heights)
         }
 
         /// TODO: Add Doc Comment Here!
         pub fn create_clientconfig(
             &self,
             conf_path: PathBuf,
-            regtest_network: crate::config::RegtestNetwork,
-        ) -> crate::config::ZingoConfig {
+            activation_heights: ActivationHeights,
+        ) -> ZingoConfig {
             std::fs::create_dir(&conf_path).unwrap();
-            crate::config::load_clientconfig(
+            load_clientconfig(
                 self.server_id.clone(),
                 Some(conf_path),
-                crate::config::ChainType::Regtest(regtest_network),
+                ChainType::Regtest(activation_heights),
                 WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -236,14 +220,14 @@ pub mod setup {
         pub fn build_faucet(
             &mut self,
             overwrite: bool,
-            regtest_network: crate::config::RegtestNetwork,
+            activation_heights: ActivationHeights,
         ) -> LightClient {
             //! A "faucet" is a lightclient that receives mining rewards
             self.build_client(
                 seeds::ABANDON_ART_SEED.to_string(),
                 0,
                 overwrite,
-                regtest_network,
+                activation_heights,
             )
         }
 
@@ -253,9 +237,9 @@ pub mod setup {
             mnemonic_phrase: String,
             birthday: u64,
             overwrite: bool,
-            regtest_network: crate::config::RegtestNetwork,
+            activation_heights: ActivationHeights,
         ) -> LightClient {
-            let config = self.make_unique_data_dir_and_load_config(regtest_network);
+            let config = self.make_unique_data_dir_and_load_config(activation_heights);
             let mut wallet = LightWallet::new(
                 config.chain,
                 WalletBase::Mnemonic {
@@ -300,38 +284,6 @@ pub mod setup {
             }
         }
 
-        /// TODO: Add Doc Comment Here!
-        pub(crate) fn create_zcash_conf(
-            &self,
-            mine_to_address: Option<&str>,
-            regtest_network: &crate::config::RegtestNetwork,
-            lightwalletd_feature: bool,
-        ) -> PathBuf {
-            let config = match mine_to_address {
-                Some(address) => super::config_templaters::zcashd::funded(
-                    address,
-                    &self.zcashd_rpcservice_port,
-                    regtest_network,
-                    lightwalletd_feature,
-                ),
-                None => super::config_templaters::zcashd::basic(
-                    &self.zcashd_rpcservice_port,
-                    regtest_network,
-                    lightwalletd_feature,
-                    "",
-                ),
-            };
-            self.write_contents_and_return_path("zcash", config)
-        }
-
-        /// TODO: Add Doc Comment Here!
-        pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
-            self.write_contents_and_return_path(
-                "lightwalletd",
-                super::config_templaters::lightwalletd::basic(&self.lightwalletd_rpcservice_port),
-            )
-        }
-
         fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
             let loc = match configtype {
                 "zcash" => &self.regtest_manager.zcashd_config,
@@ -365,35 +317,54 @@ pub mod setup {
     }
 }
 
+/// Builds faucet (miner) and recipient lightclients for local network integration testing
+pub fn build_lightclients(
+    lightclient_dir: PathBuf,
+    indexer_port: Port,
+) -> (LightClient, LightClient) {
+    let mut client_builder = ClientBuilder::new(localhost_uri(indexer_port), lightclient_dir);
+    let faucet = client_builder.build_faucet(true, ActivationHeights::default());
+    let recipient = client_builder.build_client(
+        HOSPITAL_MUSEUM_SEED.to_string(),
+        1,
+        true,
+        ActivationHeights::default(),
+    );
+
+    (faucet, recipient)
+}
+
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    regtest_network: crate::config::RegtestNetwork,
+    activation_heights: ActivationHeights,
     lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        None,
-        None,
-        None,
-        &regtest_network,
-        lightwalletd_feature,
-    )
-    .await;
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-        scenario_builder.client_builder.build_client(
-            HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
-            false,
-            regtest_network,
-        ),
-    )
+    // let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     None,
+    //     None,
+    //     None,
+    //     &activation_heights,
+    //     lightwalletd_feature,
+    // )
+    // .await;
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    //     scenario_builder.client_builder.build_client(
+    //         HOSPITAL_MUSEUM_SEED.to_string(),
+    //         0,
+    //         false,
+    //         activation_heights,
+    //     ),
+    // )
+    //
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-    unfunded_client(regtest_network, true).await
+    let activation_heights = ActivationHeights::default();
+    unfunded_client(activation_heights, true).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -408,32 +379,33 @@ pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, 
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    regtest_network: crate::config::RegtestNetwork,
+    activation_heights: ActivationHeights,
     lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let mut sb = setup::ScenarioBuilder::build_configure_launch(
-        Some(mine_to_pool),
-        None,
-        None,
-        &regtest_network,
-        lightwalletd_feature,
-    )
-    .await;
-    let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-    faucet.sync_and_await().await.unwrap();
-    (
-        sb.regtest_manager,
-        sb.child_process_handler.unwrap(),
-        faucet,
-    )
+    // let mut sb = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(mine_to_pool),
+    //     None,
+    //     None,
+    //     &regtest_network,
+    //     lightwalletd_feature,
+    // )
+    // .await;
+    // let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
+    // faucet.sync_and_await().await.unwrap();
+    // (
+    //     sb.regtest_manager,
+    //     sb.child_process_handler.unwrap(),
+    //     faucet,
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     faucet(
         PoolType::Shielded(ShieldedProtocol::Orchard),
-        regtest_network,
+        activation_heights,
         true,
     )
     .await
@@ -442,7 +414,7 @@ pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClie
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    regtest_network: crate::config::RegtestNetwork,
+    activation_heights: ActivationHeights,
     lightwalletd_feature: bool,
 ) -> (
     RegtestManager,
@@ -450,29 +422,30 @@ pub async fn faucet_recipient(
     LightClient,
     LightClient,
 ) {
-    let mut sb = setup::ScenarioBuilder::build_configure_launch(
-        Some(mine_to_pool),
-        None,
-        None,
-        &regtest_network,
-        lightwalletd_feature,
-    )
-    .await;
-    let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-    faucet.sync_and_await().await.unwrap();
+    // let mut sb = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(mine_to_pool),
+    //     None,
+    //     None,
+    //     &regtest_network,
+    //     lightwalletd_feature,
+    // )
+    // .await;
+    // let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
+    // faucet.sync_and_await().await.unwrap();
 
-    let recipient = sb.client_builder.build_client(
-        HOSPITAL_MUSEUM_SEED.to_string(),
-        BASE_HEIGHT as u64,
-        false,
-        regtest_network,
-    );
-    (
-        sb.regtest_manager,
-        sb.child_process_handler.unwrap(),
-        faucet,
-        recipient,
-    )
+    // let recipient = sb.client_builder.build_client(
+    //     HOSPITAL_MUSEUM_SEED.to_string(),
+    //     BASE_HEIGHT as u64,
+    //     false,
+    //     regtest_network,
+    // );
+    // (
+    //     sb.regtest_manager,
+    //     sb.child_process_handler.unwrap(),
+    //     faucet,
+    //     recipient,
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
@@ -482,10 +455,10 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     faucet_recipient(
         PoolType::Shielded(ShieldedProtocol::Orchard),
-        regtest_network,
+        activation_heights,
         true,
     )
     .await
@@ -497,7 +470,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    regtest_network: crate::config::RegtestNetwork,
+    activation_heights: ActivationHeights,
     lightwalletd_feature: bool,
 ) -> (
     RegtestManager,
@@ -509,7 +482,7 @@ pub async fn faucet_funded_recipient(
     Option<String>,
 ) {
     let (regtest_manager, child_process_handler, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, regtest_network, lightwalletd_feature).await;
+        faucet_recipient(mine_to_pool, activation_heights, lightwalletd_feature).await;
     increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
         .await
         .unwrap();
@@ -585,14 +558,14 @@ pub async fn faucet_funded_recipient_default(
     LightClient,
     String,
 ) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let (regtest_manager, cph, faucet, recipient, orchard_txid, _sapling_txid, _transparent_txid) =
         faucet_funded_recipient(
             Some(orchard_funds),
             None,
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
-            regtest_network,
+            activation_heights,
             true,
         )
         .await;
@@ -608,14 +581,14 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    regtest_network: crate::config::RegtestNetwork,
+    activation_heights: ActivationHeights,
     lightwalletd_feature: bool,
 ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
     let sb = setup::ScenarioBuilder::build_configure_launch(
         Some(mine_to_pool),
         None,
         None,
-        &regtest_network,
+        activation_heights,
         lightwalletd_feature,
     )
     .await;
@@ -631,26 +604,26 @@ pub async fn custom_clients_default() -> (
     RegtestManager,
     ChildProcessHandler,
     ClientBuilder,
-    crate::config::RegtestNetwork,
+    ActivationHeights,
 ) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let (regtest_manager, cph, client_builder) = custom_clients(
         PoolType::Shielded(ShieldedProtocol::Orchard),
-        regtest_network,
+        activation_heights,
         true,
     )
     .await;
-    (regtest_manager, cph, client_builder, regtest_network)
+    (regtest_manager, cph, client_builder, activation_heights)
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         None,
         None,
         Some(20_000),
-        &regtest_network,
+        activation_heights,
         true,
     )
     .await;
@@ -662,23 +635,23 @@ pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
 
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
         None,
         Some(20_000),
-        &regtest_network,
+        activation_heights,
         true,
     )
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network);
+        .build_faucet(false, activation_heights);
     let recipient = scenario_builder.client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         0,
         false,
-        regtest_network,
+        activation_heights,
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -701,23 +674,23 @@ pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildPr
 pub async fn funded_orchard_with_3_txs_mobileclient(
     value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
         None,
         Some(20_000),
-        &regtest_network,
+        activation_heights,
         true,
     )
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network);
+        .build_faucet(false, activation_heights);
     let mut recipient = scenario_builder.client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         0,
         false,
-        regtest_network,
+        activation_heights,
     );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
@@ -770,23 +743,23 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 
 /// This scenario funds a client with transparent funds.
 pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
         None,
         Some(20_000),
-        &regtest_network,
+        activation_heights,
         true,
     )
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network);
+        .build_faucet(false, activation_heights);
     let mut recipient = scenario_builder.client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         0,
         false,
-        regtest_network,
+        activation_heights,
     );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
@@ -822,23 +795,23 @@ pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, Chi
 pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
-    let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
         Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
         None,
         Some(20_000),
-        &regtest_network,
+        activation_heights,
         true,
     )
     .await;
     let mut faucet = scenario_builder
         .client_builder
-        .build_faucet(false, regtest_network);
+        .build_faucet(false, activation_heights);
     let mut recipient = scenario_builder.client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         0,
         false,
-        regtest_network,
+        activation_heights,
     );
     increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
         .await
@@ -969,8 +942,8 @@ pub mod chainload {
 
     /// TODO: Add Doc Comment Here!
     pub async fn unsynced_basic() -> ChildProcessHandler {
-        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
-        setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
+        let activation_heights = ActivationHeights::default();
+        setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(activation_heights)
             .await
             .child_process_handler
             .unwrap()
@@ -983,16 +956,16 @@ pub mod chainload {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+        let activation_heights = ActivationHeights::default();
         let mut sb =
-            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
-        let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
+            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(activation_heights).await;
+        let mut faucet = sb.client_builder.build_faucet(false, activation_heights);
         faucet.sync_and_await().await.unwrap();
         let recipient = sb.client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            regtest_network,
+            activation_heights,
         );
         (
             sb.regtest_manager,
@@ -1009,15 +982,15 @@ pub mod chainload {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = crate::config::RegtestNetwork::all_upgrades_active();
+        let activation_heights = ActivationHeights::default();
         let mut sb =
-            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network).await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network);
+            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(activation_heights).await;
+        let faucet = sb.client_builder.build_faucet(false, activation_heights);
         let recipient = sb.client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            regtest_network,
+            activation_heights,
         );
         (
             sb.regtest_manager,

@@ -2,7 +2,6 @@
 
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use crate::config::RegtestNetwork;
 use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::scenarios::setup::ScenarioBuilder;

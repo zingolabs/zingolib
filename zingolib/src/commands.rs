@@ -18,6 +18,7 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
+use zingo_infra_services::network::ActivationHeights;
 
 use crate::data::{PollReport, proposal};
 use crate::lightclient::LightClient;
@@ -220,9 +221,7 @@ impl Command for ParseAddressCommand {
             [
                 crate::config::ChainType::Mainnet,
                 crate::config::ChainType::Testnet,
-                crate::config::ChainType::Regtest(
-                    crate::config::RegtestNetwork::all_upgrades_active(),
-                ),
+                crate::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

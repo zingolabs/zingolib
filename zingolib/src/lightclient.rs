@@ -310,21 +310,22 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, RegtestNetwork, ZingoConfig},
+        config::{ChainType, ZingoConfig},
         lightclient::error::LightClientError,
         wallet::LightWallet,
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zingo_infra_services::network::ActivationHeights;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let regtest_network = RegtestNetwork::all_upgrades_active();
-        let config = ZingoConfig::build(ChainType::Regtest(regtest_network))
+        let activation_heights = ActivationHeights::default();
+        let config = ZingoConfig::build(ChainType::Regtest(activation_heights))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .create();
         let mut lc = LightClient::create_from_wallet(
