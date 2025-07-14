@@ -1273,6 +1273,7 @@ dependencies = [
  "tracing-subscriber",
  "zcash_primitives",
  "zcash_protocol",
+ "zingo-infra-services",
  "zingo-netutils",
  "zingo-testvectors",
  "zingolib",
@@ -8510,6 +8511,7 @@ dependencies = [
  "shellwords",
  "tracing-subscriber",
  "zcash_protocol",
+ "zingo-infra-services",
  "zingolib",
 ]
 

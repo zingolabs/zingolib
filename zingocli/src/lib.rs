@@ -15,6 +15,7 @@ use log::{error, info};
 use zcash_protocol::consensus::BlockHeight;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_infra_services::network::ActivationHeights;
 use zingolib::commands::RT;
 use zingolib::config::ChainType;
 use zingolib::testutils::regtest;
@@ -403,13 +404,11 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => {
-                    ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
-                }
+                "regtest" => ChainType::Regtest(ActivationHeights::default()),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(ActivationHeights::default())
         } else {
             ChainType::Mainnet
         };

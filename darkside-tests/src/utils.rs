@@ -368,6 +368,7 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zingo_infra_services::network::ActivationHeights;
 
     use super::{
         DarksideConnector, DarksideHandler, init_darksidewalletd,
@@ -378,7 +379,6 @@ pub mod scenarios {
         darkside_types::{RawTransaction, TreeState},
     };
     use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zingolib::config::RegtestNetwork;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::setup::ClientBuilder;
 
@@ -386,7 +386,7 @@ pub mod scenarios {
         darkside_handler: DarksideHandler,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) regtest_network: RegtestNetwork,
+        pub(crate) activation_heights: ActivationHeights,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -402,12 +402,12 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 darkside_handler.darkside_dir.clone(),
             );
-            let regtest_network = RegtestNetwork::all_upgrades_active();
+            let activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 darkside_handler,
                 darkside_connector,
                 client_builder,
-                regtest_network,
+                activation_heights,
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
@@ -438,7 +438,7 @@ pub mod scenarios {
                 testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.regtest_network,
+                self.activation_heights,
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -465,7 +465,7 @@ pub mod scenarios {
         ) -> &mut DarksideEnvironment {
             let lightclient =
                 self.client_builder
-                    .build_client(seed, birthday, true, self.regtest_network);
+                    .build_client(seed, birthday, true, self.activation_heights);
             self.lightclients.push(lightclient);
             self
         }
@@ -712,8 +712,8 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_regtest_network(&self) -> &RegtestNetwork {
-            &self.regtest_network
+        pub fn get_activation_heights(&self) -> ActivationHeights {
+            self.activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {
             self.faucet
