@@ -13,8 +13,9 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
+use zingo_infra_services::network::ActivationHeights;
+use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
-use zingolib::{config::RegtestNetwork, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
         lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
@@ -41,7 +42,7 @@ async fn reorg_changes_incoming_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     light_client.sync_and_await().await.unwrap();
@@ -202,7 +203,7 @@ async fn reorg_changes_incoming_tx_index() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     light_client.sync_and_await().await.unwrap();
@@ -363,7 +364,7 @@ async fn reorg_expires_incoming_tx() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     light_client.sync_and_await().await.unwrap();
@@ -546,7 +547,7 @@ async fn reorg_changes_outgoing_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     light_client.sync_and_await().await.unwrap();
@@ -804,7 +805,7 @@ async fn reorg_expires_outgoing_tx_height() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     let expected_initial_balance = AccountBalance {
@@ -1007,7 +1008,7 @@ async fn reorg_changes_outgoing_tx_index() {
             ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
             202,
             true,
-            RegtestNetwork::all_upgrades_active(),
+            ActivationHeights::default(),
         );
 
     light_client.sync_and_await().await.unwrap();

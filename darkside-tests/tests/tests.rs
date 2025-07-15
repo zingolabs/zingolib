@@ -4,10 +4,10 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::DarksideHandler;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use testvectors::seeds::DARKSIDE_SEED;
+use zingo_infra_services::network::ActivationHeights;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
-use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
@@ -27,9 +27,9 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -69,12 +69,12 @@ async fn reorg_receipt_sync_generic() {
         .await
         .unwrap();
 
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut light_client = ClientBuilder::new(
         server_id.clone(),
         darkside_handler.darkside_dir.clone(),
     )
-    .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -132,14 +132,14 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let mut client_manager =
         ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let activation_heights = ActivationHeights::default();
     let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
         testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        regtest_network,
+        activation_heights,
     );
 
     light_client.sync_and_await().await.unwrap();

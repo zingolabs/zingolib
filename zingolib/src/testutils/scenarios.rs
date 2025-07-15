@@ -13,11 +13,23 @@
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
 
+const ZCASHD_BIN: Option<PathBuf> = None;
+const ZCASH_CLI_BIN: Option<PathBuf> = None;
+const ZEBRAD_BIN: Option<PathBuf> = None;
+const LIGHTWALLETD_BIN: Option<PathBuf> = None;
+const ZAINOD_BIN: Option<PathBuf> = None;
+
 use std::path::PathBuf;
 
 use portpicker::Port;
+use testvectors::{
+    REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART,
+};
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zingo_infra_services::LocalNet;
+use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
 use zingo_infra_services::network::{ActivationHeights, localhost_uri};
+use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
@@ -41,7 +53,6 @@ pub mod setup {
     use crate::config::{ChainType, ZingoConfig, load_clientconfig};
     use crate::testutils::RegtestManager;
     use crate::testutils::paths::get_regtest_dir;
-    use crate::testutils::poll_server_height;
     use crate::testutils::regtest::ChildProcessHandler;
     use crate::wallet::keys::unified::ReceiverSelection;
     use crate::wallet::{LightWallet, WalletSettings};
@@ -90,71 +101,32 @@ pub mod setup {
             }
         }
 
-        async fn launch_scenario(&mut self, clean: bool) {
-            self.child_process_handler = Some(self.regtest_manager.launch(clean).unwrap_or_else(
-                |e| match e {
-                    super::super::regtest::LaunchChildProcessError::ZcashdState {
-                        errorcode,
-                        stdout,
-                        stderr,
-                    } => {
-                        panic!("{} {} {}", errorcode, stdout, stderr)
-                    }
-                },
-            ));
-            self.regtest_manager
-                .generate_n_blocks(BASE_HEIGHT - 1)
-                .unwrap();
-            while poll_server_height(&self.regtest_manager).as_u32().unwrap() < BASE_HEIGHT {
-                sleep(std::time::Duration::from_millis(50)).await;
-            }
-        }
-
         /// TODO: Add Doc Comment Here!
         pub async fn new_load_1153_saplingcb_regtest_chain(
             activation_heights: ActivationHeights,
         ) -> Self {
-            let mut sb = ScenarioBuilder::build_scenario(None, None);
-            let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
-            if !source.exists() {
-                panic!("Data cache is missing!");
-            }
-            let destination = &sb.regtest_manager.zcashd_data_dir;
+            // let mut sb = ScenarioBuilder::build_scenario(None, None);
+            // let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
+            // if !source.exists() {
+            //     panic!("Data cache is missing!");
+            // }
+            // let destination = &sb.regtest_manager.zcashd_data_dir;
 
-            std::process::Command::new("cp")
-                .arg("-r")
-                .arg(source)
-                .arg(destination)
-                .output()
-                .expect("copy operation into fresh dir from known dir to succeed");
-            dbg!(&sb.test_env.regtest_manager.zcashd_config);
-            // FIXME
+            // std::process::Command::new("cp")
+            //     .arg("-r")
+            //     .arg(source)
+            //     .arg(destination)
+            //     .output()
+            //     .expect("copy operation into fresh dir from known dir to succeed");
+            // dbg!(&sb.test_env.regtest_manager.zcashd_config);
             // sb.configure_scenario(
             //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
             //     activation_heights,
             //     false,
             // );
-            sb.launch_scenario(false).await;
-            sb
-        }
-
-        /// Writes the specified zcashd.conf and launches with it
-        pub async fn build_configure_launch(
-            mine_to_pool: Option<PoolType>,
-            zingo_wallet_dir: Option<PathBuf>,
-            set_lightwalletd_port: Option<portpicker::Port>,
-            activation_heights: ActivationHeights,
-            lightwalletd_feature: bool,
-        ) -> Self {
-            let mut sb = if let Some(conf) = zingo_wallet_dir {
-                ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
-            } else {
-                ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
-            };
-            // FIXME
-            // sb.configure_scenario(mine_to_pool, regtest_network, lightwalletd_feature);
-            sb.launch_scenario(true).await;
-            sb
+            // sb.launch_scenario(false).await;
+            // sb
+            todo!()
         }
     }
 
@@ -415,51 +387,47 @@ pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClie
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
     activation_heights: ActivationHeights,
-    lightwalletd_feature: bool,
-) -> (
-    RegtestManager,
-    ChildProcessHandler,
-    LightClient,
-    LightClient,
-) {
-    // let mut sb = setup::ScenarioBuilder::build_configure_launch(
-    //     Some(mine_to_pool),
-    //     None,
-    //     None,
-    //     &regtest_network,
-    //     lightwalletd_feature,
-    // )
-    // .await;
-    // let mut faucet = sb.client_builder.build_faucet(false, regtest_network);
-    // faucet.sync_and_await().await.unwrap();
+) -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient) {
+    let miner_address = match mine_to_pool {
+        PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
+        PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
+        PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
+    };
+    let local_net = LocalNet::<Lightwalletd, Zcashd>::launch(
+        LightwalletdConfig {
+            lightwalletd_bin: LIGHTWALLETD_BIN,
+            listen_port: None,
+            zcashd_conf: PathBuf::new(),
+        },
+        ZcashdConfig {
+            zcashd_bin: ZCASHD_BIN,
+            zcash_cli_bin: ZCASH_CLI_BIN,
+            rpc_listen_port: None,
+            activation_heights,
+            miner_address: Some(miner_address),
+            chain_cache: None,
+        },
+    )
+    .await;
 
-    // let recipient = sb.client_builder.build_client(
-    //     HOSPITAL_MUSEUM_SEED.to_string(),
-    //     BASE_HEIGHT as u64,
-    //     false,
-    //     regtest_network,
-    // );
-    // (
-    //     sb.regtest_manager,
-    //     sb.child_process_handler.unwrap(),
-    //     faucet,
-    //     recipient,
-    // )
-    todo!()
+    let lightclient_dir = tempfile::tempdir().unwrap();
+    let (mut faucet, mut recipient) = build_lightclients(
+        lightclient_dir.path().to_path_buf(),
+        local_net.indexer().port(),
+    );
+    faucet.sync_and_await().await.unwrap();
+    recipient.sync_and_await().await.unwrap();
+
+    (local_net, faucet, recipient)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_recipient_default() -> (
-    RegtestManager,
-    ChildProcessHandler,
-    LightClient,
-    LightClient,
-) {
+pub async fn faucet_recipient_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient)
+{
     let activation_heights = ActivationHeights::default();
     faucet_recipient(
         PoolType::Shielded(ShieldedProtocol::Orchard),
         activation_heights,
-        true,
     )
     .await
 }
@@ -471,19 +439,17 @@ pub async fn faucet_funded_recipient(
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
     activation_heights: ActivationHeights,
-    lightwalletd_feature: bool,
 ) -> (
-    RegtestManager,
-    ChildProcessHandler,
+    LocalNet<Lightwalletd, Zcashd>,
     LightClient,
     LightClient,
     Option<String>,
     Option<String>,
     Option<String>,
 ) {
-    let (regtest_manager, child_process_handler, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, activation_heights, lightwalletd_feature).await;
-    increase_height_and_wait_for_client(&regtest_manager, &mut faucet, 1)
+    let (local_net, mut faucet, mut recipient) =
+        faucet_recipient(mine_to_pool, activation_heights).await;
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
 
@@ -533,13 +499,12 @@ pub async fn faucet_funded_recipient(
     } else {
         None
     };
-    increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
     faucet.sync_and_await().await.unwrap();
     (
-        regtest_manager,
-        child_process_handler,
+        local_net,
         faucet,
         recipient,
         orchard_txid,
@@ -552,122 +517,128 @@ pub async fn faucet_funded_recipient(
 pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
 ) -> (
-    RegtestManager,
-    ChildProcessHandler,
+    LocalNet<Lightwalletd, Zcashd>,
     LightClient,
     LightClient,
     String,
 ) {
     let activation_heights = ActivationHeights::default();
-    let (regtest_manager, cph, faucet, recipient, orchard_txid, _sapling_txid, _transparent_txid) =
+    let (local_net, faucet, recipient, orchard_txid, _sapling_txid, _transparent_txid) =
         faucet_funded_recipient(
             Some(orchard_funds),
             None,
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
             activation_heights,
-            true,
         )
         .await;
-    (
-        regtest_manager,
-        cph,
-        faucet,
-        recipient,
-        orchard_txid.unwrap(),
-    )
+    (local_net, faucet, recipient, orchard_txid.unwrap())
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
     activation_heights: ActivationHeights,
-    lightwalletd_feature: bool,
-) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
-    let sb = setup::ScenarioBuilder::build_configure_launch(
-        Some(mine_to_pool),
-        None,
-        None,
-        activation_heights,
-        lightwalletd_feature,
+) -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
+    let miner_address = match mine_to_pool {
+        PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
+        PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
+        PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
+    };
+    let local_net = LocalNet::<Lightwalletd, Zcashd>::launch(
+        LightwalletdConfig {
+            lightwalletd_bin: LIGHTWALLETD_BIN,
+            listen_port: None,
+            zcashd_conf: PathBuf::new(),
+        },
+        ZcashdConfig {
+            zcashd_bin: ZCASHD_BIN,
+            zcash_cli_bin: ZCASH_CLI_BIN,
+            rpc_listen_port: None,
+            activation_heights,
+            miner_address: Some(miner_address),
+            chain_cache: None,
+        },
     )
     .await;
-    (
-        sb.regtest_manager,
-        sb.child_process_handler.unwrap(),
-        sb.client_builder,
-    )
+    let client_builder = ClientBuilder::new(
+        localhost_uri(local_net.indexer().port()),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
+    );
+
+    (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (
-    RegtestManager,
-    ChildProcessHandler,
+    LocalNet<Lightwalletd, Zcashd>,
     ClientBuilder,
     ActivationHeights,
 ) {
     let activation_heights = ActivationHeights::default();
-    let (regtest_manager, cph, client_builder) = custom_clients(
+    let (local_net, client_builder) = custom_clients(
         PoolType::Shielded(ShieldedProtocol::Orchard),
         activation_heights,
-        true,
     )
     .await;
-    (regtest_manager, cph, client_builder, activation_heights)
+
+    (local_net, client_builder, activation_heights)
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
     let activation_heights = ActivationHeights::default();
-    let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        None,
-        None,
-        Some(20_000),
-        activation_heights,
-        true,
-    )
-    .await;
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-    )
+    // let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     None,
+    //     None,
+    //     Some(20_000),
+    //     activation_heights,
+    //     true,
+    // )
+    // .await;
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
     let activation_heights = ActivationHeights::default();
-    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
-        None,
-        Some(20_000),
-        activation_heights,
-        true,
-    )
-    .await;
-    let mut faucet = scenario_builder
-        .client_builder
-        .build_faucet(false, activation_heights);
-    let recipient = scenario_builder.client_builder.build_client(
-        HOSPITAL_MUSEUM_SEED.to_string(),
-        0,
-        false,
-        activation_heights,
-    );
-    faucet.sync_and_await().await.unwrap();
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
-    )
-    .await
-    .unwrap();
-    scenario_builder
-        .regtest_manager
-        .generate_n_blocks(1)
-        .expect("Failed to generate blocks.");
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-    )
+    // let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+    //     None,
+    //     Some(20_000),
+    //     activation_heights,
+    //     true,
+    // )
+    // .await;
+    // let mut faucet = scenario_builder
+    //     .client_builder
+    //     .build_faucet(false, activation_heights);
+    // let recipient = scenario_builder.client_builder.build_client(
+    //     HOSPITAL_MUSEUM_SEED.to_string(),
+    //     0,
+    //     false,
+    //     activation_heights,
+    // );
+    // faucet.sync_and_await().await.unwrap();
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+    // )
+    // .await
+    // .unwrap();
+    // scenario_builder
+    //     .regtest_manager
+    //     .generate_n_blocks(1)
+    //     .expect("Failed to generate blocks.");
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
@@ -675,120 +646,122 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
     let activation_heights = ActivationHeights::default();
-    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
-        None,
-        Some(20_000),
-        activation_heights,
-        true,
-    )
-    .await;
-    let mut faucet = scenario_builder
-        .client_builder
-        .build_faucet(false, activation_heights);
-    let mut recipient = scenario_builder.client_builder.build_client(
-        HOSPITAL_MUSEUM_SEED.to_string(),
-        0,
-        false,
-        activation_heights,
-    );
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
-        .await
-        .unwrap();
-    // received from a faucet
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to a faucet
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &get_base_address_macro!(faucet, "unified"),
-            value.checked_div(10).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to self sapling
-    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &recipient_sapling_address,
-            value.checked_div(10).unwrap(),
-            Some("note-to-self test memo"),
-        )],
-    )
-    .await
-    .unwrap();
-    scenario_builder
-        .regtest_manager
-        .generate_n_blocks(4)
-        .expect("Failed to generate blocks.");
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-    )
+    // let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+    //     None,
+    //     Some(20_000),
+    //     activation_heights,
+    //     true,
+    // )
+    // .await;
+    // let mut faucet = scenario_builder
+    //     .client_builder
+    //     .build_faucet(false, activation_heights);
+    // let mut recipient = scenario_builder.client_builder.build_client(
+    //     HOSPITAL_MUSEUM_SEED.to_string(),
+    //     0,
+    //     false,
+    //     activation_heights,
+    // );
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
+    //     .await
+    //     .unwrap();
+    // // received from a faucet
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to a faucet
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &get_base_address_macro!(faucet, "unified"),
+    //         value.checked_div(10).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to self sapling
+    // let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &recipient_sapling_address,
+    //         value.checked_div(10).unwrap(),
+    //         Some("note-to-self test memo"),
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // scenario_builder
+    //     .regtest_manager
+    //     .generate_n_blocks(4)
+    //     .expect("Failed to generate blocks.");
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    // )
+    todo!()
 }
 
 /// This scenario funds a client with transparent funds.
 pub async fn funded_transparent_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
     let activation_heights = ActivationHeights::default();
-    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
-        None,
-        Some(20_000),
-        activation_heights,
-        true,
-    )
-    .await;
-    let mut faucet = scenario_builder
-        .client_builder
-        .build_faucet(false, activation_heights);
-    let mut recipient = scenario_builder.client_builder.build_client(
-        HOSPITAL_MUSEUM_SEED.to_string(),
-        0,
-        false,
-        activation_heights,
-    );
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
-        .await
-        .unwrap();
+    // let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+    //     None,
+    //     Some(20_000),
+    //     activation_heights,
+    //     true,
+    // )
+    // .await;
+    // let mut faucet = scenario_builder
+    //     .client_builder
+    //     .build_faucet(false, activation_heights);
+    // let mut recipient = scenario_builder.client_builder.build_client(
+    //     HOSPITAL_MUSEUM_SEED.to_string(),
+    //     0,
+    //     false,
+    //     activation_heights,
+    // );
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
+    //     .await
+    //     .unwrap();
 
-    // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "transparent"),
-            value.checked_div(4).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
+    // // received from a faucet to transparent
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(
+    //         &get_base_address_macro!(recipient, "transparent"),
+    //         value.checked_div(4).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
 
-    // end
-    scenario_builder
-        .regtest_manager
-        .generate_n_blocks(1)
-        .expect("Failed to generate blocks.");
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-    )
+    // // end
+    // scenario_builder
+    //     .regtest_manager
+    //     .generate_n_blocks(1)
+    //     .expect("Failed to generate blocks.");
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
@@ -796,144 +769,145 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     value: u64,
 ) -> (RegtestManager, ChildProcessHandler) {
     let activation_heights = ActivationHeights::default();
-    let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-        Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
-        None,
-        Some(20_000),
-        activation_heights,
-        true,
-    )
-    .await;
-    let mut faucet = scenario_builder
-        .client_builder
-        .build_faucet(false, activation_heights);
-    let mut recipient = scenario_builder.client_builder.build_client(
-        HOSPITAL_MUSEUM_SEED.to_string(),
-        0,
-        false,
-        activation_heights,
-    );
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
-        .await
-        .unwrap();
-    // received from a faucet to orchard
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "unified"),
-            value.checked_div(2).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
-        .await
-        .unwrap();
-    // received from a faucet to sapling
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "sapling"),
-            value.checked_div(4).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
-        .await
-        .unwrap();
-    // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
-        &mut faucet,
-        vec![(
-            &get_base_address_macro!(recipient, "transparent"),
-            value.checked_div(4).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to a faucet
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &get_base_address_macro!(faucet, "unified"),
-            value.checked_div(10).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to self orchard
-    let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &recipient_unified_address,
-            value.checked_div(10).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to self sapling
-    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &recipient_sapling_address,
-            value.checked_div(10).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // send to self transparent
-    let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
-    super::lightclient::from_inputs::quick_send(
-        &mut recipient,
-        vec![(
-            &recipient_transparent_address,
-            value.checked_div(10).unwrap(),
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // shield transparent
-    recipient
-        .quick_shield(zip32::AccountId::ZERO)
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
-        .await
-        .unwrap();
-    // end
-    scenario_builder
-        .regtest_manager
-        .generate_n_blocks(1)
-        .expect("Failed to generate blocks.");
-    (
-        scenario_builder.regtest_manager,
-        scenario_builder.child_process_handler.unwrap(),
-    )
+    // let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    //     Some(PoolType::Shielded(ShieldedProtocol::Sapling)),
+    //     None,
+    //     Some(20_000),
+    //     activation_heights,
+    //     true,
+    // )
+    // .await;
+    // let mut faucet = scenario_builder
+    //     .client_builder
+    //     .build_faucet(false, activation_heights);
+    // let mut recipient = scenario_builder.client_builder.build_client(
+    //     HOSPITAL_MUSEUM_SEED.to_string(),
+    //     0,
+    //     false,
+    //     activation_heights,
+    // );
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
+    //     .await
+    //     .unwrap();
+    // // received from a faucet to orchard
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(
+    //         &get_base_address_macro!(recipient, "unified"),
+    //         value.checked_div(2).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
+    //     .await
+    //     .unwrap();
+    // // received from a faucet to sapling
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(
+    //         &get_base_address_macro!(recipient, "sapling"),
+    //         value.checked_div(4).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut faucet, 1)
+    //     .await
+    //     .unwrap();
+    // // received from a faucet to transparent
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut faucet,
+    //     vec![(
+    //         &get_base_address_macro!(recipient, "transparent"),
+    //         value.checked_div(4).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to a faucet
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &get_base_address_macro!(faucet, "unified"),
+    //         value.checked_div(10).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to self orchard
+    // let recipient_unified_address = get_base_address_macro!(recipient, "unified");
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &recipient_unified_address,
+    //         value.checked_div(10).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to self sapling
+    // let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &recipient_sapling_address,
+    //         value.checked_div(10).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // send to self transparent
+    // let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
+    // super::lightclient::from_inputs::quick_send(
+    //     &mut recipient,
+    //     vec![(
+    //         &recipient_transparent_address,
+    //         value.checked_div(10).unwrap(),
+    //         None,
+    //     )],
+    // )
+    // .await
+    // .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // shield transparent
+    // recipient
+    //     .quick_shield(zip32::AccountId::ZERO)
+    //     .await
+    //     .unwrap();
+    // increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &mut recipient, 1)
+    //     .await
+    //     .unwrap();
+    // // end
+    // scenario_builder
+    //     .regtest_manager
+    //     .generate_n_blocks(1)
+    //     .expect("Failed to generate blocks.");
+    // (
+    //     scenario_builder.regtest_manager,
+    //     scenario_builder.child_process_handler.unwrap(),
+    // )
+    todo!()
 }
 
 /// TODO: Add Doc Comment Here!
