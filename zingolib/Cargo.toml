@@ -79,6 +79,7 @@ tracing-subscriber = { workspace = true }
 bech32 = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 tracing.workspace = true
+time = "0.3.41"
 
 [dev-dependencies]
 portpicker = { workspace = true }

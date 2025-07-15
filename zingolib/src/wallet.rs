@@ -471,8 +471,16 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
+    use std::num::{NonZero, NonZeroU32};
+
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::{
+        config::{ChainType, RegtestNetwork},
+        wallet::{LightWallet, WalletSettings},
+    };
 
     // TODO: move to relevant mod
     #[test]
@@ -523,5 +531,28 @@ mod tests {
         ];
         let anchor = orchard::Anchor::from(MerkleHashOrchard::from_bytes(&anchor).unwrap());
         assert_eq!(orchard::Anchor::from(orchard_tree.root()), anchor);
+    }
+
+    #[tokio::test]
+    async fn new_offline() {
+        let chain_type = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let settings = WalletSettings {
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            sync_config: pepper_sync::config::SyncConfig {
+                ..Default::default()
+            },
+        };
+
+        let lw = LightWallet::new(
+            chain_type,
+            crate::wallet::WalletBase::FreshEntropy {
+                no_of_accounts: NonZero::new(1).unwrap(),
+            },
+            BlockHeight::from_u32(0),
+            settings,
+        );
+
+        assert!(lw.is_ok());
+        assert_eq!(lw.unwrap().network, chain_type);
     }
 }

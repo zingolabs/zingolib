@@ -7574,6 +7574,7 @@ dependencies = [
  "shardtree",
  "tempfile",
  "thiserror 2.0.12",
+ "time",
  "tokio",
  "tonic",
  "tracing",

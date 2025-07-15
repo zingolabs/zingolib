@@ -86,6 +86,10 @@ impl LightClient {
         )
     }
 
+    pub fn new_with_timestamp(config: ZingoConfig, timestamp: time::OffsetDateTime) {
+        // Check if is online
+    }
+
     /// Creates a LightClient from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     pub fn create_from_wallet(
@@ -139,6 +143,10 @@ impl LightClient {
     /// Returns config used to create lightclient.
     pub fn config(&self) -> &ZingoConfig {
         &self.config
+    }
+
+    pub async fn wallet_birthday(&self) -> BlockHeight {
+        self.wallet.read().await.birthday
     }
 
     /// Returns tor client.
@@ -310,13 +318,14 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, RegtestNetwork, ZingoConfig},
+        config::{ChainType, RegtestNetwork, ZingoConfig, ZingoConfigBuilder},
         lightclient::error::LightClientError,
         wallet::LightWallet,
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zcash_protocol::consensus::BlockHeight;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
@@ -376,6 +385,22 @@ mod tests {
             "uregtest15en5x5cnsc7ye3wfy0prnh3ut34ns9w40htunlh9htfl6k5p004ja5gprxfz8fygjeax07a8489wzjk8gsx65thcp6d3ku8umgaka6f0"
                 .to_string(),
             lc.unified_addresses_json().await[0]["encoded_address"]
+        );
+    }
+
+    #[tokio::test]
+    async fn new_lc_offline() {
+        let zc = ZingoConfigBuilder::default().create();
+
+        // TODO: This test should not rely on a given birthday
+        // I should be able to do something like: LightClient::new(zc, None, false);
+        // OR: LightClient::new_with_timestamp(zc, Timestamp::now(), false);
+        let lc = LightClient::new(zc, BlockHeight::from_u32(0), false);
+        assert!(lc.is_ok());
+
+        assert_eq!(
+            lc.unwrap().wallet.read().await.birthday,
+            BlockHeight::from_u32(0)
         );
     }
 }
