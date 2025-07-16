@@ -4,7 +4,7 @@ use zingolib::testutils::{lightclient::from_inputs, scenarios::faucet_recipient_
 #[tokio::test]
 #[ignore]
 async fn shield_transparent() {
-    let (regtest_manager, _cph, mut faucet, mut recipient) = faucet_recipient_default().await;
+    let (local_net, mut faucet, mut recipient) = faucet_recipient_default().await;
     let transparent_funds = 100_000;
 
     println!(
@@ -44,7 +44,7 @@ async fn shield_transparent() {
             .await
             .unwrap(),
     );
-    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
 
@@ -71,7 +71,7 @@ async fn shield_transparent() {
     println!("Shielding proposal {:?}", shielding_proposal);
 
     recipient.send_stored_proposal().await.unwrap();
-    zingolib::testutils::increase_height_and_wait_for_client(&regtest_manager, &mut recipient, 1)
+    zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
 
