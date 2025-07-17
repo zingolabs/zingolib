@@ -8,8 +8,6 @@ pub mod scenarios;
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
-use json::JsonValue;
-
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
@@ -19,7 +17,6 @@ use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::validator::{Validator, Zcashd};
 
 use crate::config::ZingoConfig;
@@ -32,7 +29,6 @@ use crate::wallet::summary::data::{
 };
 use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 use lightclient::get_base_address;
-use regtest::RegtestManager;
 
 pub mod assertions;
 pub mod chain_generics;

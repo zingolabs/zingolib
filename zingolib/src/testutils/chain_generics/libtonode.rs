@@ -1,15 +1,14 @@
 //! libtonode tests use zcashd regtest mode to mock a chain
 
-use zcash_protocol::{PoolType, ShieldedProtocol};
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Indexer, Lightwalletd};
-use zingo_infra_services::network::{ActivationHeights, localhost_uri};
+use zingo_infra_services::network::localhost_uri;
 use zingo_infra_services::validator::{Validator, Zcashd};
 
 use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
+use crate::testutils::scenarios::ClientBuilder;
 use crate::testutils::scenarios::custom_clients_default;
-use crate::testutils::scenarios::setup::{ClientBuilder, ScenarioBuilder};
 use crate::testutils::timestamped_test_log;
 
 /// includes utilities for connecting to zcashd regtest

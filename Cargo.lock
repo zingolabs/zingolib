@@ -8666,7 +8666,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-fetcher-core"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#aa32d14019c0982ce95926fb6e25c91a3469869a"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#a0eb8aff8a18fb197ee131a3058bc2cd1444ecbc"
 dependencies = [
  "hex",
  "reqwest",
@@ -8677,7 +8677,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#aa32d14019c0982ce95926fb6e25c91a3469869a"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#a0eb8aff8a18fb197ee131a3058bc2cd1444ecbc"
 dependencies = [
  "getset",
  "hex",

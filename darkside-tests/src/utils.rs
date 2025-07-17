@@ -28,7 +28,6 @@ use crate::{
 use zingolib::testutils::{
     paths::{get_bin_dir, get_cargo_manifest_dir},
     regtest::launch_lightwalletd,
-    scenarios::setup::TestEnvironmentGenerator,
 };
 
 pub async fn prepare_darksidewalletd(
@@ -100,8 +99,8 @@ pub async fn prepare_darksidewalletd(
 
     Ok(())
 }
-pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (String, PathBuf) {
-    let darkside_grpc_port = TestEnvironmentGenerator::pick_unused_port_to_string(set_port);
+pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (u16, PathBuf) {
+    let darkside_grpc_port = zingo_infra_services::network::pick_unused_port(set_port);
     let darkside_dir = tempfile::TempDir::with_prefix("zingo_darkside_test")
         .unwrap()
         .keep();
@@ -135,7 +134,7 @@ impl DarksideHandler {
         );
         Self {
             lightwalletd_handle,
-            grpc_port,
+            grpc_port: grpc_port.to_string(),
             darkside_dir,
         }
     }
@@ -380,7 +379,7 @@ pub mod scenarios {
     };
     use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
-    use zingolib::testutils::scenarios::setup::ClientBuilder;
+    use zingolib::testutils::scenarios::ClientBuilder;
 
     pub struct DarksideEnvironment {
         darkside_handler: DarksideHandler,

@@ -4,7 +4,7 @@ use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::ActivationHeights;
+use zingo_infra_services::network::{ActivationHeights, localhost_uri};
 
 use super::super::LightWallet;
 use crate::config::ChainType;
@@ -274,9 +274,7 @@ impl NetworkSeedVersion {
     pub async fn load_example_wallet_with_client(&self) -> LightClient {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
-                let lightwalletd_uri =
-                    crate::testutils::scenarios::setup::TestEnvironmentGenerator::new(None)
-                        .get_lightwalletd_uri();
+                let lightwalletd_uri = localhost_uri(0);
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
