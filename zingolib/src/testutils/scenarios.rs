@@ -541,12 +541,12 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<Lightwalletd, Z
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap().path().to_path_buf(),
     );
-    let mut faucet = client_builder.build_faucet(true, *local_net.validator().activation_heights());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let recipient = client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        *local_net.validator().activation_heights(),
+        local_net.validator().activation_heights(),
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -567,12 +567,12 @@ pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> LocalNet<Ligh
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap().path().to_path_buf(),
     );
-    let mut faucet = client_builder.build_faucet(true, *local_net.validator().activation_heights());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        *local_net.validator().activation_heights(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -622,12 +622,12 @@ pub async fn funded_transparent_mobileclient(value: u64) -> LocalNet<Lightwallet
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap().path().to_path_buf(),
     );
-    let mut faucet = client_builder.build_faucet(true, *local_net.validator().activation_heights());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        *local_net.validator().activation_heights(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -662,12 +662,12 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap().path().to_path_buf(),
     );
-    let mut faucet = client_builder.build_faucet(true, *local_net.validator().activation_heights());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        *local_net.validator().activation_heights(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
