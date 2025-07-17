@@ -3,8 +3,6 @@
 
 #![warn(missing_docs)]
 
-pub mod scenarios;
-
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
@@ -33,14 +31,10 @@ use lightclient::get_base_address;
 pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
-/// lightclient helpers
 pub mod lightclient;
-/// macros to help test
 pub mod macros;
-/// TODO: Add Doc Comment Here!
 pub mod paths;
-/// TODO: Add Doc Comment Here!
-pub mod regtest;
+pub mod scenarios;
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
