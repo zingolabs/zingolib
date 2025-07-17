@@ -18,7 +18,7 @@ use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
     testutils::{
-        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
+        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
     },
     wallet::balance::AccountBalance,
 };
