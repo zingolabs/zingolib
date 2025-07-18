@@ -105,6 +105,10 @@ pub enum WalletBase {
 /// methods for a save task implementation.
 #[derive(Debug)]
 pub struct LightWallet {
+    /// Current wallet version.
+    current_version: u64,
+    /// Wallet version that was read from on wallet load.
+    read_version: u64,
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
@@ -231,6 +235,8 @@ impl LightWallet {
         };
 
         Ok(Self {
+            current_version: LightWallet::serialized_version(),
+            read_version: LightWallet::serialized_version(),
             network,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
@@ -248,6 +254,16 @@ impl LightWallet {
             save_required: true,
             send_progress: SendProgress::new(0),
         })
+    }
+
+    /// Returns current wallet version.
+    pub fn current_version(&self) -> u64 {
+        self.current_version
+    }
+
+    /// Returns wallet version that was read from on wallet load.
+    pub fn read_version(&self) -> u64 {
+        self.read_version
     }
 
     /// Returns the wallet's mnemonic (seed and phrase).
