@@ -8657,9 +8657,11 @@ dependencies = [
  "rustls 0.23.29",
  "rustyline",
  "shellwords",
+ "tempfile",
  "tracing-subscriber",
  "zcash_protocol",
  "zingo-infra-services",
+ "zingo-testvectors",
  "zingolib",
 ]
 

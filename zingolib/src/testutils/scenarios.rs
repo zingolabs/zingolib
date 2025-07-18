@@ -38,11 +38,11 @@ use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::{LightWallet, WalletSettings};
 
-const ZCASHD_BIN: Option<PathBuf> = None;
-const ZCASH_CLI_BIN: Option<PathBuf> = None;
-const ZEBRAD_BIN: Option<PathBuf> = None;
-const LIGHTWALLETD_BIN: Option<PathBuf> = None;
-const ZAINOD_BIN: Option<PathBuf> = None;
+pub const ZCASHD_BIN: Option<PathBuf> = None;
+pub const ZCASH_CLI_BIN: Option<PathBuf> = None;
+pub const ZEBRAD_BIN: Option<PathBuf> = None;
+pub const LIGHTWALLETD_BIN: Option<PathBuf> = None;
+pub const ZAINOD_BIN: Option<PathBuf> = None;
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {

@@ -15,6 +15,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
+use zingo_infra_services::indexer::{Indexer, Lightwalletd, LightwalletdConfig};
 
 use super::{
     constants,
@@ -25,10 +26,9 @@ use crate::{
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-use zingolib::testutils::{
-    paths::{get_bin_dir, get_cargo_manifest_dir},
-    regtest::launch_lightwalletd,
-};
+use zingolib::testutils::paths::get_cargo_manifest_dir;
+
+const LIGHTWALLETD_BIN: Option<PathBuf> = None;
 
 pub async fn prepare_darksidewalletd(
     uri: http::Uri,
@@ -99,13 +99,6 @@ pub async fn prepare_darksidewalletd(
 
     Ok(())
 }
-pub fn generate_darksidewalletd(set_port: Option<portpicker::Port>) -> (u16, PathBuf) {
-    let darkside_grpc_port = zingo_infra_services::network::pick_unused_port(set_port);
-    let darkside_dir = tempfile::TempDir::with_prefix("zingo_darkside_test")
-        .unwrap()
-        .keep();
-    (darkside_grpc_port, darkside_dir)
-}
 
 pub struct DarksideHandler {
     pub lightwalletd_handle: Child,
@@ -120,18 +113,13 @@ impl Default for DarksideHandler {
 }
 impl DarksideHandler {
     pub fn new(set_port: Option<portpicker::Port>) -> Self {
-        let (grpc_port, darkside_dir) = generate_darksidewalletd(set_port);
-        let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
+        let lightwalletd_handle = Lightwalletd::launch(LightwalletdConfig {
+            lightwalletd_bin: LIGHTWALLETD_BIN,
+            listen_port: None,
+            zcashd_conf: PathBuf::new(),
+        })
+        .unwrap();
 
-        let check_interval = Duration::from_millis(300);
-        let lightwalletd_handle = launch_lightwalletd(
-            darkside_dir.join("logs"),
-            darkside_dir.join("conf"),
-            darkside_dir.join("data"),
-            get_bin_dir(),
-            check_interval,
-            grpc_bind_addr,
-        );
         Self {
             lightwalletd_handle,
             grpc_port: grpc_port.to_string(),
