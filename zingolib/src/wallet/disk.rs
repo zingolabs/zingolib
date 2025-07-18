@@ -318,6 +318,8 @@ impl LightWallet {
         );
 
         let lw = Self {
+            current_version: LightWallet::serialized_version(),
+            read_version: version,
             mnemonic,
             birthday,
             unified_key_store,
@@ -547,6 +549,8 @@ impl LightWallet {
         };
 
         Ok(Self {
+            current_version: LightWallet::serialized_version(),
+            read_version: version,
             network,
             mnemonic,
             birthday,
