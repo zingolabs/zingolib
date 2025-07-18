@@ -832,9 +832,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.29"
+version = "1.2.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c1599538de2394445747c8cf7935946e3cc27e9625f889d979bfb2aaf569362"
+checksum = "deec109607ca693028562ed836a5f1c4b8bd77755c4e132fc5ce11b0b6211ae7"
 dependencies = [
  "jobserver",
  "libc",
@@ -8668,7 +8668,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-fetcher-core"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#a0eb8aff8a18fb197ee131a3058bc2cd1444ecbc"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=zingolib_integration_update#3ef942d7a2e9ea26ff6126a46dd70cb03406e5c1"
 dependencies = [
  "hex",
  "reqwest",
@@ -8679,7 +8679,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=improve_activation_heights#a0eb8aff8a18fb197ee131a3058bc2cd1444ecbc"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=zingolib_integration_update#3ef942d7a2e9ea26ff6126a46dd70cb03406e5c1"
 dependencies = [
  "getset",
  "hex",

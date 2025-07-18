@@ -15,7 +15,10 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingo_infra_services::indexer::{Indexer, Lightwalletd, LightwalletdConfig};
+use zingo_infra_services::{
+    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
+    network::localhost_uri,
+};
 
 use super::{
     constants,
@@ -34,7 +37,6 @@ pub async fn prepare_darksidewalletd(
     uri: http::Uri,
     include_startup_funds: bool,
 ) -> Result<(), String> {
-    dbg!(&uri);
     let connector = DarksideConnector(uri.clone());
 
     let mut client = connector.get_client().await.unwrap();
@@ -98,49 +100,6 @@ pub async fn prepare_darksidewalletd(
     connector.apply_staged(3).await?;
 
     Ok(())
-}
-
-pub struct DarksideHandler {
-    pub lightwalletd_handle: Child,
-    pub grpc_port: String,
-    pub darkside_dir: PathBuf,
-}
-
-impl Default for DarksideHandler {
-    fn default() -> Self {
-        Self::new(None)
-    }
-}
-impl DarksideHandler {
-    pub fn new(set_port: Option<portpicker::Port>) -> Self {
-        let lightwalletd_handle = Lightwalletd::launch(LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN,
-            listen_port: None,
-            zcashd_conf: PathBuf::new(),
-        })
-        .unwrap();
-
-        Self {
-            lightwalletd_handle,
-            grpc_port: grpc_port.to_string(),
-            darkside_dir,
-        }
-    }
-}
-
-impl Drop for DarksideHandler {
-    fn drop(&mut self) {
-        if Command::new("kill")
-            .arg(self.lightwalletd_handle.id().to_string())
-            .output()
-            .is_err()
-        {
-            // if regular kill doesn't work, kill it harder
-            self.lightwalletd_handle
-                .kill()
-                .expect("command couldn't be killed");
-        }
-    }
 }
 
 /// Takes a raw transaction and then updates and returns tree state from the previous block
@@ -255,12 +214,15 @@ impl TreeState {
 /// Generates a genesis block and adds initial treestate.
 pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
-) -> Result<(DarksideHandler, DarksideConnector), String> {
-    let handler = DarksideHandler::new(set_port);
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        handler.grpc_port
-    )));
+) -> Result<(Lightwalletd, DarksideConnector), String> {
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: set_port,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
+    let server_id = localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);
 
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
@@ -282,7 +244,7 @@ pub async fn init_darksidewalletd(
         .await
         .unwrap();
 
-    Ok((handler, connector))
+    Ok((lightwalletd, connector))
 }
 
 /// Creates a file for writing transactions to store pre-built blockchains.
@@ -355,11 +317,11 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_infra_services::network::ActivationHeights;
+    use zingo_infra_services::{indexer::Lightwalletd, network::ActivationHeights};
 
     use super::{
-        DarksideConnector, DarksideHandler, init_darksidewalletd,
-        update_tree_states_for_transaction, write_raw_transaction,
+        DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
+        write_raw_transaction,
     };
     use crate::{
         constants,
@@ -370,7 +332,7 @@ pub mod scenarios {
     use zingolib::testutils::scenarios::ClientBuilder;
 
     pub struct DarksideEnvironment {
-        darkside_handler: DarksideHandler,
+        lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
         pub(crate) activation_heights: ActivationHeights,
@@ -383,15 +345,12 @@ pub mod scenarios {
     impl DarksideEnvironment {
         /// Initialises and launches darksidewalletd, stages the genesis block and creates the lightclient builder
         pub async fn new(set_port: Option<portpicker::Port>) -> DarksideEnvironment {
-            let (darkside_handler, darkside_connector) =
-                init_darksidewalletd(set_port).await.unwrap();
-            let client_builder = ClientBuilder::new(
-                darkside_connector.0.clone(),
-                darkside_handler.darkside_dir.clone(),
-            );
+            let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
+            let client_builder =
+                ClientBuilder::new(darkside_connector.0.clone(), tempfile::tempdir().unwrap());
             let activation_heights = ActivationHeights::default();
             DarksideEnvironment {
-                darkside_handler,
+                lightwalletd,
                 darkside_connector,
                 client_builder,
                 activation_heights,
