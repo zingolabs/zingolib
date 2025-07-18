@@ -649,8 +649,8 @@ pub mod scenarios {
             self.tree_state = tree_state;
         }
 
-        pub fn get_handler(&self) -> &DarksideHandler {
-            &self.darkside_handler
+        pub fn get_handler(&self) -> &Lightwalletd {
+            &self.lightwalletd
         }
         pub fn get_connector(&self) -> &DarksideConnector {
             &self.darkside_connector

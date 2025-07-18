@@ -389,6 +389,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
             lightwalletd_bin: LIGHTWALLETD_BIN,
             listen_port: Some(20_000),
             zcashd_conf: PathBuf::new(),
+            darkside: false,
         },
         ZcashdConfig {
             zcashd_bin: ZCASHD_BIN,

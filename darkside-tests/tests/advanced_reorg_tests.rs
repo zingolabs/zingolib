@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use darkside_tests::{
     constants::{
         ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
@@ -8,14 +10,17 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{DarksideHandler, read_dataset, read_lines},
+    utils::{read_dataset, read_lines},
 };
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_infra_services::network::ActivationHeights;
-use zingolib::wallet::summary::data::SentValueTransfer;
+use zingo_infra_services::{
+    indexer::{Lightwalletd, LightwalletdConfig},
+    network::{ActivationHeights, localhost_uri},
+};
 use zingolib::wallet::summary::data::ValueTransferKind;
+use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
         lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
@@ -26,12 +31,15 @@ use zingolib::{
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_height_change_reorg(server_id.clone())
         .await
