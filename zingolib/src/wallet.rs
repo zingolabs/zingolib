@@ -106,9 +106,9 @@ pub enum WalletBase {
 #[derive(Debug)]
 pub struct LightWallet {
     /// Current wallet version.
-    pub current_version: u64,
+    current_version: u64,
     /// Wallet version that was read from on wallet load.
-    pub read_version: u64,
+    read_version: u64,
     /// Network type
     pub network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
@@ -254,6 +254,16 @@ impl LightWallet {
             save_required: true,
             send_progress: SendProgress::new(0),
         })
+    }
+
+    /// Returns current wallet version.
+    pub fn current_version(&self) -> u64 {
+        self.current_version
+    }
+
+    /// Returns wallet version that was read from on wallet load.
+    pub fn read_version(&self) -> u64 {
+        self.read_version
     }
 
     /// Returns the wallet's mnemonic (seed and phrase).
