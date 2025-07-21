@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod commands;
+
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -14,12 +16,13 @@ use log::{error, info};
 
 use zcash_protocol::consensus::BlockHeight;
 
+use crate::commands::RT;
+use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::commands::RT;
 use zingolib::config::ChainType;
+use zingolib::lightclient::LightClient;
 use zingolib::testutils::regtest;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
-use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
@@ -301,7 +304,7 @@ pub struct ConfigTemplate {
     chaintype: ChainType,
     tor_enabled: bool,
 }
-use commands::ShortCircuitedCommand;
+
 fn short_circuit_on_help(params: Vec<String>) {
     for h in commands::HelpCommand::exec_without_lc(params).lines() {
         println!("{}", h);
