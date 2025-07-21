@@ -1081,3 +1081,19 @@ pub fn get_config_wallet_performance() -> String {
         "Error: Lightclient is not initialized".to_string()
     }
 }
+
+pub fn get_wallet_version() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let wallet = lightclient.wallet.read().await;
+            let current_version = wallet.current_version();
+            let read_version = wallet.read_version();
+            object! { 
+                "current_version" => current_version,
+                "read_version" => read_version
+            }.pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
