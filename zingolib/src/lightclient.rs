@@ -49,7 +49,7 @@ pub mod sync;
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
-    pub(crate) config: ZingoConfig,
+    pub config: ZingoConfig,
     /// Tor client
     tor_client: Option<tor::Client>,
     /// Wallet data
