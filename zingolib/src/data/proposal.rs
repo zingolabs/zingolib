@@ -39,9 +39,7 @@ pub(crate) enum ZingoProposal {
 }
 
 /// total sum of all transaction request payment amounts in a proposal
-pub(crate) fn total_payment_amount(
-    proposal: &ProportionalFeeProposal,
-) -> Result<Zatoshis, BalanceError> {
+pub fn total_payment_amount(proposal: &ProportionalFeeProposal) -> Result<Zatoshis, BalanceError> {
     proposal
         .steps()
         .iter()
@@ -52,7 +50,7 @@ pub(crate) fn total_payment_amount(
 }
 
 /// total sum of all fees in a proposal
-pub(crate) fn total_fee(proposal: &ProportionalFeeProposal) -> Result<Zatoshis, BalanceError> {
+pub fn total_fee(proposal: &ProportionalFeeProposal) -> Result<Zatoshis, BalanceError> {
     proposal
         .steps()
         .iter()

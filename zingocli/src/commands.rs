@@ -1,6 +1,9 @@
 //! An interface that passes strings (e.g. from a cli, into zingolib)
 //! upgrade-or-replace
 
+mod error;
+mod utils;
+
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::num::NonZeroU32;
@@ -19,15 +22,12 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
-use crate::data::{PollReport, proposal};
-use crate::lightclient::LightClient;
-use crate::utils::conversion::txid_from_hex_encoded_str;
-use crate::wallet::keys::WalletAddressRef;
-use crate::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-
-mod error;
-mod utils;
+use zingolib::data::{PollReport, proposal};
+use zingolib::lightclient::LightClient;
+use zingolib::utils::conversion::txid_from_hex_encoded_str;
+use zingolib::wallet::keys::WalletAddressRef;
+use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 
 lazy_static! {
     pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
@@ -66,7 +66,7 @@ impl Command for GetVersionCommand {
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &mut LightClient) -> String {
-        crate::git_description().to_string()
+        zingolib::git_description().to_string()
     }
 }
 
@@ -215,13 +215,13 @@ impl Command for ParseAddressCommand {
             address: &str,
         ) -> Option<(
             zcash_client_backend::address::Address,
-            crate::config::ChainType,
+            zingolib::config::ChainType,
         )> {
             [
-                crate::config::ChainType::Mainnet,
-                crate::config::ChainType::Testnet,
-                crate::config::ChainType::Regtest(
-                    crate::config::RegtestNetwork::all_upgrades_active(),
+                zingolib::config::ChainType::Mainnet,
+                zingolib::config::ChainType::Testnet,
+                zingolib::config::ChainType::Regtest(
+                    zingolib::config::RegtestNetwork::all_upgrades_active(),
                 ),
             ]
             .iter()
@@ -229,9 +229,9 @@ impl Command for ParseAddressCommand {
         }
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
             let chain_name_string = match chain_name {
-                crate::config::ChainType::Mainnet => "main",
-                crate::config::ChainType::Testnet => "test",
-                crate::config::ChainType::Regtest(_) => "regtest",
+                zingolib::config::ChainType::Mainnet => "main",
+                zingolib::config::ChainType::Testnet => "test",
+                zingolib::config::ChainType::Regtest(_) => "regtest",
             };
             match recipient_address {
                 Address::Sapling(_) => object! {
@@ -1044,7 +1044,8 @@ impl Command for SendCommand {
                 );
             }
         };
-        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
+        let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
+        {
             Ok(request) => request,
             Err(e) => {
                 return format!(
@@ -1059,7 +1060,7 @@ impl Command for SendCommand {
                 .await
             {
                 Ok(proposal) => {
-                    let fee = match crate::data::proposal::total_fee(&proposal) {
+                    let fee = match zingolib::data::proposal::total_fee(&proposal) {
                         Ok(fee) => fee,
                         Err(e) => return object! { "error" => e.to_string() }.pretty(2),
                     };
@@ -1171,7 +1172,8 @@ impl Command for QuickSendCommand {
                 );
             }
         };
-        let request = match crate::data::receivers::transaction_request_from_receivers(receivers) {
+        let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
+        {
             Ok(request) => request,
             Err(e) => {
                 return format!(
