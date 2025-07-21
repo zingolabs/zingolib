@@ -70,4 +70,5 @@ namespace zingo {
   string set_config_wallet_to_test();
   string set_config_wallet_to_prod();
   string get_config_wallet_performance();
+  string get_wallet_version();
 };
