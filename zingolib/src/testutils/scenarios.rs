@@ -365,6 +365,8 @@ pub async fn custom_clients(
         },
     )
     .await;
+    local_net.validator().generate_blocks(2).await.unwrap();
+
     let client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
