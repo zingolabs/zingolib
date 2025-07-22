@@ -672,7 +672,7 @@ mod fast {
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -904,7 +904,7 @@ mod fast {
         environment.bump_chain().await;
         faucet.sync_and_await().await.unwrap();
 
-        check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
+        check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
 
         from_inputs::quick_send(
             &mut faucet,
@@ -2507,7 +2507,15 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let activation_heights = ActivationHeights::default();
+        let activation_heights = ActivationHeights {
+            overwinter: 1.into(),
+            sapling: 1.into(),
+            blossom: 1.into(),
+            heartwood: 1.into(),
+            canopy: 3.into(),
+            nu5: 5.into(),
+            nu6: 5.into(),
+        };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             activation_heights,
