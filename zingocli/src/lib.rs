@@ -18,7 +18,7 @@ use zcash_protocol::consensus::BlockHeight;
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Indexer, Lightwalletd, LightwalletdConfig};
+use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
 use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::commands::RT;
@@ -614,6 +614,7 @@ pub fn run_cli() {
                                 lightwalletd_bin: LIGHTWALLETD_BIN,
                                 listen_port: None,
                                 zcashd_conf: PathBuf::new(),
+                                darkside: false,
                             },
                             ZcashdConfig {
                                 zcashd_bin: ZCASHD_BIN,

@@ -1716,7 +1716,7 @@ mod slow {
         );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
-            Some(client_builder.zingo_datadir),
+            Some(client_builder.zingo_datadir.path().to_path_buf()),
             ChainType::Regtest(local_net.validator().activation_heights()),
             WalletSettings {
                 sync_config: SyncConfig {

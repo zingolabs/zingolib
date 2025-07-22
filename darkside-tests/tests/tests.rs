@@ -1,8 +1,10 @@
+use std::path::PathBuf;
+
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
-use darkside_tests::utils::DarksideHandler;
 use darkside_tests::utils::update_tree_states_for_transaction;
+use tempfile::TempDir;
 use testvectors::seeds::DARKSIDE_SEED;
 use zingo_infra_services::indexer::Indexer;
 use zingo_infra_services::indexer::Lightwalletd;
@@ -17,6 +19,7 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
+use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::wallet::balance::AccountBalance;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
@@ -35,8 +38,13 @@ async fn simple_sync() {
         .await
         .unwrap();
     let activation_heights = ActivationHeights::default();
-    let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -80,11 +88,13 @@ async fn reorg_receipt_sync_generic() {
         .unwrap();
 
     let activation_heights = ActivationHeights::default();
-    let mut light_client = ClientBuilder::new(
-        server_id.clone(),
-        darkside_handler.darkside_dir.clone(),
-    )
-    .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -143,8 +153,8 @@ async fn sent_transaction_reorged_into_mempool() {
         .await
         .unwrap();
 
-    let mut client_manager =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
+    let wallet_dir = TempDir::new().unwrap();
+    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
     let activation_heights = ActivationHeights::default();
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);

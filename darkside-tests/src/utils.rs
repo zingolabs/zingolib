@@ -3,12 +3,9 @@ use std::{
     fs::File,
     io::{self, BufRead, Write},
     path::{Path, PathBuf},
-    process::{Child, Command},
-    time::Duration,
 };
 
 use http::Uri;
-use tempfile;
 use tokio::time::sleep;
 
 use incrementalmerkletree::frontier::CommitmentTree;
