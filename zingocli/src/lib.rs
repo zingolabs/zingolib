@@ -358,14 +358,17 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
+        let server = matches
+            .get_one::<http::Uri>("server")
+            .map(ToString::to_string)
+            .or_else(|| {
+                if is_regtest {
+                    Some("http://127.0.0.1".to_string())
+                } else {
+                    None
+                }
+            });
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = if is_regtest {
-            matches
-                .get_one::<http::Uri>("server")
-                .map(|server| server.to_string())
-        } else {
-            Some("http://127.0.0.1".to_string())
-        };
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
