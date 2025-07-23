@@ -1310,19 +1310,19 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     }
 
     #[tokio::test]
-    async fn sync_all_epochs_from_sapling() {
+    async fn sync_all_epochs_from_heartwood() {
         let activation_heights = ActivationHeights {
             overwinter: 1.into(),
             sapling: 1.into(),
-            blossom: 3.into(),
-            heartwood: 5.into(),
-            canopy: 7.into(),
-            nu5: 9.into(),
-            nu6: 11.into(),
+            blossom: 1.into(),
+            heartwood: 1.into(),
+            canopy: 3.into(),
+            nu5: 5.into(),
+            nu6: 7.into(),
         };
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights, None).await;
-        increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
+        increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
             .await
             .unwrap();
     }
