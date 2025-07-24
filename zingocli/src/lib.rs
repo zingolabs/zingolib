@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod commands;
+
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -21,11 +23,12 @@ use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
 use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
-use zingolib::commands::RT;
 use zingolib::config::ChainType;
+use zingolib::lightclient::LightClient;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
-use zingolib::{commands, lightclient::LightClient};
+
+use crate::commands::RT;
 
 pub mod version;
 
@@ -294,9 +297,8 @@ pub struct ConfigTemplate {
 
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
-        let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
-        let tor_enabled = matches.get_flag("tor"); // Begin short_circuit section
-
+        let is_regtest = matches.get_flag("regtest");
+        let tor_enabled = matches.get_flag("tor");
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
