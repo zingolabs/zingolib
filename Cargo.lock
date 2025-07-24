@@ -4138,9 +4138,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.35"
+version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "061c1221631e079b26479d25bbf2275bfe5917ae8419cd7e34f13bfc2aa7539a"
+checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
 dependencies = [
  "proc-macro2",
  "syn 2.0.104",
@@ -8679,7 +8679,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-fetcher-core"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=zingolib_integration_update#38c1dd0cae5e36ed27c99c3f99576da0088c5f7c"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
 dependencies = [
  "hex",
  "reqwest",
@@ -8690,7 +8690,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=zingolib_integration_update#38c1dd0cae5e36ed27c99c3f99576da0088c5f7c"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
 dependencies = [
  "getset",
  "hex",
