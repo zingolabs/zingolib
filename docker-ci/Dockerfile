@@ -38,7 +38,7 @@ RUN git clone https://github.com/zcash/zcash.git \
     && git checkout v6.2.0 \
     && ./zcutil/build.sh -j$(nproc)
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runner
 
 # Copy regtest binaries and zcash params from builder
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
@@ -56,6 +56,7 @@ RUN apt update \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libclang-14-dev \
     ca-certificates \
     && update-ca-certificates
 
