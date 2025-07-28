@@ -29,7 +29,6 @@ use zcash_protocol::consensus::NetworkType;
 use pepper_sync::keys::transparent;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
-use zingolib::commands::RT;
 use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
 use zingolib::data::PollReport;
 use zingolib::lightclient::LightClient;
@@ -39,12 +38,23 @@ use zingolib::wallet::keys::{
     unified::{ReceiverSelection, UnifiedKeyStore},
 };
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
+use zingolib::data::receivers::Receivers;
+use zcash_address::ZcashAddress;
+use zcash_protocol::{value::Zatoshis};
+use tokio::runtime::Runtime;
+use zcash_primitives::memo::MemoBytes;
+use zingolib::data::receivers::transaction_request_from_receivers;
+use zingolib::data::proposal::total_fee;
 
 // We'll use a RwLock to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
 // because we can't return such a complex structure back to JS
 lazy_static! {
     static ref LIGHTCLIENT: RwLock<Option<LightClient>> = RwLock::new(None);
+}
+
+lazy_static! {
+    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
 fn store_client(lightclient: LightClient) {
@@ -244,20 +254,6 @@ pub fn save_to_b64() -> String {
                 Err(e) => format!("Error: {e}"),
             }
         })
-    } else {
-        "Error: Lightclient is not initialized".to_string()
-    }
-}
-
-// TODO: deprecate
-pub fn execute_command(cmd: String, args_list: String) -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
-        let args = if args_list.is_empty() {
-            vec![]
-        } else {
-            vec![args_list.as_ref()]
-        };
-        zingolib::commands::do_user_command(&cmd, &args, lightclient)
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
@@ -1092,6 +1088,146 @@ pub fn get_wallet_version() -> String {
                 "current_version" => current_version,
                 "read_version" => read_version
             }.pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
+    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+    // interpret it as a hex
+    let s_bytes = if memo_str.to_lowercase().starts_with("0x") {
+        match hex::decode(&memo_str[2..memo_str.len()]) {
+            Ok(data) => data,
+            Err(_) => Vec::from(memo_str.as_bytes()),
+        }
+    } else {
+        Vec::from(memo_str.as_bytes())
+    };
+
+    MemoBytes::from_bytes(&s_bytes)
+        .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
+}
+
+pub fn send(send_json: String) -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            let json_args = match json::parse(&send_json) {
+                Ok(parsed) => parsed,
+                Err(_) => return "Error: it is not a valid JSON".to_string(),
+            };
+
+            let mut receivers = Receivers::new();
+            for j in json_args.members() {
+                let recipient_address = match j["address"].as_str() {
+                    Some(addr) => match ZcashAddress::try_from_encoded(addr) {
+                        Ok(a) => a,
+                        Err(e) => return format!("Error: Invalid address: {e}"),
+                    },
+                    None => return "Error: Missing address".to_string(),
+                };
+
+                let amount = match j["amount"].as_u64() {
+                    Some(a) => match Zatoshis::from_u64(a) {
+                        Ok(a) => a,
+                        Err(e) => return format!("Error: Invalid amount: {e}"),
+                    },
+                    None => return "Missing amount".to_string(),
+                };
+
+                let memo = if let Some(m) = j["memo"].as_str() {
+                    match interpret_memo_string(m.to_string()) {
+                        Ok(memo_bytes) => Some(memo_bytes),
+                        Err(e) => return format!("Error: Invalid memo: {e}"),
+                    }
+                } else {
+                    None
+                };
+
+                receivers.push(zingolib::data::receivers::Receiver {
+                    recipient_address,
+                    amount,
+                    memo,
+                });
+            }
+
+            let request = match transaction_request_from_receivers(receivers)
+            {
+                Ok(request) => request,
+                Err(e) => return format!("Error: Request Error: {e}"),
+            };
+
+            match lightclient
+                .propose_send(request, AccountId::ZERO)
+                .await
+            {
+                Ok(proposal) => {
+                    let fee = match total_fee(&proposal) {
+                        Ok(fee) => fee,
+                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                    };
+                    object! { "fee" => fee.into_u64() }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn shield() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            match lightclient.propose_shield(AccountId::ZERO).await {
+                Ok(proposal) => {
+                    if proposal.steps().len() != 1 {
+                        return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
+                    }
+                    let step = proposal.steps().first();
+                    let Some(value_to_shield) = step
+                        .balance()
+                        .proposed_change()
+                        .iter()
+                        .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
+                            return object! { "error" => "shield amount outside valid range of zatoshis" }
+                                .pretty(2);
+                    };
+                    let fee = step.balance().fee_required();
+                    object! {
+                        "value_to_shield" => value_to_shield.into_u64(),
+                        "fee" => fee.into_u64(),
+                    }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
+        })
+    } else {
+        "Error: Lightclient is not initialized".to_string()
+    }
+}
+
+pub fn confirm() -> String {
+    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        RT.block_on(async move {
+            match lightclient
+                .send_stored_proposal()
+                .await {
+                Ok(txids) => {
+                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                }
+                Err(e) => {
+                    object! { "error" => e.to_string() }
+                }
+            }
+            .pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()

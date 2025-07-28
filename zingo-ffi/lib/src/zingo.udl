@@ -1,6 +1,5 @@
 namespace zingo {
   string init_logging();
-  string execute_command(string cmd, string args);
   string init_new(
       string serveruri,
       string chainhint
@@ -71,4 +70,7 @@ namespace zingo {
   string set_config_wallet_to_prod();
   string get_config_wallet_performance();
   string get_wallet_version();
+  string send(string send_json);
+  string shield();
+  string confirm();
 };
