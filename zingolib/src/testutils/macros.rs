@@ -1,3 +1,5 @@
+//! TODO
+
 /// Note that do_addresses returns an array, each element is a JSON representation
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>

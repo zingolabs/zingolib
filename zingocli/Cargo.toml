@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 zingolib = { workspace = true, features = ["test-elevation"] }
 pepper-sync = { workspace = true }
+zingo-infra-services = { workspace = true }
+testvectors = { workspace = true }
 
 zcash_protocol = { workspace = true }
 
@@ -26,3 +28,4 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
+tempfile = { workspace = true }
