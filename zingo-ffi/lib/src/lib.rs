@@ -113,25 +113,24 @@ pub fn init_logging() -> String {
 pub fn init_new(server_uri: String, chain_hint: String) -> String {
     let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
         Ok(c) => c,
-        Err(e) => return e,
+        Err(e) => return format!("Error: {e}"),
     };
-    let latest_block_height = match RT
-        .block_on(async move { zingolib::grpc_connector::get_latest_block(lightwalletd_uri).await })
-    {
-        Ok(block_id) => block_id.height,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+    let chain_height = match RT
+        .block_on(async move {
+            zingolib::grpc_connector::get_latest_block(lightwalletd_uri)
+                .await
+                .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+    }) {
+        Ok(h) => h,
+        Err(e) => return format!("Error: {e}"),
     };
     let lightclient = match LightClient::new(
         config,
-        (latest_block_height.saturating_sub(100) as u32).into(),
+        chain_height - 100,
         false,
     ) {
         Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+        Err(e) => return format!("Error: {e}"),
     };
     store_client(lightclient);
 
@@ -147,13 +146,11 @@ pub fn init_from_seed(
 ) -> String {
     let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
         Ok(c) => c,
-        Err(e) => return e,
+        Err(e) => return format!("Error: {e}"),
     };
     let mnemonic = match Mnemonic::from_phrase(seed) {
         Ok(m) => m,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+        Err(e) => return format!("Error: {e}"),
     };
     let wallet = match LightWallet::new(
         config.chain,
@@ -169,9 +166,7 @@ pub fn init_from_seed(
     };
     let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+        Err(e) => return format!("Error: {e}"),
     };
     store_client(lightclient);
 
@@ -186,7 +181,7 @@ pub fn init_from_ufvk(
 ) -> String {
     let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
         Ok(c) => c,
-        Err(e) => return e,
+        Err(e) => return format!("Error: {e}"),
     };
     let wallet = match LightWallet::new(
         config.chain,
@@ -199,9 +194,7 @@ pub fn init_from_ufvk(
     };
     let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+        Err(e) => return format!("Error: {e}"),
     };
     store_client(lightclient);
 
@@ -211,7 +204,7 @@ pub fn init_from_ufvk(
 pub fn init_from_b64(server_uri: String, base64_data: String, chain_hint: String) -> String {
     let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
         Ok(c) => c,
-        Err(e) => return e,
+        Err(e) => return format!("Error: {e}"),
     };
     let decoded_bytes = match STANDARD.decode(&base64_data) {
         Ok(b) => b,
@@ -232,9 +225,7 @@ pub fn init_from_b64(server_uri: String, base64_data: String, chain_hint: String
     let has_seed = wallet.mnemonic().is_some();
     let lightclient = match LightClient::create_from_wallet(wallet, config, false) {
         Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {e}");
-        }
+        Err(e) => return format!("Error: {e}"),
     };
     store_client(lightclient);
 
@@ -420,8 +411,8 @@ pub fn get_seed() -> String {
         RT.block_on(async move {
             match lightclient.wallet.read().await.recovery_info() {
                 Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
-                    .unwrap_or_else(|_| "error: get seed. failed to serialize".to_string()),
-                None => "error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
+                    .unwrap_or_else(|_| "Error: get seed. failed to serialize".to_string()),
+                None => "Error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
             }
         })
     } else {
@@ -440,9 +431,7 @@ pub fn get_ufvk() -> String {
                 .try_into()
             {
                 Ok(ufvk) => ufvk,
-                Err(e) => {
-                    return format!("Error: {e}");
-                }
+                Err(e) => return format!("Error: {e}"),
             };
             object! {
                 "ufvk" => ufvk.encode(&wallet.network),
@@ -1094,6 +1083,7 @@ pub fn get_wallet_version() -> String {
     }
 }
 
+// internal use
 fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
     // interpret it as a hex
