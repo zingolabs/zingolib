@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use darkside_tests::{
     constants::{
         ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
@@ -8,16 +10,21 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{DarksideHandler, read_dataset, read_lines},
+    utils::{read_dataset, read_lines},
 };
 
+use tempfile::TempDir;
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
+use zingo_infra_services::{
+    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
+    network::{ActivationHeights, localhost_uri},
+};
 use zingolib::wallet::summary::data::ValueTransferKind;
-use zingolib::{config::RegtestNetwork, wallet::summary::data::SentValueTransfer};
+use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
-        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
+        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
     },
     wallet::balance::AccountBalance,
 };
@@ -25,24 +32,27 @@ use zingolib::{
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_height_change_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -186,24 +196,27 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_index_change_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -347,24 +360,27 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 #[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_expires_incoming_tx_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -530,24 +546,27 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -788,24 +807,27 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     let expected_initial_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
@@ -991,24 +1013,27 @@ async fn reorg_expires_outgoing_tx_height() {
 async fn reorg_changes_outgoing_tx_index() {
     tracing_subscriber::fmt().init();
 
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(

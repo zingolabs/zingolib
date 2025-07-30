@@ -16,7 +16,7 @@ pub(crate) enum CommandError {
     IncompatibleMemo,
     InvalidMemo(String),
     NonJsonNumberForAmount(String),
-    ConversionFailed(crate::utils::error::ConversionError),
+    ConversionFailed(zingolib::utils::error::ConversionError),
     MissingZenniesForZingoFlag,
     ZenniesFlagNonBool(String),
 }

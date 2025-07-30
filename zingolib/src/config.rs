@@ -26,6 +26,7 @@ use log4rs::{
 use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
+use zingo_infra_services::network::ActivationHeights;
 
 use crate::wallet::WalletSettings;
 
@@ -495,7 +496,7 @@ pub enum ChainType {
     /// Public testnet
     Testnet,
     /// Local testnet
-    Regtest(RegtestNetwork),
+    Regtest(ActivationHeights),
     /// Mainnet
     Mainnet,
 }
@@ -526,144 +527,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest(regtest_network) => regtest_network.activation_height(nu),
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-// TODO: replace with infrastucture types
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RegtestNetwork {
-    activation_heights: ActivationHeights,
-}
-
-impl RegtestNetwork {
-    /// TODO: Add Doc Comment Here!
-    pub fn new(
-        overwinter_activation_height: u64,
-        sapling_activation_height: u64,
-        blossom_activation_height: u64,
-        heartwood_activation_height: u64,
-        canopy_activation_height: u64,
-        orchard_activation_height: u64,
-        nu6_activation_height: u64,
-    ) -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(
-                overwinter_activation_height,
-                sapling_activation_height,
-                blossom_activation_height,
-                heartwood_activation_height,
-                canopy_activation_height,
-                orchard_activation_height,
-                nu6_activation_height,
-            ),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn all_upgrades_active() -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1, 1),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn set_orchard_and_nu6(custom_activation_height: u64) -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(
-                1,
-                1,
-                1,
-                1,
-                1,
-                custom_activation_height,
-                custom_activation_height,
-            ),
-        }
-    }
-
-    /// Network parameters
-    pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        match nu {
-            NetworkUpgrade::Overwinter => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Overwinter),
-            ),
-            NetworkUpgrade::Sapling => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Sapling),
-            ),
-            NetworkUpgrade::Blossom => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Blossom),
-            ),
-            NetworkUpgrade::Heartwood => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Heartwood),
-            ),
-            NetworkUpgrade::Canopy => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Canopy),
-            ),
-            NetworkUpgrade::Nu5 => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Nu5),
-            ),
-            NetworkUpgrade::Nu6 => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Nu6),
-            ),
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-// TODO: replace with infrastucture types
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ActivationHeights {
-    overwinter: BlockHeight,
-    sapling: BlockHeight,
-    blossom: BlockHeight,
-    heartwood: BlockHeight,
-    canopy: BlockHeight,
-    orchard: BlockHeight,
-    nu6: BlockHeight,
-}
-
-impl ActivationHeights {
-    /// TODO: Add Doc Comment Here!
-    pub fn new(
-        overwinter: u64,
-        sapling: u64,
-        blossom: u64,
-        heartwood: u64,
-        canopy: u64,
-        orchard: u64,
-        nu6: u64,
-    ) -> Self {
-        Self {
-            overwinter: BlockHeight::from_u32(overwinter as u32),
-            sapling: BlockHeight::from_u32(sapling as u32),
-            blossom: BlockHeight::from_u32(blossom as u32),
-            heartwood: BlockHeight::from_u32(heartwood as u32),
-            canopy: BlockHeight::from_u32(canopy as u32),
-            orchard: BlockHeight::from_u32(orchard as u32),
-            nu6: BlockHeight::from_u32(nu6 as u32),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn get_activation_height(&self, network_upgrade: NetworkUpgrade) -> BlockHeight {
-        match network_upgrade {
-            NetworkUpgrade::Overwinter => self.overwinter,
-            NetworkUpgrade::Sapling => self.sapling,
-            NetworkUpgrade::Blossom => self.blossom,
-            NetworkUpgrade::Heartwood => self.heartwood,
-            NetworkUpgrade::Canopy => self.canopy,
-            NetworkUpgrade::Nu5 => self.orchard,
-            NetworkUpgrade::Nu6 => self.nu6,
+            Regtest(activation_heights) => Some(activation_heights.activation_height(nu)),
         }
     }
 }

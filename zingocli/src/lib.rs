@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod commands;
+
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -12,14 +14,21 @@ use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
+use testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zcash_protocol::consensus::BlockHeight;
 
+use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::commands::RT;
+use zingo_infra_services::LocalNet;
+use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zingo_infra_services::network::ActivationHeights;
+use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
-use zingolib::testutils::regtest;
+use zingolib::lightclient::LightClient;
+use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
-use zingolib::{commands, lightclient::LightClient};
+
+use crate::commands::RT;
 
 pub mod version;
 
@@ -139,19 +148,6 @@ fn report_permission_error() {
             "User {} must have permission to write to '{}/.zcash/' .",
             user, home
         );
-    }
-}
-
-/// If the regtest flag was passed but a non regtest network is selected
-/// exit immediately and vice versa.
-fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
-    match (regtest_manager.is_some(), chain) {
-        (true, ChainType::Regtest(_)) => println!("regtest detected and network set correctly!"),
-        (true, _) => panic!("Regtest flag detected, but unexpected network set! Exiting."),
-        (false, ChainType::Regtest(_)) => {
-            println!("WARNING! regtest network in use but no regtest flag recognized!")
-        }
-        _ => {}
     }
 }
 
@@ -295,33 +291,14 @@ pub struct ConfigTemplate {
     data_dir: PathBuf,
     sync: bool,
     command: Option<String>,
-    regtest_manager: Option<regtest::RegtestManager>,
-    #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
-    child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
     tor_enabled: bool,
 }
-use commands::ShortCircuitedCommand;
-fn short_circuit_on_help(params: Vec<String>) {
-    for h in commands::HelpCommand::exec_without_lc(params).lines() {
-        println!("{}", h);
-    }
-    std::process::exit(0x0100);
-}
 
-/// This type manages setup of the zingo-cli utility among its responsibilities:
-///  * parse arguments with standard clap: <https://crates.io/crates/clap>
-///  * behave correctly as a function of each parameter that may have been passed
-///      * add details of above here
-///  * handle parameters as efficiently as possible.
-///      * If a ShortCircuitCommand is specified, then the system should execute
-///        only logic necessary to support that command, in other words "help"
-///        the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
-        let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
-        let tor_enabled = matches.get_flag("tor"); // Begin short_circuit section
-
+        let is_regtest = matches.get_flag("regtest");
+        let tor_enabled = matches.get_flag("tor");
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -374,7 +351,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        let clean_regtest_data = !matches.get_flag("no-clean");
+        // TODO: handle no-clean parameter
+        let _clean_regtest_data = !matches.get_flag("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
@@ -382,34 +360,27 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let mut server = matches
+        let server = matches
             .get_one::<http::Uri>("server")
-            .map(|server| server.to_string());
-        let mut child_process_handler = None;
-        // Regtest specific launch:
-        //   * spawn zcashd in regtest mode
-        //   * spawn lighwalletd and connect it to zcashd
-        let regtest_manager = if is_regtest {
-            let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
-            child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
-            server = Some("http://127.0.0.1".to_string());
-            Some(regtest_manager)
-        } else {
-            None
-        };
+            .map(ToString::to_string)
+            .or_else(|| {
+                if is_regtest {
+                    Some("http://127.0.0.1".to_string())
+                } else {
+                    None
+                }
+            });
+        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => {
-                    ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
-                }
+                "regtest" => ChainType::Regtest(ActivationHeights::default()),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(ActivationHeights::default())
         } else {
             ChainType::Mainnet
         };
@@ -431,8 +402,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             data_dir,
             sync,
             command,
-            regtest_manager,
-            child_process_handler,
             chaintype,
             tor_enabled,
         })
@@ -451,15 +420,9 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    // Try to get the configuration
-    let data_dir = if let Some(regtest_manager) = filled_template.regtest_manager.clone() {
-        regtest_manager.zingo_datadir
-    } else {
-        filled_template.data_dir.clone()
-    };
     let config = zingolib::config::load_clientconfig(
         filled_template.server.clone(),
-        Some(data_dir),
+        Some(filled_template.data_dir.clone()),
         filled_template.chaintype,
         WalletSettings {
             sync_config: SyncConfig {
@@ -471,7 +434,6 @@ pub fn startup(
         1.try_into().unwrap(),
     )
     .unwrap();
-    regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
     let mut lightclient = match filled_template.from.clone() {
         Some(phrase) => LightClient::create_from_wallet(
@@ -640,7 +602,50 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
+        Ok(mut cli_config) => {
+            let _wallet_dir = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
+                let wallet_dir = tempfile::tempdir().unwrap();
+                cli_config.data_dir = wallet_dir.path().to_path_buf();
+
+                Some(wallet_dir)
+            } else {
+                None
+            };
+            let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
+                RT.block_on(async move {
+                    Some(
+                        LocalNet::<Lightwalletd, Zcashd>::launch(
+                            LightwalletdConfig {
+                                lightwalletd_bin: LIGHTWALLETD_BIN,
+                                listen_port: None,
+                                zcashd_conf: PathBuf::new(),
+                                darkside: false,
+                            },
+                            ZcashdConfig {
+                                zcashd_bin: ZCASHD_BIN,
+                                zcash_cli_bin: ZCASH_CLI_BIN,
+                                rpc_listen_port: None,
+                                activation_heights: ActivationHeights::default(),
+                                miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
+                                chain_cache: None,
+                            },
+                        )
+                        .await,
+                    )
+                })
+            } else {
+                None
+            };
+
+            dispatch_command_or_start_interactive(&cli_config)
+        }
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
+}
+
+fn short_circuit_on_help(params: Vec<String>) {
+    for h in commands::HelpCommand::exec_without_lc(params).lines() {
+        println!("{}", h);
+    }
+    std::process::exit(0x0100);
 }

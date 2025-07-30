@@ -7,9 +7,9 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
 use crate::commands::error::CommandError;
-use crate::data::receivers::Receivers;
-use crate::utils::conversion::{address_from_str, zatoshis_from_u64};
-use crate::wallet;
+use zingolib::data::receivers::Receivers;
+use zingolib::utils::conversion::{address_from_str, zatoshis_from_u64};
+use zingolib::wallet;
 
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
@@ -35,7 +35,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
                 let memo = memo_from_json(j)?;
                 check_memo_compatibility(&recipient_address, &memo)?;
 
-                Ok(crate::data::receivers::Receiver {
+                Ok(zingolib::data::receivers::Receiver {
                     recipient_address,
                     amount,
                     memo,
@@ -60,7 +60,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
         };
         check_memo_compatibility(&recipient_address, &memo)?;
 
-        Ok(vec![crate::data::receivers::Receiver {
+        Ok(vec![zingolib::data::receivers::Receiver {
             recipient_address,
             amount,
             memo,
@@ -218,12 +218,13 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        commands::error::CommandError,
+    use zingolib::{
         data::receivers::Receiver,
         utils::conversion::{address_from_str, zatoshis_from_u64},
         wallet::{self, utils::interpret_memo_string},
     };
+
+    use crate::commands::error::CommandError;
 
     #[test]
     fn parse_send_args() {
@@ -238,7 +239,7 @@ mod tests {
         let send_args = &[address_str, value_str];
         assert_eq!(
             super::parse_send_args(send_args).unwrap(),
-            vec![crate::data::receivers::Receiver {
+            vec![zingolib::data::receivers::Receiver {
                 recipient_address: recipient_address.clone(),
                 amount,
                 memo: None
