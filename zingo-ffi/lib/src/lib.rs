@@ -29,7 +29,7 @@ use zcash_protocol::consensus::NetworkType;
 use pepper_sync::keys::transparent;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::{KeyIdInterface, SyncMode};
-use zingolib::config::{ChainType, RegtestNetwork, ZingoConfig, construct_lightwalletd_uri};
+use zingolib::config::{ChainType, ZingoConfig, construct_lightwalletd_uri};
 use zingolib::data::PollReport;
 use zingolib::lightclient::LightClient;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
@@ -45,6 +45,8 @@ use tokio::runtime::Runtime;
 use zcash_primitives::memo::MemoBytes;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::data::proposal::total_fee;
+use zingo_infra_services::network::ActivationHeights;
+
 
 // We'll use a RwLock to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -71,7 +73,7 @@ fn construct_uri_load_config(
     let chaintype = match chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
-        "regtest" => ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
+        "regtest" => ChainType::Regtest(ActivationHeights::default()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let config = match zingolib::config::load_clientconfig(
@@ -519,7 +521,7 @@ pub fn parse_address(address: String) -> String {
             [
                 ChainType::Mainnet,
                 ChainType::Testnet,
-                ChainType::Regtest(RegtestNetwork::all_upgrades_active()),
+                ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

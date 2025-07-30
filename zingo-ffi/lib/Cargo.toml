@@ -7,6 +7,7 @@ edition = "2024"
 [dependencies]
 zingolib = { workspace = true }
 pepper-sync = { workspace = true }
+zingo-infra-services = { workspace = true }
 
 http = { workspace = true }
 json = { workspace = true }
