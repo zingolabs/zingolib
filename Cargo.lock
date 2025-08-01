@@ -905,18 +905,18 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.40"
+version = "4.5.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40b6887a1d8685cebccf115538db5c0efe625ccac9696ad45c409d96566e910f"
+checksum = "ed87a9d530bb41a67537289bafcac159cb3ee28460e0a4571123d2a778a6a882"
 dependencies = [
  "clap_builder",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.5.40"
+version = "4.5.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0c66c08ce9f0c698cbce5c0279d0bb6ac936d8674174fe48f736533b964f59e"
+checksum = "64f4f3f3c77c94aff3c7e9aac9a2ca1974a5adf392a8bb751e827d6d127ab966"
 dependencies = [
  "anstream",
  "anstyle",
@@ -8526,20 +8526,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-infra-fetcher-core"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
-dependencies = [
- "hex",
- "reqwest",
- "sha2 0.10.9",
- "tokio",
-]
-
-[[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#c3678c1b14e0b7d28646039fe0204ebc1dab71b6"
 dependencies = [
  "getset",
  "hex",
@@ -8558,7 +8547,6 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo-infra-fetcher-core",
 ]
 
 [[package]]
