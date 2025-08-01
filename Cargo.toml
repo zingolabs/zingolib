@@ -39,7 +39,7 @@ zcash_keys = { version = "0.8.0", features = [
     "orchard",
 ] }
 zcash_note_encryption = "0.4.1"
-zcash_primitives = "0.22.0"
+zcash_primitives = "0.22.1"
 zcash_proofs = "0.22.0"
 zcash_protocol = "=0.5.1"
 zcash_transparent = "0.2.3"

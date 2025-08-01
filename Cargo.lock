@@ -668,9 +668,9 @@ dependencies = [
 
 [[package]]
 name = "block-buffer"
-version = "0.11.0-rc.4"
+version = "0.11.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a229bfd78e4827c91b9b95784f69492c1b77c1ab75a45a8a037b139215086f94"
+checksum = "3fd016a0ddc7cb13661bf5576073ce07330a693f8608a1320b4e20561cc12cdc"
 dependencies = [
  "hybrid-array",
 ]
@@ -1204,9 +1204,9 @@ dependencies = [
 
 [[package]]
 name = "crypto-common"
-version = "0.2.0-rc.3"
+version = "0.2.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a23fa214dea9efd4dacee5a5614646b30216ae0f05d4bb51bafb50e9da1c5be"
+checksum = "b0b8ce8218c97789f16356e7896b3714f26c2ee1079b79c0b7ae7064bb9089fa"
 dependencies = [
  "hybrid-array",
 ]
@@ -1405,7 +1405,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357422a457ccb850dc8f1c1680e0670079560feaad6c2e247e3f345c4fab8a3f"
 dependencies = [
  "heck",
- "indexmap 1.9.3",
+ "indexmap 2.9.0",
  "itertools 0.14.0",
  "proc-macro-crate",
  "proc-macro2",
@@ -1515,8 +1515,8 @@ version = "0.11.0-pre.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf2e3d6615d99707295a9673e889bf363a04b2a466bd320c65a72536f7577379"
 dependencies = [
- "block-buffer 0.11.0-rc.4",
- "crypto-common 0.2.0-rc.3",
+ "block-buffer 0.11.0-rc.3",
+ "crypto-common 0.2.0-rc.1",
  "subtle",
 ]
 
@@ -1807,7 +1807,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea14ef9355e3beab063703aa9dab15afd25f0667c341310c1e5274bb1d0da18"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2474,9 +2474,9 @@ dependencies = [
 
 [[package]]
 name = "hybrid-array"
-version = "0.3.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891d15931895091dea5c47afa5b3c9a01ba634b311919fd4d41388fa0e3d76af"
+checksum = "f2d35805454dc9f8662a98d6d61886ffe26bd465f5960e0e55345c70d5c0d2a9"
 dependencies = [
  "typenum",
 ]
@@ -3062,7 +3062,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -4385,7 +4385,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4960,7 +4960,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4973,7 +4973,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5823,7 +5823,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7602,7 +7602,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8064,14 +8064,16 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.22.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7574550ec5eba75f4e9d447b186de1541c40251d7f3ae2693ddaa5a477760190"
+checksum = "4033e521ce8bc2e37cfa98f3db847495339de15858b349cc8a4078154cdc25dc"
 dependencies = [
  "bip32",
  "blake2b_simd",
+ "block-buffer 0.11.0-rc.3",
  "bs58",
  "core2",
+ "crypto-common 0.2.0-rc.1",
  "document-features",
  "equihash",
  "ff",
@@ -8526,20 +8528,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-infra-fetcher-core"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
-dependencies = [
- "hex",
- "reqwest",
- "sha2 0.10.9",
- "tokio",
-]
-
-[[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#c3678c1b14e0b7d28646039fe0204ebc1dab71b6"
 dependencies = [
  "getset",
  "hex",
@@ -8558,7 +8549,6 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo-infra-fetcher-core",
 ]
 
 [[package]]
