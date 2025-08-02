@@ -66,6 +66,8 @@ fn store_client(lightclient: LightClient) {
 fn construct_uri_load_config(
     uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> Result<(ZingoConfig, http::Uri), String> {
     // if uri is empty -> Offline Mode.
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
@@ -76,6 +78,13 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
+    let performancetype = match performance_level.as_str() {
+        "Maximum" => PerformanceLevel::Maximum,
+        "High" => PerformanceLevel::High,
+        "Medium" => PerformanceLevel::Medium,
+        "Low" => PerformanceLevel::Low,
+        _ => return Err("Error: Not a valid performance level!".to_string()),
+    };
     let config = match zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
@@ -83,9 +92,9 @@ fn construct_uri_load_config(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
+                performance_level: performancetype,
             },
-            min_confirmations: NonZeroU32::try_from(3).unwrap(),
+            min_confirmations: NonZeroU32::try_from(min_confirmations).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -112,8 +121,13 @@ pub fn init_logging() -> String {
     "OK".to_string()
 }
 
-pub fn init_new(server_uri: String, chain_hint: String) -> String {
-    let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+pub fn init_new(
+    server_uri: String,
+    chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
+    let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -141,12 +155,14 @@ pub fn init_new(server_uri: String, chain_hint: String) -> String {
 
 // TODO: change `seed` to `seed_phrase` or `mnemonic_phrase`
 pub fn init_from_seed(
-    server_uri: String,
     seed: String,
-    birthday: u64,
+    birthday: u32,
+    server_uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -160,7 +176,7 @@ pub fn init_from_seed(
             mnemonic,
             no_of_accounts: config.no_of_accounts,
         },
-        BlockHeight::from_u32(birthday as u32),
+        BlockHeight::from_u32(birthday),
         config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
@@ -176,19 +192,21 @@ pub fn init_from_seed(
 }
 
 pub fn init_from_ufvk(
-    server_uri: String,
     ufvk: String,
-    birthday: u64,
+    birthday: u32,
+    server_uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
     let wallet = match LightWallet::new(
         config.chain,
         WalletBase::Ufvk(ufvk),
-        BlockHeight::from_u32(birthday as u32),
+        BlockHeight::from_u32(birthday),
         config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
@@ -203,8 +221,14 @@ pub fn init_from_ufvk(
     get_ufvk()
 }
 
-pub fn init_from_b64(server_uri: String, base64_data: String, chain_hint: String) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+pub fn init_from_b64(
+    base64_data: String,
+    server_uri: String,
+    chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -1038,14 +1062,24 @@ pub fn set_config_wallet_to_test() -> String {
     }
 }
 
-pub fn set_config_wallet_to_prod() -> String {
+pub fn set_config_wallet_to_prod(
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         RT.block_on(async move {
+            let performancetype = match performance_level.as_str() {
+                "Maximum" => PerformanceLevel::Maximum,
+                "High" => PerformanceLevel::High,
+                "Medium" => PerformanceLevel::Medium,
+                "Low" => PerformanceLevel::Low,
+                _ => return "Error: Not a valid performance level!".to_string(),
+            };
             let mut wallet = lightclient.wallet.write().await;
-            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(3).unwrap();
-            wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium;
+            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(min_confirmations).unwrap();
+            wallet.wallet_settings.sync_config.performance_level = performancetype;
             wallet.save_required = true;
-            "Successfully set config wallet to prod. (3 - Medium)".to_string()
+            "Successfully set config wallet to prod.".to_string()
         })
     } else {
         "Error: Lightclient is not initialized".to_string()

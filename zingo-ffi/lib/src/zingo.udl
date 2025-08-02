@@ -2,31 +2,41 @@ namespace zingo {
   string init_logging();
   string init_new(
       string serveruri,
-      string chainhint
+      string chainhint,
+      string performancelevel,
+      u32 minconfirmations
   );
 
   string init_from_seed(
-      string serveruri,
       string seed,
-      u64 birthday,
-      string chainhint
+      u32 birthday,
+      string serveruri,
+      string chainhint,
+      string performancelevel,
+      u32 minconfirmations
   );
 
   string init_from_ufvk(
-      string serveruri,
       string ufvk,
-      u64 birthday,
-      string chainhint
+      u32 birthday,
+      string serveruri,
+      string chainhint,
+      string performancelevel,
+      u32 minconfirmations
   );
 
   string init_from_b64(
-      string serveruri,
       string datab64,
-      string chainhint
+      string serveruri,
+      string chainhint,
+      string performancelevel,
+      u32 minconfirmations
   );
 
   string save_to_b64();
-  string get_latest_block_server(string serveruri);
+  string get_latest_block_server(
+    string serveruri
+  );
   string get_latest_block_wallet();
   string get_developer_donation_address();
   string get_zennies_for_zingo_donation_address();
@@ -41,36 +51,64 @@ namespace zingo {
   string info_server();
   string get_seed();
   string get_ufvk();
-  string change_server(string serveruri);
+  string change_server(
+    string serveruri
+  );
   string wallet_kind();
-  string parse_address(string address);
-  string parse_ufvk(string ufvk);
+  string parse_address(
+    string address
+  );
+  string parse_ufvk(
+    string ufvk
+  );
   string get_version();
-  string get_messages(string address);
+  string get_messages(
+    string address
+  );
   string get_balance();
   string get_total_memobytes_to_address();
   string get_total_value_to_address();
   string get_total_spends_to_address();
-  string zec_price(string tor);
-  string resend_transaction(string txid);
-  string remove_transaction(string txid);
-  string get_spendable_balance_with_address(string address, string zennies);
+  string zec_price(
+    string tor
+  );
+  string resend_transaction(
+    string txid
+  );
+  string remove_transaction(
+    string txid
+  );
+  string get_spendable_balance_with_address(
+    string address, 
+    string zennies
+  );
   string get_spendable_balance_total();
   string set_option_wallet();
   string get_option_wallet();
-  string create_tor_client(string datadir);
+  string create_tor_client(
+    string datadir
+  );
   string remove_tor_client();
   string get_unified_addresses();
   string get_transparent_addresses();
-  string create_new_unified_address(string receivers);
+  string create_new_unified_address(
+    string receivers
+  );
   string create_new_transparent_address();
-  string check_my_address(string address);
+  string check_my_address(
+    string address
+  );
   string get_wallet_save_required();
   string set_config_wallet_to_test();
-  string set_config_wallet_to_prod();
+  string set_config_wallet_to_prod(
+      string performancelevel,
+      u32 minconfirmations
+  );
   string get_config_wallet_performance();
   string get_wallet_version();
-  string send(string send_json);
+  string send(
+    string send_json
+  );
   string shield();
   string confirm();
 };
