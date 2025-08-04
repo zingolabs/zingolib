@@ -276,6 +276,24 @@ pub fn save_to_b64() -> String {
     }
 }
 
+pub fn get_developer_donation_address() -> String {
+    zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
+}
+
+pub fn get_zennies_for_zingo_donation_address() -> String {
+    zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
+}
+
+pub fn set_crypto_default_provider_to_ring() -> String {
+    CryptoProvider::get_default().map_or_else(
+        || match default_provider().install_default() {
+            Ok(_) => "true".to_string(),
+            Err(_) => "Error: Failed to install crypto provider".to_string(),
+        },
+        |_| "true".to_string(),
+    )
+}
+
 pub fn get_latest_block_server(server_uri: String) -> String {
     let lightwalletd_uri: http::Uri = match server_uri.parse() {
         Ok(uri) => uri,
@@ -301,14 +319,6 @@ pub fn get_latest_block_wallet() -> String {
     }
 }
 
-pub fn get_developer_donation_address() -> String {
-    zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
-}
-
-pub fn get_zennies_for_zingo_donation_address() -> String {
-    zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
-}
-
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
@@ -326,16 +336,6 @@ pub fn get_value_transfers() -> String {
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
-}
-
-pub fn set_crypto_default_provider_to_ring() -> String {
-    CryptoProvider::get_default().map_or_else(
-        || match default_provider().install_default() {
-            Ok(_) => "true".to_string(),
-            Err(_) => "Error: Failed to install crypto provider".to_string(),
-        },
-        |_| "true".to_string(),
-    )
 }
 
 pub fn poll_sync() -> String {
@@ -435,7 +435,8 @@ pub fn info_server() -> String {
 pub fn get_seed() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient.wallet.read().await.recovery_info() {
+            let wallet = lightclient.wallet.read().await;
+            match wallet.recovery_info() {
                 Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
                     .unwrap_or_else(|_| "Error: get seed. failed to serialize".to_string()),
                 None => "Error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
