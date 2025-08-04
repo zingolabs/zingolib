@@ -264,7 +264,8 @@ pub fn save_to_b64() -> String {
         // we need to use STANDARD because swift is expecting the encoded String with padding
         // I tried with STANDARD_NO_PAD and the decoding return `nil`.
         RT.block_on(async move {
-            match lightclient.wallet.write().await.save() {
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.save() {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
                 Ok(None) => "Error: No need to save the wallet file".to_string(),
@@ -312,7 +313,8 @@ pub fn get_latest_block_server(server_uri: String) -> String {
 pub fn get_latest_block_wallet() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.write().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+            let wallet = lightclient.wallet.write().await;
+            object! { "height" => json::JsonValue::from(wallet.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
@@ -322,12 +324,8 @@ pub fn get_latest_block_wallet() -> String {
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .read()
-                .await
-                .value_transfers(true)
-                .await
+            let wallet = lightclient.wallet.read().await;
+            match wallet.value_transfers(true).await
             {
                 Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -399,7 +397,8 @@ pub fn stop_sync() -> String {
 pub fn status_sync() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
+            let wallet = lightclient.wallet.read().await;
+            match pepper_sync::sync_status(&*wallet).await {
                 Ok(status) => json::JsonValue::from(status).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
@@ -757,12 +756,8 @@ pub fn zec_price(tor: String) -> String {
                 }
             };
 
-            match lightclient
-                .wallet
-                .write()
-                .await
-                .update_current_price(tor_client)
-                .await
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.update_current_price(tor_client).await
             {
                 Ok(price) => object! { "current_price" => price }.pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -799,11 +794,8 @@ pub fn remove_transaction(txid: String) -> String {
         };
 
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .write()
-                .await
-                .remove_unconfirmed_transaction(txid)
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.remove_unconfirmed_transaction(txid)
             {
                 Ok(_) => "Successfully removed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
@@ -968,11 +960,8 @@ pub fn create_new_transparent_address() -> String {
 pub fn check_my_address(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .read()
-                .await
-                .is_address_derived_by_keys(&address) {
+            let wallet = lightclient.wallet.read().await;
+            match wallet.is_address_derived_by_keys(&address) {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => false },
                     |address_ref| match address_ref {
