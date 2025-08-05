@@ -66,6 +66,8 @@ fn store_client(lightclient: LightClient) {
 fn construct_uri_load_config(
     uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> Result<(ZingoConfig, http::Uri), String> {
     // if uri is empty -> Offline Mode.
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
@@ -76,6 +78,13 @@ fn construct_uri_load_config(
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
+    let performancetype = match performance_level.as_str() {
+        "Maximum" => PerformanceLevel::Maximum,
+        "High" => PerformanceLevel::High,
+        "Medium" => PerformanceLevel::Medium,
+        "Low" => PerformanceLevel::Low,
+        _ => return Err("Error: Not a valid performance level!".to_string()),
+    };
     let config = match zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
@@ -83,9 +92,9 @@ fn construct_uri_load_config(
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::Medium,
+                performance_level: performancetype,
             },
-            min_confirmations: NonZeroU32::try_from(3).unwrap(),
+            min_confirmations: NonZeroU32::try_from(min_confirmations).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
     ) {
@@ -112,8 +121,13 @@ pub fn init_logging() -> String {
     "OK".to_string()
 }
 
-pub fn init_new(server_uri: String, chain_hint: String) -> String {
-    let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+pub fn init_new(
+    server_uri: String,
+    chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
+    let (config, lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -141,12 +155,14 @@ pub fn init_new(server_uri: String, chain_hint: String) -> String {
 
 // TODO: change `seed` to `seed_phrase` or `mnemonic_phrase`
 pub fn init_from_seed(
-    server_uri: String,
     seed: String,
-    birthday: u64,
+    birthday: u32,
+    server_uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -160,7 +176,7 @@ pub fn init_from_seed(
             mnemonic,
             no_of_accounts: config.no_of_accounts,
         },
-        BlockHeight::from_u32(birthday as u32),
+        BlockHeight::from_u32(birthday),
         config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
@@ -176,19 +192,21 @@ pub fn init_from_seed(
 }
 
 pub fn init_from_ufvk(
-    server_uri: String,
     ufvk: String,
-    birthday: u64,
+    birthday: u32,
+    server_uri: String,
     chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
 ) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
     let wallet = match LightWallet::new(
         config.chain,
         WalletBase::Ufvk(ufvk),
-        BlockHeight::from_u32(birthday as u32),
+        BlockHeight::from_u32(birthday),
         config.wallet_settings.clone(),
     ) {
         Ok(w) => w,
@@ -203,8 +221,14 @@ pub fn init_from_ufvk(
     get_ufvk()
 }
 
-pub fn init_from_b64(server_uri: String, base64_data: String, chain_hint: String) -> String {
-    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint) {
+pub fn init_from_b64(
+    base64_data: String,
+    server_uri: String,
+    chain_hint: String,
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
+    let (config, _lightwalletd_uri) = match construct_uri_load_config(server_uri, chain_hint, performance_level, min_confirmations) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -240,7 +264,8 @@ pub fn save_to_b64() -> String {
         // we need to use STANDARD because swift is expecting the encoded String with padding
         // I tried with STANDARD_NO_PAD and the decoding return `nil`.
         RT.block_on(async move {
-            match lightclient.wallet.write().await.save() {
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.save() {
                 Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                 // TODO: check this is better than a custom error when save is not required (empty buffer)
                 Ok(None) => "Error: No need to save the wallet file".to_string(),
@@ -250,6 +275,24 @@ pub fn save_to_b64() -> String {
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
+}
+
+pub fn get_developer_donation_address() -> String {
+    zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
+}
+
+pub fn get_zennies_for_zingo_donation_address() -> String {
+    zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
+}
+
+pub fn set_crypto_default_provider_to_ring() -> String {
+    CryptoProvider::get_default().map_or_else(
+        || match default_provider().install_default() {
+            Ok(_) => "true".to_string(),
+            Err(_) => "Error: Failed to install crypto provider".to_string(),
+        },
+        |_| "true".to_string(),
+    )
 }
 
 pub fn get_latest_block_server(server_uri: String) -> String {
@@ -270,30 +313,19 @@ pub fn get_latest_block_server(server_uri: String) -> String {
 pub fn get_latest_block_wallet() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.write().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+            let wallet = lightclient.wallet.write().await;
+            object! { "height" => json::JsonValue::from(wallet.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
 }
 
-pub fn get_developer_donation_address() -> String {
-    zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string()
-}
-
-pub fn get_zennies_for_zingo_donation_address() -> String {
-    zingolib::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS.to_string()
-}
-
 pub fn get_value_transfers() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .read()
-                .await
-                .value_transfers(true)
-                .await
+            let wallet = lightclient.wallet.read().await;
+            match wallet.value_transfers(true).await
             {
                 Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -302,16 +334,6 @@ pub fn get_value_transfers() -> String {
     } else {
         "Error: Lightclient is not initialized".to_string()
     }
-}
-
-pub fn set_crypto_default_provider_to_ring() -> String {
-    CryptoProvider::get_default().map_or_else(
-        || match default_provider().install_default() {
-            Ok(_) => "true".to_string(),
-            Err(_) => "Error: Failed to install crypto provider".to_string(),
-        },
-        |_| "true".to_string(),
-    )
 }
 
 pub fn poll_sync() -> String {
@@ -375,7 +397,8 @@ pub fn stop_sync() -> String {
 pub fn status_sync() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
+            let wallet = lightclient.wallet.read().await;
+            match pepper_sync::sync_status(&*wallet).await {
                 Ok(status) => json::JsonValue::from(status).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
@@ -411,7 +434,8 @@ pub fn info_server() -> String {
 pub fn get_seed() -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient.wallet.read().await.recovery_info() {
+            let wallet = lightclient.wallet.read().await;
+            match wallet.recovery_info() {
                 Some(recovery_info) => serde_json::to_string_pretty(&recovery_info)
                     .unwrap_or_else(|_| "Error: get seed. failed to serialize".to_string()),
                 None => "Error: get seed. no mnemonic found. wallet loaded from key.".to_string(),
@@ -732,12 +756,8 @@ pub fn zec_price(tor: String) -> String {
                 }
             };
 
-            match lightclient
-                .wallet
-                .write()
-                .await
-                .update_current_price(tor_client)
-                .await
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.update_current_price(tor_client).await
             {
                 Ok(price) => object! { "current_price" => price }.pretty(2),
                 Err(e) => format!("Error: {e}"),
@@ -774,11 +794,8 @@ pub fn remove_transaction(txid: String) -> String {
         };
 
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .write()
-                .await
-                .remove_unconfirmed_transaction(txid)
+            let mut wallet = lightclient.wallet.write().await;
+            match wallet.remove_unconfirmed_transaction(txid)
             {
                 Ok(_) => "Successfully removed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
@@ -943,11 +960,8 @@ pub fn create_new_transparent_address() -> String {
 pub fn check_my_address(address: String) -> String {
     if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
         RT.block_on(async move {
-            match lightclient
-                .wallet
-                .read()
-                .await
-                .is_address_derived_by_keys(&address) {
+            let wallet = lightclient.wallet.read().await;
+            match wallet.is_address_derived_by_keys(&address) {
                 Ok(address_ref) => address_ref.map_or(
                     json::object! { "is_wallet_address" => false },
                     |address_ref| match address_ref {
@@ -1038,14 +1052,24 @@ pub fn set_config_wallet_to_test() -> String {
     }
 }
 
-pub fn set_config_wallet_to_prod() -> String {
+pub fn set_config_wallet_to_prod(
+    performance_level: String,
+    min_confirmations: u32,
+) -> String {
     if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
         RT.block_on(async move {
+            let performancetype = match performance_level.as_str() {
+                "Maximum" => PerformanceLevel::Maximum,
+                "High" => PerformanceLevel::High,
+                "Medium" => PerformanceLevel::Medium,
+                "Low" => PerformanceLevel::Low,
+                _ => return "Error: Not a valid performance level!".to_string(),
+            };
             let mut wallet = lightclient.wallet.write().await;
-            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(3).unwrap();
-            wallet.wallet_settings.sync_config.performance_level = PerformanceLevel::Medium;
+            wallet.wallet_settings.min_confirmations = NonZeroU32::try_from(min_confirmations).unwrap();
+            wallet.wallet_settings.sync_config.performance_level = performancetype;
             wallet.save_required = true;
-            "Successfully set config wallet to prod. (3 - Medium)".to_string()
+            "Successfully set config wallet to prod.".to_string()
         })
     } else {
         "Error: Lightclient is not initialized".to_string()
