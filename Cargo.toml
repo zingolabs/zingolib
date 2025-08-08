@@ -13,11 +13,12 @@ members = [
     "pepper-sync",
     "zingo-testvectors",
     "zingo-price",
+    "ffi",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-bip0039 = { version = "0.12", features = [ "rand" ] }
+bip0039 = { version = "0.12", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 
 zip32 = "0.2.0"

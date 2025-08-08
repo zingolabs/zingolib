@@ -1,0 +1,33 @@
+[package]
+name = "zingolib-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+android_logger = "0.15.1"
+base64 = "0.22.1"
+bip0039.workspace = true
+http.workspace = true
+json.workspace = true
+lazy_static.workspace = true
+pepper-sync.workspace = true
+rustls.workspace = true
+tokio.workspace = true
+uniffi = { version = "0.29.4", features = ["cli"] }
+zcash_address.workspace = true
+zcash_keys.workspace = true
+zcash_primitives.workspace = true
+zcash_protocol.workspace = true
+zingolib.workspace = true
+zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+serde_json.workspace = true
+hex.workspace = true
+zcash_client_backend.workspace = true
+
+
+[build-dependencies]
+uniffi = { version = "0.29.4", features = ["build"] }
+
+[lib]
+crate-type = ["cdylib"]
+name = "zingolib_ffi"
