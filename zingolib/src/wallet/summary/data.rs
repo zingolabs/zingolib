@@ -1,7 +1,6 @@
 //! Data structures for wallet summaries.
 
 use chrono::DateTime;
-use json::JsonValue;
 
 use zcash_protocol::{TxId, consensus::BlockHeight};
 
@@ -251,24 +250,24 @@ impl std::fmt::Display for TransactionSummary {
     }
 }
 
-impl From<TransactionSummary> for JsonValue {
+impl From<TransactionSummary> for serde_json::Value {
     fn from(transaction: TransactionSummary) -> Self {
-        json::object! {
-            "txid" => transaction.txid.to_string(),
-            "datetime" => transaction.datetime,
-            "status" => transaction.status.to_string(),
-            "blockheight" => u64::from(transaction.blockheight),
-            "kind" => transaction.kind.to_string(),
-            "value" => transaction.value,
-            "fee" => transaction.fee,
-            "zec_price" => transaction.zec_price,
-            "orchard_notes" => JsonValue::from(transaction.orchard_notes),
-            "sapling_notes" => JsonValue::from(transaction.sapling_notes),
-            "transparent_coins" => JsonValue::from(transaction.transparent_coins),
-            "outgoing_orchard_notes" => JsonValue::from(transaction.outgoing_orchard_notes),
-            "outgoing_sapling_notes" => JsonValue::from(transaction.outgoing_sapling_notes),
-            "outgoing_transparent_coins" => JsonValue::from(transaction.outgoing_transparent_coins),
-        }
+        serde_json::json!({
+            "txid": transaction.txid.to_string(),
+            "datetime": transaction.datetime,
+            "status": transaction.status.to_string(),
+            "blockheight": u64::from(transaction.blockheight),
+            "kind": transaction.kind.to_string(),
+            "value": transaction.value,
+            "fee": transaction.fee,
+            "zec_price": transaction.zec_price,
+            "orchard_notes": serde_json::Value::from(transaction.orchard_notes),
+            "sapling_notes": serde_json::Value::from(transaction.sapling_notes),
+            "transparent_coins": serde_json::Value::from(transaction.transparent_coins),
+            "outgoing_orchard_notes": serde_json::Value::from(transaction.outgoing_orchard_notes),
+            "outgoing_sapling_notes": serde_json::Value::from(transaction.outgoing_sapling_notes),
+            "outgoing_transparent_coins": serde_json::Value::from(transaction.outgoing_transparent_coins),
+        })
     }
 }
 
@@ -313,16 +312,16 @@ impl std::fmt::Display for TransactionSummaries {
     }
 }
 
-impl From<TransactionSummaries> for JsonValue {
+impl From<TransactionSummaries> for serde_json::Value {
     fn from(transaction_summaries: TransactionSummaries) -> Self {
-        let transaction_summaries: Vec<JsonValue> = transaction_summaries
+        let transaction_summaries: Vec<serde_json::Value> = transaction_summaries
             .0
             .into_iter()
-            .map(JsonValue::from)
+            .map(serde_json::Value::from)
             .collect();
-        json::object! {
-            "transaction_summaries" => transaction_summaries
-        }
+        serde_json::json!({
+            "transaction_summaries": transaction_summaries
+        })
     }
 }
 
@@ -422,21 +421,21 @@ impl std::fmt::Display for ValueTransfer {
     }
 }
 
-impl From<ValueTransfer> for JsonValue {
+impl From<ValueTransfer> for serde_json::Value {
     fn from(value_transfer: ValueTransfer) -> Self {
-        json::object! {
-            "txid" => value_transfer.txid.to_string(),
-            "datetime" => value_transfer.datetime,
-            "status" => value_transfer.status.to_string(),
-            "blockheight" => u64::from(value_transfer.blockheight),
-            "transaction_fee" => value_transfer.transaction_fee,
-            "zec_price" => value_transfer.zec_price,
-            "kind" => value_transfer.kind.to_string(),
-            "value" => value_transfer.value,
-            "recipient_address" => value_transfer.recipient_address,
-            "pool_received" => value_transfer.pool_received,
-            "memos" => value_transfer.memos
-        }
+        serde_json::json!({
+            "txid": value_transfer.txid.to_string(),
+            "datetime": value_transfer.datetime,
+            "status": value_transfer.status.to_string(),
+            "blockheight": u64::from(value_transfer.blockheight),
+            "transaction_fee": value_transfer.transaction_fee,
+            "zec_price": value_transfer.zec_price,
+            "kind": value_transfer.kind.to_string(),
+            "value": value_transfer.value,
+            "recipient_address": value_transfer.recipient_address,
+            "pool_received": value_transfer.pool_received,
+            "memos": value_transfer.memos
+        })
     }
 }
 
@@ -488,13 +487,16 @@ impl std::fmt::Display for ValueTransfers {
     }
 }
 
-impl From<ValueTransfers> for JsonValue {
+impl From<ValueTransfers> for serde_json::Value {
     fn from(value_transfers: ValueTransfers) -> Self {
-        let value_transfers: Vec<JsonValue> =
-            value_transfers.0.into_iter().map(JsonValue::from).collect();
-        json::object! {
-            "value_transfers" => value_transfers
-        }
+        let value_transfers: Vec<serde_json::Value> = value_transfers
+            .0
+            .into_iter()
+            .map(serde_json::Value::from)
+            .collect();
+        serde_json::json!({
+            "value_transfers": value_transfers
+        })
     }
 }
 
@@ -552,19 +554,19 @@ impl std::fmt::Display for NoteSummary {
     }
 }
 
-impl From<NoteSummary> for json::JsonValue {
+impl From<NoteSummary> for serde_json::Value {
     fn from(note: NoteSummary) -> Self {
-        json::object! {
-            "value" => note.value,
-            "status" => format!("{} at block height {}", note.status, note.block_height),
-            "spend_status" => note.spend_status.to_string(),
-            "memo" => note.memo,
-            "time" => note.time,
-            "txid" => note.txid.to_string(),
-            "output_index" => note.output_index,
-            "account_id" => u32::from(note.account_id),
-            "scope" => note.scope.to_string(),
-        }
+        serde_json::json!({
+            "value": note.value,
+            "status": format!("{} at block height {}", note.status, note.block_height),
+            "spend_status": note.spend_status.to_string(),
+            "memo": note.memo,
+            "time": note.time,
+            "txid": note.txid.to_string(),
+            "output_index": note.output_index,
+            "account_id": u32::from(note.account_id),
+            "scope": note.scope.to_string(),
+        })
     }
 }
 
@@ -619,17 +621,16 @@ impl std::fmt::Display for NoteSummaries {
     }
 }
 
-impl From<NoteSummaries> for json::JsonValue {
+impl From<NoteSummaries> for serde_json::Value {
     fn from(note_summaries: NoteSummaries) -> Self {
-        let note_summaries: Vec<json::JsonValue> = note_summaries
+        let note_summaries: Vec<serde_json::Value> = note_summaries
             .0
             .into_iter()
-            .map(json::JsonValue::from)
+            .map(serde_json::Value::from)
             .collect();
-        json::object! {
-            "note_summaries" => note_summaries
-
-        }
+        serde_json::json!({
+            "note_summaries": note_summaries
+        })
     }
 }
 
@@ -683,14 +684,14 @@ impl std::fmt::Display for BasicNoteSummary {
     }
 }
 
-impl From<BasicNoteSummary> for JsonValue {
+impl From<BasicNoteSummary> for serde_json::Value {
     fn from(note: BasicNoteSummary) -> Self {
-        json::object! {
-            "value" => note.value,
-            "spend_status" => note.spend_status.to_string(),
-            "output_index" => note.output_index,
-            "memo" => note.memo,
-        }
+        serde_json::json!({
+            "value": note.value,
+            "spend_status": note.spend_status.to_string(),
+            "output_index": note.output_index,
+            "memo": note.memo,
+        })
     }
 }
 
@@ -759,19 +760,19 @@ impl std::fmt::Display for CoinSummary {
     }
 }
 
-impl From<CoinSummary> for json::JsonValue {
+impl From<CoinSummary> for serde_json::Value {
     fn from(coin: CoinSummary) -> Self {
-        json::object! {
-            "value" => coin.value,
-            "status" => format!("{} at block height {}", coin.status, coin.block_height),
-            "spend_status" => coin.spend_status.to_string(),
-            "time" => coin.time,
-            "txid" => coin.txid.to_string(),
-            "output_index" => coin.output_index,
-            "account_id" => u32::from(coin.account_id),
-            "scope" => coin.scope.to_string(),
-            "address_index" => coin.address_index
-        }
+        serde_json::json!({
+            "value": coin.value,
+            "status": format!("{} at block height {}", coin.status, coin.block_height),
+            "spend_status": coin.spend_status.to_string(),
+            "time": coin.time,
+            "txid": coin.txid.to_string(),
+            "output_index": coin.output_index,
+            "account_id": u32::from(coin.account_id),
+            "scope": coin.scope.to_string(),
+            "address_index": coin.address_index
+        })
     }
 }
 
@@ -808,13 +809,13 @@ impl std::fmt::Display for BasicCoinSummary {
         )
     }
 }
-impl From<BasicCoinSummary> for JsonValue {
+impl From<BasicCoinSummary> for serde_json::Value {
     fn from(note: BasicCoinSummary) -> Self {
-        json::object! {
-            "value" => note.value,
-            "spend_status" => note.spend_summary.to_string(),
-            "output_index" => note.output_index,
-        }
+        serde_json::json!({
+            "value": note.value,
+            "spend_status": note.spend_summary.to_string(),
+            "output_index": note.output_index,
+        })
     }
 }
 
@@ -872,17 +873,17 @@ impl std::fmt::Display for OutgoingNoteSummary {
     }
 }
 
-impl From<OutgoingNoteSummary> for JsonValue {
+impl From<OutgoingNoteSummary> for serde_json::Value {
     fn from(note: OutgoingNoteSummary) -> Self {
-        json::object! {
-            "value" => note.value,
-            "memo" => note.memo,
-            "recipient" => note.recipient,
-            "recipient_unified_address" => note.recipient_unified_address,
-            "output_index" => note.output_index,
-            "account_id" => u32::from(note.account_id),
-            "scope" => note.scope.to_string(),
-        }
+        serde_json::json!({
+            "value": note.value,
+            "memo": note.memo,
+            "recipient": note.recipient,
+            "recipient_unified_address": note.recipient_unified_address,
+            "output_index": note.output_index,
+            "account_id": u32::from(note.account_id),
+            "scope": note.scope.to_string(),
+        })
     }
 }
 
@@ -920,13 +921,13 @@ impl std::fmt::Display for OutgoingCoinSummary {
     }
 }
 
-impl From<OutgoingCoinSummary> for JsonValue {
+impl From<OutgoingCoinSummary> for serde_json::Value {
     fn from(note: OutgoingCoinSummary) -> Self {
-        json::object! {
-            "value" => note.value,
-            "recipient" => note.recipient,
-            "output_index" => note.output_index,
-        }
+        serde_json::json!({
+            "value": note.value,
+            "recipient": note.recipient,
+            "output_index": note.output_index,
+        })
     }
 }
 
@@ -954,36 +955,39 @@ pub mod finsight {
     #[derive(Debug)]
     pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, usize>);
 
-    impl From<TotalMemoBytesToAddress> for json::JsonValue {
+    impl From<TotalMemoBytesToAddress> for serde_json::Value {
         fn from(value: TotalMemoBytesToAddress) -> Self {
-            let mut jsonified = json::object!();
-            let hm = value.0;
-            for (key, val) in hm.iter() {
-                jsonified[key] = json::JsonValue::from(*val);
-            }
-            jsonified
+            let obj: serde_json::Map<String, serde_json::Value> = value
+                .0
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), serde_json::Value::from(v)))
+                .collect();
+
+            serde_json::Value::Object(obj)
         }
     }
 
-    impl From<TotalValueToAddress> for json::JsonValue {
+    impl From<TotalValueToAddress> for serde_json::Value {
         fn from(value: TotalValueToAddress) -> Self {
-            let mut jsonified = json::object!();
-            let hm = value.0;
-            for (key, val) in hm.iter() {
-                jsonified[key] = json::JsonValue::from(*val);
-            }
-            jsonified
+            let obj: serde_json::Map<String, serde_json::Value> = value
+                .0
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), serde_json::Value::from(v)))
+                .collect();
+
+            serde_json::Value::Object(obj)
         }
     }
 
-    impl From<TotalSendsToAddress> for json::JsonValue {
+    impl From<TotalSendsToAddress> for serde_json::Value {
         fn from(value: TotalSendsToAddress) -> Self {
-            let mut jsonified = json::object!();
-            let hm = value.0;
-            for (key, val) in hm.iter() {
-                jsonified[key] = json::JsonValue::from(*val);
-            }
-            jsonified
+            let obj: serde_json::Map<String, serde_json::Value> = value
+                .0
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), serde_json::Value::from(v)))
+                .collect();
+
+            serde_json::Value::Object(obj)
         }
     }
 }

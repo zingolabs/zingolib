@@ -64,7 +64,7 @@ async fn sync_mainnet_test() {
             let wallet = lightclient.wallet.read().await;
             println!(
                 "{}",
-                json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
+                serde_json::Value::from(pepper_sync::sync_status(&*wallet).await.unwrap())
             );
             println!("WALLET DEBUG:");
             println!("uas: {}", wallet.unified_addresses().len());

@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-use json::JsonValue;
-
 use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
@@ -162,7 +160,7 @@ mod fast {
     // #[tokio::test]
     // async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     //     async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
-    //         json::object! {
+    //         jzon::object! {
     //             "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
     //         }
     //     }
@@ -1133,9 +1131,11 @@ mod fast {
             .unwrap();
         let addresses = recipient.unified_addresses_json().await;
         let address_5000_nonememo_tuples = addresses
-            .members()
+            .as_array()
+            .unwrap()
+            .iter()
             .map(|ua| (ua["encoded_address"].as_str().unwrap(), 10_000, None))
-            .collect::<Vec<(&str, u64, Option<&str>)>>();
+            .collect();
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
@@ -1448,7 +1448,10 @@ mod slow {
         );
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(4)
+            serde_json::to_string_pretty(&serde_json::Value::from(
+                recipient.value_transfers(true).await.unwrap()
+            ))
+            .unwrap() // This is always valid
         );
     }
     #[tokio::test]
@@ -1941,7 +1944,10 @@ mod slow {
         println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
+            serde_json::to_string_pretty(&serde_json::Value::from(
+                recipient.value_transfers(true).await.unwrap()
+            ))
+            .unwrap() // This is always valid
         );
         recipient.rescan_and_await().await.unwrap();
         println!(
@@ -1954,7 +1960,10 @@ mod slow {
         println!("{}", recipient.transaction_summaries(false).await.unwrap());
         println!(
             "{}",
-            JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
+            serde_json::to_string_pretty(&serde_json::Value::from(
+                recipient.value_transfers(true).await.unwrap()
+            ))
+            .unwrap() // This is always valid
         );
         // TODO: Add asserts!
     }
@@ -1998,8 +2007,8 @@ mod slow {
             transactions,
             rescanned_transactions,
             "Pre-Rescan: {}\n\n\nPost-Rescan: {}\n\n\n",
-            json::stringify_pretty(transactions.clone(), 4),
-            json::stringify_pretty(rescanned_transactions.clone(), 4)
+            serde_json::to_string_pretty(&transactions.clone()).unwrap(),
+            serde_json::to_string_pretty(&rescanned_transactions.clone()).unwrap()
         );
     }
     #[tokio::test]
@@ -2427,7 +2436,10 @@ TransactionSummary {
 
         println!(
             "{}",
-            JsonValue::from(faucet.value_transfers(true).await.unwrap()).pretty(4)
+            serde_json::to_string_pretty(&serde_json::Value::from(
+                faucet.value_transfers(true).await.unwrap()
+            ))
+            .unwrap() // This is always valid
         );
         println!(
             "{}",
@@ -2618,7 +2630,8 @@ TransactionSummary {
             .unwrap();
         println!(
             "{}",
-            json::stringify_pretty(recipient.transaction_summaries(false).await.unwrap(), 4)
+            serde_json::to_string_pretty(&recipient.transaction_summaries(false).await.unwrap())
+                .unwrap() // This is always valid
         );
         let mut txids = recipient
             .transaction_summaries(false)
@@ -3717,16 +3730,22 @@ TransactionSummary {
             .await
             .unwrap();
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
-                .pretty(4),
+            serde_json::to_string_pretty(
+                &serde_json::Value::from(faucet.do_total_memobytes_to_address().await.unwrap())
+                    [&base_uaddress]
+            )
+            .unwrap(), // This is always valid
             "2".to_string()
         );
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
         assert_eq!(
-            JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
-                .pretty(4),
+            serde_json::to_string_pretty(
+                &serde_json::Value::from(faucet.do_total_memobytes_to_address().await.unwrap())
+                    [&base_uaddress]
+            )
+            .unwrap(),
             "6".to_string()
         );
     }

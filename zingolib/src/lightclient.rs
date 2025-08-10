@@ -10,7 +10,6 @@ use std::{
     },
 };
 
-use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -181,18 +180,19 @@ impl LightClient {
     pub async fn do_info(&self) -> String {
         match crate::grpc_connector::get_info(self.server_uri()).await {
             Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.server_uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
+                let o = serde_json::json!({
+                    "version": i.version,
+                    "git_commit": i.git_commit,
+                    "server_uri": self.server_uri().to_string(),
+                    "vendor": i.vendor,
+                    "taddr_support": i.taddr_support,
+                    "chain_name": i.chain_name,
+                    "sapling_activation_height": i.sapling_activation_height,
+                    "consensus_branch_id": i.consensus_branch_id,
+                    "latest_block_height": i.block_height
+                });
+                serde_json::to_string_pretty(&o).unwrap() // Unwrap is safe: json is valid
+                // o.pretty(2)
             }
             Err(e) => e,
         }
@@ -223,12 +223,12 @@ impl LightClient {
     }
 
     /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
-    pub async fn unified_addresses_json(&self) -> JsonValue {
+    pub async fn unified_addresses_json(&self) -> serde_json::Value {
         self.wallet.read().await.unified_addresses_json()
     }
 
     /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
-    pub async fn transparent_addresses_json(&self) -> JsonValue {
+    pub async fn transparent_addresses_json(&self) -> serde_json::Value {
         self.wallet.read().await.transparent_addresses_json()
     }
 

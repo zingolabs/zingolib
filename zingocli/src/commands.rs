@@ -10,7 +10,6 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use indoc::indoc;
-use json::object;
 use lazy_static::lazy_static;
 use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
@@ -152,38 +151,39 @@ impl Command for WalletKindCommand {
         RT.block_on(async move {
             let wallet = lightclient.wallet.read().await;
             if wallet.mnemonic().is_some() {
-                object! {"kind" => "Loaded from mnemonic (seed or phrase)",
-                        "transparent" => true,
-                        "sapling" => true,
-                        "orchard" => true,
-                }
-                .pretty(4)
+                serde_json::to_string_pretty(&serde_json::json!({
+                        "kind": "Loaded from mnemonic (seed or phrase)",
+                        "transparent": true,
+                        "sapling": true,
+                        "orchard": true,
+                }))
+                .unwrap()
             } else {
                 match wallet
                     .unified_key_store
                     .get(&zip32::AccountId::ZERO)
                     .expect("account 0 must always exist")
                 {
-                    UnifiedKeyStore::Spend(_) => object! {
-                        "kind" => "Loaded from unified spending key",
-                        "transparent" => true,
-                        "sapling" => true,
-                        "orchard" => true,
-                    }
+                    UnifiedKeyStore::Spend(_) => serde_json::json!({
+                        "kind": "Loaded from unified spending key",
+                        "transparent": true,
+                        "sapling": true,
+                        "orchard": true,
+                    })
                     .pretty(4),
-                    UnifiedKeyStore::View(ufvk) => object! {
-                        "kind" => "Loaded from unified full viewing key",
-                        "transparent" => ufvk.transparent().is_some(),
-                        "sapling" => ufvk.sapling().is_some(),
-                        "orchard" => ufvk.orchard().is_some(),
-                    }
+                    UnifiedKeyStore::View(ufvk) => serde_json::json!({
+                        "kind": "Loaded from unified full viewing key",
+                        "transparent": ufvk.transparent().is_some(),
+                        "sapling": ufvk.sapling().is_some(),
+                        "orchard": ufvk.orchard().is_some(),
+                    })
                     .pretty(4),
-                    UnifiedKeyStore::Empty => object! {
-                        "kind" => "No keys found",
-                        "transparent" => false,
-                        "sapling" => false,
-                        "orchard" => false,
-                    }
+                    UnifiedKeyStore::Empty => serde_json::json!({
+                        "kind": "No keys found",
+                        "transparent": false,
+                        "sapling": false,
+                        "orchard": false,
+                    })
                     .pretty(4),
                 }
             }
@@ -233,23 +233,23 @@ impl Command for ParseAddressCommand {
                 zingolib::config::ChainType::Regtest(_) => "regtest",
             };
             match recipient_address {
-                Address::Sapling(_) => object! {
-                    "status" => "success",
-                    "chain_name" => chain_name_string,
-                    "address_kind" => "sapling",
-                }
+                Address::Sapling(_) => serde_json::json!({
+                    "status": "success",
+                    "chain_name": chain_name_string,
+                    "address_kind": "sapling",
+                })
                 .to_string(),
-                Address::Transparent(_) => object! {
-                    "status" => "success",
-                    "chain_name" => chain_name_string,
-                    "address_kind" => "transparent",
-                }
+                Address::Transparent(_) => serde_json::json!({
+                    "status": "success",
+                    "chain_name": chain_name_string,
+                    "address_kind": "transparent",
+                })
                 .to_string(),
-                Address::Tex(_) => object! {
-                    "status" => "success",
-                    "chain_name" => chain_name_string,
-                    "address_kind" => "tex",
-                }
+                Address::Tex(_) => serde_json::json!({
+                    "status": "success",
+                    "chain_name": chain_name_string,
+                    "address_kind": "tex",
+                })
                 .to_string(),
                 Address::Unified(ua) => {
                     let mut receivers_available = vec![];
@@ -261,31 +261,31 @@ impl Command for ParseAddressCommand {
                     }
                     if ua.orchard().is_some() {
                         receivers_available.push("orchard");
-                        object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "unified",
-                            "receivers_available" => receivers_available,
-                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
-                        }
+                        serde_json::json!({
+                            "status": "success",
+                            "chain_name": chain_name_string,
+                            "address_kind": "unified",
+                            "receivers_available": receivers_available,
+                            "only_orchard_ua": zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                        })
                         .to_string()
                     } else {
-                        object! {
-                            "status" => "success",
-                            "chain_name" => chain_name_string,
-                            "address_kind" => "unified",
-                            "receivers_available" => receivers_available,
-                        }
+                        serde_json::json!({
+                            "status": "success",
+                            "chain_name": chain_name_string,
+                            "address_kind": "unified",
+                            "receivers_available": receivers_available,
+                        })
                         .to_string()
                     }
                 }
             }
         } else {
-            object! {
-                "status" => "Invalid address",
-                "chain_name" => json::JsonValue::Null,
-                "address_kind" => json::JsonValue::Null,
-            }
+            serde_json::json!({
+                "status": "Invalid address",
+                "chain_name": serde_json::Value::Null,
+                "address_kind": serde_json::Value::Null,
+            })
             .to_string()
         }
     }
@@ -309,13 +309,12 @@ impl Command for ParseViewKeyCommand {
     }
 
     fn exec(&self, args: &[&str], _lightclient: &mut LightClient) -> String {
-        match args.len() {
-            1 => json::stringify_pretty(
-                match Ufvk::decode(args[0]) {
-                    Ok((network, ufvk)) => {
-                        let mut pools_available = vec![];
-                        for fvk in ufvk.items_as_parsed() {
-                            match fvk {
+        let json_result: serde_json::Value = match args.len() {
+            1 => match Ufvk::decode(args[0]) {
+                Ok((network, ufvk)) => {
+                    let mut pools_available = vec![];
+                    for fvk in ufvk.items_as_parsed() {
+                        match fvk {
                             zcash_address::unified::Fvk::Orchard(_) => {
                                 pools_available.push("orchard")
                             }
@@ -328,30 +327,29 @@ impl Command for ParseViewKeyCommand {
                             zcash_address::unified::Fvk::Unknown { .. } => pools_available
                                 .push("Unknown future protocol. Perhaps you're using old software"),
                         }
-                        }
-                        object! {
-                            "status" => "success",
-                            "chain_name" => match network {
-                                NetworkType::Main => "main",
-                                NetworkType::Test => "test",
-                                NetworkType::Regtest => "regtest",
-                            },
-                            "address_kind" => "ufvk",
-                            "pools_available" => pools_available,
-                        }
                     }
-                    Err(_) => {
-                        object! {
-                            "status" => "Invalid viewkey",
-                            "chain_name" => json::JsonValue::Null,
-                            "address_kind" => json::JsonValue::Null
-                        }
-                    }
-                },
-                4,
-            ),
-            _ => self.help().to_string(),
-        }
+                    let network: &str = match network {
+                        NetworkType::Main => "main",
+                        NetworkType::Test => "test",
+                        NetworkType::Regtest => "regtest",
+                    };
+                    serde_json::json!({
+                        "status": "success",
+                        "chain_name": network,
+                        "address_kind": "ufvk",
+                        "pools_available": pools_available,
+                    })
+                }
+                Err(_) => serde_json::json!({
+                    "status": "Invalid viewkey",
+                    "chain_name": serde_json::Value::Null,
+                    "address_kind": serde_json::Value::Null
+                }),
+            },
+            _ => self.help(), // FIXME: a little bit of refactor needed here
+        };
+
+        json_result.to_string()
     }
 }
 
@@ -413,7 +411,9 @@ impl Command for SyncCommand {
             },
             "status" => RT.block_on(async move {
                 match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
-                    Ok(status) => json::JsonValue::from(status).pretty(2),
+                    Ok(status) => {
+                        serde_json::to_string_pretty(serde_json::Value::from(status)).unwrap()
+                    }
                     Err(e) => format!("Error: {e}"),
                 }
             }),
@@ -447,7 +447,7 @@ impl Command for SendProgressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(
-            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
+            async move { serde_json::Value::from(lightclient.send_progress().await).pretty(2) },
         )
     }
 }
@@ -504,8 +504,8 @@ impl Command for ClearCommand {
         RT.block_on(async move {
             lightclient.wallet.write().await.clear_all();
 
-            let result = object! { "result" => "success" };
-            result.pretty(2)
+            let result = serde_json::json!({ "result": "success" });
+            serde_json::to_string_pretty(result).unwrap()
         })
     }
 }
@@ -679,9 +679,9 @@ impl Command for SpendableBalanceCommand {
                     Ok(bal) => bal,
                     Err(e) => return format!("Error: {e}"),
                 };
-            object! {
-                "spendable_balance" => spendable_balance.into_u64(),
-            }
+            serde_json::json!({
+                "spendable_balance": spendable_balance.into_u64(),
+            })
             .pretty(2)
         })
     }
@@ -728,12 +728,12 @@ impl Command for MaxSendValueCommand {
                 .await
             {
                 Ok(bal) => {
-                    object! {
+                    serde_json::json!({
                         "max_send_value" => bal.into_u64(),
-                    }
+                    })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -786,16 +786,16 @@ impl Command for NewUnifiedAddressCommand {
             };
             match wallet.generate_unified_address(receivers, zip32::AccountId::ZERO) {
                 Ok((id, unified_address)) => {
-                    json::object! {
-                        "account" => u32::from(zip32::AccountId::ZERO), // used concrete type instead of u32 to simplify upgrading CLI to multi-account
-                        "address_index" => id.address_index,
-                        "has_orchard" => unified_address.has_orchard(),
-                        "has_sapling" => unified_address.has_sapling(),
-                        "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&network),
-                    }
+                    serde_json::json!({
+                        "account": u32::from(zip32::AccountId::ZERO), // used concrete type instead of u32 to simplify upgrading CLI to multi-account
+                        "address_index": id.address_index,
+                        "has_orchard": unified_address.has_orchard(),
+                        "has_sapling": unified_address.has_sapling(),
+                        "has_transparent": unified_address.has_transparent(),
+                        "encoded_address": unified_address.encode(&network),
+                    })
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
             }
             .pretty(2)
         })
@@ -823,14 +823,14 @@ impl Command for NewTransparentAddressCommand {
             let network = wallet.network;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
-                    json::object! {
-                        "account" => u32::from(id.account_id()),
-                        "address_index" => id.address_index().index(),
-                        "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent::encode_address(&network,  transparent_address),
-                    }
+                    serde_json::json!({
+                        "account": u32::from(id.account_id()),
+                        "address_index": id.address_index().index(),
+                        "scope": id.scope().to_string(),
+                        "encoded_address": transparent::encode_address(&network,  transparent_address),
+                    })
                 }
-                Err(e) => object! { "error" => e.to_string() },
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
             }
             .pretty(2)
         })
@@ -899,8 +899,8 @@ impl Command for CheckAddressCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         if args.len() != 1 {
-            return json::object! { "error" => "no address specified. try 'help check_address' for correct usage and examples."
-                .to_string() }.pretty(2)            ;
+            return serde_json::json!({ "error": "no address specified. try 'help check_address' for correct usage and examples."
+                .to_string() }).to_string();
         }
         RT.block_on(async move {
             match lightclient
@@ -910,7 +910,7 @@ impl Command for CheckAddressCommand {
                 .is_address_derived_by_keys(args[0])
             {
                 Ok(address_ref) => address_ref.map_or(
-                    json::object! { "is_wallet_address" => "false".to_string() },
+                    serde_json::json!({ "is_wallet_address": "false".to_string() }),
                     |address_ref| match address_ref {
                         WalletAddressRef::Unified {
                             account_id,
@@ -919,56 +919,59 @@ impl Command for CheckAddressCommand {
                             has_sapling,
                             has_transparent,
                             encoded_address,
-                        } => json::object! {
-                            "is_wallet_address" => "true".to_string(),
-                            "address_type" => "unified".to_string(),
-                            "address_index" => address_index,
-                            "account_id" => u32::from(account_id),
-                            "has_orchard" => has_orchard,
-                            "has_sapling" => has_sapling,
-                            "has_transparent" => has_transparent,
-                            "encoded_address" => encoded_address,
-                        },
+                        } => serde_json::json!({
+                            "is_wallet_address": "true".to_string(),
+                            "address_type": "unified".to_string(),
+                            "address_index": address_index,
+                            "account_id": u32::from(account_id),
+                            "has_orchard": has_orchard,
+                            "has_sapling": has_sapling,
+                            "has_transparent": has_transparent,
+                            "encoded_address": encoded_address,
+                        })
+                        .to_string(),
                         WalletAddressRef::OrchardInternal {
                             account_id,
                             diversifier_index,
                             encoded_address,
-                        } => json::object! {
-                            "is_wallet_address" => "true".to_string(),
-                            "address_type" => "orchard_internal".to_string(),
-                            "account_id" => u32::from(account_id),
-                            "diversifier_index" => u128::from(diversifier_index).to_string(),
-                            "encoded_address" => encoded_address,
-                        },
+                        } => serde_json::json!({
+                            "is_wallet_address": "true".to_string(),
+                            "address_type": "orchard_internal".to_string(),
+                            "account_id": u32::from(account_id),
+                            "diversifier_index": u128::from(diversifier_index).to_string(),
+                            "encoded_address": encoded_address,
+                        })
+                        .to_string(),
                         WalletAddressRef::SaplingExternal {
                             account_id,
                             diversifier_index,
                             encoded_address,
-                        } => json::object! {
-                            "is_wallet_address" => "true".to_string(),
-                            "address_type" => "sapling".to_string(),
-                            "account_id" => u32::from(account_id),
-                            "diversifier_index" => u128::from(diversifier_index).to_string(),
-                            "encoded_address" => encoded_address,
-                        },
+                        } => serde_json::json!({
+                            "is_wallet_address": "true".to_string(),
+                            "address_type": "sapling".to_string(),
+                            "account_id": u32::from(account_id),
+                            "diversifier_index": u128::from(diversifier_index).to_string(),
+                            "encoded_address": encoded_address,
+                        })
+                        .to_string(),
                         WalletAddressRef::Transparent {
                             account_id,
                             scope,
                             address_index,
                             encoded_address,
-                        } => json::object! {
-                            "is_wallet_address" => "true".to_string(),
-                            "address_type" => "transparent".to_string(),
-                            "account_id" => u32::from(account_id),
-                            "scope" => scope.to_string(),
-                            "address_index" => address_index.index(),
-                            "encoded_address" => encoded_address,
-                        },
+                        } => serde_json::json!({
+                            "is_wallet_address": "true".to_string(),
+                            "address_type": "transparent".to_string(),
+                            "account_id": u32::from(account_id),
+                            "scope": scope.to_string(),
+                            "address_index": address_index.index(),
+                            "encoded_address": encoded_address,
+                        })
+                        .to_string(),
                     },
                 ),
-                Err(e) => json::object! { "error" => e.to_string() },
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
             }
-            .pretty(2)
         })
     }
 }
@@ -1001,11 +1004,11 @@ impl Command for ExportUfvkCommand {
                 Ok(ufvk) => ufvk,
                 Err(e) => return e.to_string(),
             };
-            object! {
-                "ufvk" => ufvk.encode(&wallet.network),
-                "birthday" => u32::from(wallet.birthday)
-            }
-            .pretty(2)
+            serde_json::json!({
+                "ufvk": ufvk.encode(&wallet.network),
+                "birthday": u32::from(wallet.birthday)
+            })
+            // .pretty(2)
         })
     }
 }
@@ -1061,12 +1064,12 @@ impl Command for SendCommand {
                 Ok(proposal) => {
                     let fee = match zingolib::data::proposal::total_fee(&proposal) {
                         Ok(fee) => fee,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                        Err(e) => return serde_json::json!({ "error": e.to_string() }).pretty(2),
                     };
-                    object! { "fee" => fee.into_u64() }
+                    serde_json::json!({ "fee": fee.into_u64() })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1119,19 +1122,19 @@ impl Command for SendAllCommand {
                 Ok(proposal) => {
                     let amount = match proposal::total_payment_amount(&proposal) {
                         Ok(amount) => amount,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                        Err(e) => return serde_json::json!({ "error": e.to_string() }).pretty(2),
                     };
                     let fee = match proposal::total_fee(&proposal) {
                         Ok(fee) => fee,
-                        Err(e) => return object! { "error" => e.to_string() }.pretty(2),
+                        Err(e) => return serde_json::json!({ "error": e.to_string() }).pretty(2),
                     };
-                    object! {
-                        "amount" => amount.into_u64(),
-                        "fee" => fee.into_u64(),
-                    }
+                    serde_json::json!({
+                        "amount": amount.into_u64(),
+                        "fee": fee.into_u64(),
+                    })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1184,10 +1187,10 @@ impl Command for QuickSendCommand {
         RT.block_on(async move {
             match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    serde_json::json!({ "txids": txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1228,7 +1231,7 @@ impl Command for ShieldCommand {
             match lightclient.propose_shield(zip32::AccountId::ZERO).await {
                 Ok(proposal) => {
                     if proposal.steps().len() != 1 {
-                        return object! { "error" => "shielding transactions should not have multiple proposal steps" }.pretty(2);
+                        return serde_json::json!({ "error": "shielding transactions should not have multiple proposal steps" }).pretty(2);
                     }
                     let step = proposal.steps().first();
                     let Some(value_to_shield) = step
@@ -1236,17 +1239,17 @@ impl Command for ShieldCommand {
                         .proposed_change()
                         .iter()
                         .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value()) else {
-                            return object! { "error" => "shield amount outside valid range of zatoshis" }
+                            return serde_json::json!({ "error": "shield amount outside valid range of zatoshis" })
                                 .pretty(2);
                     };
                     let fee = step.balance().fee_required();
-                    object! {
-                        "value_to_shield" => value_to_shield.into_u64(),
-                        "fee" => fee.into_u64(),
-                    }
+                    serde_json::json!({
+                        "value_to_shield": value_to_shield.into_u64(),
+                        "fee": fee.into_u64(),
+                    })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1285,10 +1288,10 @@ impl Command for QuickShieldCommand {
                 .quick_shield(zip32::AccountId::ZERO)
                 .await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    serde_json::json!({ "txids": txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1330,10 +1333,10 @@ impl Command for ConfirmCommand {
                 .send_stored_proposal()
                 .await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    serde_json::json!({ "txids": txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() })
                 }
                 Err(e) => {
-                    object! { "error" => e.to_string() }
+                    serde_json::json!({ "error": e.to_string() })
                 }
             }
             .pretty(2)
@@ -1402,15 +1405,16 @@ impl Command for DeleteCommand {
         RT.block_on(async move {
             match lightclient.do_delete().await {
                 Ok(_) => {
-                    let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
-                    r.pretty(2)
+                    let r = serde_json::json!({
+                        "result": "success",
+                        "wallet_path": lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") });
+                        r.pretty(2)
                 }
                 Err(e) => {
-                    let r = object! {
-                        "result" => "error",
-                        "error" => e
-                    };
+                    let r = serde_json::json!({
+                        "result": "error",
+                        "error": e
+                    });
                     r.pretty(2)
                 }
             }
@@ -1499,7 +1503,7 @@ impl Command for MessagesFilterCommand {
 
         RT.block_on(async move {
             match lightclient.messages_containing(args.first().copied()).await {
-                Ok(value_transfers) => json::JsonValue::from(value_transfers).pretty(2),
+                Ok(value_transfers) => serde_json::Value::from(value_transfers).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1556,7 +1560,7 @@ impl Command for MemoBytesToAddressCommand {
 
         RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
-                Ok(total_memo_bytes) => json::JsonValue::from(total_memo_bytes).pretty(2),
+                Ok(total_memo_bytes) => serde_json::Value::from(total_memo_bytes).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1584,7 +1588,7 @@ impl Command for ValueToAddressCommand {
 
         RT.block_on(async move {
             match lightclient.do_total_value_to_address().await {
-                Ok(total_values) => json::JsonValue::from(total_values).pretty(2),
+                Ok(total_values) => serde_json::Value::from(total_values).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1612,7 +1616,7 @@ impl Command for SendsToAddressCommand {
 
         RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
-                Ok(total_spends) => json::JsonValue::from(total_spends).pretty(2),
+                Ok(total_spends) => serde_json::Value::from(total_spends).pretty(2),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1716,7 +1720,9 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+            serde_json::json!({
+                "height": serde_json::Value::from(lightclient.wallet.read().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))
+            }).pretty(2)
         })
     }
 }
@@ -1760,11 +1766,10 @@ impl Command for NotesCommand {
         RT.block_on(async move {
             let wallet = lightclient.wallet.read().await;
 
-            json::object! {
-                "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
-                "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
-            }
-            .pretty(2)
+            serde_json::to_string_pretty(&serde_json::json!({
+                "orchard_notes": serde_json::Value::from(wallet.note_summaries::<OrchardNote>(all_notes)),
+                "sapling_notes": serde_json::Value::from(wallet.note_summaries::<SaplingNote>(all_notes)),
+            })).unwrap()
         })
     }
 }
@@ -1806,9 +1811,9 @@ impl Command for CoinsCommand {
         };
 
         RT.block_on(async move {
-            json::object! {
-                "transparent_coins" => json::JsonValue::from(lightclient.wallet.read().await.coin_summaries(all_coins)),
-            }
+            serde_json::json!({
+                "transparent_coins": serde_json::Value::from(lightclient.wallet.read().await.coin_summaries(all_coins)),
+            })
             .pretty(2)
         })
     }

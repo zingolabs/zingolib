@@ -4,7 +4,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub(crate) enum CommandError {
-    ArgsNotJson(json::Error),
+    ArgsNotJson(serde_json::Error),
     ArgNotJsonOrValidAddress,
     SingleArgNotJsonArray(String),
     JsonArrayNotObj(String),

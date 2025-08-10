@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
+use serde_json::json;
 use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
@@ -84,34 +85,34 @@ impl std::fmt::Display for SyncStatus {
     }
 }
 
-impl From<SyncStatus> for json::JsonValue {
+impl From<SyncStatus> for serde_json::Value {
     fn from(value: SyncStatus) -> Self {
-        let scan_ranges: Vec<json::JsonValue> = value
+        let scan_ranges: Vec<serde_json::Value> = value
             .scan_ranges
             .iter()
             .map(|range| {
-                json::object! {
-                    "priority" => format!("{:?}", range.priority()),
-                    "start_block" => range.block_range().start.to_string(),
-                    "end_block" => (range.block_range().end - 1).to_string(),
-                }
+                json!({
+                    "priority": format!("{:?}", range.priority()),
+                    "start_block": range.block_range().start.to_string(),
+                    "end_block": (range.block_range().end - 1).to_string(),
+                })
             })
             .collect();
 
-        json::object! {
-            "scan_ranges" => scan_ranges,
-            "sync_start_height" => u32::from(value.sync_start_height),
-            "session_blocks_scanned" => value.session_blocks_scanned,
-            "total_blocks_scanned" => value.total_blocks_scanned,
-            "percentage_session_blocks_scanned" => value.percentage_session_blocks_scanned,
-            "percentage_total_blocks_scanned" => value.percentage_total_blocks_scanned,
-            "session_sapling_outputs_scanned" => value.session_sapling_outputs_scanned,
-            "total_sapling_outputs_scanned" => value.total_sapling_outputs_scanned,
-            "session_orchard_outputs_scanned" => value.session_orchard_outputs_scanned,
-            "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
-            "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
-            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
-        }
+        json!({
+            "scan_ranges": scan_ranges,
+            "sync_start_height": u32::from(value.sync_start_height),
+            "session_blocks_scanned": value.session_blocks_scanned,
+            "total_blocks_scanned": value.total_blocks_scanned,
+            "percentage_session_blocks_scanned": value.percentage_session_blocks_scanned,
+            "percentage_total_blocks_scanned": value.percentage_total_blocks_scanned,
+            "session_sapling_outputs_scanned": value.session_sapling_outputs_scanned,
+            "total_sapling_outputs_scanned": value.total_sapling_outputs_scanned,
+            "session_orchard_outputs_scanned": value.session_orchard_outputs_scanned,
+            "total_orchard_outputs_scanned": value.total_orchard_outputs_scanned,
+            "percentage_session_outputs_scanned": value.percentage_session_outputs_scanned,
+            "percentage_total_outputs_scanned": value.percentage_total_outputs_scanned,
+        })
     }
 }
 
@@ -150,16 +151,16 @@ impl std::fmt::Display for SyncResult {
     }
 }
 
-impl From<SyncResult> for json::JsonValue {
+impl From<SyncResult> for serde_json::Value {
     fn from(value: SyncResult) -> Self {
-        json::object! {
-            "sync_start_height" => u32::from(value.sync_start_height),
-            "sync_end_height" => u32::from(value.sync_end_height),
-            "blocks_scanned" => value.blocks_scanned,
-            "sapling_outputs_scanned" => value.sapling_outputs_scanned,
-            "orchard_outputs_scanned" => value.orchard_outputs_scanned,
-            "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
-        }
+        json!({
+            "sync_start_height": u32::from(value.sync_start_height),
+            "sync_end_height": u32::from(value.sync_end_height),
+            "blocks_scanned": value.blocks_scanned,
+            "sapling_outputs_scanned": value.sapling_outputs_scanned,
+            "orchard_outputs_scanned": value.orchard_outputs_scanned,
+            "percentage_total_outputs_scanned": value.percentage_total_outputs_scanned,
+        })
     }
 }
 

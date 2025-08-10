@@ -1,7 +1,5 @@
 //! Module containing utility functions for the commands interface
 
-use json::JsonValue;
-
 use zcash_address::ZcashAddress;
 use zcash_primitives::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
@@ -11,65 +9,106 @@ use zingolib::data::receivers::Receivers;
 use zingolib::utils::conversion::{address_from_str, zatoshis_from_u64};
 use zingolib::wallet;
 
+/// The possible arguments for `do_send`
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum SendArgs {
+    /// Multiple sends in the form of a JSON array
+    Multiple(Vec<SendArg>),
+
+    /// Represents a single send
+    Single(SendArg),
+}
+
+/// A send argument, used in `do_send`
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SendArg {
+    /// The address to send funds to
+    pub address: String,
+
+    /// The amount to send, in zatoshis. Can be specified as "value" or "amount"
+    #[serde(alias = "amount", alias = "value")]
+    pub value: u64,
+
+    /// The optional memo to attach
+    #[serde(default)]
+    pub memo: Option<String>,
+}
+
 // Parse the send arguments for `do_send`.
 // The send arguments have two possible formats:
 // - 1 argument in the form of a JSON string for multiple sends. '[{"address":"<address>", "value":<value>, "memo":"<optional memo>"}, ...]'
 // - 2 (+1 optional) arguments for a single address send. &["<address>", <amount>, "<optional memo>"]
 pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> {
-    // Check for a single argument that can be parsed as JSON
-    let send_args = if args.len() == 1 {
-        let json_args = json::parse(args[0]).map_err(CommandError::ArgsNotJson)?;
+    match args {
+        // JSON array form: '[{ "address": "...", "value": 123, "memo": "..."}, ...]'
+        [json] => {
+            let list: Vec<SendArg> =
+                serde_json::from_str(json).map_err(CommandError::ArgsNotJson)?;
+            if list.is_empty() {
+                return Err(CommandError::EmptyJsonArray);
+            }
 
-        if !json_args.is_array() {
-            return Err(CommandError::SingleArgNotJsonArray(json_args.to_string()));
-        }
-        if json_args.is_empty() {
-            return Err(CommandError::EmptyJsonArray);
-        }
-
-        json_args
-            .members()
-            .map(|j| {
-                let recipient_address = address_from_json(j)?;
-                let amount = zatoshis_from_json(j)?;
-                let memo = memo_from_json(j)?;
-                check_memo_compatibility(&recipient_address, &memo)?;
-
-                Ok(zingolib::data::receivers::Receiver {
-                    recipient_address,
-                    amount,
-                    memo,
+            list.into_iter()
+                .map(|sa| {
+                    let recipient_address =
+                        address_from_str(&sa.address).map_err(CommandError::ConversionFailed)?;
+                    let amount =
+                        zatoshis_from_u64(sa.value).map_err(CommandError::ConversionFailed)?;
+                    let memo = match sa.memo {
+                        Some(m) => Some(
+                            wallet::utils::interpret_memo_string(m)
+                                .map_err(CommandError::InvalidMemo)?,
+                        ),
+                        None => None,
+                    };
+                    check_memo_compatibility(&recipient_address, &memo)?;
+                    Ok(zingolib::data::receivers::Receiver {
+                        recipient_address,
+                        amount,
+                        memo,
+                    })
                 })
-            })
-            .collect::<Result<Receivers, CommandError>>()
-    } else if args.len() == 2 || args.len() == 3 {
-        let recipient_address =
-            address_from_str(args[0]).map_err(CommandError::ConversionFailed)?;
-        let amount_u64 = args[1]
-            .trim()
-            .parse::<u64>()
-            .map_err(CommandError::ParseIntFromString)?;
-        let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
-        let memo = if args.len() == 3 {
-            Some(
-                wallet::utils::interpret_memo_string(args[2].to_string())
+                .collect::<Result<Receivers, CommandError>>()
+        }
+        // Positional single-send: "<address>" "<amount>""
+        [addr, amount] => {
+            let recipient_address =
+                address_from_str(addr).map_err(CommandError::ConversionFailed)?;
+            let amount_u64 = amount
+                .trim()
+                .parse::<u64>()
+                .map_err(CommandError::ParseIntFromString)?;
+            let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
+            let memo = None;
+            check_memo_compatibility(&recipient_address, &memo)?;
+            Ok(vec![zingolib::data::receivers::Receiver {
+                recipient_address,
+                amount,
+                memo,
+            }])
+        }
+        // Positional single-send with memo: "<address>" "<amount>" "<memo>"
+        [addr, amount, memo_str] => {
+            let recipient_address =
+                address_from_str(addr).map_err(CommandError::ConversionFailed)?;
+            let amount_u64 = amount
+                .trim()
+                .parse::<u64>()
+                .map_err(CommandError::ParseIntFromString)?;
+            let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
+            let memo = Some(
+                wallet::utils::interpret_memo_string((*memo_str).to_string())
                     .map_err(CommandError::InvalidMemo)?,
-            )
-        } else {
-            None
-        };
-        check_memo_compatibility(&recipient_address, &memo)?;
-
-        Ok(vec![zingolib::data::receivers::Receiver {
-            recipient_address,
-            amount,
-            memo,
-        }])
-    } else {
-        return Err(CommandError::InvalidArguments);
-    }?;
-
-    Ok(send_args)
+            );
+            check_memo_compatibility(&recipient_address, &memo)?;
+            Ok(vec![zingolib::data::receivers::Receiver {
+                recipient_address,
+                amount,
+                memo,
+            }])
+        }
+        _ => Err(CommandError::InvalidArguments),
+    }
 }
 
 // The send arguments have two possible formats:
@@ -89,8 +128,8 @@ pub(super) fn parse_send_all_args(
             check_memo_compatibility(&address, &memo)?;
             zennies_for_zingo = false;
         } else {
-            let json_arg =
-                json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+            let json_arg = serde_json::from_str(args[0])
+                .map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
             if json_arg.is_array() {
                 return Err(CommandError::JsonArrayNotObj(json_arg.to_string()));
             }
@@ -135,7 +174,8 @@ pub(super) fn parse_max_send_value_args(
         address = addr;
         zennies_for_zingo = false;
     } else {
-        let json_arg = json::parse(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
+        let json_arg =
+            serde_json::from_str(args[0]).map_err(|_e| CommandError::ArgNotJsonOrValidAddress)?;
 
         if json_arg.is_array() {
             return Err(CommandError::JsonArrayNotObj(
@@ -164,7 +204,7 @@ fn check_memo_compatibility(
     Ok(())
 }
 
-fn address_from_json(json_array: &JsonValue) -> Result<ZcashAddress, CommandError> {
+fn address_from_json(json_array: &serde_json::Value) -> Result<ZcashAddress, CommandError> {
     if !json_array.has_key("address") {
         return Err(CommandError::MissingKey("address".to_string()));
     }
@@ -176,7 +216,7 @@ fn address_from_json(json_array: &JsonValue) -> Result<ZcashAddress, CommandErro
     address_from_str(address_str).map_err(CommandError::ConversionFailed)
 }
 
-fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
+fn zennies_flag_from_json(json_arg: &serde_json::Value) -> Result<bool, CommandError> {
     if !json_arg.has_key("zennies_for_zingo") {
         return Err(CommandError::MissingZenniesForZingoFlag);
     }
@@ -188,13 +228,13 @@ fn zennies_flag_from_json(json_arg: &JsonValue) -> Result<bool, CommandError> {
     }
 }
 
-fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> {
+fn zatoshis_from_json(json_array: &serde_json::Value) -> Result<Zatoshis, CommandError> {
     if !json_array.has_key("amount") {
         return Err(CommandError::MissingKey("amount".to_string()));
     }
     let amount_u64 = if !json_array["amount"].is_number() {
         return Err(CommandError::NonJsonNumberForAmount(format!(
-            "\"amount\": {}\nis not a json::number::Number",
+            "\"amount\": {}\nis not a number",
             json_array["amount"]
         )));
     } else {
@@ -207,7 +247,7 @@ fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> 
     zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)
 }
 
-fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandError> {
+fn memo_from_json(json_array: &serde_json::Value) -> Result<Option<MemoBytes>, CommandError> {
     if let Some(m) = json_array["memo"].as_str().map(|s| s.to_string()) {
         let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
         Ok(Some(memo))
@@ -449,13 +489,13 @@ mod tests {
         // with address
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         super::address_from_json(json_args).unwrap();
 
         // without address
         let json_str = "[{\"amount\":100000, \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
             super::address_from_json(json_args),
@@ -465,7 +505,7 @@ mod tests {
         // invalid address
         let json_str = "[{\"address\": 1, \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
             super::address_from_json(json_args),
@@ -478,14 +518,14 @@ mod tests {
         // with amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         super::zatoshis_from_json(json_args).unwrap();
 
         // without amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
             super::zatoshis_from_json(json_args),
@@ -495,7 +535,7 @@ mod tests {
         // invalid amount
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":\"non_number\", \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert!(matches!(
             super::zatoshis_from_json(json_args),
@@ -508,7 +548,7 @@ mod tests {
         // with memo
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000, \"memo\":\"test memo\"}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert_eq!(
             super::memo_from_json(json_args).unwrap(),
@@ -518,7 +558,7 @@ mod tests {
         // without memo
         let json_str = "[{\"address\":\"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \
                     \"amount\":100000}]";
-        let json_args = json::parse(json_str).unwrap();
+        let json_args = serde_json::from_str(json_str).unwrap();
         let json_args = json_args.members().next().unwrap();
         assert_eq!(super::memo_from_json(json_args).unwrap(), None);
     }

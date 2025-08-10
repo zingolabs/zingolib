@@ -64,11 +64,9 @@ rayon.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# JSON
-json.workspace = true
-
 # Serialization
 byteorder = { workspace = true, optional = true }
 
 # temp
 zcash_address.workspace = true
+serde_json.workspace = true

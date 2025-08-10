@@ -283,19 +283,19 @@ impl LightWallet {
     }
 
     /// Returns unified addresses in a JSON array.
-    pub fn unified_addresses_json(&self) -> json::JsonValue {
-        json::JsonValue::Array(
+    pub fn unified_addresses_json(&self) -> serde_json::Value {
+        serde_json::Value::Array(
             self.unified_addresses
                 .iter()
                 .map(|(id, unified_address)| {
-                    json::object! {
-                        "account" => u32::from(id.account_id),
-                        "address_index" => id.address_index,
-                        "has_orchard" => unified_address.has_orchard(),
-                        "has_sapling" => unified_address.has_sapling(),
-                        "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&self.network),
-                    }
+                    serde_json::json!({
+                        "account": u32::from(id.account_id),
+                        "address_index": id.address_index,
+                        "has_orchard": unified_address.has_orchard(),
+                        "has_sapling": unified_address.has_sapling(),
+                        "has_transparent": unified_address.has_transparent(),
+                        "encoded_address": unified_address.encode(&self.network),
+                    })
                 })
                 .collect::<Vec<_>>(),
         )
@@ -307,17 +307,17 @@ impl LightWallet {
     }
 
     /// Returns transparent addresses in a JSON array.
-    pub fn transparent_addresses_json(&self) -> json::JsonValue {
-        json::JsonValue::Array(
+    pub fn transparent_addresses_json(&self) -> serde_json::Value {
+        serde_json::Value::Array(
             self.transparent_addresses
                 .iter()
                 .map(|(id, transparent_address)| {
-                    json::object! {
-                        "account" => u32::from(id.account_id()),
-                        "address_index" => id.address_index().index(),
-                        "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent_address.clone(),
-                    }
+                    serde_json::json!({
+                        "account": u32::from(id.account_id()),
+                        "address_index": id.address_index().index(),
+                        "scope": id.scope().to_string(),
+                        "encoded_address": transparent_address.clone(),
+                    })
                 })
                 .collect::<Vec<_>>(),
         )

@@ -181,14 +181,14 @@ fn start_interactive(
     loop {
         if chain_name.is_empty() {
             let info = send_command("info".to_string(), vec![]);
-            chain_name = json::parse(&info)
+            chain_name = serde_json::from_str(&info)
                 .map(|mut json_info| json_info.remove("chain_name"))
                 .ok()
                 .and_then(|name| name.as_str().map(ToString::to_string))
                 .unwrap_or("".to_string());
         }
         // Read the height first
-        let height = json::parse(&send_command(
+        let height = serde_json::from_str(&send_command(
             "height".to_string(),
             vec!["false".to_string()],
         ))

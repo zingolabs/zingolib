@@ -51,15 +51,15 @@ impl SendProgress {
     }
 }
 
-impl From<SendProgress> for json::JsonValue {
+impl From<SendProgress> for serde_json::Value {
     fn from(value: SendProgress) -> Self {
-        json::object! {
-            "id" => value.id,
-            "sending" => value.is_send_in_progress,
-            "progress" => value.progress,
-            "total" => value.total,
-            "last_result" => value.last_result,
-        }
+        serde_json::json!({
+            "id": value.id,
+            "sending": value.is_send_in_progress,
+            "progress": value.progress,
+            "total": value.total,
+            "last_result": value.last_result,
+        })
     }
 }
 

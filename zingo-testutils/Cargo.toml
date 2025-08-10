@@ -10,13 +10,15 @@ default = ["grpc-proxy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zingoconfig = { workspace = true , features = ["test-elevation"] }
-zingolib = { workspace = true , features = ["test-elevation"] }
+zingoconfig = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true, features = ["test-elevation"] }
 zingo-netutils = { workspace = true, features = ["test-features"] }
 zingo-testvectors = { workspace = true }
 zingo-status = { workspace = true }
 
-zcash_client_backend = { workspace = true, features = [ "lightwalletd-tonic-transport" ] }
+zcash_client_backend = { workspace = true, features = [
+    "lightwalletd-tonic-transport",
+] }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 orchard = { workspace = true }
@@ -24,7 +26,6 @@ portpicker = { workspace = true }
 tempfile = { workspace = true }
 incrementalmerkletree = { workspace = true }
 
-json = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
 http.workspace = true
@@ -32,6 +33,5 @@ tonic = { workspace = true, optional = true }
 nonempty.workspace = true
 
 [dev-dependencies]
-zingoconfig = { workspace = true , features = ["test-elevation"] }
-zingolib = { workspace = true , features = ["test-elevation"] }
-
+zingoconfig = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true, features = ["test-elevation"] }
