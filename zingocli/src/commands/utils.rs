@@ -111,6 +111,12 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
     }
 }
 
+/// TODO: define a better interface for this function
+pub enum SendAllArgs {
+    WithZennies(todo!()),
+    WithoutZennies(todo!()),
+}
+
 // The send arguments have two possible formats:
 // - 1 arguments in the form of:
 //    *  a JSON string (single address only). '[{"address":"<address>", "memo":"<optional memo>", "zennies_for_zingo":<true|false>}]'
@@ -154,6 +160,9 @@ pub(super) fn parse_send_all_args(
     }
     Ok((address, zennies_for_zingo, memo))
 }
+
+/// TODO
+pub enum MaxSendValueArgs {}
 
 // Parse the arguments for `spendable_balance`.
 // The arguments have two possible formats:
