@@ -40,6 +40,10 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .long("nosync")
                 .short('n')
                 .action(clap::ArgAction::SetTrue))
+            .arg(Arg::new("waitsync")
+                .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
+                .long("waitsync")
+                .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("regtest")
                 .long("regtest")
                 .help("Regtest mode")
@@ -290,6 +294,7 @@ pub struct ConfigTemplate {
     birthday: u64,
     data_dir: PathBuf,
     sync: bool,
+    waitsync: bool,
     command: Option<String>,
     chaintype: ChainType,
     tor_enabled: bool,
@@ -394,6 +399,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         }
 
         let sync = !matches.get_flag("nosync");
+        let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             params,
             server,
@@ -401,6 +407,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             birthday,
             data_dir,
             sync,
+            waitsync,
             command,
             chaintype,
             tor_enabled,
@@ -562,6 +569,42 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
     } else {
+        // Optionally wait for background sync to finish before executing command
+        if cli_config.sync && cli_config.waitsync {
+            use std::{thread, time::Duration};
+            loop {
+                // Poll sync task status
+                command_transmitter
+                    .send(("sync".to_string(), vec!["poll".to_string()]))
+                    .unwrap();
+                match resp_receiver.recv() {
+                    Ok(resp) => {
+                        if resp.starts_with("Error:") {
+                            eprintln!(
+                                "Sync error while waiting: {}\nProceeding to execute the command.",
+                                resp
+                            );
+                            break;
+                        } else if resp.starts_with("Sync completed succesfully:") {
+                            // Sync finished; proceed
+                            break;
+                        } else if resp == "Sync task has not been launched." {
+                            // Try to launch sync and continue waiting
+                            command_transmitter
+                                .send(("sync".to_string(), vec!["run".to_string()]))
+                                .unwrap();
+                            let _ = resp_receiver.recv();
+                            thread::sleep(Duration::from_millis(500));
+                        } else {
+                            // Not ready yet
+                            thread::sleep(Duration::from_millis(500));
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
         command_transmitter
             .send((
                 cli_config.command.clone().unwrap(),
