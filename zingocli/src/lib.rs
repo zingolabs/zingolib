@@ -580,7 +580,10 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 match resp_receiver.recv() {
                     Ok(resp) => {
                         if resp.starts_with("Error:") {
-                            eprintln!("Sync error while waiting: {}\nProceeding to execute the command.", resp);
+                            eprintln!(
+                                "Sync error while waiting: {}\nProceeding to execute the command.",
+                                resp
+                            );
                             break;
                         } else if resp.starts_with("Sync completed succesfully:") {
                             // Sync finished; proceed
