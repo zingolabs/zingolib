@@ -358,6 +358,12 @@ impl LightWallet {
             account,
             include_potentially_spent_notes,
         )?;
+
+        // If a txid spend filter is set, restrict eligible notes to those created by that transaction.
+        if let Some(filter_txid) = self.txid_spend_filter {
+            unselected_notes.retain(|note| note.output_id().txid() == filter_txid);
+        }
+
         unselected_notes.sort_by_key(|&output| output.value());
         let dust_index =
             unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());

@@ -1148,12 +1148,15 @@ impl Command for QuickSendCommand {
             Warning:
                 Transaction(s) will be sent without the user being aware of the fee amount.
             Usage:
-                quicksend <address> <amount in zatoshis> "<optional memo>"
+                quicksend <address> <amount in zatoshis> "<optional memo>" "<optional txid to select notes from>"
                 OR
-                quicksend '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
+                quicksend '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]' "<optional txid to select notes from>"
             Example:
                 quicksend ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
 
+            Notes:
+                • The optional txid restricts note selection to notes created by that transaction id.
+                • Passing txid as the 4th argument without a memo is not supported.
         "#}
     }
 
@@ -1162,7 +1165,37 @@ impl Command for QuickSendCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        let receivers = match utils::parse_send_args(args) {
+        // Extract optional txid filter argument (positional or JSON form)
+        // Positional: <addr> <amount> "<memo>" "<txid>"
+        // JSON: '[{...}]' "<txid>"
+        let mut txid_filter_opt = None;
+        let mut send_args: Vec<&str> = args.iter().copied().collect();
+
+        // JSON form with an extra txid as the last argument
+        if send_args.len() >= 2 {
+            let first = send_args[0].trim();
+            if first.starts_with('[') || first.starts_with('{') {
+                if let Some(candidate) = send_args.last().copied() {
+                    if candidate.len() >= 64 {
+                        if let Ok(txid) = zingolib::utils::conversion::txid_from_hex_encoded_str(candidate) {
+                            txid_filter_opt = Some(txid);
+                            send_args.pop();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Positional form with a 4th argument as txid
+        if send_args.len() >= 4 {
+            let candidate = send_args[3];
+            if let Ok(txid) = zingolib::utils::conversion::txid_from_hex_encoded_str(candidate) {
+                txid_filter_opt = Some(txid);
+                send_args.truncate(3);
+            }
+        }
+
+        let receivers = match utils::parse_send_args(&send_args) {
             Ok(receivers) => receivers,
             Err(e) => {
                 return format!(
@@ -1182,15 +1215,22 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
-                Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
-                }
-                Err(e) => {
-                    object! { "error" => e.to_string() }
-                }
+            // Apply optional txid filter for this quicksend only
+            if let Some(txid) = txid_filter_opt {
+                lightclient.wallet.write().await.txid_spend_filter = Some(txid);
             }
-            .pretty(2)
+
+            let result = match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
+                Ok(txids) => object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }.pretty(2),
+                Err(e) => object! { "error" => e.to_string() }.pretty(2),
+            };
+
+            // Always clear the filter afterwards
+            if txid_filter_opt.is_some() {
+                lightclient.wallet.write().await.txid_spend_filter = None;
+            }
+
+            result
         })
     }
 }

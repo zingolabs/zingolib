@@ -324,6 +324,7 @@ impl LightWallet {
             birthday,
             unified_key_store,
             send_progress: SendProgress::new(0),
+            txid_spend_filter: None,
             price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
@@ -566,6 +567,7 @@ impl LightWallet {
             wallet_settings,
             price_list,
             send_progress: SendProgress::new(0),
+            txid_spend_filter: None,
             save_required: false,
         })
     }

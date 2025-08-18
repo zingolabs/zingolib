@@ -18,12 +18,16 @@ zingodisclosure@proton.me
 * Price information is retrieved from Gemini exchange.
 
 ### Note Management
-Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
+Zingo-CLI does automatic note and utxo management by default. It follows these principles:
 * Defaults to sending shielded transactions, even if you're sending to a transparent address
 * Can select funds from multiple shielded addresses in the same transaction
 * Will automatically shield your sapling funds at the first opportunity
     * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
 * Transparent funds are only spent via explicit shield operations
+
+Manual note selection is possible by providing txid, currently only as an argument for `quicksend` command.
+When used, the automatically-selected notes are filtered by the given transaction id. This way it is possible
+to spend funds only from a certain note. If transaction id is not found, it will result in Insufficient balance error.
 
 ## Compiling from source
 

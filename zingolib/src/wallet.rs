@@ -139,6 +139,9 @@ pub struct LightWallet {
     pub price_list: PriceList,
     /// Progress of an outgoing transaction
     pub send_progress: SendProgress,
+    /// Optional txid filter to restrict which shielded notes are eligible for selection during the next send.
+    /// When set, only notes created by this transaction id will be considered during input selection.
+    pub txid_spend_filter: Option<zcash_primitives::transaction::TxId>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
 }
@@ -253,6 +256,7 @@ impl LightWallet {
             price_list: PriceList::new(),
             save_required: true,
             send_progress: SendProgress::new(0),
+            txid_spend_filter: None,
         })
     }
 
