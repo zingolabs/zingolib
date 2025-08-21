@@ -1,5 +1,7 @@
 //! This mod contains pieces of the impl LightWallet that are invoked during a send.
 
+use std::ops::Range;
+
 use nonempty::NonEmpty;
 
 use pepper_sync::sync::ScanPriority;
@@ -13,7 +15,7 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
-use pepper_sync::wallet::traits::SyncWallet as _;
+use pepper_sync::wallet::traits::SyncWallet;
 use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -271,63 +273,53 @@ impl LightWallet {
 
     // TODO: check with adjacent scanned and scannedwithoutmapping ranges merged in case shard ranges are scanend across
     // the two priorities
-    pub(crate) fn can_build_witness<N>(&self, block_height: BlockHeight) -> bool
+    pub(crate) fn can_build_witness<N>(
+        &self,
+        note_height: BlockHeight,
+        anchor_height: BlockHeight,
+    ) -> bool
     where
         N: NoteInterface,
     {
-        if self
-            .sync_state
-            .scan_ranges()
-            .iter()
-            .any(|scan_range| scan_range.priority() == ScanPriority::ChainTip)
-        {
-            return false;
-        }
+        let check_note_shards_are_scanned = |shard_ranges: &[Range<BlockHeight>]| {
+            let incomplete_shard_range = if let Some(shard_range) = shard_ranges.last() {
+                shard_range.end..anchor_height + 1
+            } else {
+                let Some(birthday) = self.sync_state.wallet_birthday() else {
+                    return false;
+                };
+
+                birthday..anchor_height + 1
+            };
+            let mut shard_ranges = shard_ranges.to_vec();
+            shard_ranges.push(incomplete_shard_range);
+
+            // a single block may contain two shards at the boundary so we check both are scanned in this case
+            let mut note_shard_ranges = shard_ranges
+                .iter()
+                .filter(|&shard_range| shard_range.contains(&note_height));
+            note_shard_ranges.all(|note_shard_range| {
+                self.sync_state
+                    .scan_ranges()
+                    .iter()
+                    .filter(|&scan_range| {
+                        scan_range.priority() == ScanPriority::Scanned
+                            || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                    })
+                    .map(|scan_range| scan_range.block_range())
+                    .any(|block_range| {
+                        block_range.contains(&note_shard_range.start)
+                            && block_range.contains(&(note_shard_range.end - 1))
+                    })
+            })
+        };
 
         match N::SHIELDED_PROTOCOL {
             ShieldedProtocol::Orchard => {
-                let mut note_shard_ranges = self
-                    .sync_state
-                    .orchard_shard_ranges()
-                    .iter()
-                    .filter(|&shard_range| shard_range.contains(&block_height));
-
-                note_shard_ranges.all(|note_shard_range| {
-                    self.sync_state
-                        .scan_ranges()
-                        .iter()
-                        .filter(|&scan_range| {
-                            scan_range.priority() == ScanPriority::Scanned
-                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                        })
-                        .map(|scan_range| scan_range.block_range())
-                        .any(|block_range| {
-                            block_range.contains(&note_shard_range.start)
-                                && block_range.contains(&(note_shard_range.end - 1))
-                        })
-                })
+                check_note_shards_are_scanned(self.sync_state.orchard_shard_ranges())
             }
             ShieldedProtocol::Sapling => {
-                let mut note_shard_ranges = self
-                    .sync_state
-                    .sapling_shard_ranges()
-                    .iter()
-                    .filter(|&shard_range| shard_range.contains(&block_height));
-
-                note_shard_ranges.all(|note_shard_range| {
-                    self.sync_state
-                        .scan_ranges()
-                        .iter()
-                        .filter(|&scan_range| {
-                            scan_range.priority() == ScanPriority::Scanned
-                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                        })
-                        .map(|scan_range| scan_range.block_range())
-                        .any(|block_range| {
-                            block_range.contains(&note_shard_range.start)
-                                && block_range.contains(&(note_shard_range.end - 1))
-                        })
-                })
+                check_note_shards_are_scanned(self.sync_state.sapling_shard_ranges())
             }
         }
     }
