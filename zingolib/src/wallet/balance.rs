@@ -4,7 +4,6 @@ use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
     WalletTransaction,
 };
-use shardtree::store::ShardStore;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::{PoolType, value::Zatoshis};

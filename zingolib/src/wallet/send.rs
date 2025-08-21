@@ -6,7 +6,6 @@ use nonempty::NonEmpty;
 
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::wallet::NoteInterface;
-use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -16,7 +15,7 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
-use pepper_sync::wallet::traits::SyncWallet as _;
+use pepper_sync::wallet::traits::SyncWallet;
 use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -276,7 +275,7 @@ impl LightWallet {
     // the two priorities
     pub(crate) fn can_build_witness<N>(
         &self,
-        block_height: BlockHeight,
+        note_height: BlockHeight,
         anchor_height: BlockHeight,
     ) -> bool
     where
@@ -292,12 +291,13 @@ impl LightWallet {
 
                 birthday..anchor_height + 1
             };
-            let mut shard_ranges = shard_ranges.iter().cloned().collect::<Vec<_>>();
+            let mut shard_ranges = shard_ranges.to_vec();
             shard_ranges.push(incomplete_shard_range);
+
+            // a single block may contain two shards at the boundary so we check both are scanned in this case
             let mut note_shard_ranges = shard_ranges
                 .iter()
-                .filter(|&shard_range| shard_range.contains(&block_height));
-
+                .filter(|&shard_range| shard_range.contains(&note_height));
             note_shard_ranges.all(|note_shard_range| {
                 self.sync_state
                     .scan_ranges()
