@@ -5,7 +5,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
-    lightclient::{LightClient, describe::UAReceivers, error::LightClientError},
+    lightclient::{LightClient, error::LightClientError},
     wallet::LightWallet,
 };
 
@@ -16,10 +16,9 @@ pub async fn new_client_from_save_buffer(
     let mut wallet_bytes: Vec<u8> = vec![];
     template_client
         .wallet
-        .lock()
+        .write()
         .await
-        .write(&mut wallet_bytes, &template_client.config.chain)
-        .await?;
+        .write(&mut wallet_bytes, &template_client.config.chain)?;
 
     LightClient::create_from_wallet(
         LightWallet::read(wallet_bytes.as_slice(), template_client.config.chain)?,
@@ -28,29 +27,45 @@ pub async fn new_client_from_save_buffer(
     )
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
-/// calling \[0] on json may panic? not sure -fv
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
-        PoolType::Transparent => {
-            client.do_addresses(UAReceivers::All).await[0]["receivers"]["transparent"]
+        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+            assert!(
+                client.unified_addresses_json().await[0]["has_orchard"]
+                    .as_bool()
+                    .unwrap()
+            );
+            client.unified_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string()
         }
         PoolType::Shielded(ShieldedProtocol::Sapling) => {
-            client.do_addresses(UAReceivers::All).await[0]["receivers"]["sapling"]
+            assert!(
+                !client.unified_addresses_json().await[1]["has_orchard"]
+                    .as_bool()
+                    .unwrap()
+            );
+            assert!(
+                client.unified_addresses_json().await[1]["has_sapling"]
+                    .as_bool()
+                    .unwrap()
+            );
+            client.unified_addresses_json().await[1]["encoded_address"]
                 .clone()
                 .to_string()
         }
-        PoolType::Shielded(ShieldedProtocol::Orchard) => {
-            client.do_addresses(UAReceivers::All).await[0]["address"]
-                .take()
-                .to_string()
-        }
+        PoolType::Transparent => client.transparent_addresses_json().await[0]["encoded_address"]
+            .clone()
+            .to_string(),
     }
 }
 /// Get the total fees paid by a given client (assumes 1 capability per client).
 pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
-    client.transaction_summaries().await.unwrap().paid_fees()
+    client
+        .transaction_summaries(false)
+        .await
+        .unwrap()
+        .paid_fees()
 }
 /// Helpers to provide raw_receivers to lightclients for send and shield, etc.
 pub mod from_inputs {
@@ -70,7 +85,9 @@ pub mod from_inputs {
     ) -> Result<NonEmpty<TxId>, QuickSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
-        quick_sender.quick_send(request).await
+        quick_sender
+            .quick_send(request, zip32::AccountId::ZERO)
+            .await
     }
 
     /// Panics if the address, amount or memo conversion fails.
@@ -112,7 +129,7 @@ pub mod from_inputs {
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
-        proposer.propose_send(request).await
+        proposer.propose_send(request, zip32::AccountId::ZERO).await
     }
 }
 
@@ -121,7 +138,7 @@ pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
-    let wallet = client.wallet.lock().await;
+    let wallet = client.wallet.read().await;
 
     txids.map(|txid| {
         wallet

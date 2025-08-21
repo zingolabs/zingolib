@@ -3,20 +3,25 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use orchard::tree::MerkleHashOrchard;
-use shardtree::store::{Checkpoint, ShardStore};
-use zcash_client_backend::data_api::scanning::ScanRange;
+use shardtree::store::{Checkpoint, ShardStore, TreeState};
+use tokio::sync::mpsc;
 use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
+use zcash_protocol::ShieldedProtocol;
+use zip32::DiversifierIndex;
 
-use crate::error::SyncError;
+use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::sync::MAX_VERIFICATION_WINDOW;
+use crate::sync::{MAX_VERIFICATION_WINDOW, ScanRange};
 use crate::wallet::{
-    Locator, NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
+use crate::{Orchard, Sapling, SyncDomain, client, reset_spends};
+
+use super::{FetchRequest, ScanTarget, witness};
 
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
@@ -37,12 +42,28 @@ pub trait SyncWallet {
         &self,
     ) -> Result<HashMap<AccountId, UnifiedFullViewingKey>, Self::Error>;
 
-    /// Returns a reference to all the transparent addresses known to this wallet.
+    /// Add orchard address to wallet's unified address list.
+    fn add_orchard_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: orchard::Address,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error>;
+
+    /// Add sapling address to wallet's unified address list.
+    fn add_sapling_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: sapling_crypto::PaymentAddress,
+        diversifier_index: DiversifierIndex,
+    ) -> Result<(), Self::Error>;
+
+    /// Returns a reference to all transparent addresses known to this wallet.
     fn get_transparent_addresses(
         &self,
     ) -> Result<&BTreeMap<TransparentAddressId, String>, Self::Error>;
 
-    /// Returns a mutable reference to all the transparent addresses known to this wallet.
+    /// Returns a mutable reference to all transparent addresses known to this wallet.
     fn get_transparent_addresses_mut(
         &mut self,
     ) -> Result<&mut BTreeMap<TransparentAddressId, String>, Self::Error>;
@@ -124,7 +145,6 @@ pub trait SyncTransactions: SyncWallet {
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), Self::Error> {
-        // TODO: Replace with `extract_if()` when it's in stable rust
         let invalid_txids: Vec<TxId> = self
             .get_wallet_transactions()?
             .values()
@@ -133,31 +153,7 @@ pub trait SyncTransactions: SyncWallet {
             .collect();
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;
-        wallet_transactions
-            .values_mut()
-            .flat_map(|tx| tx.sapling_notes_mut())
-            .filter(|note| {
-                note.spending_transaction.map_or_else(
-                    || false,
-                    |spending_txid| invalid_txids.contains(&spending_txid),
-                )
-            })
-            .for_each(|note| {
-                note.spending_transaction = None;
-            });
-        wallet_transactions
-            .values_mut()
-            .flat_map(|tx| tx.orchard_notes_mut())
-            .filter(|note| {
-                note.spending_transaction.map_or_else(
-                    || false,
-                    |spending_txid| invalid_txids.contains(&spending_txid),
-                )
-            })
-            .for_each(|note| {
-                note.spending_transaction = None;
-            });
-
+        reset_spends(wallet_transactions, invalid_txids.clone());
         invalid_txids.iter().for_each(|invalid_txid| {
             wallet_transactions.remove(invalid_txid);
         });
@@ -175,7 +171,7 @@ pub trait SyncNullifiers: SyncWallet {
     fn get_nullifiers_mut(&mut self) -> Result<&mut NullifierMap, Self::Error>;
 
     /// Append nullifiers to wallet nullifier map
-    fn append_nullifiers(&mut self, mut nullifiers: NullifierMap) -> Result<(), Self::Error> {
+    fn append_nullifiers(&mut self, nullifiers: &mut NullifierMap) -> Result<(), Self::Error> {
         self.get_nullifiers_mut()?
             .sapling
             .append(&mut nullifiers.sapling);
@@ -191,10 +187,10 @@ pub trait SyncNullifiers: SyncWallet {
         let nullifier_map = self.get_nullifiers_mut()?;
         nullifier_map
             .sapling
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
         nullifier_map
             .orchard
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
     }
@@ -203,15 +199,15 @@ pub trait SyncNullifiers: SyncWallet {
 /// Trait for interfacing outpoints with wallet data
 pub trait SyncOutPoints: SyncWallet {
     /// Get wallet outpoint map
-    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, Locator>, Self::Error>;
+    fn get_outpoints(&self) -> Result<&BTreeMap<OutputId, ScanTarget>, Self::Error>;
 
     /// Get mutable reference to wallet outpoint map
-    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, Locator>, Self::Error>;
+    fn get_outpoints_mut(&mut self) -> Result<&mut BTreeMap<OutputId, ScanTarget>, Self::Error>;
 
     /// Append outpoints to wallet outpoint map
     fn append_outpoints(
         &mut self,
-        outpoints: &mut BTreeMap<OutputId, Locator>,
+        outpoints: &mut BTreeMap<OutputId, ScanTarget>,
     ) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?.append(outpoints);
 
@@ -221,7 +217,7 @@ pub trait SyncOutPoints: SyncWallet {
     /// Removes all mapped outpoints above the given `block_height`.
     fn truncate_outpoints(&mut self, truncate_height: BlockHeight) -> Result<(), Self::Error> {
         self.get_outpoints_mut()?
-            .retain(|_, (block_height, _)| *block_height <= truncate_height);
+            .retain(|_, scan_target| scan_target.block_height <= truncate_height);
 
         Ok(())
     }
@@ -238,112 +234,81 @@ pub trait SyncShardTrees: SyncWallet {
     /// Update wallet shard trees with new shard tree data
     fn update_shard_trees(
         &mut self,
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
         wallet_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
-    ) -> Result<(), SyncError<Self::Error>> {
-        let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+    ) -> impl std::future::Future<Output = Result<(), SyncError<Self::Error>>> + Send
+    where
+        Self: std::marker::Send,
+    {
+        async move {
+            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-        // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
-        // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
-        // height and we will also never need to truncate to checkpoints lower than this height.
-        let checkpoint_range = match (
-            scan_range.block_range().start > wallet_height - MAX_VERIFICATION_WINDOW,
-            scan_range.block_range().end - 1 > wallet_height - MAX_VERIFICATION_WINDOW,
-        ) {
-            (true, _) => scan_range.block_range().clone(),
-            (false, true) => {
-                (wallet_height - MAX_VERIFICATION_WINDOW)..scan_range.block_range().end
+            // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
+            // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
+            // height and we will also never need to truncate to checkpoints lower than this height.
+            let checkpoint_range = match (
+                scan_range.block_range().start
+                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
+                scan_range.block_range().end - 1
+                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
+            ) {
+                (true, _) => scan_range.block_range().clone(),
+                (false, true) => {
+                    (wallet_height - MAX_VERIFICATION_WINDOW)..scan_range.block_range().end
+                }
+                (false, false) => BlockHeight::from_u32(0)..BlockHeight::from_u32(0),
+            };
+
+            // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention
+            // at that height. Therefore, to prevent anchor and truncate errors, checkpoints are manually added first and
+            // copy the tree state from the previous checkpoint where the commitment tree has not changed as of that block.
+            for checkpoint_height in
+                u32::from(checkpoint_range.start)..u32::from(checkpoint_range.end)
+            {
+                let checkpoint_height = BlockHeight::from_u32(checkpoint_height);
+
+                add_checkpoint::<
+                    Sapling,
+                    sapling_crypto::Node,
+                    { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                    { witness::SHARD_HEIGHT },
+                >(
+                    fetch_request_sender.clone(),
+                    checkpoint_height,
+                    &sapling_located_trees,
+                    &mut shard_trees.sapling,
+                )
+                .await?;
+                add_checkpoint::<
+                    Orchard,
+                    MerkleHashOrchard,
+                    { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
+                    { witness::SHARD_HEIGHT },
+                >(
+                    fetch_request_sender.clone(),
+                    checkpoint_height,
+                    &orchard_located_trees,
+                    &mut shard_trees.orchard,
+                )
+                .await?;
             }
-            (false, false) => BlockHeight::from_u32(0)..BlockHeight::from_u32(0),
-        };
 
-        // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention
-        // at that height. Therefore, to prevent anchor and truncate errors, checkpoints are manually added first and
-        // copy the tree state from the previous checkpoint where the commitment tree has not changed as of that block.
-        for checkpoint_height in u32::from(checkpoint_range.start)..u32::from(checkpoint_range.end)
-        {
-            let checkpoint_height = BlockHeight::from_u32(checkpoint_height);
-            let checkpoint = sapling_located_trees
-                .iter()
-                .flat_map(|tree| tree.checkpoints.iter())
-                .find(|(height, _)| **height == checkpoint_height)
-                .map_or_else(
-                    || {
-                        let mut next_checkpoint_below = None;
-                        shard_trees
-                            .sapling
-                            .store()
-                            .for_each_checkpoint(1_000, |height, checkpoint| {
-                                if *height < checkpoint_height {
-                                    next_checkpoint_below = Some(checkpoint.clone());
-                                }
-                                Ok(())
-                            })
-                            .expect("infallible");
-
-                        next_checkpoint_below.map(|checkpoint| {
-                            Checkpoint::from_parts(checkpoint.tree_state(), BTreeSet::new())
-                        })
-                    },
-                    |(_, position)| Some(Checkpoint::at_position(*position)),
-                );
-
-            if let Some(c) = checkpoint {
+            for tree in sapling_located_trees.into_iter() {
                 shard_trees
                     .sapling
-                    .store_mut()
-                    .add_checkpoint(checkpoint_height, c)
-                    .expect("infallible");
+                    .insert_tree(tree.subtree, tree.checkpoints)?;
             }
-
-            let checkpoint = orchard_located_trees
-                .iter()
-                .flat_map(|tree| tree.checkpoints.iter())
-                .find(|(height, _)| **height == checkpoint_height)
-                .map_or_else(
-                    || {
-                        let mut next_checkpoint_below = None;
-                        shard_trees
-                            .orchard
-                            .store()
-                            .for_each_checkpoint(1_000, |height, checkpoint| {
-                                if *height < checkpoint_height {
-                                    next_checkpoint_below = Some(checkpoint.clone());
-                                }
-                                Ok(())
-                            })
-                            .expect("infallible");
-
-                        next_checkpoint_below.map(|checkpoint| {
-                            Checkpoint::from_parts(checkpoint.tree_state(), BTreeSet::new())
-                        })
-                    },
-                    |(_, position)| Some(Checkpoint::at_position(*position)),
-                );
-
-            if let Some(c) = checkpoint {
+            for tree in orchard_located_trees.into_iter() {
                 shard_trees
                     .orchard
-                    .store_mut()
-                    .add_checkpoint(checkpoint_height, c)
-                    .expect("infallible");
+                    .insert_tree(tree.subtree, tree.checkpoints)?;
             }
-        }
 
-        for tree in sapling_located_trees.into_iter() {
-            shard_trees
-                .sapling
-                .insert_tree(tree.subtree, tree.checkpoints)?;
+            Ok(())
         }
-        for tree in orchard_located_trees.into_iter() {
-            shard_trees
-                .orchard
-                .insert_tree(tree.subtree, tree.checkpoints)?;
-        }
-
-        Ok(())
     }
 
     /// Removes all shard tree data above the given `block_height`.
@@ -370,4 +335,63 @@ pub trait SyncShardTrees: SyncWallet {
 
         Ok(())
     }
+}
+
+async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    checkpoint_height: BlockHeight,
+    located_trees: &[LocatedTreeData<L>],
+    shard_tree: &mut shardtree::ShardTree<
+        shardtree::store::memory::MemoryShardStore<L, BlockHeight>,
+        DEPTH,
+        SHARD_HEIGHT,
+    >,
+) -> Result<(), ServerError>
+where
+    L: Clone + PartialEq + incrementalmerkletree::Hashable,
+    D: SyncDomain,
+{
+    let checkpoint = if let Some((_, position)) = located_trees
+        .iter()
+        .flat_map(|tree| tree.checkpoints.iter())
+        .find(|(height, _)| **height == checkpoint_height)
+    {
+        Checkpoint::at_position(*position)
+    } else {
+        let mut previous_checkpoint = None;
+        shard_tree
+            .store()
+            .for_each_checkpoint(1_000, |height, checkpoint| {
+                if *height == checkpoint_height - 1 {
+                    previous_checkpoint = Some(checkpoint.clone());
+                }
+                Ok(())
+            })
+            .expect("infallible");
+
+        let tree_state = if let Some(checkpoint) = previous_checkpoint {
+            checkpoint.tree_state()
+        } else {
+            let frontiers =
+                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height - 1).await?;
+            let tree_size = match D::SHIELDED_PROTOCOL {
+                ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
+                ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),
+            };
+            if tree_size == 0 {
+                TreeState::Empty
+            } else {
+                TreeState::AtPosition(incrementalmerkletree::Position::from(tree_size - 1))
+            }
+        };
+
+        Checkpoint::from_parts(tree_state, BTreeSet::new())
+    };
+
+    shard_tree
+        .store_mut()
+        .add_checkpoint(checkpoint_height, checkpoint)
+        .expect("infallible");
+
+    Ok(())
 }

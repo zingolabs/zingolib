@@ -103,7 +103,7 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
         }),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Received memo from a future version of this protocol.\n\
+            "Received encoded memo data from a different wallet or a future wallet version.\n\
             Please ensure your software is up-to-date",
         )),
     }
@@ -118,7 +118,7 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
 ) -> io::Result<()> {
     let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::MAIN_NETWORK);
     let (_mainnet, address) =
-        Address::decode(&mainnet_encoded_ua).expect("Freshly encoded ua to decode!");
+        Address::decode(&mainnet_encoded_ua).expect("freshly encoded ua to decode!");
     let receivers = address.items();
     Vector::write(writer, &receivers, |mut w, receiver| {
         let (typecode, data): (u32, &[u8]) = match receiver {

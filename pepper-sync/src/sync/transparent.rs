@@ -9,18 +9,19 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use crate::client::{self, FetchRequest};
+use crate::config::TransparentAddressDiscovery;
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
-use crate::wallet::Locator;
 use crate::wallet::traits::SyncWallet;
+use crate::wallet::{KeyIdInterface, ScanTarget};
 
-use super::{MAX_VERIFICATION_WINDOW, TransparentAddressDiscovery};
+use super::MAX_VERIFICATION_WINDOW;
 
-/// Discovers all addresses in use by the wallet and returns locators for any new relevant transactions to scan transparent
+/// Discovers all addresses in use by the wallet and returns scan_targets for any new relevant transactions to scan transparent
 /// bundles.
-/// `wallet_height` should be the value before updating scan ranges. i.e. the wallet height as of previous sync.
-pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
+/// `wallet_height` should be the value before updating to latest chain height.
+pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -36,13 +37,13 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     let wallet_addresses = wallet
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
-    let mut locators: BTreeSet<Locator> = BTreeSet::new();
+    let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
     let block_range = Range {
-        start: wallet_height + 1 - MAX_VERIFICATION_WINDOW,
+        start: wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1,
         end: chain_height + 1,
     };
 
-    // find locators for any new transactions relevant to known addresses
+    // find scan_targets for any new transactions relevant to known addresses
     for address in wallet_addresses.values() {
         let transactions = client::get_transparent_address_transactions(
             fetch_request_sender.clone(),
@@ -52,11 +53,11 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         )
         .await?;
 
-        // The transaction is not scanned here, instead the locator is stored to be later sent to a scan task for these reasons:
+        // The transaction is not scanned here, instead the scan target is stored to be later sent to a scan task for these reasons:
         // - We must search for all relevant transactions MAX_VERIFICATION_WINDOW blocks below wallet height in case of re-org.
         // These would be scanned again which would be inefficient
         // - In case of re-org, any scanned transactions with heights within the re-org range would be wrongly invalidated
-        // - The locator will cause the surrounding range to be set to high priority which will often also contain shielded notes
+        // - The scan target will cause the surrounding range to be set to high priority which will often also contain shielded notes
         // relevant to the wallet
         // - Scanning a transaction without scanning the surrounding range of compact blocks in the context of a scan task creates
         // complications. Instead of writing all the information into a wallet transaction once, it would result in "incomplete"
@@ -70,7 +71,11 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         // any new developments to sync state management and scanning. It also separates concerns, with tasks happening in one
         // place and performed once, wherever possible.
         transactions.iter().for_each(|(height, tx)| {
-            locators.insert((*height, tx.txid()));
+            scan_targets.insert(ScanTarget {
+                block_height: *height,
+                txid: tx.txid(),
+                narrow_scan_area: true,
+            });
         });
     }
 
@@ -85,7 +90,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
         scopes.push(TransparentScope::Refund);
     }
 
-    // discover new addresses and find locators for relevant transactions
+    // discover new addresses and find scan_targets for relevant transactions
     for (account_id, ufvk) in ufvks {
         if let Some(account_pubkey) = ufvk.transparent() {
             for scope in scopes.iter() {
@@ -130,7 +135,11 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
                         unused_address_count += 1;
                     } else {
                         transactions.iter().for_each(|(height, tx)| {
-                            locators.insert((*height, tx.txid()));
+                            scan_targets.insert(ScanTarget {
+                                block_height: *height,
+                                txid: tx.txid(),
+                                narrow_scan_area: true,
+                            });
                         });
                         unused_address_count = 0;
                     }
@@ -149,8 +158,8 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
     wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
-        .locators
-        .append(&mut locators);
+        .scan_targets
+        .append(&mut scan_targets);
 
     Ok(())
 }
@@ -159,7 +168,7 @@ pub(crate) async fn update_addresses_and_locators<W: SyncWallet>(
 // 1. return any memo address ids from scan in ScanResults
 // 2. derive the addresses up to that index, add to wallet addresses and send them to GetTaddressTxids
 // 3. for each transaction returned:
-// a) if the tx is in a range that is not scanned, add locator to sync_state
+// a) if the tx is in a range that is not scanned, add scan_targets to sync_state
 // b) if the range is scanned and the tx is already in the wallet, rescan the zcash transaction transparent bundles in
 // the wallet transaction
 // c) if the range is scanned and the tx does not exist in the wallet, fetch the compact block if its not in the wallet

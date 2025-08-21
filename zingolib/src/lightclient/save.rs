@@ -9,6 +9,7 @@ use super::LightClient;
 use crate::{data::PollReport, utils};
 
 impl LightClient {
+    /// Launches a task for saving the wallet data to persistance when the wallet's `save_required` flag is set.
     pub async fn save_task(&mut self) {
         if self.save_active.load(atomic::Ordering::Acquire) {
             return;
@@ -23,7 +24,7 @@ impl LightClient {
         let save_handle = tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                if let Some(wallet_bytes) = wallet.lock().await.save().await? {
+                if let Some(wallet_bytes) = wallet.write().await.save()? {
                     utils::write_to_path(&wallet_path, wallet_bytes).await?
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
@@ -34,12 +35,13 @@ impl LightClient {
         self.save_handle = Some(save_handle);
     }
 
+    /// Wait until the wallet's `save_required` flag is not set.
     pub async fn wait_for_save(&self) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            if !self.wallet.lock().await.save_required {
+            if !self.wallet.read().await.save_required {
                 return;
             }
         }

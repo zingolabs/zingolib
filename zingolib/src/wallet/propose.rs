@@ -1,7 +1,5 @@
 //! creating proposals from wallet data
 
-use std::num::NonZeroU32;
-
 use zcash_client_backend::{
     data_api::wallet::input_selection::GreedyInputSelector,
     fees::{DustAction, DustOutputPolicy},
@@ -9,7 +7,7 @@ use zcash_client_backend::{
 };
 use zcash_protocol::{
     ShieldedProtocol,
-    consensus::Parameters,
+    consensus::{BlockHeight, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
 };
@@ -19,13 +17,14 @@ use super::{
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
 use crate::config::ChainType;
-use pepper_sync::keys::transparent::TransparentScope;
+use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
     pub(crate) async fn create_send_proposal(
         &mut self,
         request: TransactionRequest,
+        account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
         let refund_address_count = self
             .transparent_addresses
@@ -54,11 +53,11 @@ impl LightWallet {
         >(
             self,
             &network,
-            zcash_primitives::zip32::AccountId::ZERO,
+            account_id,
             &input_selector,
             &change_strategy,
             request,
-            NonZeroU32::MIN,
+            self.wallet_settings.min_confirmations,
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -73,6 +72,7 @@ impl LightWallet {
     /// can be consumed without costing more in zip317 fees than is being transferred.
     pub(crate) async fn create_shield_proposal(
         &mut self,
+        account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
@@ -82,6 +82,19 @@ impl LightWallet {
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
         );
         let network = self.network;
+
+        // TODO: store t addrs as concrete types instead of encoded
+        let transparent_addresses = self
+            .transparent_addresses
+            .values()
+            .map(|address| {
+                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
+                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                        self.network.network_type(),
+                    )
+                    .expect("incorrect network should be checked on wallet load"))
+            })
+            .collect::<Result<Vec<_>, zcash_address::ParseError>>()?;
 
         let proposed_shield = zcash_client_backend::data_api::wallet::propose_shielding::<
             LightWallet,
@@ -98,8 +111,8 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             Zatoshis::const_from_u64(10_000),
-            &self.get_transparent_addresses()?,
-            zip32::AccountId::ZERO,
+            &transparent_addresses,
+            account_id,
             1,
         )
         .map_err(ProposeShieldError::Component)?;
@@ -161,6 +174,28 @@ impl LightWallet {
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
+
+    /// Returns the block height at which all blocks equal to and above this height are scanned.
+    /// Returns `None` if `self.scan_ranges` is empty.
+    ///
+    /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
+    /// unspent.
+    pub(crate) fn spend_horizon(&self) -> Option<BlockHeight> {
+        if let Some(scan_range) = self
+            .sync_state
+            .scan_ranges()
+            .iter()
+            .rev()
+            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+        {
+            Some(scan_range.block_range().end)
+        } else {
+            self.sync_state
+                .scan_ranges()
+                .first()
+                .map(|range| range.block_range().start)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -181,17 +216,17 @@ mod test {
         )
         .load_example_wallet_with_client()
         .await;
-        let mut wallet = client.wallet.lock().await;
+        let mut wallet = client.wallet.write().await;
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
-        let self_address = wallet.get_first_address(pool).unwrap();
+        let self_address = wallet.get_address(pool);
 
         let receivers = vec![(self_address.as_str(), 100_000, None)];
         let request = transaction_request_from_send_inputs(receivers)
             .expect("actually all of this logic oughta be internal to propose");
 
         wallet
-            .create_send_proposal(request)
+            .create_send_proposal(request, zip32::AccountId::ZERO)
             .await
             .expect("can propose from existing data");
     }

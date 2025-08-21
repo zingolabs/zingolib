@@ -19,10 +19,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
 use zcash_address::unified::ParseError;
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::compact_formats::CompactBlock,
-};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
@@ -43,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::MAX_VERIFICATION_WINDOW,
+    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
     witness,
 };
 
@@ -54,7 +51,20 @@ pub mod serialization;
 
 /// Block height and txid of relevant transactions that have yet to be scanned. These may be added due to transparent
 /// output/spend discovery or for targetted rescan.
-pub type Locator = (BlockHeight, TxId);
+///
+/// `narrow_scan_area` is used to narrow the surrounding area scanned around the target from a shard to 100 blocks.
+/// For example, this is useful when targetting transparent outputs as scanning the whole shard will not affect the
+/// spendability of the scan target but will significantly reduce memory usage and/or storage as well as prioritise
+/// creating spendable notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ScanTarget {
+    /// Block height.
+    pub block_height: BlockHeight,
+    /// Txid.
+    pub txid: TxId,
+    /// Narrow surrounding scan area of target.
+    pub narrow_scan_area: bool,
+}
 
 /// Initial sync state.
 ///
@@ -116,8 +126,8 @@ pub struct SyncState {
     /// There is an edge case where a range may include two (or more) shards. However, this only occurs when the lower
     /// shards are already scanned so will cause no issues when punching in the higher scan priorites.
     pub(crate) orchard_shard_ranges: Vec<Range<BlockHeight>>,
-    /// Locators for relevant transactions to the wallet.
-    pub(crate) locators: BTreeSet<Locator>,
+    /// Scan targets for relevant transactions to the wallet.
+    pub(crate) scan_targets: BTreeSet<ScanTarget>,
     /// Initial sync state.
     pub(crate) initial_sync_state: InitialSyncState,
 }
@@ -129,7 +139,7 @@ impl SyncState {
             scan_ranges: Vec::new(),
             sapling_shard_ranges: Vec::new(),
             orchard_shard_ranges: Vec::new(),
-            locators: BTreeSet::new(),
+            scan_targets: BTreeSet::new(),
             initial_sync_state: InitialSyncState::new(),
         }
     }
@@ -137,6 +147,16 @@ impl SyncState {
     /// Scan ranges
     pub fn scan_ranges(&self) -> &[ScanRange] {
         &self.scan_ranges
+    }
+
+    /// Sapling shard ranges
+    pub fn sapling_shard_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.sapling_shard_ranges
+    }
+
+    /// Orchard shard ranges
+    pub fn orchard_shard_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.orchard_shard_ranges
     }
 
     /// Returns true if all scan ranges are scanned.
@@ -169,7 +189,10 @@ impl SyncState {
         if let Some(last_scanned_range) = self
             .scan_ranges
             .iter()
-            .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+            .filter(|scan_range| {
+                scan_range.priority() == ScanPriority::Scanned
+                    || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+            })
             .last()
         {
             Some(last_scanned_range.block_range().end - 1)
@@ -305,9 +328,9 @@ impl From<OutputId> for OutPoint {
 #[derive(Debug)]
 pub struct NullifierMap {
     /// Sapling nullifer map
-    pub sapling: BTreeMap<sapling_crypto::Nullifier, Locator>,
+    pub sapling: BTreeMap<sapling_crypto::Nullifier, ScanTarget>,
     /// Orchard nullifer map
-    pub orchard: BTreeMap<orchard::note::Nullifier, Locator>,
+    pub orchard: BTreeMap<orchard::note::Nullifier, ScanTarget>,
 }
 
 impl NullifierMap {
@@ -530,6 +553,8 @@ impl WalletTransaction {
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
 
+        // TODO: it is not intended behaviour to create outgoing change notes. the logic must be changed to be resilient
+        // to this fix to zcash client backend
         let sapling_value_sent = self
             .total_outgoing_note_value::<OutgoingSaplingNote>()
             .saturating_sub(self.total_output_value::<SaplingNote>());
@@ -579,10 +604,16 @@ impl std::fmt::Debug for WalletTransaction {
     }
 }
 
+/// Provides a common API for all key identifiers.
+pub trait KeyIdInterface {
+    /// Account ID.
+    fn account_id(&self) -> zip32::AccountId;
+}
+
 /// Provides a common API for all output types.
 pub trait OutputInterface: Sized {
     /// Identifier for key used to decrypt output.
-    type KeyId;
+    type KeyId: KeyIdInterface;
     /// Transaction input type associated with spend detection of output.
     type Input: Clone + Debug + PartialEq + Eq + PartialOrd + Ord;
 
@@ -603,6 +634,7 @@ pub trait OutputInterface: Sized {
     fn set_spending_transaction(&mut self, spending_transaction: Option<TxId>);
 
     /// Note value..
+    // TODO: change to Zatoshis checked type
     fn value(&self) -> u64;
 
     /// Returns the type used to link with transaction inputs for spend detection.
@@ -1047,7 +1079,8 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     }
 }
 
-// TODO: allow consumer to define shard store
+// TODO: allow consumer to define shard store. memory shard store has infallible error type but other may not so error
+// handling will need to replace expects
 /// Type alias for sapling memory shard store
 pub type SaplingShardStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 

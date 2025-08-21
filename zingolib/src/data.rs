@@ -1,4 +1,5 @@
 //! This is a mod for data structs that will be used across all sections of zingolib.
+
 pub mod proposal;
 
 /// Return type for fns that poll the status of task handles.
@@ -21,14 +22,14 @@ pub mod receivers {
     use zcash_protocol::value::Zatoshis;
 
     /// A list of Receivers
-    pub(crate) type Receivers = Vec<Receiver>;
+    pub type Receivers = Vec<Receiver>;
 
     /// The superficial representation of the the consumer's intended receiver
     #[derive(Clone, Debug, PartialEq)]
-    pub(crate) struct Receiver {
-        pub(crate) recipient_address: ZcashAddress,
-        pub(crate) amount: Zatoshis,
-        pub(crate) memo: Option<MemoBytes>,
+    pub struct Receiver {
+        pub recipient_address: ZcashAddress,
+        pub amount: Zatoshis,
+        pub memo: Option<MemoBytes>,
     }
     impl Receiver {
         /// Create a new Receiver
@@ -61,7 +62,7 @@ pub mod receivers {
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
     /// Note this fn is called to calculate the spendable_shielded balance
     /// shielding and TEX should be handled mutually exclusively
-    pub(crate) fn transaction_request_from_receivers(
+    pub fn transaction_request_from_receivers(
         receivers: Receivers,
     ) -> Result<TransactionRequest, Zip321Error> {
         // If this succeeds:

@@ -1,5 +1,4 @@
 use std::{
-    array::TryFromSliceError,
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap},
 };
@@ -9,7 +8,7 @@ use orchard::{note_encryption::CompactAction, tree::MerkleHashOrchard};
 use sapling_crypto::{Node, note_encryption::CompactOutputDescription};
 use tokio::sync::mpsc;
 use zcash_client_backend::proto::compact_formats::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput, CompactTx,
+    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
@@ -17,30 +16,28 @@ use zcash_primitives::{block::BlockHash, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
-    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
-    wallet::{NullifierMap, OutputId, TreeBounds, WalletBlock},
+    wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
 };
 
 #[cfg(not(feature = "darkside_test"))]
-use zcash_client_backend::{PoolType, ShieldedProtocol};
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use self::runners::{BatchRunners, DecryptedOutput};
 
-use super::{DecryptedNoteData, InitialScanData, ScanData};
+use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
 
 mod runners;
-
-const TRIAL_DECRYPT_TASK_SIZE: usize = MAX_BATCH_OUTPUTS / 8;
 
 pub(super) fn scan_compact_blocks<P>(
     compact_blocks: Vec<CompactBlock>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
+    trial_decrypt_task_size: usize,
 ) -> Result<ScanData, ScanError>
 where
     P: consensus::Parameters + Sync + Send + 'static,
@@ -52,11 +49,16 @@ where
     )?;
 
     let scanning_keys = ScanningKeys::from_account_ufvks(ufvks.clone());
-    let mut runners = trial_decrypt(consensus_parameters, &scanning_keys, &compact_blocks)?;
+    let mut runners = trial_decrypt(
+        consensus_parameters,
+        &scanning_keys,
+        &compact_blocks,
+        trial_decrypt_task_size,
+    )?;
 
     let mut wallet_blocks: BTreeMap<BlockHeight, WalletBlock> = BTreeMap::new();
     let mut nullifiers = NullifierMap::new();
-    let mut decrypted_locators = BTreeSet::new();
+    let mut decrypted_scan_targets = BTreeSet::new();
     let mut decrypted_note_data = DecryptedNoteData::new();
     let mut witness_data = WitnessData::new(
         Position::from(u64::from(initial_scan_data.sapling_initial_tree_size)),
@@ -66,14 +68,13 @@ where
     let mut orchard_initial_tree_size;
     let mut sapling_final_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_final_tree_size = initial_scan_data.orchard_initial_tree_size;
-    for block in &compact_blocks {
+    for block in compact_blocks.iter() {
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
         let block_height = block.height();
 
-        let mut transactions = block.vtx.iter().peekable();
-        while let Some(transaction) = transactions.next() {
+        for transaction in block.vtx.iter() {
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners
                 .sapling
@@ -86,10 +87,18 @@ where
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
             incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
-                decrypted_locators.insert((block_height, output_id.txid()));
+                decrypted_scan_targets.insert(ScanTarget {
+                    block_height,
+                    txid: output_id.txid(),
+                    narrow_scan_area: false,
+                });
             });
             incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
-                decrypted_locators.insert((block_height, output_id.txid()));
+                decrypted_scan_targets.insert(ScanTarget {
+                    block_height,
+                    txid: output_id.txid(),
+                    narrow_scan_area: false,
+                });
             });
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
@@ -97,16 +106,12 @@ where
             witness_data.sapling_leaves_and_retentions.extend(
                 calculate_sapling_leaves_and_retentions(
                     &transaction.outputs,
-                    block.height(),
-                    transactions.peek().is_none(),
                     &incoming_sapling_outputs,
                 )?,
             );
             witness_data.orchard_leaves_and_retentions.extend(
                 calculate_orchard_leaves_and_retentions(
                     &transaction.actions,
-                    block.height(),
-                    transactions.peek().is_none(),
                     &incoming_orchard_outputs,
                 )?,
             );
@@ -129,6 +134,15 @@ where
             orchard_final_tree_size += u32::try_from(transaction.actions.len())
                 .expect("should not be more than 2^32 outputs in a transaction");
         }
+
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.sapling_leaves_and_retentions,
+        );
+        set_checkpoint_retentions(
+            block_height,
+            &mut witness_data.orchard_leaves_and_retentions,
+        );
 
         let wallet_block = WalletBlock {
             block_height: block.height(),
@@ -156,7 +170,7 @@ where
     Ok(ScanData {
         nullifiers,
         wallet_blocks,
-        decrypted_locators,
+        decrypted_scan_targets,
         decrypted_note_data,
         witness_data,
     })
@@ -166,11 +180,12 @@ fn trial_decrypt<P>(
     consensus_parameters: &P,
     scanning_keys: &ScanningKeys,
     compact_blocks: &[CompactBlock],
+    trial_decrypt_task_size: usize,
 ) -> Result<BatchRunners<(), ()>, ScanError>
 where
     P: consensus::Parameters + Send + 'static,
 {
-    let mut runners = BatchRunners::<(), ()>::for_keys(TRIAL_DECRYPT_TASK_SIZE, scanning_keys);
+    let mut runners = BatchRunners::<(), ()>::for_keys(trial_decrypt_task_size, scanning_keys);
     for block in compact_blocks {
         runners
             .add_block(consensus_parameters, block.clone())
@@ -331,8 +346,6 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
 /// Calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_sapling_leaves_and_retentions<D: Domain>(
     outputs: &[CompactSaplingOutput],
-    block_height: BlockHeight,
-    last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -344,8 +357,6 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
     if outputs.is_empty() {
         Ok(Vec::new())
     } else {
-        let last_output_index = outputs.len() - 1;
-
         let leaves_and_retentions = outputs
             .iter()
             .enumerate()
@@ -354,21 +365,11 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
                     .map_err(|_| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
-
-                let last_output_in_block: bool =
-                    last_outputs_in_block && output_index == last_output_index;
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
-                let retention = match (decrypted, last_output_in_block) {
-                    (decrypted, true) => Retention::Checkpoint {
-                        id: block_height,
-                        marking: if decrypted {
-                            Marking::Marked
-                        } else {
-                            Marking::None
-                        },
-                    },
-                    (true, false) => Retention::Marked,
-                    (false, false) => Retention::Ephemeral,
+                let retention = if decrypted {
+                    Retention::Marked
+                } else {
+                    Retention::Ephemeral
                 };
 
                 Ok((leaf, retention))
@@ -378,11 +379,10 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
         Ok(leaves_and_retentions)
     }
 }
+
 // calculates the orchard note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_orchard_leaves_and_retentions<D: Domain>(
     actions: &[CompactOrchardAction],
-    block_height: BlockHeight,
-    last_outputs_in_block: bool,
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -394,8 +394,6 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
     if actions.is_empty() {
         Ok(Vec::new())
     } else {
-        let last_output_index = actions.len() - 1;
-
         let leaves_and_retentions = actions
             .iter()
             .enumerate()
@@ -404,21 +402,11 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
                     .map_err(|_| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
-
-                let last_output_in_block: bool =
-                    last_outputs_in_block && output_index == last_output_index;
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
-                let retention = match (decrypted, last_output_in_block) {
-                    (is_marked, true) => Retention::Checkpoint {
-                        id: block_height,
-                        marking: if is_marked {
-                            Marking::Marked
-                        } else {
-                            Marking::None
-                        },
-                    },
-                    (true, false) => Retention::Marked,
-                    (false, false) => Retention::Ephemeral,
+                let retention = if decrypted {
+                    Retention::Marked
+                } else {
+                    Retention::Ephemeral
                 };
 
                 Ok((leaf, retention))
@@ -427,45 +415,6 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 
         Ok(leaves_and_retentions)
     }
-}
-
-/// Converts the nullifiers from a compact transaction and adds them to the nullifier map
-fn collect_nullifiers(
-    nullifier_map: &mut NullifierMap,
-    block_height: BlockHeight,
-    transaction: &CompactTx,
-) -> Result<(), ScanError> {
-    transaction
-        .spends
-        .iter()
-        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
-        .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map
-                .sapling
-                .insert(nullifier, (block_height, transaction.txid()));
-        });
-    transaction
-        .actions
-        .iter()
-        .map(|action| {
-            orchard::note::Nullifier::from_bytes(
-                action.nullifier.as_slice().try_into().map_err(|_| {
-                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
-                })?,
-            )
-            .into_option()
-            .ok_or(ScanError::InvalidOrchardNullifier)
-        })
-        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map
-                .orchard
-                .insert(nullifier, (block_height, transaction.txid()));
-        });
-    Ok(())
 }
 
 pub(crate) async fn calculate_block_tree_bounds(
@@ -528,4 +477,27 @@ pub(crate) async fn calculate_block_tree_bounds(
         orchard_initial_tree_size: orchard_final_tree_size.saturating_sub(orchard_output_count),
         orchard_final_tree_size,
     })
+}
+
+fn set_checkpoint_retentions<L>(
+    block_height: BlockHeight,
+    leaves_and_retentions: &mut [(L, Retention<BlockHeight>)],
+) {
+    if let Some((_leaf, retention)) = leaves_and_retentions.last_mut() {
+        match retention {
+            Retention::Marked => {
+                *retention = Retention::Checkpoint {
+                    id: block_height,
+                    marking: Marking::Marked,
+                };
+            }
+            Retention::Ephemeral => {
+                *retention = Retention::Checkpoint {
+                    id: block_height,
+                    marking: Marking::None,
+                };
+            }
+            _ => (),
+        }
+    }
 }

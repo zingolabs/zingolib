@@ -47,6 +47,7 @@ pub fn txid_from_slice(txid: &[u8]) -> TxId {
     TxId::from_bytes(txid_bytes)
 }
 
+/// Returns the downloaded Sapling parameters as bytes.
 pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
     use crate::SaplingParams;
     let mut sapling_output = vec![];
@@ -64,6 +65,5 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
             .data
             .as_ref(),
     );
-
     Ok((sapling_output, sapling_spend))
 }

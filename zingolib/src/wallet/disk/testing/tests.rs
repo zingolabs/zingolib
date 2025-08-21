@@ -26,20 +26,14 @@ impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightClient {
         let client = self.load_example_wallet_with_client().await;
-        let wallet = client.wallet.lock().await;
+        let wallet = client.wallet.read().await;
 
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
         for pool in [
             PoolType::Transparent,
-            PoolType::Shielded(ShieldedProtocol::Sapling),
             PoolType::Shielded(ShieldedProtocol::Orchard),
         ] {
-            assert_eq!(
-                wallet
-                    .get_first_address(pool)
-                    .expect("can find the first address"),
-                self.example_wallet_address(pool)
-            );
+            assert_eq!(wallet.get_address(pool), self.example_wallet_address(pool));
         }
         drop(wallet);
 
@@ -185,7 +179,7 @@ async fn loaded_wallet_assert(
     expected_num_addresses: usize,
 ) {
     {
-        let wallet = lightclient.wallet.lock().await;
+        let wallet = lightclient.wallet.read().await;
         assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
         assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
@@ -195,8 +189,14 @@ async fn loaded_wallet_assert(
             assert!(addr.transparent().is_some());
         }
 
-        let balance = lightclient.do_balance().await;
-        assert_eq!(balance.orchard_balance, Some(expected_balance));
+        let balance = lightclient
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(
+            balance.total_orchard_balance,
+            Some(expected_balance.try_into().unwrap())
+        );
     }
     if expected_balance > 0 {
         let sapling_address = crate::get_base_address_macro!(lightclient, "sapling");
@@ -227,15 +227,14 @@ async fn reload_wallet_from_buffer() {
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
-    let mid_client_network = mid_client.wallet.lock().await.network;
+    let mid_client_network = mid_client.wallet.read().await.network;
 
     let mut mid_buffer: Vec<u8> = vec![];
     mid_client
         .wallet
-        .lock()
+        .write()
         .await
         .write(&mut mid_buffer, &mid_client.config.chain)
-        .await
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
@@ -245,21 +244,22 @@ async fn reload_wallet_from_buffer() {
         true,
     )
     .unwrap();
-    let wallet = client.wallet.lock().await;
+    let wallet = client.wallet.read().await;
 
-    let expected_mnemonic = (
-        Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-        0,
-    );
+    let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
         &mid_client_network,
-        &expected_mnemonic.0,
-        expected_mnemonic.1,
+        &expected_mnemonic,
+        zip32::AccountId::ZERO,
     )
     .unwrap();
 
-    let UnifiedKeyStore::Spend(usk) = &wallet.unified_key_store else {
+    let UnifiedKeyStore::Spend(usk) = &wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be spending key!")
     };
     let UnifiedKeyStore::Spend(expected_usk) = &expected_keys else {
@@ -277,13 +277,13 @@ async fn reload_wallet_from_buffer() {
         expected_usk.transparent().to_bytes()
     );
 
-    // FIXME: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
+    // TODO: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
     // should thoroughly test UA discovery when syncing which should find these UAs again
     assert_eq!(wallet.unified_addresses.len(), 1);
     for addr in wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
-        assert!(addr.sapling().is_some());
-        assert!(addr.transparent().is_some());
+        assert!(addr.sapling().is_none());
+        assert!(addr.transparent().is_none());
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
@@ -296,7 +296,11 @@ async fn reload_wallet_from_buffer() {
         wallet.wallet_settings.clone(),
     )
     .unwrap();
-    let UnifiedKeyStore::View(v_ufvk) = &view_wallet.unified_key_store else {
+    let UnifiedKeyStore::View(v_ufvk) = &view_wallet
+        .unified_key_store
+        .get(&zip32::AccountId::ZERO)
+        .unwrap()
+    else {
         panic!("should be viewing key!");
     };
     let v_ufvk_string = v_ufvk.encode(&view_wallet.network);

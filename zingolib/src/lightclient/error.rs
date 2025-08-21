@@ -32,6 +32,9 @@ pub enum LightClientError {
     /// Wallet error
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
+    /// Tor client error.
+    #[error("Tor client error. {0}")]
+    TorClientError(#[from] zcash_client_backend::tor::Error),
 }
 
 #[allow(missing_docs)] // error types document themselves

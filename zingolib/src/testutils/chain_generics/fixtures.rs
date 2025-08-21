@@ -11,12 +11,12 @@ use crate::testutils::fee_tables;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timestamped_test_log;
-use crate::wallet::data::summaries::SelfSendValueTransfer;
-use crate::wallet::data::summaries::SentValueTransfer;
-use crate::wallet::data::summaries::ValueTransferKind;
 use crate::wallet::output::query::OutputPoolQuery;
 use crate::wallet::output::query::OutputQuery;
 use crate::wallet::output::query::OutputSpendStatusQuery;
+use crate::wallet::summary::data::SelfSendValueTransfer;
+use crate::wallet::summary::data::SentValueTransfer;
+use crate::wallet::summary::data::ValueTransferKind;
 
 /// Fixture for testing various vt transactions
 pub async fn create_various_value_transfers<CC>()
@@ -35,7 +35,7 @@ where
 
     println!("client is ready to send");
 
-    let mut recipient = environment.create_client();
+    let mut recipient = environment.create_client().await;
     dbg!("TEST 1");
     with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
@@ -59,44 +59,41 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 3);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 3);
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Received })
+            .any(|vt| { vt.kind == ValueTransferKind::Received })
     );
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
-            .any(|vt| { vt.kind() == ValueTransferKind::Sent(SentValueTransfer::Send) })
+            .any(|vt| { vt.kind == ValueTransferKind::Sent(SentValueTransfer::Send) })
     );
 
     assert!(
         sender
-            .sorted_value_transfers(false)
+            .value_transfers(false)
             .await
             .unwrap()
             .iter()
             .any(|vt| {
-                vt.kind()
+                vt.kind
                     == ValueTransferKind::Sent(SentValueTransfer::SendToSelf(
                         SelfSendValueTransfer::MemoToSelf,
                     ))
             })
     );
 
-    assert_eq!(
-        recipient.sorted_value_transfers(true).await.unwrap().len(),
-        1
-    );
+    assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
     dbg!("TEST 2");
     with_assertions::assure_propose_send_bump_sync_all_recipients(
@@ -109,18 +106,18 @@ where
     .await
     .unwrap();
 
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 4);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 4);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Basic))
     );
 
     with_assertions::assure_propose_shield_bump_sync(&mut environment, &mut sender, false)
         .await
         .unwrap();
-    assert_eq!(sender.sorted_value_transfers(true).await.unwrap().len(), 5);
+    assert_eq!(sender.value_transfers(true).await.unwrap().len(), 5);
     assert_eq!(
-        sender.sorted_value_transfers(true).await.unwrap()[0].kind(),
+        sender.value_transfers(true).await.unwrap()[0].kind,
         ValueTransferKind::Sent(SentValueTransfer::SendToSelf(SelfSendValueTransfer::Shield))
     );
 }
@@ -134,7 +131,7 @@ where
     let primary_fund = 1_000_000;
     let mut primary = environment.fund_client_orchard(primary_fund).await;
 
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_taddr = get_base_address(&secondary, PoolType::Transparent).await;
 
     for _ in 0..n {
@@ -198,7 +195,7 @@ where
     let mut environment = CC::setup().await;
 
     let mut primary = environment.fund_client_orchard(120_000).await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_sapling_addr =
         get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
     let secondary_orchard_addr =
@@ -275,7 +272,7 @@ where
     let mut primary = environment
         .fund_client_orchard(expected_fee_for_transaction_1 + expected_value_from_transaction_1)
         .await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
 
     // Send number_of_notes transfers in increasing 10_000 zat increments
     let secondary_sapling_addr =
@@ -357,7 +354,7 @@ where
 
     let received_change_from_transaction_2 = secondary
         .wallet
-        .lock()
+        .read()
         .await
         .sum_queried_output_values(OutputQuery {
             spend_status: OutputSpendStatusQuery::only_unspent(),
@@ -366,7 +363,7 @@ where
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 
-    let secondary_wallet = secondary.wallet.lock().await;
+    let secondary_wallet = secondary.wallet.read().await;
     let spent_sapling_outputs = secondary_wallet
         .wallet_outputs::<SaplingNote>()
         .into_iter()
@@ -393,7 +390,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     let mut environment = CC::setup().await;
 
     let mut primary = environment.fund_client_orchard(1_000_000).await;
-    let mut secondary = environment.create_client();
+    let mut secondary = environment.create_client().await;
     let secondary_addr = get_base_address(&secondary, PoolType::Shielded(shpool)).await;
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
@@ -408,20 +405,14 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
     .await
     .unwrap();
 
-    let tertiary = environment.create_client();
+    let tertiary = environment.create_client().await;
 
     let tertiary_fund = 100_000;
     assert_eq!(
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .lock()
-                    .await
-                    .get_first_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.read().await.get_address(pool).as_str(),
                 tertiary_fund,
                 None,
             )],
@@ -444,8 +435,8 @@ where
 {
     let mut environment = CC::setup().await;
 
-    let mut secondary = environment.create_client();
-    let tertiary = environment.create_client();
+    let mut secondary = environment.create_client().await;
+    let tertiary = environment.create_client().await;
 
     secondary.sync_and_await().await.unwrap();
 
@@ -455,13 +446,7 @@ where
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary
-                    .wallet
-                    .lock()
-                    .await
-                    .get_first_address(pool)
-                    .unwrap()
-                    .as_str(),
+                tertiary.wallet.read().await.get_address(pool).as_str(),
                 try_amount,
                 None,
             )],
@@ -492,8 +477,8 @@ pub async fn any_source_sends_to_any_receiver<CC>(
     let mut environment = CC::setup().await;
 
     let mut primary = environment.create_faucet().await;
-    let mut secondary = environment.create_client();
-    let mut tertiary = environment.create_client();
+    let mut secondary = environment.create_client().await;
+    let mut tertiary = environment.create_client().await;
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 

@@ -2,6 +2,8 @@
 
 use nonempty::NonEmpty;
 
+use pepper_sync::sync::ScanPriority;
+use pepper_sync::wallet::NoteInterface;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -11,12 +13,14 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
+use pepper_sync::wallet::traits::SyncWallet as _;
+use zcash_protocol::ShieldedProtocol;
+use zingo_status::confirmation_status::ConfirmationStatus;
+
 use super::LightWallet;
 use super::error::CalculateTransactionError;
+use super::error::KeyError;
 use super::error::TransmissionError;
-use crate::wallet::now;
-use pepper_sync::wallet::traits::SyncWallet as _;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 /// TODO: Add Doc Comment Here!
 // TODO: revisit send progress to separate json and handle errors properly
@@ -72,23 +76,21 @@ impl LightWallet {
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
         proposal: &Proposal<zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        if !self.unified_key_store.is_spending_key() {
-            return Err(CalculateTransactionError::NoSpendCapability);
-        }
-
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
             crate::wallet::utils::read_sapling_params()
                 .map_err(CalculateTransactionError::SaplingParams)?;
+
         let sapling_prover =
             zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
         let calculated_txids = match proposal.steps().len() {
             1 => {
-                self.create_proposed_transactions(sapling_prover, proposal)
+                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
                     .await?
             }
             2 if proposal.steps()[1]
@@ -107,7 +109,7 @@ impl LightWallet {
                     )
                 }) =>
             {
-                self.create_proposed_transactions(sapling_prover, proposal)
+                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
                     .await?
             }
 
@@ -122,11 +124,14 @@ impl LightWallet {
         &mut self,
         sapling_prover: LocalTxProver,
         proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
-        let usk = (&self.unified_key_store)
-            .try_into()
-            .map_err(CalculateTransactionError::UnifiedSpendKey)?;
+        let usk = self
+            .unified_key_store
+            .get(&sending_account)
+            .ok_or(KeyError::NoAccountKeys)?
+            .try_into()?;
 
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
@@ -253,14 +258,78 @@ impl LightWallet {
                     self,
                     sent_transaction.transaction,
                     ConfirmationStatus::Transmitted(sent_transaction.height),
-                    now(),
+                    crate::utils::now(),
                 )?;
 
                 Ok(sent_transaction.txid)
             })
             .collect::<Result<Vec<TxId>, TransmissionError>>()?;
+        self.save_required = true;
 
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
+    }
+
+    // TODO: check with adjacent scanned and scannedwithoutmapping ranges merged in case shard ranges are scanend across
+    // the two priorities
+    pub(crate) fn can_build_witness<N>(&self, block_height: BlockHeight) -> bool
+    where
+        N: NoteInterface,
+    {
+        if self
+            .sync_state
+            .scan_ranges()
+            .iter()
+            .any(|scan_range| scan_range.priority() == ScanPriority::ChainTip)
+        {
+            return false;
+        }
+
+        match N::SHIELDED_PROTOCOL {
+            ShieldedProtocol::Orchard => {
+                let mut note_shard_ranges = self
+                    .sync_state
+                    .orchard_shard_ranges()
+                    .iter()
+                    .filter(|&shard_range| shard_range.contains(&block_height));
+
+                note_shard_ranges.all(|note_shard_range| {
+                    self.sync_state
+                        .scan_ranges()
+                        .iter()
+                        .filter(|&scan_range| {
+                            scan_range.priority() == ScanPriority::Scanned
+                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                        })
+                        .map(|scan_range| scan_range.block_range())
+                        .any(|block_range| {
+                            block_range.contains(&note_shard_range.start)
+                                && block_range.contains(&(note_shard_range.end - 1))
+                        })
+                })
+            }
+            ShieldedProtocol::Sapling => {
+                let mut note_shard_ranges = self
+                    .sync_state
+                    .sapling_shard_ranges()
+                    .iter()
+                    .filter(|&shard_range| shard_range.contains(&block_height));
+
+                note_shard_ranges.all(|note_shard_range| {
+                    self.sync_state
+                        .scan_ranges()
+                        .iter()
+                        .filter(|&scan_range| {
+                            scan_range.priority() == ScanPriority::Scanned
+                                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                        })
+                        .map(|scan_range| scan_range.block_range())
+                        .any(|block_range| {
+                            block_range.contains(&note_shard_range.start)
+                                && block_range.contains(&(note_shard_range.end - 1))
+                        })
+                })
+            }
+        }
     }
 }
 

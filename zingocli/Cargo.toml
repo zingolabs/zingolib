@@ -4,17 +4,28 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-zingolib = { workspace = true, features = [ "test-elevation" ] }
+zingolib = { workspace = true, features = ["test-elevation"] }
 pepper-sync = { workspace = true }
+zingo-infra-services = { workspace = true }
+testvectors = { workspace = true }
 
+zcash_protocol = { workspace = true }
+
+bip0039 = { workspace = true }
 clap = { workspace = true }
 http = { workspace = true }
-
 json = { workspace = true }
 log = { workspace = true }
+rustls = { workspace = true }
 rustyline = { workspace = true }
 shellwords = { workspace = true }
-
-rustls.workspace = true
-
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true }
+indoc = { workspace = true }
+lazy_static = { workspace = true }
+tokio = { workspace = true }
+zip32 = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_address = { workspace = true }
+zcash_keys = { workspace = true }
+tempfile = { workspace = true }

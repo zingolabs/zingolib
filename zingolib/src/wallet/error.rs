@@ -3,20 +3,25 @@
 use std::convert::Infallible;
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
+use shardtree::error::ShardTreeError;
 use zcash_keys::keys::DerivationError;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zcash_protocol::PoolType;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use super::output::OutputRef;
 
 /// Top level wallet errors
+// TODO: unify errors and error variants
 #[derive(Debug, thiserror::Error)]
 pub enum WalletError {
     /// Key error
-    #[error("{0}")]
+    #[error("Key error. {0}")]
     KeyError(#[from] KeyError),
+    /// Mnemonic not found.
+    #[error("Mnemonic not found.")]
+    MnemonicNotFound,
     /// Mnemonic error
-    #[error("{0}")]
+    #[error("Mnemonic error. {0}")]
     MnemonicError(#[from] bip0039::Error),
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
@@ -39,6 +44,29 @@ pub enum WalletError {
     /// No sync data. Wallet has never been synced with the block chain.
     #[error("No sync data. Wallet has never been synced with the block chain.")]
     NoSyncData,
+    /// Maximum number of accounts already in use.
+    #[error("Maximum number of accounts already in use.")]
+    AccountCreationFailed,
+    /// Shard store checkpoint not found.
+    #[error("{shielded_protocol:?} shard store checkpoint not found at anchor height {height}.")]
+    CheckpointNotFound {
+        shielded_protocol: ShieldedProtocol,
+        height: BlockHeight,
+    },
+    /// Shard tree error.
+    #[error("shard tree error. {0}")]
+    ShardTreeError(#[from] ShardTreeError<Infallible>),
+}
+
+/// Price error
+#[derive(Debug, thiserror::Error)]
+pub enum PriceError {
+    /// Price error
+    #[error("price error. {0}")]
+    PriceError(#[from] zingo_price::PriceError),
+    /// Price list not initialised
+    #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
+    NotInitialised,
 }
 
 /// Removal error
@@ -55,13 +83,12 @@ pub enum RemovalError {
 /// Summary error
 #[derive(Debug, thiserror::Error)]
 pub enum SummaryError {
+    /// Key error.
+    #[error("key error. {0}")]
+    KeyError(#[from] KeyError),
     /// Address parse error
     #[error("address parse error. {0}")]
     ParseError(#[from] zcash_address::ParseError),
-    /// Std IO address parse or conversion error
-    // TODO: temp while we fix `decode_address` error handling in pepper sync
-    #[error("address parse error. {0}")]
-    StdParseError(#[from] std::io::Error),
     /// Spend error
     #[error("spend error. {0}")]
     SpendError(#[from] SpendError),
@@ -118,12 +145,15 @@ pub enum SpendError {
 /// Errors associated with balance calculation
 #[derive(Debug, thiserror::Error)]
 pub enum BalanceError {
-    /// failed to retrieve full viewing key
-    #[error("failed to retrieve full viewing key.")]
-    NoFullViewingKey,
-    /// conversion failed
+    /// Key error
+    #[error("key error. {0}")]
+    KeyError(#[from] KeyError),
+    /// Conversion failed
     #[error("conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
+    /// Summation overflow
+    #[error("overflow occured during summation.")]
+    Overflow,
 }
 
 /// Errors associated with key and address derivation
@@ -135,6 +165,9 @@ pub enum KeyError {
     /// Invalid account ID
     #[error("Account ID should be at most 31 bits")]
     InvalidAccountId(#[from] zip32::TryFromIntError),
+    /// Invalid account ID
+    #[error("No keys found for the given account id. Try adding the account.")]
+    NoAccountKeys,
     /// Key derivation failed
     #[error("Key derivation failed")]
     KeyDerivationError(#[from] DerivationError),
@@ -162,6 +195,11 @@ pub enum KeyError {
     /// Unified address missing shielded receiver
     #[error("Unified address must contain a shielded receiver")]
     UnifiedAddressError,
+    /// Transparent address generation failed. Latest transparent address has not received funds.
+    #[error(
+        "Transparent address generation failed. Latest transparent address has not received funds."
+    )]
+    GapError,
 }
 
 impl From<bip32::Error> for KeyError {
@@ -206,12 +244,10 @@ pub enum TransmissionError {
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
-    #[error("No witness trees. This is viewkey watch, not spendkey wallet.")]
-    NoSpendCapability,
-    #[error("Could not load sapling_params: {0}")]
+    #[error("No unified spending key found for this account. {0}")]
+    NoSpendingKey(#[from] crate::wallet::error::KeyError),
+    #[error("Failed to load sapling paramaters. {0}")]
     SaplingParams(String),
-    #[error("Could not find UnifiedSpendKey: {0}")]
-    UnifiedSpendKey(#[from] crate::wallet::error::KeyError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
         zcash_client_backend::data_api::error::Error<

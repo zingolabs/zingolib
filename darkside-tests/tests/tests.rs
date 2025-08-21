@@ -1,35 +1,50 @@
+use std::path::PathBuf;
+
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
-use darkside_tests::utils::DarksideHandler;
 use darkside_tests::utils::update_tree_states_for_transaction;
+use tempfile::TempDir;
 use testvectors::seeds::DARKSIDE_SEED;
+use zingo_infra_services::indexer::Indexer;
+use zingo_infra_services::indexer::Lightwalletd;
+use zingo_infra_services::indexer::LightwalletdConfig;
+use zingo_infra_services::network::ActivationHeights;
+use zingo_infra_services::network::localhost_uri;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
-use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
-use zingolib::lightclient::PoolBalances;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::scenarios::setup::ClientBuilder;
+use zingolib::testutils::scenarios::ClientBuilder;
+use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
+use zingolib::wallet::balance::AccountBalance;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    let activation_heights = ActivationHeights::default();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -38,18 +53,20 @@ async fn simple_sync() {
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 }
@@ -57,37 +74,44 @@ async fn simple_sync() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client = ClientBuilder::new(
-        server_id.clone(),
-        darkside_handler.darkside_dir.clone(),
-    )
-    .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    let activation_heights = ActivationHeights::default();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
     prepare_darksidewalletd(server_id.clone(), false)
@@ -95,18 +119,20 @@ async fn reorg_receipt_sync_generic() {
         .unwrap();
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(0),
-            verified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(0),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(0.try_into().unwrap()),
+            confirmed_orchard_balance: Some(0.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 }
@@ -114,42 +140,47 @@ async fn reorg_receipt_sync_generic() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let mut client_manager =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
+    let activation_heights = ActivationHeights::default();
     let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
         testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        regtest_network,
+        activation_heights,
     );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
     let one_txid = from_inputs::quick_send(
@@ -179,11 +210,17 @@ async fn sent_transaction_reorged_into_mempool() {
     //  light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient pre-reorg: {}",
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        &recipient
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     println!(
         "Sender pre-reorg (unsynced): {}",
-        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
+        &light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
 
     prepare_darksidewalletd(server_id.clone(), true)
@@ -198,11 +235,17 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.sync_and_await().await.unwrap();
     println!(
         "Recipient post-reorg: {}",
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+        &recipient
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     println!(
         "Sender post-reorg: {}",
-        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
+        &light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
     );
     let mut loaded_client =
         zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
@@ -210,7 +253,13 @@ async fn sent_transaction_reorged_into_mempool() {
             .unwrap();
     loaded_client.sync_and_await().await.unwrap();
     assert_eq!(
-        loaded_client.do_balance().await.orchard_balance,
-        Some(100000000)
+        loaded_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
+            .total_orchard_balance
+            .unwrap()
+            .into_u64(),
+        100000000
     );
 }

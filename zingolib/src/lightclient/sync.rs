@@ -30,7 +30,7 @@ impl LightClient {
         let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
             .get_client()
             .await?;
-        let wallet_guard = self.wallet.lock().await;
+        let wallet_guard = self.wallet.read().await;
         let network = wallet_guard.network;
         let sync_config = wallet_guard.wallet_settings.sync_config.clone();
         drop(wallet_guard);
@@ -58,7 +58,7 @@ impl LightClient {
                 interval.tick().await;
             }
         }
-        self.wallet.lock().await.clear_all();
+        self.wallet.write().await.clear_all();
         self.sync().await
     }
 
@@ -171,7 +171,7 @@ pub mod test {
 
         let sync_result = lc.sync_and_await().await.unwrap();
         println!("{}", sync_result);
-        println!("{:?}", lc.do_balance().await);
+        println!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }
 

@@ -23,15 +23,15 @@
 //! 1. For first time sync, creates a single scan range from birthday to chain height.
 //! 2. If synced previously, merge all previously scanned ranges together and create a new scan range from wallet
 //!    height to chain height (the part of the chain that has been mined since last sync).
-//! 3. Use locators from transparent address discovery and targetted scanning to set "found note" priority ranges.
+//! 3. Use scan targets from transparent address discovery and targetted scanning to set "found note" priority ranges.
 //! 4. Finds the upper range bound of the latest orchard and sapling shard ranges and splits the scan range at the lowest
 //!    height of the two, setting the upper scan range to priority "chain tip". This ensures that both the sapling and orchard
 //!    note commitments are scanned in the latest incomplete shard at the chain tip.
 //! 5. Set the first 10 blocks after the highest previously scanned blocks to "verify" priority to check for re-org.
 //!
 //! Scanning:
-//! 1. Take the highest priority scan range and split off an orchard shard range off the lower end. setting to "ignored"
-//!    (a.k.a scanning) priority and sending this to the "batcher" task.
+//! 1. Take the highest priority scan range and split off an orchard shard range off the lower end. setting to "scanning"
+//!    priority and sending this to the "batcher" task.
 //! 2. The batcher takes this scan range (containing all note commitments to an orchard shard) and fetches the compact
 //!    blocks, splitting the blocks into multiple batches with a fixed number of outputs.
 //! 3. Each batch is sent to an idle "scan worker" which scans a batch and returns scan results to the main sync process.
@@ -46,6 +46,7 @@
 //!
 
 pub(crate) mod client;
+pub mod config;
 pub mod error;
 pub mod keys;
 pub(crate) mod scan;
@@ -54,8 +55,25 @@ pub mod wallet;
 pub(crate) mod witness;
 
 pub use sync::add_scan_targets;
+pub use sync::reset_spends;
 pub use sync::scan_pending_transaction;
 pub use sync::sync;
 pub use sync::sync_status;
 
-pub(crate) const MAX_BATCH_OUTPUTS: usize = 2usize.pow(12);
+use zcash_protocol::ShieldedProtocol;
+
+pub(crate) trait SyncDomain {
+    const SHIELDED_PROTOCOL: ShieldedProtocol;
+}
+
+pub(crate) struct Sapling;
+
+impl SyncDomain for Sapling {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
+}
+
+pub(crate) struct Orchard;
+
+impl SyncDomain for Orchard {
+    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
+}

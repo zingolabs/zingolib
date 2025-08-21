@@ -1,4 +1,7 @@
-use pepper_sync::sync::{SyncConfig, TransparentAddressDiscovery};
+use std::{num::NonZeroU32, time::Duration};
+
+use bip0039::Mnemonic;
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use tempfile::TempDir;
 use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{
@@ -30,15 +33,21 @@ async fn sync_mainnet_test() {
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
+        1.try_into().unwrap(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
-            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
-            2_650_318.into(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
+            1_500_000.into(),
             config.wallet_settings.clone(),
         )
         .unwrap(),
@@ -47,12 +56,32 @@ async fn sync_mainnet_test() {
     )
     .unwrap();
 
-    lightclient.sync_and_await().await.unwrap();
+    lightclient.sync().await.unwrap();
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        interval.tick().await;
+        {
+            let wallet = lightclient.wallet.read().await;
+            println!(
+                "{}",
+                json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
+            );
+            println!("WALLET DEBUG:");
+            println!("uas: {}", wallet.unified_addresses().len());
+            println!("taddrs: {}", wallet.transparent_addresses().len());
+            println!("blocks: {}", wallet.wallet_blocks.len());
+            println!("txs: {}", wallet.wallet_transactions.len());
+            println!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
+            println!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
+            println!("outpoints: {}", wallet.outpoint_map.len());
+        }
+        lightclient.wallet.write().await.save().unwrap();
+    }
 
-    let wallet = lightclient.wallet.lock().await;
+    // let wallet = lightclient.wallet.read().await;
     // dbg!(&wallet.wallet_blocks);
     // dbg!(&wallet.nullifier_map);
-    dbg!(&wallet.sync_state);
+    // dbg!(&wallet.sync_state);
 }
 
 #[ignore = "mainnet test for large chain"]
@@ -73,14 +102,20 @@ async fn sync_status() {
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
+        1.try_into().unwrap(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
             config.chain,
-            WalletBase::from_string(HOSPITAL_MUSEUM_SEED.to_string()),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
             2_496_152.into(),
             config.wallet_settings.clone(),
         )
@@ -100,7 +135,7 @@ async fn sync_status() {
 async fn sync_test() {
     tracing_subscriber::fmt().init();
 
-    let (regtest_manager, _cph, mut faucet, mut recipient, _txid) =
+    let (_local_net, mut faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
 
     // let recipient_ua = get_base_address_macro!(&recipient, "unified");
@@ -116,9 +151,18 @@ async fn sync_test() {
     //     .unwrap();
 
     // println!("{}", recipient.transaction_summaries().await.unwrap());
-    println!("{}", recipient.value_transfers().await.unwrap());
-    println!("{}", recipient.do_balance().await);
-    println!("{:?}", recipient.propose_shield().await);
+    println!("{}", recipient.value_transfers(false).await.unwrap());
+    println!(
+        "{}",
+        recipient
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap()
+    );
+    println!(
+        "{:?}",
+        recipient.propose_shield(zip32::AccountId::ZERO).await
+    );
 
     // println!(
     //     "{:?}",

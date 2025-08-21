@@ -35,7 +35,7 @@ pub(crate) mod fetch;
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
 #[derive(Debug)]
-pub(crate) enum FetchRequest {
+pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
     /// Gets  a compact block of the given block height.
@@ -45,6 +45,11 @@ pub(crate) enum FetchRequest {
     ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
     CompactBlockRange(
+        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        Range<BlockHeight>,
+    ),
+    /// Gets the specified range of nullifiers from the server (end exclusive).
+    NullifierRange(
         oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
         Range<BlockHeight>,
     ),
@@ -85,10 +90,10 @@ pub(crate) async fn get_chain_height(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::ChainTip(reply_sender))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let chain_tip = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
 }
@@ -103,11 +108,11 @@ pub(crate) async fn get_compact_block(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
 
     Ok(reply_receiver
         .await
-        .expect("sender should never be dropped")?)
+        .map_err(|_| ServerError::FetcherDropped)??)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -120,10 +125,30 @@ pub(crate) async fn get_compact_block_range(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let block_stream = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
+
+    Ok(block_stream)
+}
+
+/// Gets the specified range of nullifiers from the server (end exclusive).
+///
+/// Nullifiers are stored in compact blocks where the actions contain only nullifiers.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub(crate) async fn get_nullifier_range(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    block_range: Range<BlockHeight>,
+) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::NullifierRange(reply_sender, block_range))
+        .map_err(|_| ServerError::FetcherDropped)?;
+    let block_stream = reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)??;
 
     Ok(block_stream)
 }
@@ -147,10 +172,10 @@ pub(crate) async fn get_subtree_roots(
             shielded_protocol,
             max_entries,
         ))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let mut subtree_root_stream = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
     let mut subtree_roots = Vec::new();
     while let Some(subtree_root) = subtree_root_stream.message().await? {
         subtree_roots.push(subtree_root);
@@ -169,10 +194,10 @@ pub(crate) async fn get_frontiers(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let tree_state = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
 
     tree_state
         .to_chain_state()
@@ -190,10 +215,10 @@ pub(crate) async fn get_transaction_and_block_height(
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::Transaction(reply_sender, txid))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let raw_transaction = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
     let block_height =
         BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
     let transaction = Transaction::read(
@@ -215,7 +240,7 @@ pub(crate) async fn get_utxo_metadata(
     start_height: BlockHeight,
 ) -> Result<Vec<GetAddressUtxosReply>, ServerError> {
     if transparent_addresses.is_empty() {
-        panic!("addresses must be non-empty!");
+        return Ok(Vec::new());
     }
 
     let (reply_sender, reply_receiver) = oneshot::channel();
@@ -224,10 +249,10 @@ pub(crate) async fn get_utxo_metadata(
             reply_sender,
             (transparent_addresses, start_height),
         ))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let transparent_output_metadata = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
 
     Ok(transparent_output_metadata)
 }
@@ -247,10 +272,10 @@ pub(crate) async fn get_transparent_address_transactions(
             reply_sender,
             (transparent_address, block_range),
         ))
-        .expect("receiver should never be dropped");
+        .map_err(|_| ServerError::FetcherDropped)?;
     let mut raw_transaction_stream = reply_receiver
         .await
-        .expect("sender should never be dropped")?;
+        .map_err(|_| ServerError::FetcherDropped)??;
 
     let mut raw_transactions: Vec<RawTransaction> = Vec::new();
     while let Some(raw_tx) = raw_transaction_stream.message().await? {

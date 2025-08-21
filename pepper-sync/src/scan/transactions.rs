@@ -33,9 +33,9 @@ use crate::{
     error::ScanError,
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
-        Locator, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
-        OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote, TransparentCoin,
-        WalletBlock, WalletNote, WalletTransaction,
+        NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface, OutgoingOrchardNote,
+        OutgoingSaplingNote, OutputId, SaplingNote, ScanTarget, TransparentCoin, WalletBlock,
+        WalletNote, WalletTransaction,
     },
 };
 
@@ -72,37 +72,37 @@ pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    locators: BTreeSet<Locator>,
+    scan_targets: BTreeSet<ScanTarget>,
     decrypted_note_data: DecryptedNoteData,
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-    outpoint_map: &mut BTreeMap<OutputId, Locator>,
+    outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_addresses: HashMap<String, TransparentAddressId>,
 ) -> Result<HashMap<TxId, WalletTransaction>, ScanError> {
-    let mut wallet_transactions = HashMap::with_capacity(locators.len());
+    let mut wallet_transactions = HashMap::with_capacity(scan_targets.len());
 
-    for (_, txid) in locators {
-        if txid == TxId::from_bytes([0u8; 32]) {
+    for scan_target in scan_targets {
+        if scan_target.txid == TxId::from_bytes([0u8; 32]) {
             continue;
         }
 
         let (transaction, block_height) = client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
-            txid,
+            scan_target.txid,
         )
         .await?;
 
-        if transaction.txid() != txid {
+        if transaction.txid() != scan_target.txid {
             #[cfg(feature = "darkside_test")]
             tracing::error!(
                 "server returned incorrect txid.\ntxid: {}\nserver reported: {}",
-                txid,
+                scan_target.txid,
                 transaction.txid()
             );
 
             #[cfg(not(feature = "darkside_test"))]
             return Err(ScanError::IncorrectTxid {
-                txid_requested: txid,
+                txid_requested: scan_target.txid,
                 txid_returned: transaction.txid(),
             });
         }
@@ -122,7 +122,7 @@ pub(crate) async fn scan_transactions(
         let wallet_transaction = scan_transaction(
             consensus_parameters,
             ufvks,
-            txid,
+            scan_target.txid,
             transaction,
             confirmation_status,
             Some(&decrypted_note_data),
@@ -131,7 +131,7 @@ pub(crate) async fn scan_transactions(
             &transparent_addresses,
             wallet_block.time(),
         )?;
-        wallet_transactions.insert(txid, wallet_transaction);
+        wallet_transactions.insert(scan_target.txid, wallet_transaction);
     }
 
     Ok(wallet_transactions)
@@ -156,7 +156,7 @@ pub(crate) fn scan_transaction(
     status: ConfirmationStatus,
     decrypted_note_data: Option<&DecryptedNoteData>,
     nullifier_map: &mut NullifierMap,
-    outpoint_map: &mut BTreeMap<OutputId, Locator>,
+    outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
 ) -> Result<WalletTransaction, ScanError> {
@@ -524,9 +524,14 @@ fn collect_nullifiers(
             .iter()
             .map(|spend| spend.nullifier())
             .for_each(|nullifier| {
-                nullifier_map
-                    .sapling
-                    .insert(*nullifier, (block_height, txid));
+                nullifier_map.sapling.insert(
+                    *nullifier,
+                    ScanTarget {
+                        block_height,
+                        txid,
+                        narrow_scan_area: false,
+                    },
+                );
             });
     }
     if let Some(bundle) = transaction.orchard_bundle() {
@@ -535,16 +540,21 @@ fn collect_nullifiers(
             .iter()
             .map(|action| action.nullifier())
             .for_each(|nullifier| {
-                nullifier_map
-                    .orchard
-                    .insert(*nullifier, (block_height, txid));
+                nullifier_map.orchard.insert(
+                    *nullifier,
+                    ScanTarget {
+                        block_height,
+                        txid,
+                        narrow_scan_area: false,
+                    },
+                );
             });
     }
 }
 
 /// Adds the outpoints from a transparent bundle to the outpoint map.
 fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::Authorization>(
-    outpoint_map: &mut BTreeMap<OutputId, Locator>,
+    outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     txid: TxId,
     block_height: BlockHeight,
     transparent_bundle: &zcash_primitives::transaction::components::transparent::Bundle<A>,
@@ -554,6 +564,13 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
         .iter()
         .map(|txin| &txin.prevout)
         .for_each(|outpoint| {
-            outpoint_map.insert(OutputId::from(outpoint), (block_height, txid));
+            outpoint_map.insert(
+                OutputId::from(outpoint),
+                ScanTarget {
+                    block_height,
+                    txid,
+                    narrow_scan_area: true,
+                },
+            );
         });
 }

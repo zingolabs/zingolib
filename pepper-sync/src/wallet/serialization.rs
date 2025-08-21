@@ -12,10 +12,7 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    serialization::shardtree::{read_shard, write_shard},
-};
+use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
@@ -37,13 +34,15 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::MAX_VERIFICATION_WINDOW,
+    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    wallet::ScanTarget,
 };
 
 use super::{
-    InitialSyncState, NullifierMap, OrchardNote, OutgoingNote, OutgoingNoteInterface,
-    OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface, SaplingNote, ShardTrees,
-    SyncState, TransparentCoin, TreeBounds, WalletBlock, WalletNote, WalletTransaction,
+    InitialSyncState, KeyIdInterface, NullifierMap, OrchardNote, OutgoingNote,
+    OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface,
+    SaplingNote, ShardTrees, SyncState, TransparentCoin, TreeBounds, WalletBlock, WalletNote,
+    WalletTransaction,
 };
 
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
@@ -60,7 +59,7 @@ fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
     writer.write_all(str.as_bytes())
 }
 
-impl SyncState {
+impl ScanTarget {
     fn serialized_version() -> u8 {
         0
     }
@@ -68,22 +67,67 @@ impl SyncState {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
+        let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
+        let txid = TxId::read(&mut reader)?;
+        let narrow_scan_area = reader.read_u8()? != 0;
+
+        Ok(Self {
+            block_height,
+            txid,
+            narrow_scan_area,
+        })
+    }
+
+    /// Serialize into `writer`
+    pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_u8(Self::serialized_version())?;
+        writer.write_u32::<LittleEndian>(self.block_height.into())?;
+        self.txid.write(&mut *writer)?;
+        writer.write_u8(self.narrow_scan_area as u8)
+    }
+}
+
+impl SyncState {
+    fn serialized_version() -> u8 {
+        2
+    }
+
+    /// Deserialize into `reader`
+    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
+        let version = reader.read_u8()?;
         let scan_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let priority = match r.read_u8()? {
-                0 => Ok(ScanPriority::Ignored),
-                1 => Ok(ScanPriority::Scanned),
-                2 => Ok(ScanPriority::Historic),
-                3 => Ok(ScanPriority::OpenAdjacent),
-                4 => Ok(ScanPriority::FoundNote),
-                5 => Ok(ScanPriority::ChainTip),
-                6 => Ok(ScanPriority::Verify),
-                _ => Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "invalid scan priority",
-                )),
-            }?;
+            let priority = if version >= 2 {
+                match r.read_u8()? {
+                    0 => Ok(ScanPriority::Scanning),
+                    1 => Ok(ScanPriority::Scanned),
+                    2 => Ok(ScanPriority::ScannedWithoutMapping),
+                    3 => Ok(ScanPriority::Historic),
+                    4 => Ok(ScanPriority::OpenAdjacent),
+                    5 => Ok(ScanPriority::FoundNote),
+                    6 => Ok(ScanPriority::ChainTip),
+                    7 => Ok(ScanPriority::Verify),
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid scan priority",
+                    )),
+                }?
+            } else {
+                match r.read_u8()? {
+                    0 => Ok(ScanPriority::Scanning),
+                    1 => Ok(ScanPriority::Scanned),
+                    2 => Ok(ScanPriority::Historic),
+                    3 => Ok(ScanPriority::OpenAdjacent),
+                    4 => Ok(ScanPriority::FoundNote),
+                    5 => Ok(ScanPriority::ChainTip),
+                    6 => Ok(ScanPriority::Verify),
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid scan priority",
+                    )),
+                }?
+            };
 
             Ok(ScanRange::from_parts(start..end, priority))
         })?;
@@ -99,11 +143,19 @@ impl SyncState {
 
             Ok(start..end)
         })?;
-        let locators = Vector::read(&mut reader, |r| {
-            let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let txid = TxId::read(r)?;
+        let scan_targets = Vector::read(&mut reader, |r| {
+            Ok(if version >= 1 {
+                ScanTarget::read(r)?
+            } else {
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                let txid = TxId::read(r)?;
 
-            Ok((block_height, txid))
+                ScanTarget {
+                    block_height,
+                    txid,
+                    narrow_scan_area: true,
+                }
+            })
         })?
         .into_iter()
         .collect::<BTreeSet<_>>();
@@ -112,7 +164,7 @@ impl SyncState {
             scan_ranges,
             sapling_shard_ranges,
             orchard_shard_ranges,
-            locators,
+            scan_targets,
             initial_sync_state: InitialSyncState::new(),
         })
     }
@@ -135,11 +187,8 @@ impl SyncState {
         })?;
         Vector::write(
             &mut writer,
-            &self.locators.iter().collect::<Vec<_>>(),
-            |w, &locator| {
-                w.write_u32::<LittleEndian>(locator.0.into())?;
-                locator.1.write(w)
-            },
+            &self.scan_targets.iter().collect::<Vec<_>>(),
+            |w, &scan_target| scan_target.write(w),
         )
     }
 }
@@ -177,13 +226,13 @@ impl TreeBounds {
 
 impl NullifierMap {
     fn serialized_version() -> u8 {
-        0
+        1
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
-        let sapling = Vector::read(&mut reader, |mut r| {
+        let version = reader.read_u8()?;
+        let sapling = Vector::read(&mut reader, |r| {
             let mut nullifier_bytes = [0u8; 32];
             r.read_exact(&mut nullifier_bytes)?;
             let nullifier =
@@ -193,23 +242,43 @@ impl NullifierMap {
                         format!("failed to read nullifier. {e}"),
                     )
                 })?;
-            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let locator_txid = TxId::read(&mut r)?;
+            let scan_target = if version >= 1 {
+                ScanTarget::read(r)?
+            } else {
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                let txid = TxId::read(r)?;
 
-            Ok((nullifier, (locator_height, locator_txid)))
+                ScanTarget {
+                    block_height,
+                    txid,
+                    narrow_scan_area: false,
+                }
+            };
+
+            Ok((nullifier, scan_target))
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
 
-        let orchard = Vector::read(&mut reader, |mut r| {
+        let orchard = Vector::read(&mut reader, |r| {
             let mut nullifier_bytes = [0u8; 32];
             r.read_exact(&mut nullifier_bytes)?;
             let nullifier = orchard::note::Nullifier::from_bytes(&nullifier_bytes)
                 .expect("nullifier bytes should be valid");
-            let locator_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let locator_txid = TxId::read(&mut r)?;
+            let scan_target = if version >= 1 {
+                ScanTarget::read(r)?
+            } else {
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                let txid = TxId::read(r)?;
 
-            Ok((nullifier, (locator_height, locator_txid)))
+                ScanTarget {
+                    block_height,
+                    txid,
+                    narrow_scan_area: false,
+                }
+            };
+
+            Ok((nullifier, scan_target))
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
@@ -223,19 +292,17 @@ impl NullifierMap {
         Vector::write(
             &mut writer,
             &self.sapling.iter().collect::<Vec<_>>(),
-            |w, &(&nullifier, &locator)| {
+            |w, &(&nullifier, &scan_target)| {
                 w.write_all(nullifier.as_ref())?;
-                w.write_u32::<LittleEndian>(locator.0.into())?;
-                locator.1.write(w)
+                scan_target.write(w)
             },
         )?;
         Vector::write(
             &mut writer,
             &self.orchard.iter().collect::<Vec<_>>(),
-            |w, &(&nullifier, &locator)| {
+            |w, &(&nullifier, &scan_target)| {
                 w.write_all(&nullifier.to_bytes())?;
-                w.write_u32::<LittleEndian>(locator.0.into())?;
-                locator.1.write(w)
+                scan_target.write(w)
             },
         )
     }

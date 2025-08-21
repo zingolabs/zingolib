@@ -2,18 +2,16 @@
 
 use std::cmp;
 use std::collections::{BTreeMap, HashMap};
-use std::io::{Read, Write};
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, AtomicU8};
 use std::time::{Duration, SystemTime};
 
-use byteorder::{ReadBytesExt, WriteBytesExt};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{RwLock, mpsc};
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
-use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -25,6 +23,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
+use crate::config::SyncConfig;
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
@@ -37,7 +36,8 @@ use crate::wallet::traits::{
     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
 };
 use crate::wallet::{
-    Locator, NullifierMap, OutputId, SyncMode, SyncState, WalletBlock, WalletTransaction,
+    KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, ScanTarget, SyncMode,
+    SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
 
@@ -48,8 +48,9 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
+const MEMPOOL_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 ///
@@ -162,136 +163,126 @@ impl From<SyncResult> for json::JsonValue {
     }
 }
 
-/// Sync configuration.
-#[derive(Default, Debug, Clone)]
-pub struct SyncConfig {
-    /// Transparent address discovery configuration.
-    pub transparent_address_discovery: TransparentAddressDiscovery,
+/// Scanning range priority levels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScanPriority {
+    /// Block ranges that are currently being scanned.
+    Scanning,
+    /// Block ranges that have already been scanned will not be re-scanned.
+    Scanned,
+    /// Block ranges that have already been scanned. The nullifiers from this range were not mapped after scanning and
+    /// spend detection to reduce memory consumption and/or storage for non-linear scanning. These nullifiers will need
+    /// to be re-fetched for final spend detection when merging this range is the lowest unscanned range in the
+    /// wallet's list of scan ranges.
+    ScannedWithoutMapping,
+    /// Block ranges to be scanned to advance the fully-scanned height.
+    Historic,
+    /// Block ranges adjacent to heights at which the user opened the wallet.
+    OpenAdjacent,
+    /// Blocks that must be scanned to complete note commitment tree shards adjacent to found notes.
+    FoundNote,
+    /// Blocks that must be scanned to complete the latest note commitment tree shard.
+    ChainTip,
+    /// A previously scanned range that must be verified to check it is still in the
+    /// main chain, has highest priority.
+    Verify,
 }
 
-impl SyncConfig {
-    fn serialized_version() -> u8 {
-        0
+/// A range of blocks to be scanned, along with its associated priority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanRange {
+    block_range: Range<BlockHeight>,
+    priority: ScanPriority,
+}
+
+impl std::fmt::Display for ScanRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}({}..{})",
+            self.priority, self.block_range.start, self.block_range.end,
+        )
+    }
+}
+
+impl ScanRange {
+    /// Constructs a scan range from its constituent parts.
+    pub fn from_parts(block_range: Range<BlockHeight>, priority: ScanPriority) -> Self {
+        assert!(
+            block_range.end >= block_range.start,
+            "{:?} is invalid for ScanRange({:?})",
+            block_range,
+            priority,
+        );
+        ScanRange {
+            block_range,
+            priority,
+        }
     }
 
-    /// Deserialize into `reader`
-    pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+    /// Returns the range of block heights to be scanned.
+    pub fn block_range(&self) -> &Range<BlockHeight> {
+        &self.block_range
+    }
 
-        let gap_limit = reader.read_u8()?;
-        let scopes = reader.read_u8()?;
-        Ok(Self {
-            transparent_address_discovery: TransparentAddressDiscovery {
-                gap_limit,
-                scopes: TransparentAddressDiscoveryScopes {
-                    external: scopes & 0b1 != 0,
-                    internal: scopes & 0b10 != 0,
-                    refund: scopes & 0b100 != 0,
-                },
+    /// Returns the priority with which the scan range should be scanned.
+    pub fn priority(&self) -> ScanPriority {
+        self.priority
+    }
+
+    /// Returns whether or not the scan range is empty.
+    pub fn is_empty(&self) -> bool {
+        self.block_range.is_empty()
+    }
+
+    /// Returns the number of blocks in the scan range.
+    pub fn len(&self) -> usize {
+        usize::try_from(u32::from(self.block_range.end) - u32::from(self.block_range.start))
+            .expect("due to number of max blocks should always be valid usize")
+    }
+
+    /// Shifts the start of the block range to the right if `block_height >
+    /// self.block_range().start`. Returns `None` if the resulting range would
+    /// be empty (or the range was already empty).
+    pub fn truncate_start(&self, block_height: BlockHeight) -> Option<Self> {
+        if block_height >= self.block_range.end || self.is_empty() {
+            None
+        } else {
+            Some(ScanRange {
+                block_range: self.block_range.start.max(block_height)..self.block_range.end,
+                priority: self.priority,
+            })
+        }
+    }
+
+    /// Shifts the end of the block range to the left if `block_height <
+    /// self.block_range().end`. Returns `None` if the resulting range would
+    /// be empty (or the range was already empty).
+    pub fn truncate_end(&self, block_height: BlockHeight) -> Option<Self> {
+        if block_height <= self.block_range.start || self.is_empty() {
+            None
+        } else {
+            Some(ScanRange {
+                block_range: self.block_range.start..self.block_range.end.min(block_height),
+                priority: self.priority,
+            })
+        }
+    }
+
+    /// Splits this scan range at the specified height, such that the provided height becomes the
+    /// end of the first range returned and the start of the second. Returns `None` if
+    /// `p <= self.block_range().start || p >= self.block_range().end`.
+    pub fn split_at(&self, p: BlockHeight) -> Option<(Self, Self)> {
+        (p > self.block_range.start && p < self.block_range.end).then_some((
+            ScanRange {
+                block_range: self.block_range.start..p,
+                priority: self.priority,
             },
-        })
-    }
-
-    /// Serialize into `writer`
-    pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
-        writer.write_u8(Self::serialized_version())?;
-        writer.write_u8(self.transparent_address_discovery.gap_limit)?;
-        let mut scopes = 0;
-        if self.transparent_address_discovery.scopes.external {
-            scopes |= 0b1;
-        };
-        if self.transparent_address_discovery.scopes.internal {
-            scopes |= 0b10;
-        };
-        if self.transparent_address_discovery.scopes.refund {
-            scopes |= 0b100;
-        };
-        writer.write_u8(scopes)?;
-
-        Ok(())
-    }
-}
-
-/// Transparent address configuration.
-///
-/// Sets which `scopes` will be searched for addresses in use, scanning relevant transactions, up to a given `gap_limit`.
-#[derive(Debug, Clone)]
-pub struct TransparentAddressDiscovery {
-    /// Sets the gap limit for transparent address discovery.
-    pub gap_limit: u8,
-    /// Sets the scopes for transparent address discovery.
-    pub scopes: TransparentAddressDiscoveryScopes,
-}
-
-impl Default for TransparentAddressDiscovery {
-    fn default() -> Self {
-        Self {
-            gap_limit: 10,
-            scopes: TransparentAddressDiscoveryScopes::default(),
-        }
-    }
-}
-
-impl TransparentAddressDiscovery {
-    /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
-    pub fn minimal() -> Self {
-        Self {
-            gap_limit: 1,
-            scopes: TransparentAddressDiscoveryScopes::default(),
-        }
-    }
-
-    /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
-    pub fn recovery() -> Self {
-        Self {
-            gap_limit: 20,
-            scopes: TransparentAddressDiscoveryScopes::recovery(),
-        }
-    }
-
-    /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
-    /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
-    pub fn disabled() -> Self {
-        Self {
-            gap_limit: 0,
-            scopes: TransparentAddressDiscoveryScopes {
-                external: false,
-                internal: false,
-                refund: false,
+            ScanRange {
+                block_range: p..self.block_range.end,
+                priority: self.priority,
             },
-        }
-    }
-}
-
-/// Sets the active scopes for transparent address recovery.
-#[derive(Debug, Clone)]
-pub struct TransparentAddressDiscoveryScopes {
-    /// External.
-    pub external: bool,
-    /// Internal.
-    pub internal: bool,
-    /// Refund.
-    pub refund: bool,
-}
-
-impl Default for TransparentAddressDiscoveryScopes {
-    fn default() -> Self {
-        Self {
-            external: true,
-            internal: false,
-            refund: true,
-        }
-    }
-}
-
-impl TransparentAddressDiscoveryScopes {
-    /// Constructor with all all scopes active.
-    pub fn recovery() -> Self {
-        Self {
-            external: true,
-            internal: true,
-            refund: true,
-        }
+        ))
     }
 }
 
@@ -303,18 +294,24 @@ impl TransparentAddressDiscoveryScopes {
 /// error. This allows more flexibility and safety with sync task handles etc.
 /// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
 /// times in quick sucession without the sync engine interrupting.
-/// Setting `sync_mode` back to `Running` will resume scanning.
-/// Setting `sync_mode` to `Shutdown` will stop the sync process.
+/// Set `sync_mode` back to `Running` to resume scanning.
+/// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
     client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
-    wallet: Arc<Mutex<W>>,
+    wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     P: consensus::Parameters + Sync + Send + 'static,
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     let mut sync_mode_enum = SyncMode::from_atomic_u8(sync_mode.clone())?;
     if sync_mode_enum == SyncMode::NotRunning {
@@ -352,7 +349,7 @@ where
     });
 
     // pre-scan initialisation
-    let mut wallet_guard = wallet.lock().await;
+    let mut wallet_guard = wallet.write().await;
 
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
         .map_err(SyncError::WalletError)?;
@@ -369,7 +366,7 @@ where
         .get_unified_full_viewing_keys()
         .map_err(SyncError::WalletError)?;
 
-    transparent::update_addresses_and_locators(
+    transparent::update_addresses_and_scan_targets(
         consensus_parameters,
         &mut *wallet_guard,
         fetch_request_sender.clone(),
@@ -420,6 +417,8 @@ where
         .expect("scan ranges must be non-empty")
         + 1;
 
+    reset_invalid_spends(&mut *wallet_guard)?;
+
     drop(wallet_guard);
 
     // create channel for receiving scan results and launch scanner
@@ -430,7 +429,7 @@ where
         fetch_request_sender.clone(),
         ufvks.clone(),
     );
-    scanner.launch();
+    scanner.launch(config.performance_level);
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
@@ -439,7 +438,7 @@ where
     loop {
         tokio::select! {
             Some((scan_range, scan_results)) = scan_results_receiver.recv() => {
-                let mut wallet_guard = wallet.lock().await;
+                let mut wallet_guard = wallet.write().await;
                 process_scan_results(
                     consensus_parameters,
                     &mut *wallet_guard,
@@ -455,7 +454,7 @@ where
             }
 
             Some(raw_transaction) = mempool_transaction_receiver.recv() => {
-                let mut wallet_guard = wallet.lock().await;
+                let mut wallet_guard = wallet.write().await;
                 process_mempool_transaction(
                     consensus_parameters,
                     &ufvks,
@@ -479,7 +478,7 @@ where
                         }
                     },
                     SyncMode::Shutdown => {
-                        let mut wallet_guard = wallet.lock().await;
+                        let mut wallet_guard = wallet.write().await;
                         let sync_status = match sync_status(&*wallet_guard).await {
                             Ok(status) => status,
                             Err(SyncStatusError::WalletError(e)) => {
@@ -516,7 +515,7 @@ where
                     },
                 }
 
-                scanner.update(&mut *wallet.lock().await, shutdown_mempool.clone()).await?;
+                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), config.performance_level).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
@@ -531,7 +530,7 @@ where
         }
     }
 
-    let mut wallet_guard = wallet.lock().await;
+    let mut wallet_guard = wallet.write().await;
     let sync_status = match sync_status(&*wallet_guard).await {
         Ok(status) => status,
         Err(SyncStatusError::WalletError(e)) => {
@@ -679,7 +678,7 @@ where
 /// Used both internally for scanning mempool transactions and externally for scanning calculated and transmitted
 /// transactions during send.
 ///
-/// Fails if `status` is of `Confirmed` variant.
+/// Panics if `status` is of `Confirmed` variant.
 pub fn scan_pending_transaction<W>(
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
@@ -689,7 +688,7 @@ pub fn scan_pending_transaction<W>(
     datetime: u32,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     if matches!(status, ConfirmationStatus::Confirmed(_)) {
         panic!("this fn is for unconfirmed transactions only");
@@ -720,13 +719,13 @@ where
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?;
     let transparent_output_ids = spend::collect_transparent_output_ids(wallet_transactions);
-    let transparent_spend_locators = spend::detect_transparent_spends(
+    let transparent_spend_scan_targets = spend::detect_transparent_spends(
         &mut pending_transaction_outpoints,
         transparent_output_ids,
     );
     let (sapling_derived_nullifiers, orchard_derived_nullifiers) =
         spend::collect_derived_nullifiers(wallet_transactions);
-    let (sapling_spend_locators, orchard_spend_locators) = spend::detect_shielded_spends(
+    let (sapling_spend_scan_targets, orchard_spend_scan_targets) = spend::detect_shielded_spends(
         &mut pending_transaction_nullifiers,
         sapling_derived_nullifiers,
         orchard_derived_nullifiers,
@@ -738,9 +737,9 @@ where
         && pending_transaction.orchard_notes().is_empty()
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_sapling_notes().is_empty()
-        && transparent_spend_locators.is_empty()
-        && sapling_spend_locators.is_empty()
-        && orchard_spend_locators.is_empty()
+        && transparent_spend_scan_targets.is_empty()
+        && sapling_spend_scan_targets.is_empty()
+        && orchard_spend_scan_targets.is_empty()
     {
         return Ok(());
     }
@@ -752,15 +751,15 @@ where
         wallet
             .get_wallet_transactions_mut()
             .map_err(SyncError::WalletError)?,
-        transparent_spend_locators,
+        transparent_spend_scan_targets,
     );
     spend::update_spent_notes(
-        wallet
-            .get_wallet_transactions_mut()
-            .map_err(SyncError::WalletError)?,
-        sapling_spend_locators,
-        orchard_spend_locators,
-    );
+        wallet,
+        sapling_spend_scan_targets,
+        orchard_spend_scan_targets,
+        false,
+    )
+    .map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -775,10 +774,54 @@ where
 /// wallet. However, in the case where a relevant spending transaction at a given height contains no decryptable
 /// incoming notes (change), only the nullifier will be mapped and this transaction will be scanned when the
 /// transaction containing the spent notes is scanned instead.
-pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[Locator]) {
+pub fn add_scan_targets(sync_state: &mut SyncState, scan_targets: &[ScanTarget]) {
     for scan_target in scan_targets {
-        sync_state.locators.insert(*scan_target);
+        sync_state.scan_targets.insert(*scan_target);
     }
+}
+
+/// Resets the spending transaction field of all outputs that were previously spent but became unspent due to a
+/// spending transactions becoming invalid.
+///
+/// `invalid_txids` are the id's of the invalidated spending transactions. Any outputs in the `wallet_transactions`
+/// matching these spending transactions will be reset back to `None`.
+pub fn reset_spends(
+    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    invalid_txids: Vec<TxId>,
+) {
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.orchard_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.sapling_notes_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
+    wallet_transactions
+        .values_mut()
+        .flat_map(|transaction| transaction.transparent_coins_mut())
+        .filter(|output| {
+            output
+                .spending_transaction
+                .is_some_and(|spending_txid| invalid_txids.contains(&spending_txid))
+        })
+        .for_each(|output| {
+            output.set_spending_transaction(None);
+        });
 }
 
 /// Returns true if the scanner and mempool are shutdown.
@@ -804,45 +847,122 @@ async fn process_scan_results<W>(
     initial_verification_height: BlockHeight,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncWallet
+        + SyncBlocks
+        + SyncTransactions
+        + SyncNullifiers
+        + SyncOutPoints
+        + SyncShardTrees
+        + Send,
 {
     match scan_results {
         Ok(results) => {
             let ScanResults {
-                nullifiers,
+                mut nullifiers,
                 outpoints,
                 scanned_blocks,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
+                map_nullifiers,
             } = results;
-            update_wallet_data(
-                consensus_parameters,
-                wallet,
-                &scan_range,
-                nullifiers,
-                outpoints,
-                wallet_transactions,
-                sapling_located_trees,
-                orchard_located_trees,
-            )?;
-            spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
-            spend::update_shielded_spends(
-                consensus_parameters,
-                wallet,
-                fetch_request_sender,
-                ufvks,
-                &scanned_blocks,
-            )
-            .await?;
-            add_scanned_blocks(wallet, scanned_blocks, &scan_range)
-                .map_err(SyncError::WalletError)?;
-            state::set_scanned_scan_range(
-                wallet
-                    .get_sync_state_mut()
-                    .map_err(SyncError::WalletError)?,
-                scan_range.block_range().clone(),
-            );
+
+            if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                    Some(&mut nullifiers),
+                )
+                .await?;
+
+                // add missing block bounds in the case that nullifier batch limit was reached and scan range was split
+                let mut missing_block_bounds = BTreeMap::new();
+                for block_bound in [
+                    scan_range.block_range().start,
+                    scan_range.block_range().end - 1,
+                ] {
+                    if wallet.get_wallet_block(block_bound).is_err() {
+                        missing_block_bounds.insert(
+                            block_bound,
+                            WalletBlock::from_compact_block(
+                                consensus_parameters,
+                                fetch_request_sender.clone(),
+                                &client::get_compact_block(
+                                    fetch_request_sender.clone(),
+                                    block_bound,
+                                )
+                                .await?,
+                            )
+                            .await?,
+                        );
+                    }
+                }
+                if !missing_block_bounds.is_empty() {
+                    wallet
+                        .append_wallet_blocks(missing_block_bounds)
+                        .map_err(SyncError::WalletError)?;
+                }
+
+                state::set_scanned_scan_range(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    scan_range.block_range().clone(),
+                    true,
+                );
+            } else {
+                update_wallet_data(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scan_range,
+                    if map_nullifiers {
+                        Some(&mut nullifiers)
+                    } else {
+                        None
+                    },
+                    outpoints,
+                    wallet_transactions,
+                    sapling_located_trees,
+                    orchard_located_trees,
+                )
+                .await?;
+                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender,
+                    ufvks,
+                    &scanned_blocks,
+                    if map_nullifiers {
+                        None
+                    } else {
+                        Some(&mut nullifiers)
+                    },
+                )
+                .await?;
+                add_scanned_blocks(wallet, scanned_blocks, &scan_range)
+                    .map_err(SyncError::WalletError)?;
+
+                state::set_scanned_scan_range(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    scan_range.block_range().clone(),
+                    map_nullifiers,
+                );
+                state::merge_scan_ranges(
+                    wallet
+                        .get_sync_state_mut()
+                        .map_err(SyncError::WalletError)?,
+                    ScanPriority::ScannedWithoutMapping,
+                );
+            }
+
             state::merge_scan_ranges(
                 wallet
                     .get_sync_state_mut()
@@ -864,14 +984,14 @@ where
                     .wallet_height()
                     .expect("scan ranges should be non-empty in this scope");
 
-                // reset scan range from `Ignored` to `Verify`
+                // reset scan range from `Scanning` to `Verify`
                 state::set_scan_priority(
                     sync_state,
                     scan_range.block_range(),
                     ScanPriority::Verify,
                 );
 
-                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verifaction range
+                // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
                 let scan_range_to_verify = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
@@ -914,21 +1034,26 @@ async fn process_mempool_transaction<W>(
     raw_transaction: RawTransaction,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    let block_height = BlockHeight::from_u32(
-        u32::try_from(raw_transaction.height + 1).expect("should be valid u32"),
-    );
+    // does not use raw transaction height due to lightwalletd off-by-one bug and potential to be zero
+    let mempool_height = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+        .expect("wallet height must exist after sync is initialised")
+        + 1;
+
     let transaction = zcash_primitives::transaction::Transaction::read(
         &raw_transaction.data[..],
-        consensus::BranchId::for_height(consensus_parameters, block_height),
+        consensus::BranchId::for_height(consensus_parameters, mempool_height),
     )
     .map_err(ServerError::InvalidTransaction)?;
 
     tracing::debug!(
         "mempool received txid {} at height {}",
         transaction.txid(),
-        block_height
+        mempool_height
     );
 
     if let Some(tx) = wallet
@@ -936,7 +1061,7 @@ where
         .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
     {
-        if tx.status().is_confirmed() {
+        if tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)) {
             return Ok(());
         }
     }
@@ -946,7 +1071,7 @@ where
         ufvks,
         wallet,
         transaction,
-        ConfirmationStatus::Mempool(block_height),
+        ConfirmationStatus::Mempool(mempool_height),
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("infalliable for such long time periods")
@@ -990,18 +1115,20 @@ where
 
 /// Updates the wallet with data from `scan_results`
 #[allow(clippy::too_many_arguments)]
-fn update_wallet_data<W>(
+async fn update_wallet_data<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
+    fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
-    nullifiers: NullifierMap,
-    mut outpoints: BTreeMap<OutputId, Locator>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    nullifiers: Option<&mut NullifierMap>,
+    mut outpoints: BTreeMap<OutputId, ScanTarget>,
+    transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees + Send,
 {
     let sync_state = wallet
         .get_sync_state_mut()
@@ -1009,7 +1136,7 @@ where
     let wallet_height = sync_state
         .wallet_height()
         .expect("scan ranges should not be empty in this scope");
-    for transaction in wallet_transactions.values() {
+    for transaction in transactions.values() {
         state::update_found_note_shard_priority(
             consensus_parameters,
             sync_state,
@@ -1023,22 +1150,80 @@ where
             transaction,
         );
     }
+    for transaction in transactions.values() {
+        discover_unified_addresses(wallet, ufvks, transaction).map_err(SyncError::WalletError)?;
+    }
 
     wallet
-        .extend_wallet_transactions(wallet_transactions)
+        .extend_wallet_transactions(transactions)
         .map_err(SyncError::WalletError)?;
-    wallet
-        .append_nullifiers(nullifiers)
-        .map_err(SyncError::WalletError)?;
+    if let Some(nullifiers) = nullifiers {
+        wallet
+            .append_nullifiers(nullifiers)
+            .map_err(SyncError::WalletError)?;
+    }
     wallet
         .append_outpoints(&mut outpoints)
         .map_err(SyncError::WalletError)?;
-    wallet.update_shard_trees(
-        scan_range,
-        wallet_height,
-        sapling_located_trees,
-        orchard_located_trees,
-    )?;
+    wallet
+        .update_shard_trees(
+            fetch_request_sender,
+            scan_range,
+            wallet_height,
+            sapling_located_trees,
+            orchard_located_trees,
+        )
+        .await?;
+
+    Ok(())
+}
+
+fn discover_unified_addresses<W>(
+    wallet: &mut W,
+    ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    transaction: &WalletTransaction,
+) -> Result<(), W::Error>
+where
+    W: SyncWallet,
+{
+    for note in transaction
+        .orchard_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .orchard()
+            .expect("fvk must exist to decrypt this note")
+            .to_ivk(zip32::Scope::External);
+
+        wallet.add_orchard_address(
+            note.key_id().account_id(),
+            note.note().recipient(),
+            ivk.diversifier_index(&note.note().recipient())
+                .expect("must be key used to create this address"),
+        )?
+    }
+    for note in transaction
+        .sapling_notes()
+        .iter()
+        .filter(|&note| note.key_id().scope == zip32::Scope::External)
+    {
+        let ivk = ufvks
+            .get(&note.key_id().account_id())
+            .expect("ufvk must exist to decrypt this note")
+            .sapling()
+            .expect("fvk must exist to decrypt this note")
+            .to_external_ivk();
+
+        wallet.add_sapling_address(
+            note.key_id().account_id(),
+            note.note().recipient(),
+            ivk.decrypt_diversifier(&note.note().recipient())
+                .expect("must be key used to create this address"),
+        )?
+    }
 
     Ok(())
 }
@@ -1054,19 +1239,19 @@ where
 
     wallet
         .get_outpoints_mut()?
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()?
         .sapling
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_nullifiers_mut()?
         .orchard
-        .retain(|_, (height, _)| *height > fully_scanned_height);
+        .retain(|_, scan_target| scan_target.block_height > fully_scanned_height);
     wallet
         .get_sync_state_mut()?
-        .locators
-        .retain(|(height, _)| *height > fully_scanned_height);
+        .scan_targets
+        .retain(|scan_target| scan_target.block_height > fully_scanned_height);
     remove_irrelevant_blocks(wallet)?;
 
     Ok(())
@@ -1076,15 +1261,18 @@ fn remove_irrelevant_blocks<W>(wallet: &mut W) -> Result<(), W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions,
 {
-    let highest_scanned_height = wallet
-        .get_sync_state()?
+    let sync_state = wallet.get_sync_state()?;
+    let highest_scanned_height = sync_state
         .highest_scanned_height()
         .expect("should be non-empty");
-    let scanned_range_bounds = wallet
-        .get_sync_state()?
+    let scanned_range_bounds = sync_state
         .scan_ranges()
         .iter()
-        .filter(|scan_range| scan_range.priority() == ScanPriority::Scanned)
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::Scanning
+        })
         .flat_map(|scanned_range| {
             vec![
                 scanned_range.block_range().start,
@@ -1099,7 +1287,7 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
@@ -1127,7 +1315,7 @@ where
         .collect::<Vec<_>>();
 
     scanned_blocks.retain(|height, _| {
-        *height >= highest_scanned_height - MAX_VERIFICATION_WINDOW
+        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
             || *height == scan_range.block_range().start
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
@@ -1319,6 +1507,43 @@ async fn mempool_monitor(
             }
         }
     }
+
+    Ok(())
+}
+
+fn reset_invalid_spends<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncTransactions,
+{
+    let wallet_height = wallet
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+        .expect("wallet height must exist after scan ranges have been updated");
+    let wallet_transactions = wallet
+        .get_wallet_transactions_mut()
+        .map_err(SyncError::WalletError)?;
+
+    let invalid_txids = wallet_transactions
+        .values()
+        .filter(|transaction| {
+            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
+                && transaction.status().get_height()
+                    <= wallet_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
+        })
+        .map(|transaction| transaction.txid())
+        .chain(
+            wallet_transactions
+                .values()
+                .filter(|transaction| {
+                    (matches!(transaction.status(), ConfirmationStatus::Calculated(_))
+                        || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
+                        && wallet_height >= transaction.transaction().expiry_height()
+                })
+                .map(|transaction| transaction.txid()),
+        )
+        .collect::<Vec<_>>();
+    reset_spends(wallet_transactions, invalid_txids);
 
     Ok(())
 }

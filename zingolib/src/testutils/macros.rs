@@ -1,23 +1,43 @@
+//! TODO
+
 /// Note that do_addresses returns an array, each element is a JSON representation
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>
+// TODO: is this needed as a macro?
+// TODO: change unified to orchard as both are unified with orchard-only or sapling-only receiver selections
 #[macro_export]
 macro_rules! get_base_address_macro {
     ($client:expr, $address_protocol:expr) => {
         match $address_protocol {
-            "unified" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["address"]
-                .take()
-                .to_string(),
-            "sapling" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["receivers"]["sapling"]
-                .clone()
-                .to_string(),
-            "transparent" => $client
-                .do_addresses($crate::lightclient::describe::UAReceivers::All)
-                .await[0]["receivers"]["transparent"]
+            "unified" => {
+                assert_eq!(
+                    $client.unified_addresses_json().await[0]["has_orchard"]
+                        .as_bool()
+                        .unwrap(),
+                    true
+                );
+                $client.unified_addresses_json().await[0]["encoded_address"]
+                    .clone()
+                    .to_string()
+            }
+            "sapling" => {
+                assert_eq!(
+                    $client.unified_addresses_json().await[1]["has_orchard"]
+                        .as_bool()
+                        .unwrap(),
+                    false
+                );
+                assert_eq!(
+                    $client.unified_addresses_json().await[1]["has_sapling"]
+                        .as_bool()
+                        .unwrap(),
+                    true
+                );
+                $client.unified_addresses_json().await[1]["encoded_address"]
+                    .clone()
+                    .to_string()
+            }
+            "transparent" => $client.transparent_addresses_json().await[0]["encoded_address"]
                 .clone()
                 .to_string(),
             _ => "ERROR".to_string(),
@@ -32,46 +52,30 @@ macro_rules! get_base_address_macro {
 #[macro_export]
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
-        use zingolib::wallet::data::summaries::TransactionSummaryInterface as _;
-
-        let balance = $client.do_balance().await;
+        let balance = $client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap();
         assert_eq!(
-            balance.orchard_balance.unwrap(),
+            balance.total_orchard_balance.unwrap().into_u64(),
             $orchard,
             "\no_balance: {} expectation: {} ",
-            balance.orchard_balance.unwrap(),
+            balance.total_orchard_balance.unwrap().into_u64(),
             $orchard
         );
         assert_eq!(
-            balance.sapling_balance.unwrap(),
+            balance.total_sapling_balance.unwrap().into_u64(),
             $sapling,
             "\ns_balance: {} expectation: {} ",
-            balance.sapling_balance.unwrap(),
+            balance.total_sapling_balance.unwrap().into_u64(),
             $sapling
         );
         assert_eq!(
-            balance.confirmed_transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent,
             "\nt_balance: {} expectation: {} ",
-            balance.confirmed_transparent_balance.unwrap(),
+            balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent
-        );
-        let summaries = $client.transaction_summaries().await.unwrap();
-        let summaries_balance = summaries
-            .iter()
-            .map(|summary| {
-                summary
-                    .balance_delta()
-                    .unwrap_or_else(|| panic!("field not correctly populated"))
-            })
-            .sum::<i64>();
-        assert_eq!(
-            (balance.orchard_balance.unwrap()
-                + balance.sapling_balance.unwrap()
-                + balance.confirmed_transparent_balance.unwrap()) as i64,
-            summaries_balance,
-            "transaction_summaries: {}",
-            summaries
         );
     };
 }

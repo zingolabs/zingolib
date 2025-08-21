@@ -8,22 +8,20 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
-    /// The transaction has been calculated but not yet broadcast to the chain.
-    Calculated(BlockHeight),
-
-    /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
-    Transmitted(BlockHeight),
-
-    /// The transaction is known to be or have been in the mempool.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
-    Mempool(BlockHeight),
-
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
     Confirmed(BlockHeight),
+    /// The transaction is known to be or have been in the mempool.
+    /// The BlockHeight is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
+    Mempool(BlockHeight),
+    /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
+    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    Transmitted(BlockHeight),
+    /// The transaction has been calculated but not yet broadcast to the chain.
+    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    Calculated(BlockHeight),
 }
 
 impl ConfirmationStatus {

@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 use std::{
     io::{self, Error, ErrorKind},
+    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
@@ -25,6 +26,7 @@ use log4rs::{
 use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
+use zingo_infra_services::network::ActivationHeights;
 
 use crate::wallet::WalletSettings;
 
@@ -47,12 +49,17 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
+/// Re-export pepper-sync SyncConfig for use with load_clientconfig
+///
+pub use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
+
 /// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
     chain: ChainType,
     wallet_settings: WalletSettings,
+    no_of_accounts: NonZeroU32,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -86,6 +93,7 @@ pub fn load_clientconfig(
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
+        no_of_accounts,
     };
 
     Ok(config)
@@ -136,9 +144,11 @@ pub struct ZingoConfigBuilder {
     pub logfile_name: Option<PathBuf>,
     /// Wallet settings.
     pub wallet_settings: WalletSettings,
+    /// Number of accounts
+    pub no_of_accounts: NonZeroU32,
 }
 
-/// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
+/// Configuration data for the creation of a LightClient.
 // TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
 // lightclient or lightwallet if it needs to retained in memory.
 #[derive(Clone, Debug)]
@@ -155,6 +165,8 @@ pub struct ZingoConfig {
     pub logfile_name: PathBuf,
     /// Wallet settings.
     pub wallet_settings: WalletSettings,
+    /// Number of accounts
+    pub no_of_accounts: NonZeroU32,
 }
 
 impl ZingoConfigBuilder {
@@ -206,6 +218,12 @@ impl ZingoConfigBuilder {
     }
 
     /// TODO: Add Doc Comment Here!
+    pub fn set_no_of_accounts(&mut self, no_of_accounts: NonZeroU32) -> &mut Self {
+        self.no_of_accounts = no_of_accounts;
+        self
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn create(&self) -> ZingoConfig {
         let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
@@ -215,6 +233,7 @@ impl ZingoConfigBuilder {
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
             wallet_settings: self.wallet_settings.clone(),
+            no_of_accounts: self.no_of_accounts,
         }
     }
 }
@@ -230,11 +249,14 @@ impl Default for ZingoConfigBuilder {
             logfile_name: None,
             chain: ChainType::Mainnet,
             wallet_settings: WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
+                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             },
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }
     }
 }
@@ -399,22 +421,9 @@ impl ZingoConfig {
                 ));
             }
 
-            let mut zcash_params = self.get_zingo_wallet_dir().into_path_buf();
-            zcash_params.push("..");
+            let zcash_params_dir = zcash_proofs::default_params_folder().unwrap();
 
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            zcash_params.push("ZcashParams");
-
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            zcash_params.push(".zcash-params");
-
-            match std::fs::create_dir_all(zcash_params.clone()) {
-                Ok(_) => Ok(zcash_params.into_boxed_path()),
-                Err(e) => {
-                    eprintln!("Couldn't create zcash params directory\n{}", e);
-                    Err(e)
-                }
-            }
+            Ok(zcash_params_dir.into_boxed_path())
         }
     }
 
@@ -489,7 +498,7 @@ pub enum ChainType {
     /// Public testnet
     Testnet,
     /// Local testnet
-    Regtest(RegtestNetwork),
+    Regtest(ActivationHeights),
     /// Mainnet
     Mainnet,
 }
@@ -520,150 +529,15 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest(regtest_network) => regtest_network.activation_height(nu),
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-// TODO: replace with infrastucture types
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RegtestNetwork {
-    activation_heights: ActivationHeights,
-}
-
-impl RegtestNetwork {
-    /// TODO: Add Doc Comment Here!
-    pub fn new(
-        overwinter_activation_height: u64,
-        sapling_activation_height: u64,
-        blossom_activation_height: u64,
-        heartwood_activation_height: u64,
-        canopy_activation_height: u64,
-        orchard_activation_height: u64,
-        nu6_activation_height: u64,
-    ) -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(
-                overwinter_activation_height,
-                sapling_activation_height,
-                blossom_activation_height,
-                heartwood_activation_height,
-                canopy_activation_height,
-                orchard_activation_height,
-                nu6_activation_height,
-            ),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn all_upgrades_active() -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1, 1),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn set_orchard_and_nu6(custom_activation_height: u64) -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(
-                1,
-                1,
-                1,
-                1,
-                1,
-                custom_activation_height,
-                custom_activation_height,
-            ),
-        }
-    }
-
-    /// Network parameters
-    pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        match nu {
-            NetworkUpgrade::Overwinter => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Overwinter),
-            ),
-            NetworkUpgrade::Sapling => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Sapling),
-            ),
-            NetworkUpgrade::Blossom => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Blossom),
-            ),
-            NetworkUpgrade::Heartwood => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Heartwood),
-            ),
-            NetworkUpgrade::Canopy => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Canopy),
-            ),
-            NetworkUpgrade::Nu5 => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Nu5),
-            ),
-            NetworkUpgrade::Nu6 => Some(
-                self.activation_heights
-                    .get_activation_height(NetworkUpgrade::Nu6),
-            ),
-        }
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-// TODO: replace with infrastucture types
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ActivationHeights {
-    overwinter: BlockHeight,
-    sapling: BlockHeight,
-    blossom: BlockHeight,
-    heartwood: BlockHeight,
-    canopy: BlockHeight,
-    orchard: BlockHeight,
-    nu6: BlockHeight,
-}
-
-impl ActivationHeights {
-    /// TODO: Add Doc Comment Here!
-    pub fn new(
-        overwinter: u64,
-        sapling: u64,
-        blossom: u64,
-        heartwood: u64,
-        canopy: u64,
-        orchard: u64,
-        nu6: u64,
-    ) -> Self {
-        Self {
-            overwinter: BlockHeight::from_u32(overwinter as u32),
-            sapling: BlockHeight::from_u32(sapling as u32),
-            blossom: BlockHeight::from_u32(blossom as u32),
-            heartwood: BlockHeight::from_u32(heartwood as u32),
-            canopy: BlockHeight::from_u32(canopy as u32),
-            orchard: BlockHeight::from_u32(orchard as u32),
-            nu6: BlockHeight::from_u32(nu6 as u32),
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn get_activation_height(&self, network_upgrade: NetworkUpgrade) -> BlockHeight {
-        match network_upgrade {
-            NetworkUpgrade::Overwinter => self.overwinter,
-            NetworkUpgrade::Sapling => self.sapling,
-            NetworkUpgrade::Blossom => self.blossom,
-            NetworkUpgrade::Heartwood => self.heartwood,
-            NetworkUpgrade::Canopy => self.canopy,
-            NetworkUpgrade::Nu5 => self.orchard,
-            NetworkUpgrade::Nu6 => self.nu6,
+            Regtest(activation_heights) => Some(activation_heights.activation_height(nu)),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use crate::wallet::WalletSettings;
 
     /// Validate that the load_clientconfig function creates a valid config from an empty uri
@@ -685,11 +559,14 @@ mod tests {
             Some(temp_path),
             crate::config::ChainType::Mainnet,
             WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
+            1.try_into().unwrap(),
         );
 
         assert!(valid_config.is_ok());
@@ -716,11 +593,14 @@ mod tests {
             Some(temp_path),
             crate::config::ChainType::Mainnet,
             WalletSettings {
-                sync_config: pepper_sync::sync::SyncConfig {
+                sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
-                        pepper_sync::sync::TransparentAddressDiscovery::minimal(),
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
+            1.try_into().unwrap(),
         )
         .unwrap();
 

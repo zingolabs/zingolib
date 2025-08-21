@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use darkside_tests::{
     constants::{
         ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
@@ -8,62 +10,74 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{DarksideHandler, read_dataset, read_lines},
+    utils::{read_dataset, read_lines},
 };
 
+use tempfile::TempDir;
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingolib::lightclient::PoolBalances;
-use zingolib::testutils::{
-    lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::setup::ClientBuilder,
+use zingo_infra_services::{
+    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
+    network::{ActivationHeights, localhost_uri},
 };
-use zingolib::wallet::data::summaries::ValueTransferKind;
-use zingolib::{config::RegtestNetwork, wallet::data::summaries::SentValueTransfer};
+use zingolib::wallet::summary::data::ValueTransferKind;
+use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
+use zingolib::{
+    testutils::{
+        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
+    },
+    wallet::balance::AccountBalance,
+};
 
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_height_change_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -80,26 +94,28 @@ async fn reorg_changes_incoming_tx_height() {
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].blockheight(),
+        after_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(206)
     );
 }
@@ -180,47 +196,52 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_index_change_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -237,26 +258,28 @@ async fn reorg_changes_incoming_tx_index() {
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
     assert_eq!(
-        after_reorg_transactions[0].blockheight(),
+        after_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 }
@@ -337,47 +360,52 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 #[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_expires_incoming_tx_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -394,22 +422,24 @@ async fn reorg_expires_incoming_tx() {
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(0),
-            verified_orchard_balance: Some(0),
-            spendable_orchard_balance: Some(0),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(0.try_into().unwrap()),
+            confirmed_orchard_balance: Some(0.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 0);
 }
@@ -516,47 +546,52 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100000000),
-            verified_orchard_balance: Some(100000000),
-            spendable_orchard_balance: Some(100000000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100000000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -587,37 +622,42 @@ async fn reorg_changes_outgoing_tx_height() {
 
     light_client.sync_and_await().await.unwrap();
 
-    let expected_after_send_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99890000),
-        verified_orchard_balance: Some(0),
-        spendable_orchard_balance: Some(0),
-        unverified_orchard_balance: Some(99890000),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_after_send_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(99890000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(0.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(99890000.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
-            .find_map(|v| match v.kind() {
+            .find_map(|v| match v.kind {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                    if let Some(addr) = v.recipient_address() {
-                        if addr == recipient_string && v.value() == 100_000 {
-                            Some(v.blockheight())
+                    if let Some(addr) = v.recipient_address.as_ref() {
+                        if addr == recipient_string && v.value == 100_000 {
+                            Some(v.blockheight)
                         } else {
                             None
                         }
@@ -655,30 +695,32 @@ async fn reorg_changes_outgoing_tx_height() {
         Err(err_str) => println!("{}", err_str),
     };
 
-    let expected_after_reorg_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99890000),
-        verified_orchard_balance: Some(99890000),
-        spendable_orchard_balance: Some(99890000),
-        unverified_orchard_balance: Some(0),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_after_reorg_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(99890000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(99890000.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -765,46 +807,54 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
-    let expected_initial_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(100000000),
-        verified_orchard_balance: Some(100000000),
-        spendable_orchard_balance: Some(100000000),
-        unverified_orchard_balance: Some(0),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_initial_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(100000000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(100000000.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
     light_client.sync_and_await().await.unwrap();
-    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        expected_initial_balance
+    );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -828,39 +878,41 @@ async fn reorg_expires_outgoing_tx_height() {
 
     light_client.sync_and_await().await.unwrap();
 
-    let expected_after_send_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99890000),
-        verified_orchard_balance: Some(0),
-        spendable_orchard_balance: Some(0),
-        unverified_orchard_balance: Some(99890000),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_after_send_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(99890000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(0.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(99890000.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!(
-        "{:?}",
-        light_client.sorted_value_transfers(true).await.unwrap()
-    );
+    println!("{:?}", light_client.value_transfers(true).await.unwrap());
 
     let send_height = light_client
-        .sorted_value_transfers(true)
+        .value_transfers(true)
         .await
         .unwrap()
         .iter()
-        .find_map(|v| match v.kind() {
+        .find_map(|v| match v.kind {
             ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                if let Some(addr) = v.recipient_address() {
-                    if addr == recipient_string && v.value() == 100_000 {
-                        Some(v.blockheight())
+                if let Some(addr) = v.recipient_address.as_ref() {
+                    if addr == recipient_string && v.value == 100_000 {
+                        Some(v.blockheight)
                     } else {
                         None
                     }
@@ -894,13 +946,19 @@ async fn reorg_expires_outgoing_tx_height() {
 
     // Assert that balance is equal to the initial balance since the
     // sent transaction was never mined and has expired.
-    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        expected_initial_balance
+    );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.sorted_value_transfers(true).await);
+    println!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -955,47 +1013,52 @@ async fn reorg_expires_outgoing_tx_height() {
 async fn reorg_changes_outgoing_tx_index() {
     tracing_subscriber::fmt().init();
 
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN,
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
         .unwrap();
 
-    let mut light_client =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone()).build_client(
-            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-            202,
-            true,
-            RegtestNetwork::all_upgrades_active(),
-        );
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+        202,
+        true,
+        ActivationHeights::default(),
+    );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
-        light_client.do_balance().await,
-        PoolBalances {
-            sapling_balance: Some(0),
-            verified_sapling_balance: Some(0),
-            spendable_sapling_balance: Some(0),
-            unverified_sapling_balance: Some(0),
-            orchard_balance: Some(100_000_000),
-            verified_orchard_balance: Some(100_000_000),
-            spendable_orchard_balance: Some(100_000_000),
-            unverified_orchard_balance: Some(0),
-            confirmed_transparent_balance: Some(0),
-            unconfirmed_transparent_balance: Some(0)
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        AccountBalance {
+            total_sapling_balance: Some(0.try_into().unwrap()),
+            confirmed_sapling_balance: Some(0.try_into().unwrap()),
+            unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+            total_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            confirmed_orchard_balance: Some(100_000_000.try_into().unwrap()),
+            unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+            total_transparent_balance: Some(0.try_into().unwrap()),
+            confirmed_transparent_balance: Some(0.try_into().unwrap()),
+            unconfirmed_transparent_balance: Some(0.try_into().unwrap())
         }
     );
 
-    let before_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let before_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     assert_eq!(before_reorg_transactions.len(), 1);
     assert_eq!(
-        before_reorg_transactions[0].blockheight(),
+        before_reorg_transactions[0].blockheight,
         BlockHeight::from_u32(203)
     );
 
@@ -1026,35 +1089,40 @@ async fn reorg_changes_outgoing_tx_index() {
 
     light_client.sync_and_await().await.unwrap();
 
-    let expected_after_send_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99_890_000),
-        verified_orchard_balance: Some(0),
-        spendable_orchard_balance: Some(0),
-        unverified_orchard_balance: Some(99_890_000),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_after_send_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(99_890_000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(0.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(99_890_000.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
-    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+    assert_eq!(
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
+        expected_after_send_balance
+    );
 
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
     assert_eq!(
         light_client
-            .sorted_value_transfers(true)
+            .value_transfers(true)
             .await
             .unwrap()
             .iter()
-            .find_map(|v| match v.kind() {
+            .find_map(|v| match v.kind {
                 ValueTransferKind::Sent(SentValueTransfer::Send) => {
-                    if let Some(addr) = v.recipient_address() {
-                        if addr == recipient_string && v.value() == 100_000 {
-                            Some(v.blockheight())
+                    if let Some(addr) = v.recipient_address.as_ref() {
+                        if addr == recipient_string && v.value == 100_000 {
+                            Some(v.blockheight)
                         } else {
                             None
                         }
@@ -1070,12 +1138,12 @@ async fn reorg_changes_outgoing_tx_index() {
     );
 
     println!("pre re-org value transfers:");
+    println!("{}", light_client.value_transfers(true).await.unwrap());
+    println!("pre re-org tx summaries:");
     println!(
         "{}",
-        light_client.sorted_value_transfers(true).await.unwrap()
+        light_client.transaction_summaries(false).await.unwrap()
     );
-    println!("pre re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
 
     //
     // Create reorg
@@ -1101,31 +1169,36 @@ async fn reorg_changes_outgoing_tx_index() {
 
     light_client.sync_and_await().await.unwrap();
 
-    let expected_after_reorg_balance = PoolBalances {
-        sapling_balance: Some(0),
-        verified_sapling_balance: Some(0),
-        spendable_sapling_balance: Some(0),
-        unverified_sapling_balance: Some(0),
-        orchard_balance: Some(99_890_000),
-        verified_orchard_balance: Some(99_890_000),
-        spendable_orchard_balance: Some(99_890_000),
-        unverified_orchard_balance: Some(0),
-        confirmed_transparent_balance: Some(0),
-        unconfirmed_transparent_balance: Some(0),
+    let expected_after_reorg_balance = AccountBalance {
+        total_sapling_balance: Some(0.try_into().unwrap()),
+        confirmed_sapling_balance: Some(0.try_into().unwrap()),
+        unconfirmed_sapling_balance: Some(0.try_into().unwrap()),
+        total_orchard_balance: Some(99_890_000.try_into().unwrap()),
+        confirmed_orchard_balance: Some(99_890_000.try_into().unwrap()),
+        unconfirmed_orchard_balance: Some(0.try_into().unwrap()),
+        total_transparent_balance: Some(0.try_into().unwrap()),
+        confirmed_transparent_balance: Some(0.try_into().unwrap()),
+        unconfirmed_transparent_balance: Some(0.try_into().unwrap()),
     };
 
     // Assert that balance holds
     assert_eq!(
-        light_client.do_balance().await,
+        light_client
+            .account_balance(zip32::AccountId::ZERO)
+            .await
+            .unwrap(),
         expected_after_reorg_balance
     );
 
-    let after_reorg_transactions = light_client.sorted_value_transfers(true).await.unwrap();
+    let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
     println!("post re-org value transfers:");
     println!("{}", after_reorg_transactions);
     println!("post re-org tx summaries:");
-    println!("{}", light_client.transaction_summaries().await.unwrap());
+    println!(
+        "{}",
+        light_client.transaction_summaries(false).await.unwrap()
+    );
 
     // FIXME: assertion is wrong as re-org transaction has lost its outgoing tx data. darkside bug?
     // assert_eq!(after_reorg_transactions.0.len(), 3);

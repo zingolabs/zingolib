@@ -13,29 +13,27 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-use zcash_client_backend::{
-    data_api::scanning::{ScanPriority, ScanRange},
-    proto::compact_formats::CompactBlock,
-};
+use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
 use zcash_protocol::consensus::{self, BlockHeight};
 
 use crate::{
-    MAX_BATCH_OUTPUTS,
     client::{self, FetchRequest},
+    config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    sync,
+    sync::{self, ScanPriority, ScanRange},
     wallet::{
-        Locator, WalletBlock,
-        traits::{SyncBlocks, SyncWallet},
+        ScanTarget, WalletBlock,
+        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
 
 use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
+const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -88,9 +86,16 @@ where
         }
     }
 
-    pub(crate) fn launch(&mut self) {
-        self.spawn_batcher();
-        self.spawn_workers();
+    pub(crate) fn launch(&mut self, performance_level: PerformanceLevel) {
+        let max_batch_outputs = match performance_level {
+            PerformanceLevel::Low => 2usize.pow(11),
+            PerformanceLevel::Medium => 2usize.pow(13),
+            PerformanceLevel::High => 2usize.pow(13),
+            PerformanceLevel::Maximum => 2usize.pow(15),
+        };
+
+        self.spawn_batcher(max_batch_outputs);
+        self.spawn_workers(max_batch_outputs);
     }
 
     pub(crate) fn worker_poolsize(&self) -> usize {
@@ -100,13 +105,13 @@ where
     /// Spawns the batcher.
     ///
     /// When the batcher is running it will wait for a scan task.
-    pub(crate) fn spawn_batcher(&mut self) {
+    pub(crate) fn spawn_batcher(&mut self, max_batch_outputs: usize) {
         tracing::debug!("Spawning batcher");
         let mut batcher = Batcher::new(
             self.consensus_parameters.clone(),
             self.fetch_request_sender.clone(),
         );
-        batcher.run();
+        batcher.run(max_batch_outputs);
         self.batcher = Some(batcher);
     }
 
@@ -132,7 +137,7 @@ where
     /// Spawns a worker.
     ///
     /// When the worker is running it will wait for a scan task.
-    pub(crate) fn spawn_worker(&mut self) {
+    pub(crate) fn spawn_worker(&mut self, max_batch_outputs: usize) {
         tracing::debug!("Spawning worker {}", self.unique_id);
         let mut worker = ScanWorker::new(
             self.unique_id,
@@ -141,7 +146,7 @@ where
             self.fetch_request_sender.clone(),
             self.ufvks.clone(),
         );
-        worker.run();
+        worker.run(max_batch_outputs);
         self.workers.push(worker);
         self.unique_id += 1;
     }
@@ -149,9 +154,9 @@ where
     /// Spawns the initial pool of workers.
     ///
     /// Poolsize is set by [`self::MAX_WORKER_POOLSIZE`].
-    pub(crate) fn spawn_workers(&mut self) {
+    pub(crate) fn spawn_workers(&mut self, max_batch_outputs: usize) {
         for _ in 0..MAX_WORKER_POOLSIZE {
-            self.spawn_worker();
+            self.spawn_worker(max_batch_outputs);
         }
     }
 
@@ -174,10 +179,7 @@ where
             .expect("worker should exist");
 
         let mut worker = self.workers.swap_remove(worker_index);
-        worker
-            .shutdown()
-            .await
-            .expect("worker should not be able to panic");
+        worker.shutdown().await.expect("worker task panicked");
     }
 
     /// Updates the scanner.
@@ -192,9 +194,10 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
+        performance_level: PerformanceLevel,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         self.check_batcher_error()?;
 
@@ -215,7 +218,7 @@ where
                     if sync_state
                         .scan_ranges()
                         .iter()
-                        .any(|scan_range| scan_range.priority() == ScanPriority::Ignored)
+                        .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
                     {
                         // the last scan ranges with `Verify` priority are currently being scanned.
                         return Ok(());
@@ -227,7 +230,7 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet)
+                self.update_batcher(wallet, performance_level)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
@@ -236,7 +239,7 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet)
+                self.update_batcher(wallet, performance_level)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
@@ -268,15 +271,21 @@ where
         }
     }
 
-    fn update_batcher<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
+    fn update_batcher<W>(
+        &mut self,
+        wallet: &mut W,
+        performance_level: PerformanceLevel,
+    ) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks,
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {
-            if let Some(scan_task) =
-                sync::state::create_scan_task(&self.consensus_parameters, wallet)?
-            {
+            if let Some(scan_task) = sync::state::create_scan_task(
+                &self.consensus_parameters,
+                wallet,
+                performance_level,
+            )? {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
                 self.state.shutdown();
@@ -320,7 +329,7 @@ where
     ///
     /// Waits for a scan task and then fetches compact blocks to form fixed output batches. The scan task is split if
     /// needed and the compact blocks are added to each scan task and sent to the scan workers for scanning.
-    fn run(&mut self) {
+    fn run(&mut self, max_batch_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (batch_sender, batch_receiver) = mpsc::channel::<ScanTask>(1);
 
@@ -335,62 +344,112 @@ where
             let mut previous_task_last_block: Option<WalletBlock> = None;
 
             while let Some(mut scan_task) = scan_task_receiver.recv().await {
+                let fetch_nullifiers_only =
+                    scan_task.scan_range.priority() == ScanPriority::ScannedWithoutMapping;
+
+                let mut retry_height = scan_task.scan_range.block_range().start;
                 let mut sapling_output_count = 0;
                 let mut orchard_output_count = 0;
+                let mut sapling_nullifier_count = 0;
+                let mut orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
-                let mut block_stream = client::get_compact_block_range(
-                    fetch_request_sender.clone(),
-                    scan_task.scan_range.block_range().clone(),
-                )
-                .await?;
-                while let Some(compact_block) = block_stream.message().await? {
-                    if let Some(block) = previous_task_last_block.as_ref() {
-                        if scan_task.start_seam_block.is_none()
-                            && scan_task.scan_range.block_range().start == block.block_height() + 1
-                        {
-                            scan_task.start_seam_block = previous_task_last_block.clone();
-                        }
+                let mut block_stream = if fetch_nullifiers_only {
+                    client::get_nullifier_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                } else {
+                    client::get_compact_block_range(
+                        fetch_request_sender.clone(),
+                        scan_task.scan_range.block_range().clone(),
+                    )
+                    .await?
+                };
+                while let Some(compact_block) = match block_stream.message().await {
+                    Ok(b) => b,
+                    Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
+                        block_stream = if fetch_nullifiers_only {
+                            client::get_nullifier_range(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                            )
+                            .await?
+                        } else {
+                            client::get_compact_block_range(
+                                fetch_request_sender.clone(),
+                                retry_height..scan_task.scan_range.block_range().end,
+                            )
+                            .await?
+                        };
+
+                        block_stream.message().await?
                     }
-                    if let Some(block) = previous_task_first_block.as_ref() {
-                        if scan_task.end_seam_block.is_none()
-                            && scan_task.scan_range.block_range().end == block.block_height()
-                        {
-                            scan_task.end_seam_block = previous_task_first_block.clone();
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                } {
+                    if !fetch_nullifiers_only {
+                        if let Some(block) = previous_task_last_block.as_ref() {
+                            if scan_task.start_seam_block.is_none()
+                                && scan_task.scan_range.block_range().start
+                                    == block.block_height() + 1
+                            {
+                                scan_task.start_seam_block = previous_task_last_block.clone();
+                            }
                         }
+                        if let Some(block) = previous_task_first_block.as_ref() {
+                            if scan_task.end_seam_block.is_none()
+                                && scan_task.scan_range.block_range().end == block.block_height()
+                            {
+                                scan_task.end_seam_block = previous_task_first_block.clone();
+                            }
+                        }
+                        if first_batch {
+                            previous_task_first_block = Some(
+                                WalletBlock::from_compact_block(
+                                    &consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    &compact_block,
+                                )
+                                .await?,
+                            );
+                            first_batch = false;
+                        }
+                        if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
+                            previous_task_last_block = Some(
+                                WalletBlock::from_compact_block(
+                                    &consensus_parameters,
+                                    fetch_request_sender.clone(),
+                                    &compact_block,
+                                )
+                                .await?,
+                            );
+                        }
+
+                        sapling_output_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.outputs.len());
+                        orchard_output_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                    } else {
+                        sapling_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.spends.len());
+                        orchard_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
                     }
 
-                    if first_batch {
-                        previous_task_first_block = Some(
-                            WalletBlock::from_compact_block(
-                                &consensus_parameters,
-                                fetch_request_sender.clone(),
-                                &compact_block,
-                            )
-                            .await?,
-                        );
-                        first_batch = false;
-                    }
-                    if compact_block.height() == scan_task.scan_range.block_range().end - 1 {
-                        previous_task_last_block = Some(
-                            WalletBlock::from_compact_block(
-                                &consensus_parameters,
-                                fetch_request_sender.clone(),
-                                &compact_block,
-                            )
-                            .await?,
-                        );
-                    }
-
-                    sapling_output_count += compact_block
-                        .vtx
-                        .iter()
-                        .fold(0, |acc, transaction| acc + transaction.outputs.len());
-                    orchard_output_count += compact_block
-                        .vtx
-                        .iter()
-                        .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    if sapling_output_count + orchard_output_count > MAX_BATCH_OUTPUTS {
+                    if sapling_output_count + orchard_output_count > max_batch_outputs
+                        || sapling_nullifier_count + orchard_nullifier_count > MAX_BATCH_NULLIFIERS
+                    {
                         let (full_batch, new_batch) = scan_task
                             .clone()
                             .split(
@@ -405,8 +464,11 @@ where
                         scan_task = new_batch;
                         sapling_output_count = 0;
                         orchard_output_count = 0;
+                        sapling_nullifier_count = 0;
+                        orchard_nullifier_count = 0;
                     }
 
+                    retry_height = compact_block.height() + 1;
                     scan_task.compact_blocks.push(compact_block);
                 }
 
@@ -519,7 +581,7 @@ where
     /// Runs the worker in a new tokio task.
     ///
     /// Waits for a scan task and then calls [`crate::scan::scan`] on the given range.
-    fn run(&mut self) {
+    fn run(&mut self, max_batch_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
         let is_scanning = self.is_scanning.clone();
@@ -536,6 +598,7 @@ where
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
+                    max_batch_outputs,
                 )
                 .await;
 
@@ -586,8 +649,9 @@ pub(crate) struct ScanTask {
     pub(crate) scan_range: ScanRange,
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,
-    pub(crate) locators: BTreeSet<Locator>,
+    pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) map_nullifiers: bool,
 }
 
 impl ScanTask {
@@ -595,16 +659,18 @@ impl ScanTask {
         scan_range: ScanRange,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-        locators: BTreeSet<Locator>,
+        scan_targets: BTreeSet<ScanTarget>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
+        map_nullifiers: bool,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
             scan_range,
             start_seam_block,
             end_seam_block,
-            locators,
+            scan_targets,
             transparent_addresses,
+            map_nullifiers,
         }
     }
 
@@ -633,9 +699,12 @@ impl ScanTask {
             Vec::new()
         };
 
-        let mut lower_task_locators = self.locators;
-        let upper_task_locators =
-            lower_task_locators.split_off(&(block_height, TxId::from_bytes([0; 32])));
+        let mut lower_task_scan_targets = self.scan_targets;
+        let upper_task_scan_targets = lower_task_scan_targets.split_off(&ScanTarget {
+            block_height,
+            txid: TxId::from_bytes([0; 32]),
+            narrow_scan_area: false,
+        });
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
             Some(
@@ -671,8 +740,9 @@ impl ScanTask {
                     .expect("block height should be within block range"),
                 start_seam_block: self.start_seam_block,
                 end_seam_block: upper_task_first_block,
-                locators: lower_task_locators,
+                scan_targets: lower_task_scan_targets,
                 transparent_addresses: self.transparent_addresses.clone(),
+                map_nullifiers: self.map_nullifiers,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -682,8 +752,9 @@ impl ScanTask {
                     .expect("block height should be within block range"),
                 start_seam_block: lower_task_last_block,
                 end_seam_block: self.end_seam_block,
-                locators: upper_task_locators,
+                scan_targets: upper_task_scan_targets,
                 transparent_addresses: self.transparent_addresses,
+                map_nullifiers: self.map_nullifiers,
             },
         ))
     }

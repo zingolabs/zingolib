@@ -16,6 +16,8 @@ use zcash_note_encryption::Domain;
 use zcash_protocol::consensus;
 use zip32::Scope;
 
+use crate::wallet::KeyIdInterface;
+
 pub mod transparent;
 
 /// Child index for the `address_index` path level in the BIP44 hierarchy.
@@ -33,6 +35,12 @@ pub struct KeyId {
 impl KeyId {
     pub(crate) fn from_parts(account_id: zcash_primitives::zip32::AccountId, scope: Scope) -> Self {
         Self { account_id, scope }
+    }
+}
+
+impl KeyIdInterface for KeyId {
+    fn account_id(&self) -> zip32::AccountId {
+        self.account_id
     }
 }
 
@@ -229,14 +237,14 @@ pub fn decode_address(
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
+                format!("failed to decode address. {e}"),
             )
         })?
         .convert_if_network::<zcash_keys::address::Address>(consensus_parameters.network_type())
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("failed to decode unified address. {e}"),
+                format!("failed to decode address. {e}"),
             )
         })
 }

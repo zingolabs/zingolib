@@ -89,7 +89,10 @@ where
     timestamped_test_log("started integration-test shield.");
     client.sync_and_await().await.unwrap();
     timestamped_test_log("syncked.");
-    let proposal = client.propose_shield().await.map_err(|e| e.to_string())?;
+    let proposal = client
+        .propose_shield(zip32::AccountId::ZERO)
+        .await
+        .map_err(|e| e.to_string())?;
     timestamped_test_log(format!("proposed a shield: {proposal:#?}").as_str());
 
     let txids = client.send_stored_proposal().await.unwrap();
@@ -125,7 +128,7 @@ where
     );
     let wallet_height_at_send = sender
         .wallet
-        .lock()
+        .read()
         .await
         .sync_state
         .wallet_height()
@@ -243,7 +246,7 @@ where
         sender.sync_and_await().await.unwrap();
         let wallet_height_at_confirmation = sender
             .wallet
-            .lock()
+            .read()
             .await
             .sync_state
             .wallet_height()

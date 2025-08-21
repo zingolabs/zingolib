@@ -11,6 +11,7 @@ chain_generic_tests = []
 zingolib = { workspace = true, features = ["darkside_tests"] }
 zingo-netutils = { workspace = true }
 testvectors = { workspace = true }
+zingo-infra-services = { workspace = true }
 
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
@@ -18,6 +19,8 @@ incrementalmerkletree = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 
+bip0039.workspace = true
+zip32.workspace = true
 tokio = { workspace = true, features = ["full"] }
 http = { workspace = true }
 hyper = { workspace = true }
@@ -37,3 +40,6 @@ tracing-subscriber.workspace = true
 
 [build-dependencies]
 tonic-build = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["prost"]

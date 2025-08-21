@@ -22,8 +22,6 @@ use crate::config::ChainType;
 use crate::wallet::error::KeyError;
 use crate::wallet::traits::ReadableWriteable;
 
-use super::legacy::generate_transparent_address_from_legacy_key;
-
 pub(crate) const KEY_TYPE_EMPTY: u8 = 0;
 pub(crate) const KEY_TYPE_VIEW: u8 = 1;
 pub(crate) const KEY_TYPE_SPEND: u8 = 2;
@@ -51,14 +49,10 @@ impl UnifiedKeyStore {
     pub fn new_from_seed(
         network: &ChainType,
         seed: &[u8; 64],
-        account_index: u32,
+        account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
-        let usk = UnifiedSpendingKey::from_seed(
-            network,
-            seed,
-            AccountId::try_from(account_index).map_err(KeyError::InvalidAccountId)?,
-        )
-        .map_err(KeyError::KeyDerivationError)?;
+        let usk = UnifiedSpendingKey::from_seed(network, seed, account_index)
+            .map_err(KeyError::KeyDerivationError)?;
 
         Ok(UnifiedKeyStore::Spend(Box::new(usk)))
     }
@@ -69,7 +63,7 @@ impl UnifiedKeyStore {
     pub fn new_from_mnemonic(
         network: &ChainType,
         mnemonic: &Mnemonic,
-        account_index: u32,
+        account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
         let seed = mnemonic.to_seed("");
         Self::new_from_seed(network, &seed, account_index)
@@ -108,35 +102,29 @@ impl UnifiedKeyStore {
         matches!(self, UnifiedKeyStore::Empty)
     }
 
-    /// Returns a selection of pools where the wallet can view funds.
-    pub fn can_view(&self) -> ReceiverSelection {
+    /// Returns the default receivers for unified address generation depending on the wallet's capability.
+    /// Returns `None` if the wallet does not have viewing capabilities of at least 1 shielded pool.
+    pub fn default_receivers(&self) -> Option<ReceiverSelection> {
         match self {
-            UnifiedKeyStore::Spend(_) => ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            },
-            UnifiedKeyStore::View(ufvk) => ReceiverSelection {
-                orchard: ufvk.orchard().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                transparent: ufvk.transparent().is_some(),
-            },
-            UnifiedKeyStore::Empty => ReceiverSelection {
-                orchard: false,
-                sapling: false,
-                transparent: false,
-            },
+            UnifiedKeyStore::Spend(_) => Some(ReceiverSelection::orchard_only()),
+            UnifiedKeyStore::View(ufvk) => {
+                if ufvk.orchard().is_some() {
+                    Some(ReceiverSelection::orchard_only())
+                } else if ufvk.sapling().is_some() {
+                    Some(ReceiverSelection::sapling_only())
+                } else {
+                    None
+                }
+            }
+            UnifiedKeyStore::Empty => None,
         }
     }
 
     /// Generates a unified address for the given `unified_address_index` and `receivers`.
-    ///
-    /// See [`self::UnifiedKeyStore::generate_transparent_address`] for information on using `legacy_key`.
     pub fn generate_unified_address(
         &self,
         unified_address_index: u32,
         receivers: ReceiverSelection,
-        legacy_key: bool,
     ) -> Result<UnifiedAddress, KeyError> {
         let orchard_receiver = if receivers.orchard {
             let fvk = orchard::keys::FullViewingKey::try_from(self)?;
@@ -146,95 +134,107 @@ impl UnifiedKeyStore {
         };
 
         let sapling_receiver = if receivers.sapling {
-            let mut sapling_diversifier_index = DiversifierIndex::new();
-            let mut address;
-            let mut count = 0;
-            let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
-
-            // not all sapling_diversifier_indexes produce valid sapling addresses.
-            // therefore, `sapling_diversifier_index` may be larger than `ua_index` and only the valid payment
-            // addresses are counted.
-            loop {
-                (sapling_diversifier_index, address) = fvk
-                    .find_address(sapling_diversifier_index)
-                    .expect("Diversifier index overflow");
-                sapling_diversifier_index
-                    .increment()
-                    .expect("Diversifier index overflow");
-                if count == unified_address_index {
-                    break;
-                }
-                count += 1;
-            }
-            Some(address)
+            Some(self.derive_sapling_address(unified_address_index)?)
         } else {
             None
         };
 
-        let transparent_receiver = if receivers.transparent {
-            Some(self.generate_transparent_address(
-                unified_address_index,
-                TransparentScope::External,
-                legacy_key,
-            )?)
-        } else {
-            None
-        };
-
-        let unified_address = UnifiedAddress::from_receivers(
-            orchard_receiver,
-            sapling_receiver,
-            transparent_receiver,
-        )
-        .ok_or(KeyError::UnifiedAddressError)?;
+        let unified_address =
+            UnifiedAddress::from_receivers(orchard_receiver, sapling_receiver, None)
+                .ok_or(KeyError::UnifiedAddressError)?;
 
         Ok(unified_address)
     }
 
     /// Generates a transparent address for the given `address_index` and `scope`.
-    ///
-    /// Panics if `address_index` has the hardened bit set.
     pub fn generate_transparent_address(
         &self,
-        address_index: u32,
+        address_index: NonHardenedChildIndex,
         scope: TransparentScope,
-        // this should only be `true` when generating externally scoped transparent addresses while loading from legacy
-        // keys (pre wallet version 29).
-        // legacy transparent keys are already derived to the external scope so setting `legacy_key` to `true` will
-        // skip this scope derivation.
-        legacy_key: bool,
     ) -> Result<TransparentAddress, KeyError> {
-        let child_index = NonHardenedChildIndex::from_index(address_index)
-            .expect("hardened bit should not be set for non-hardened child indexes");
         let account_pubkey = UnifiedFullViewingKey::try_from(self)?
             .transparent()
             .ok_or(KeyError::NoViewCapability)?
             .clone();
 
         let transparent_address = match scope {
-            TransparentScope::External => {
-                if legacy_key {
-                    generate_transparent_address_from_legacy_key(&account_pubkey, child_index)?
-                } else {
-                    account_pubkey
-                        .derive_external_ivk()?
-                        .derive_address(child_index)?
-                }
-            }
+            TransparentScope::External => account_pubkey
+                .derive_external_ivk()?
+                .derive_address(address_index)?,
             TransparentScope::Internal => account_pubkey
                 .derive_internal_ivk()?
-                .derive_address(child_index)?,
+                .derive_address(address_index)?,
             TransparentScope::Refund => account_pubkey
                 .derive_ephemeral_ivk()?
-                .derive_ephemeral_address(child_index)?,
+                .derive_ephemeral_address(address_index)?,
         };
 
         Ok(transparent_address)
+    }
+
+    fn derive_sapling_address(
+        &self,
+        unified_address_index: u32,
+    ) -> Result<sapling_crypto::PaymentAddress, KeyError> {
+        let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
+        let mut address;
+        let mut diversifier_index = DiversifierIndex::new();
+        let mut valid_diversifier_count = 0;
+
+        // not all sapling diversifier indexes produce valid sapling diversifiers.
+        // therefore, `diversifier_index` may be larger than `unified_address_index` as only the valid payment
+        // addresses are counted.
+        loop {
+            (diversifier_index, address) = fvk
+                .find_address(diversifier_index)
+                .expect("diversifier index overflow");
+            valid_diversifier_count += 1;
+            if valid_diversifier_count - 1 == unified_address_index {
+                break;
+            }
+
+            diversifier_index
+                .increment()
+                .expect("diversifier index overflow");
+        }
+
+        Ok(address)
+    }
+
+    /// Returns the number of valid sapling diversifiers when incrementing from 0 to `sapling_diversifier_index` inclusive.
+    ///
+    /// For example, if 10 is returned, the `sapling_diversifier_index` is associated with the 10th valid sapling
+    /// diversifier when incrementing from a diversifier index of 0.
+    pub(crate) fn determine_nth_valid_sapling_diversifier(
+        &self,
+        sapling_diversifier_index: DiversifierIndex,
+    ) -> Result<u32, KeyError> {
+        let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(self)?;
+        let mut _address;
+        let mut diversifier_index = DiversifierIndex::new();
+        let mut valid_diversifier_count = 0;
+
+        loop {
+            (diversifier_index, _address) = fvk
+                .find_address(diversifier_index)
+                .expect("diversifier index overflow");
+            valid_diversifier_count += 1;
+            if diversifier_index == sapling_diversifier_index {
+                break;
+            }
+
+            diversifier_index
+                .increment()
+                .expect("diversifier index overflow");
+        }
+
+        Ok(valid_diversifier_count)
     }
 }
 
 impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
     const VERSION: u8 = 0;
+
     fn read<R: Read>(mut reader: R, input: ChainType) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let key_type = reader.read_u8()?;
@@ -380,19 +380,43 @@ impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey
     }
 }
 
-/// TODO: Add Doc Comment Here!
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+/// Selects the receivers for the creation of a new unified address.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Deserialize, serde::Serialize)]
 pub struct ReceiverSelection {
-    /// TODO: Add Doc Comment Here!
+    /// Orchard
     pub orchard: bool,
-    /// TODO: Add Doc Comment Here!
+    /// Sapling
     pub sapling: bool,
-    /// TODO: Add Doc Comment Here!
-    pub transparent: bool,
+}
+
+impl ReceiverSelection {
+    /// All shielded receivers.
+    pub fn all_shielded() -> Self {
+        Self {
+            orchard: true,
+            sapling: true,
+        }
+    }
+
+    /// Only orchard receiver.
+    pub fn orchard_only() -> Self {
+        Self {
+            orchard: true,
+            sapling: false,
+        }
+    }
+
+    /// Only sapling receiver.
+    pub fn sapling_only() -> Self {
+        Self {
+            orchard: false,
+            sapling: true,
+        }
+    }
 }
 
 impl ReadableWriteable for ReceiverSelection {
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
@@ -400,7 +424,6 @@ impl ReadableWriteable for ReceiverSelection {
         Ok(Self {
             orchard: receivers & 0b1 != 0,
             sapling: receivers & 0b10 != 0,
-            transparent: receivers & 0b100 != 0,
         })
     }
 
@@ -413,9 +436,6 @@ impl ReadableWriteable for ReceiverSelection {
         if self.sapling {
             receivers |= 0b10;
         };
-        if self.transparent {
-            receivers |= 0b100;
-        };
         writer.write_u8(receivers)?;
         Ok(())
     }
@@ -423,8 +443,8 @@ impl ReadableWriteable for ReceiverSelection {
 
 #[test]
 fn read_write_receiver_selections() {
-    for (i, receivers_selected) in (0..8)
-        .map(|n| ReceiverSelection::read([1, n].as_slice(), ()).unwrap())
+    for (i, receivers_selected) in (0..4)
+        .map(|n| ReceiverSelection::read([2, n].as_slice(), ()).unwrap())
         .enumerate()
     {
         let mut receivers_selected_bytes = [0; 2];
