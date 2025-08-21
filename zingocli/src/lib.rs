@@ -112,7 +112,10 @@ fn parse_seed(s: &str) -> Result<String, String> {
             if [12, 15, 18, 21, 24].contains(&count) {
                 Ok(s)
             } else {
-                Err(format!("Expected 12/15/18/21/24 words, but received: {}.", count))
+                Err(format!(
+                    "Expected 12/15/18/21/24 words, but received: {}.",
+                    count
+                ))
             }
         }
         Err(_) => Err("Unexpected failure to parse String!!".to_string()),
