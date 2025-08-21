@@ -8526,20 +8526,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo-infra-fetcher-core"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
-dependencies = [
- "hex",
- "reqwest",
- "sha2 0.10.9",
- "tokio",
-]
-
-[[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.1.0#222d794750417d3493a9482b3607e530513ff37b"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#7509a6d26c6424b2e22585fabd0bb974bff6bf55"
 dependencies = [
  "getset",
  "hex",
@@ -8558,7 +8547,6 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo-infra-fetcher-core",
 ]
 
 [[package]]
