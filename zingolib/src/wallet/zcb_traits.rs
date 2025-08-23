@@ -6,8 +6,9 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, BlockMetadata, InputSource, NullifierQuery,
-        ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TransactionDataRequest,
-        WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite, chain::CommitmentTreeRoot,
+        ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TargetValue,
+        TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
+        chain::CommitmentTreeRoot,
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
 };
@@ -562,7 +563,7 @@ impl InputSource for LightWallet {
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
-        target_value: Zatoshis,
+        target_value: TargetValue,
         sources: &[ShieldedProtocol],
         anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
@@ -577,7 +578,11 @@ impl InputSource for LightWallet {
             .filter(|&note_id| note_id.pool_type() == PoolType::ORCHARD)
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
-        let mut remaining_value_needed = RemainingNeeded::Positive(target_value);
+
+        let at_least_value = match target_value {
+            TargetValue::AtLeast(value) => value,
+        };
+        let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
 
         // prioritises selecting spendable notes that are guaranteed to be unspent first
         let mut selected_sapling_notes = Vec::new();

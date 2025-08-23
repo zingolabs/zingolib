@@ -11,14 +11,13 @@ use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-use tonic::body::BoxBody;
 use tower::ServiceExt;
 use tower::util::BoxCloneService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// ?
 pub type UnderlyingService = BoxCloneService<
-    http::Request<BoxBody>,
+    http::Request<tonic::body::Body>,
     http::Response<hyper::body::Incoming>,
     hyper_util::client::legacy::Error,
 >;
