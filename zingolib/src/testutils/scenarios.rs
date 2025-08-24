@@ -40,34 +40,49 @@ use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::{LightWallet, WalletSettings};
 
+/// Helper function to get the test binary path
+fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
+    // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
+    // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
+    let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
+        .map(PathBuf::from)
+        .or_else(|_| {
+            std::env::var("CARGO_MANIFEST_DIR")
+                .map(|manifest_dir| PathBuf::from(manifest_dir).parent().unwrap().to_path_buf())
+        })
+        .unwrap_or_else(|_| PathBuf::from("."));
+    
+    let path = workspace_dir.join("test_binaries").join("bins").join(binary_name);
+    if path.exists() {
+        Some(path.canonicalize().unwrap())
+    } else {
+        None
+    }
+}
+
 /// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
 pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let path = PathBuf::from("test_binaries/bins/zcashd");
-    if path.exists() { Some(path) } else { None }
+    get_test_binary_path("zcashd")
 });
 
 /// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
 pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let path = PathBuf::from("test_binaries/bins/zcash-cli");
-    if path.exists() { Some(path) } else { None }
+    get_test_binary_path("zcash-cli")
 });
 
 /// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
 pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let path = PathBuf::from("test_binaries/bins/zebrad");
-    if path.exists() { Some(path) } else { None }
+    get_test_binary_path("zebrad")
 });
 
 /// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
 pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let path = PathBuf::from("test_binaries/bins/lightwalletd");
-    if path.exists() { Some(path) } else { None }
+    get_test_binary_path("lightwalletd")
 });
 
 /// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
 pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let path = PathBuf::from("test_binaries/bins/zainod");
-    if path.exists() { Some(path) } else { None }
+    get_test_binary_path("zainod")
 });
 
 /// Struct for building lightclients for integration testing

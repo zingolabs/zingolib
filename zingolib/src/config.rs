@@ -4,7 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 use std::{
-    io::{self, Error, ErrorKind},
+    io::{self, Error},
     num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},

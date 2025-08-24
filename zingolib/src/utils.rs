@@ -19,6 +19,10 @@ macro_rules! build_method {
         }
     };
 }
+
+#[cfg(any(test, feature = "test-elevation"))]
+pub(crate) use build_method;
+
 #[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_method_push {
     ($name:ident, $localtype:ty) => {
