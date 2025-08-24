@@ -1060,11 +1060,9 @@ where
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
-    {
-        if tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)) {
+        && (tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_))) {
             return Ok(());
         }
-    }
 
     scan_pending_transaction(
         consensus_parameters,
