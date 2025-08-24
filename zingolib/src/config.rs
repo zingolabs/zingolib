@@ -348,7 +348,7 @@ impl ZingoConfig {
                     .appender("logfile")
                     .build(LevelFilter::Debug),
             )
-            .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
+            .map_err(|e| Error::other(format!("{}", e)))
     }
 
     /// TODO: Add Doc Comment Here!

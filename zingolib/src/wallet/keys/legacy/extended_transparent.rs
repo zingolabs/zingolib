@@ -11,7 +11,7 @@ use zcash_encoding::Vector;
 
 use crate::wallet::traits::ReadableWriteable;
 
-static SECP256K1_SIGN_ONLY: LazyLock<Secp256k1<SignOnly>> = LazyLock::new(|| Secp256k1::signing_only());
+static SECP256K1_SIGN_ONLY: LazyLock<Secp256k1<SignOnly>> = LazyLock::new(Secp256k1::signing_only);
 //static SECP256K1_VERIFY_ONLY: LazyLock<Secp256k1<VerifyOnly>> = LazyLock::new(|| Secp256k1::verification_only());
 /// Random entropy, part of extended key.
 type ChainCode = Vec<u8>;

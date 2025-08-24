@@ -39,7 +39,6 @@ macro_rules! build_push_list {
     };
 }
 
-pub(crate) use build_method;
 #[cfg(any(test, feature = "test-elevation"))]
 pub(crate) use build_method_push;
 #[allow(unused_imports)]
