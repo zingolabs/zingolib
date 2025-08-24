@@ -659,14 +659,14 @@ pub fn run_cli() {
                     Some(
                         LocalNet::<Lightwalletd, Zcashd>::launch(
                             LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN,
+                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                                 listen_port: None,
                                 zcashd_conf: PathBuf::new(),
                                 darkside: false,
                             },
                             ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN,
-                                zcash_cli_bin: ZCASH_CLI_BIN,
+                                zcashd_bin: ZCASHD_BIN.clone(),
+                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                                 rpc_listen_port: None,
                                 activation_heights: ActivationHeights::default(),
                                 miner_address: Some(REG_O_ADDR_FROM_ABANDONART),

@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use indoc::indoc;
 use json::object;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use tokio::runtime::Runtime;
@@ -30,9 +30,7 @@ use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 
-lazy_static! {
-    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
-}
+pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
 /// This command interface is used both by cli and also consumers.
 pub trait Command {
