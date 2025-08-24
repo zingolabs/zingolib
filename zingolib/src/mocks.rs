@@ -429,7 +429,7 @@ pub mod proposal {
                 step.shielded_inputs().cloned(),
                 step.balance().clone(),
                 self.fee_rule.unwrap(),
-                self.min_target_height.unwrap(),
+                self.min_target_height.unwrap().into(),
                 step.is_shielding(),
             )
             .unwrap()
