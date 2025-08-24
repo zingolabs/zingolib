@@ -459,8 +459,7 @@ pub fn startup(
                 config.wallet_settings.clone(),
             )
             .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                std::io::Error::other(
                     format!("Failed to create wallet. {}", e),
                 )
             })?,
@@ -468,8 +467,7 @@ pub fn startup(
             false,
         )
         .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
+            std::io::Error::other(
                 format!("Failed to create lightclient. {}", e),
             )
         })?,
@@ -477,8 +475,7 @@ pub fn startup(
         None => {
             if config.wallet_path_exists() {
                 LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    std::io::Error::other(
                         format!("Failed to create lightclient. {}", e),
                     )
                 })?
@@ -494,15 +491,13 @@ pub fn startup(
                             .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
                     })
                     .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        std::io::Error::other(
                             format!("Failed to create lightclient. {}", e),
                         )
                     })?;
                 // Create a wallet with height - 100, to protect against reorgs
                 LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    std::io::Error::other(
                         format!("Failed to create lightclient. {}", e),
                     )
                 })?
