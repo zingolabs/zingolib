@@ -10,6 +10,7 @@ use zcash_primitives::consensus::NetworkConstants;
 pub mod conversion;
 pub mod error;
 
+#[cfg(any(test, feature = "test-elevation"))]
 macro_rules! build_method {
     ($name:ident, $localtype:ty) => {
         #[doc = "Set the $name field of the builder."]
