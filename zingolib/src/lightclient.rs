@@ -67,6 +67,7 @@ impl LightClient {
     ///
     /// It is worth considering setting `chain_height` to 100 blocks below current height of block chain to protect
     /// from re-orgs.
+    #[allow(clippy::result_large_err)]
     pub fn new(
         config: ZingoConfig,
         chain_height: BlockHeight,
@@ -88,6 +89,7 @@ impl LightClient {
 
     /// Creates a LightClient from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
+    #[allow(clippy::result_large_err)]
     pub fn create_from_wallet(
         wallet: LightWallet,
         config: ZingoConfig,
@@ -118,6 +120,7 @@ impl LightClient {
     }
 
     /// Create a LightClient from an existing wallet file.
+    #[allow(clippy::result_large_err)]
     pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
         let wallet_path = if config.wallet_path_exists() {
             config.get_wallet_path()
