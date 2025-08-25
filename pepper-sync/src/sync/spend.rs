@@ -254,12 +254,13 @@ where
 
                     if remove_marks
                         && let Some(height) = transaction_height
-                            && let Some(position) = note.position {
-                                shard_trees
-                                    .sapling
-                                    .remove_mark(position, Some(&height))
-                                    .expect("infallible");
-                            }
+                        && let Some(position) = note.position
+                    {
+                        shard_trees
+                            .sapling
+                            .remove_mark(position, Some(&height))
+                            .expect("infallible");
+                    }
                 }
             });
     }
@@ -277,12 +278,13 @@ where
 
                     if remove_marks
                         && let Some(height) = transaction_height
-                            && let Some(position) = note.position {
-                                shard_trees
-                                    .orchard
-                                    .remove_mark(position, Some(&height))
-                                    .expect("infallible");
-                            }
+                        && let Some(position) = note.position
+                    {
+                        shard_trees
+                            .orchard
+                            .remove_mark(position, Some(&height))
+                            .expect("infallible");
+                    }
                 }
             });
     }

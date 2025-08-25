@@ -215,21 +215,23 @@ fn check_continuity(
 
     for block in compact_blocks {
         if let Some(prev_height) = prev_height
-            && block.height() != prev_height + 1 {
-                return Err(ContinuityError::HeightDiscontinuity {
-                    height: block.height(),
-                    previous_block_height: prev_height,
-                });
-            }
+            && block.height() != prev_height + 1
+        {
+            return Err(ContinuityError::HeightDiscontinuity {
+                height: block.height(),
+                previous_block_height: prev_height,
+            });
+        }
 
         if let Some(prev_hash) = prev_hash
-            && block.prev_hash() != prev_hash {
-                return Err(ContinuityError::HashDiscontinuity {
-                    height: block.height(),
-                    prev_hash: block.prev_hash(),
-                    previous_block_hash: prev_hash,
-                });
-            }
+            && block.prev_hash() != prev_hash
+        {
+            return Err(ContinuityError::HashDiscontinuity {
+                height: block.height(),
+                prev_hash: block.prev_hash(),
+                previous_block_hash: prev_hash,
+            });
+        }
 
         prev_height = Some(block.height());
         prev_hash = Some(block.hash());

@@ -11,9 +11,9 @@ use std::str::FromStr;
 
 use indoc::indoc;
 use json::object;
-use std::sync::LazyLock;
 use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
+use std::sync::LazyLock;
 use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};

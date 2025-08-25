@@ -95,7 +95,8 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         if let Some(account_pubkey) = ufvk.transparent() {
             for scope in scopes.iter() {
                 // start with the first address index previously unused by the wallet
-                let mut address_index = if let Some(id) = wallet_addresses.keys()
+                let mut address_index = if let Some(id) = wallet_addresses
+                    .keys()
                     .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
                     .next_back()
                 {

@@ -4,9 +4,9 @@ use zcash_primitives::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use byteorder::ReadBytesExt;
-use std::sync::LazyLock;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use std::sync::LazyLock;
 use zcash_encoding::Vector;
 
 use crate::wallet::traits::ReadableWriteable;

@@ -51,8 +51,11 @@ fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
                 .map(|manifest_dir| PathBuf::from(manifest_dir).parent().unwrap().to_path_buf())
         })
         .unwrap_or_else(|_| PathBuf::from("."));
-    
-    let path = workspace_dir.join("test_binaries").join("bins").join(binary_name);
+
+    let path = workspace_dir
+        .join("test_binaries")
+        .join("bins")
+        .join(binary_name);
     if path.exists() {
         Some(path.canonicalize().unwrap())
     } else {
@@ -61,29 +64,21 @@ fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
 }
 
 /// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    get_test_binary_path("zcashd")
-});
+pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zcashd"));
 
 /// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    get_test_binary_path("zcash-cli")
-});
+pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> =
+    LazyLock::new(|| get_test_binary_path("zcash-cli"));
 
 /// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    get_test_binary_path("zebrad")
-});
+pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zebrad"));
 
 /// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    get_test_binary_path("lightwalletd")
-});
+pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> =
+    LazyLock::new(|| get_test_binary_path("lightwalletd"));
 
 /// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    get_test_binary_path("zainod")
-});
+pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {

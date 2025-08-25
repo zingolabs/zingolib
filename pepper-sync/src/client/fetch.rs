@@ -57,9 +57,10 @@ async fn receive_fetch_requests(
     // if there are no fetch requests to process, sleep until the next fetch request is received
     // or channel is closed
     if fetch_request_queue.is_empty()
-        && let Some(fetch_request) = receiver.recv().await {
-            fetch_request_queue.push(fetch_request);
-        }
+        && let Some(fetch_request) = receiver.recv().await
+    {
+        fetch_request_queue.push(fetch_request);
+    }
     // receive all remaining fetch requests from channel
     // when channel is empty return `false` to continue fetching data from the server
     // when channel is closed and all fetch requests are processed, return `true`
