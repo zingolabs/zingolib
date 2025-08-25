@@ -15,6 +15,7 @@
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use bip0039::Mnemonic;
 
@@ -39,16 +40,45 @@ use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::{LightWallet, WalletSettings};
 
-/// Zcashd binary location. Checks $PATH if `None`.
-pub const ZCASHD_BIN: Option<PathBuf> = None;
-/// Zcash CLI binary location. Checks $PATH if `None`.
-pub const ZCASH_CLI_BIN: Option<PathBuf> = None;
-/// Zebrad binary location. Checks $PATH if `None`.
-pub const ZEBRAD_BIN: Option<PathBuf> = None;
-/// Lightwalletd binary location. Checks $PATH if `None`.
-pub const LIGHTWALLETD_BIN: Option<PathBuf> = None;
-/// Zainod binary location. Checks $PATH if `None`.
-pub const ZAINOD_BIN: Option<PathBuf> = None;
+/// Helper function to get the test binary path
+fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
+    // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
+    // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
+    let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
+        .map(PathBuf::from)
+        .or_else(|_| {
+            std::env::var("CARGO_MANIFEST_DIR")
+                .map(|manifest_dir| PathBuf::from(manifest_dir).parent().unwrap().to_path_buf())
+        })
+        .unwrap_or_else(|_| PathBuf::from("."));
+
+    let path = workspace_dir
+        .join("test_binaries")
+        .join("bins")
+        .join(binary_name);
+    if path.exists() {
+        Some(path.canonicalize().unwrap())
+    } else {
+        None
+    }
+}
+
+/// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
+pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zcashd"));
+
+/// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
+pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> =
+    LazyLock::new(|| get_test_binary_path("zcash-cli"));
+
+/// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
+pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zebrad"));
+
+/// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
+pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> =
+    LazyLock::new(|| get_test_binary_path("lightwalletd"));
+
+/// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
+pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
@@ -350,14 +380,14 @@ pub async fn custom_clients(
     };
     let local_net = LocalNet::<Lightwalletd, Zcashd>::launch(
         LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN,
+            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
             listen_port: None,
             zcashd_conf: PathBuf::new(),
             darkside: false,
         },
         ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN,
-            zcash_cli_bin: ZCASH_CLI_BIN,
+            zcashd_bin: ZCASHD_BIN.clone(),
+            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
             activation_heights,
             miner_address: Some(miner_address),
@@ -388,14 +418,14 @@ pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
     let activation_heights = ActivationHeights::default();
     LocalNet::<Lightwalletd, Zcashd>::launch(
         LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN,
+            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
             listen_port: Some(20_000),
             zcashd_conf: PathBuf::new(),
             darkside: false,
         },
         ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN,
-            zcash_cli_bin: ZCASH_CLI_BIN,
+            zcashd_bin: ZCASHD_BIN.clone(),
+            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
             activation_heights,
             miner_address: Some(REG_Z_ADDR_FROM_ABANDONART),

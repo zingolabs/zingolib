@@ -1060,10 +1060,9 @@ where
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
+        && (tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)))
     {
-        if tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)) {
-            return Ok(());
-        }
+        return Ok(());
     }
 
     scan_pending_transaction(

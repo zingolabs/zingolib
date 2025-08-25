@@ -17,7 +17,7 @@ use zcash_encoding::{CompactSize, Vector};
 /// as the blockchain only records the pool-specific receiver corresponding to the key we sent with.
 /// We also record the index of any ephemeral addresses sent to. On rescan, this tells us:
 /// * this transaction is the first step of a multistep proposal that is sending
-///     to a TEX address in the second step
+///   to a TEX address in the second step
 /// * what ephemeral address we need to derive in order to sync the second step
 #[derive(Debug)]
 pub enum ParsedMemo {

@@ -458,29 +458,16 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e),
-                )
-            })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
             config.clone(),
             false,
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
-            )
-        })?,
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?,
 
         None => {
             if config.wallet_path_exists() {
                 LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
+                    std::io::Error::other(format!("Failed to create lightclient. {}", e))
                 })?
             } else {
                 println!("Creating a new wallet");
@@ -494,17 +481,11 @@ pub fn startup(
                             .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
                     })
                     .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to create lightclient. {}", e),
-                        )
+                        std::io::Error::other(format!("Failed to create lightclient. {}", e))
                     })?;
                 // Create a wallet with height - 100, to protect against reorgs
                 LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
+                    std::io::Error::other(format!("Failed to create lightclient. {}", e))
                 })?
             }
         }
@@ -659,14 +640,14 @@ pub fn run_cli() {
                     Some(
                         LocalNet::<Lightwalletd, Zcashd>::launch(
                             LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN,
+                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                                 listen_port: None,
                                 zcashd_conf: PathBuf::new(),
                                 darkside: false,
                             },
                             ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN,
-                                zcash_cli_bin: ZCASH_CLI_BIN,
+                                zcashd_bin: ZCASHD_BIN.clone(),
+                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                                 rpc_listen_port: None,
                                 activation_heights: ActivationHeights::default(),
                                 miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
