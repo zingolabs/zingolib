@@ -461,6 +461,7 @@ impl WalletWrite for LightWallet {
             .collect())
     }
 
+    // TODO: implement
     fn set_transaction_status(
         &mut self,
         _txid: TxId,
@@ -469,10 +470,11 @@ impl WalletWrite for LightWallet {
         unimplemented!()
     }
 
+    // TODO: implement
     fn notify_address_checked(
         &mut self,
-        request: zcash_client_backend::data_api::TransactionsInvolvingAddress,
-        as_of_height: BlockHeight,
+        _request: zcash_client_backend::data_api::TransactionsInvolvingAddress,
+        _as_of_height: BlockHeight,
     ) -> Result<(), Self::Error> {
         todo!()
     }
@@ -572,13 +574,14 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 
+    // TODO: use `confirmations_policy`
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
         target_value: TargetValue,
         sources: &[ShieldedProtocol],
         target_height: TargetHeight,
-        confirmations_policy: ConfirmationsPolicy,
+        _confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let mut exclude_sapling = exclude
