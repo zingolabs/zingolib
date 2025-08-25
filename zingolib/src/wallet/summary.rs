@@ -47,7 +47,11 @@ impl LightWallet {
                     TransactionKind::Sent(SendType::Send)
                     | TransactionKind::Sent(SendType::SendToSelf) => transaction.total_value_sent(),
                 };
-                let fee = self.calculate_transaction_fee(transaction).ok();
+                let fee: Option<u64> = Some(
+                    self.calculate_transaction_fee(transaction)
+                        .unwrap()
+                        .into_u64(),
+                );
                 let orchard_notes = transaction
                     .orchard_notes()
                     .iter()

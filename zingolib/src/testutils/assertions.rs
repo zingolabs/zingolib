@@ -48,7 +48,7 @@ pub async fn lookup_fees_with_proposal_check<N>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
     txids: &NonEmpty<TxId>,
-) -> Vec<Result<u64, ProposalToTransactionRecordComparisonError>> {
+) -> Vec<Result<Zatoshis, ProposalToTransactionRecordComparisonError>> {
     for_each_proposed_transaction(client, proposal, txids, |records, record, step| {
         compare_fee(records, record, step)
     })

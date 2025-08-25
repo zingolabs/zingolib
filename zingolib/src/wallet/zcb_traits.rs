@@ -27,7 +27,6 @@ use zcash_primitives::{
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
-    value::Zatoshis,
 };
 use zcash_transparent::bundle::{OutPoint, TxOut};
 
@@ -37,8 +36,8 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::{self, TransparentScope},
     wallet::{
-        KeyIdInterface, NoteInterface as _, OrchardNote, OrchardShardStore, OutputId,
-        OutputInterface, SaplingNote, SaplingShardStore, traits::SyncWallet,
+        KeyIdInterface, NoteInterface, OrchardNote, OrchardShardStore, OutputId, OutputInterface,
+        SaplingNote, SaplingShardStore, traits::SyncWallet,
     },
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -709,6 +708,8 @@ impl InputSource for LightWallet {
                     note.key_id().scope,
                     note.position()
                         .expect("note selection should filter on notes with positions"),
+                    None, // mined_height. TODO: How should we use this here?
+                    None, // max_shielding_input_height. TODO: How should we use this here?
                 )
             })
             .collect::<Vec<_>>();
@@ -726,6 +727,8 @@ impl InputSource for LightWallet {
                     note.key_id().scope,
                     note.position()
                         .expect("note selection should filter on notes with positions"),
+                    None, // mined_height. TODO: How should we use this here?
+                    None, // max_shielding_input_height. TODO: How should we use this here?
                 )
             })
             .collect::<Vec<_>>();

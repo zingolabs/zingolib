@@ -534,6 +534,8 @@ pub mod proposal {
                         zcash_client_backend::wallet::Note::Sapling(note),
                         zip32::Scope::External,
                         Position::from(1),
+                        None, // mined_height. TODO: How should we use this here?
+                        None, // max_shielding_input_height. TODO: How should we use this here?
                     )),
                 )))
                 .prior_step_inputs(vec![])

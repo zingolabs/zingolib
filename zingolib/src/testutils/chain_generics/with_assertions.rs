@@ -7,6 +7,7 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;
+use zcash_protocol::value::Zatoshis;
 
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
@@ -49,7 +50,7 @@ pub async fn propose_send_bump_sync_all_recipients<CC>(
     payments: Vec<(&str, u64, Option<&str>)>,
     recipients: Vec<&mut LightClient>,
     test_mempool: bool,
-) -> Result<(u64, u64, u64), String>
+) -> Result<(Zatoshis, Zatoshis, Zatoshis), String>
 where
     CC: ConductChain,
 {
@@ -80,7 +81,7 @@ pub async fn assure_propose_shield_bump_sync<CC>(
     environment: &mut CC,
     client: &mut LightClient,
     test_mempool: bool,
-) -> Result<(u64, u64), String>
+) -> Result<(Zatoshis, Zatoshis), String>
 where
     CC: ConductChain,
 {
@@ -105,7 +106,7 @@ pub async fn follow_proposal<CC, NoteRef>(
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
     txids: NonEmpty<TxId>,
     test_mempool: bool,
-) -> Result<(u64, u64, u64), String>
+) -> Result<(Zatoshis, Zatoshis, Zatoshis), String>
 where
     CC: ConductChain,
 {
@@ -120,8 +121,8 @@ where
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
-        Vec<u64>,
-        (Vec<u64>, Vec<ConfirmationStatus>),
+        Vec<Zatoshis>,
+        (Vec<Zatoshis>, Vec<ConfirmationStatus>),
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
@@ -156,8 +157,8 @@ where
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
-            Vec<u64>,
-            (Vec<u64>, Vec<ConfirmationStatus>),
+            Vec<Zatoshis>,
+            (Vec<Zatoshis>, Vec<ConfirmationStatus>),
         ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
                 compare_fee(wallet, transaction, step),
@@ -225,8 +226,8 @@ where
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
-        Vec<u64>,
-        (Vec<u64>, Vec<ConfirmationStatus>),
+        Vec<Zatoshis>,
+        (Vec<Zatoshis>, Vec<ConfirmationStatus>),
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
