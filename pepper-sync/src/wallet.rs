@@ -193,7 +193,7 @@ impl SyncState {
                 scan_range.priority() == ScanPriority::Scanned
                     || scan_range.priority() == ScanPriority::ScannedWithoutMapping
             })
-            .last()
+            .next_back()
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {

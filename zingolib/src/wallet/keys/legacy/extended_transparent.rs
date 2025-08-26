@@ -4,17 +4,15 @@ use zcash_primitives::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use byteorder::ReadBytesExt;
-use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use std::sync::LazyLock;
 use zcash_encoding::Vector;
 
 use crate::wallet::traits::ReadableWriteable;
 
-lazy_static! {
-    static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
-    //static ref SECP256K1_VERIFY_ONLY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
-}
+static SECP256K1_SIGN_ONLY: LazyLock<Secp256k1<SignOnly>> = LazyLock::new(Secp256k1::signing_only);
+//static SECP256K1_VERIFY_ONLY: LazyLock<Secp256k1<VerifyOnly>> = LazyLock::new(|| Secp256k1::verification_only());
 /// Random entropy, part of extended key.
 type ChainCode = Vec<u8>;
 

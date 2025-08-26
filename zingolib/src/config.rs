@@ -4,7 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 use std::{
-    io::{self, Error, ErrorKind},
+    io::{self, Error},
     num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -348,7 +348,7 @@ impl ZingoConfig {
                     .appender("logfile")
                     .build(LevelFilter::Debug),
             )
-            .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
+            .map_err(|e| Error::other(format!("{}", e)))
     }
 
     /// TODO: Add Doc Comment Here!

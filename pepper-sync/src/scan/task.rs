@@ -256,18 +256,18 @@ where
 
     fn update_workers(&mut self) {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
-        if batcher.batch.is_some() {
-            if let Some(worker) = self.idle_worker() {
-                let batch = batcher
-                    .batch
-                    .clone()
-                    .expect("batch should exist in this closure");
-                worker.add_scan_task(batch);
-                self.batcher
-                    .as_mut()
-                    .expect("batcher should be running")
-                    .batch = None;
-            }
+        if batcher.batch.is_some()
+            && let Some(worker) = self.idle_worker()
+        {
+            let batch = batcher
+                .batch
+                .clone()
+                .expect("batch should exist in this closure");
+            worker.add_scan_task(batch);
+            self.batcher
+                .as_mut()
+                .expect("batcher should be running")
+                .batch = None;
         }
     }
 
@@ -391,20 +391,17 @@ where
                     }
                 } {
                     if !fetch_nullifiers_only {
-                        if let Some(block) = previous_task_last_block.as_ref() {
-                            if scan_task.start_seam_block.is_none()
-                                && scan_task.scan_range.block_range().start
-                                    == block.block_height() + 1
-                            {
-                                scan_task.start_seam_block = previous_task_last_block.clone();
-                            }
+                        if let Some(block) = previous_task_last_block.as_ref()
+                            && scan_task.start_seam_block.is_none()
+                            && scan_task.scan_range.block_range().start == block.block_height() + 1
+                        {
+                            scan_task.start_seam_block = previous_task_last_block.clone();
                         }
-                        if let Some(block) = previous_task_first_block.as_ref() {
-                            if scan_task.end_seam_block.is_none()
-                                && scan_task.scan_range.block_range().end == block.block_height()
-                            {
-                                scan_task.end_seam_block = previous_task_first_block.clone();
-                            }
+                        if let Some(block) = previous_task_first_block.as_ref()
+                            && scan_task.end_seam_block.is_none()
+                            && scan_task.scan_range.block_range().end == block.block_height()
+                        {
+                            scan_task.end_seam_block = previous_task_first_block.clone();
                         }
                         if first_batch {
                             previous_task_first_block = Some(
