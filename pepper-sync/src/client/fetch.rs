@@ -27,7 +27,7 @@ use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
 /// request prioritisation for further performance enhancement
 pub(crate) async fn fetch(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
-    mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    mut client: CompactTxStreamerClient<tower_service::UnderlyingService>,
 ) {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
@@ -94,7 +94,7 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 
 //
 async fn fetch_from_server(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     fetch_request: FetchRequest,
 ) {
     match fetch_request {
@@ -161,7 +161,7 @@ async fn fetch_from_server(
 }
 
 async fn get_latest_block(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
 ) -> Result<BlockId, tonic::Status> {
     let request = tonic::Request::new(ChainSpec {});
 
@@ -169,7 +169,7 @@ async fn get_latest_block(
 }
 
 async fn get_block(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     block_height: BlockHeight,
 ) -> Result<CompactBlock, tonic::Status> {
     let request = tonic::Request::new(BlockId {
@@ -181,7 +181,7 @@ async fn get_block(
 }
 
 async fn get_block_range(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
     let request = tonic::Request::new(BlockRange {
@@ -199,7 +199,7 @@ async fn get_block_range(
 }
 
 async fn get_block_range_nullifiers(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
     let request = tonic::Request::new(BlockRange {
@@ -221,7 +221,7 @@ async fn get_block_range_nullifiers(
 
 #[cfg(not(feature = "darkside_test"))]
 async fn get_subtree_roots(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
@@ -236,7 +236,7 @@ async fn get_subtree_roots(
 }
 
 async fn get_tree_state(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     block_height: BlockHeight,
 ) -> Result<TreeState, tonic::Status> {
     let request = tonic::Request::new(BlockId {
@@ -248,7 +248,7 @@ async fn get_tree_state(
 }
 
 async fn get_transaction(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     txid: TxId,
 ) -> Result<RawTransaction, tonic::Status> {
     let request = tonic::Request::new(TxFilter {
@@ -261,7 +261,7 @@ async fn get_transaction(
 }
 
 async fn get_address_utxos(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     addresses: Vec<String>,
     start_height: BlockHeight,
     max_entries: u32,
@@ -281,7 +281,7 @@ async fn get_address_utxos(
 }
 
 async fn get_taddress_txs(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
     address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
@@ -304,7 +304,7 @@ async fn get_taddress_txs(
 ///
 /// This is not called from the fetch request framework and is intended to be called independently.
 pub(crate) async fn get_mempool_stream(
-    client: &mut CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: &mut CompactTxStreamerClient<tower_service::UnderlyingService>,
 ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
     let request = tonic::Request::new(zcash_client_backend::proto::service::Empty {});
 
