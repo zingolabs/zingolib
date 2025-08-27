@@ -1012,7 +1012,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode(consensus_parameters))
+            .map(|unified_address| unified_address.encode(&consensus_parameters.network_type()))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
@@ -1071,7 +1071,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode(consensus_parameters))
+            .map(|unified_address| unified_address.encode(&consensus_parameters.network_type()))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {

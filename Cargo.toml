@@ -94,8 +94,8 @@ tempfile = "3"
 thiserror = "2"
 tokio = "1"
 tokio-rustls = "0.26"
-tonic = { version = "0.13", features = ["tls-webpki-roots"] }
-tonic-build = "0.13"
+tonic = { version = "0.14", features = ["tls-webpki-roots"] }
+tonic-build = "0.14"
 tower = { version = "0.5" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
