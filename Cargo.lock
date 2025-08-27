@@ -3927,6 +3927,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tonic",
+ "tower_service",
  "tracing",
  "zcash_address",
  "zcash_client_backend",
@@ -3937,7 +3938,6 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo",
- "zingo-netutils",
  "zingo-status",
  "zip32",
 ]
@@ -7033,6 +7033,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
+name = "tower_service"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "prost",
+ "tonic",
+ "tower 0.5.2",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8612,6 +8625,7 @@ dependencies = [
  "tokio-rustls 0.26.2",
  "tonic",
  "tower 0.5.2",
+ "tower_service",
  "webpki-roots 0.25.4",
 ]
 
@@ -8663,6 +8677,10 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
  "incrementalmerkletree",
  "json",
  "jubjub",
@@ -8686,9 +8704,13 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-rustls 0.26.2",
  "tonic",
+ "tower 0.5.2",
+ "tower_service",
  "tracing",
  "tracing-subscriber",
+ "webpki-roots 0.25.4",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",

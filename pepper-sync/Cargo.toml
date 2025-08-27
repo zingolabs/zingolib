@@ -17,7 +17,7 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-zingo-netutils = { workspace = true }
+tower_service = { path = "../tower_service" }
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
 

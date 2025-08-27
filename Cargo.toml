@@ -13,6 +13,7 @@ members = [
     "pepper-sync",
     "zingo-testvectors",
     "zingo-price",
+    "tower_service",
 ]
 resolver = "2"
 

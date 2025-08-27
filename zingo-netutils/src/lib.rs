@@ -8,21 +8,12 @@ use std::sync::Arc;
 
 use client::client_from_connector;
 use http::{Uri, uri::PathAndQuery};
-use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::connect::HttpConnector;
 use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-use tonic::Status;
 use tower::ServiceExt;
-use tower::util::BoxCloneService;
-
-/// ?
-pub type UnderlyingService = BoxCloneService<
-    http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
-    http::Response<hyper::body::Incoming>,
-    hyper_util::client::legacy::Error,
->;
+pub use tower_service::UnderlyingService;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]

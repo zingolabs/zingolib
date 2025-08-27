@@ -27,8 +27,7 @@ impl LightClient {
             ));
         }
 
-        let client = zingo_netutils::GrpcConnector::new(self.config.get_lightwalletd_uri())
-            .get_client()
+        let client = crate::grpc_client::get_zcb_client(self.config.get_lightwalletd_uri())
             .await?;
         let wallet_guard = self.wallet.read().await;
         let network = wallet_guard.network;
