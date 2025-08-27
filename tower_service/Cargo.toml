@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-http = "1"
-http-body-util = "0.1"
-hyper = "1"
-hyper-util = "0.1"
-prost = "0.13"
-tonic = "0.12"
-tower = "0.5"
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+prost = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }

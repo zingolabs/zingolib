@@ -20,8 +20,8 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-tower_service = { path = "../tower_service" }
-webpki-roots = "0.25"
+tower_service = { workspace = true }
+webpki-roots = { workspace = true }
 lightwallet-protocol.workspace = true
 
 [features]
