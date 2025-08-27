@@ -10,12 +10,12 @@ use client::client_from_connector;
 use http::{Uri, uri::PathAndQuery};
 use http_body_util::combinators::UnsyncBoxBody;
 use hyper_util::client::legacy::connect::HttpConnector;
+use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::ServiceExt;
 use tower::util::BoxCloneService;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// ?
 pub type UnderlyingService = BoxCloneService<
