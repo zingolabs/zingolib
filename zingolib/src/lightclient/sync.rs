@@ -27,8 +27,7 @@ impl LightClient {
             ));
         }
 
-        let client = crate::grpc_client::get_zcb_client(self.config.get_lightwalletd_uri())
-            .await?;
+        let client = crate::grpc_client::get_zcb_client(self.config.get_lightwalletd_uri()).await?;
         let wallet_guard = self.wallet.read().await;
         let network = wallet_guard.network;
         let sync_config = wallet_guard.wallet_settings.sync_config.clone();
