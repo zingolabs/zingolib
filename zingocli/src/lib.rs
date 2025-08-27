@@ -457,12 +457,7 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e),
-                )
-            })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
             config.clone(),
             false,
         )
@@ -488,7 +483,8 @@ pub fn startup(
     } else {
         // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
         println!("Creating a new wallet");
-
+        // Call the lightwalletd server to get the current block-height
+        // Do a getinfo first, before opening the wallet
         let server_uri = config.get_lightwalletd_uri();
 
         let chain_height = RT
@@ -652,14 +648,14 @@ pub fn run_cli() {
                     Some(
                         LocalNet::<Lightwalletd, Zcashd>::launch(
                             LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN,
+                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                                 listen_port: None,
                                 zcashd_conf: PathBuf::new(),
                                 darkside: false,
                             },
                             ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN,
-                                zcash_cli_bin: ZCASH_CLI_BIN,
+                                zcashd_bin: ZCASHD_BIN.clone(),
+                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                                 rpc_listen_port: None,
                                 activation_heights: ActivationHeights::default(),
                                 miner_address: Some(REG_O_ADDR_FROM_ABANDONART),

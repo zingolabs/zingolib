@@ -247,8 +247,7 @@ impl LightWallet {
                     })?,
                 ));
             } else if let UnifiedKeyStore::Spend(_) = &wallet_capability.unified_key_store {
-                return Err(io::Error::new(
-                    ErrorKind::Other,
+                return Err(io::Error::other(
                     "loading from legacy spending keys with no seed to recover",
                 ));
             }
