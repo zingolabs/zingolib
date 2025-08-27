@@ -466,13 +466,9 @@ pub fn startup(
             config.clone(),
             false,
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
-            )
-        })?
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
+        // Create client from UFVK
         LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
@@ -480,52 +476,31 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e),
-                )
-            })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
             config.clone(),
             false,
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
-            )
-        })?
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     } else if config.wallet_path_exists() {
-        LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
-            )
-        })?
+        // Open existing wallet from path
+        LightClient::create_from_wallet_path(config.clone())
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     } else {
+        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
         println!("Creating a new wallet");
-        // Call the lightwalletd server to get the current block-height
-        // Do a getinfo first, before opening the wallet
+
         let server_uri = config.get_lightwalletd_uri();
+
         let chain_height = RT
             .block_on(async move {
                 zingolib::grpc_connector::get_latest_block(server_uri)
                     .await
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create lightclient. {}", e),
-                )
-            })?;
-        // Create a wallet with height - 100, to protect against reorgs
-        LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
-            )
-        })?
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?;
+
+        LightClient::new(config.clone(), chain_height - 100, false)
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     };
 
     if filled_template.command.is_none() {
