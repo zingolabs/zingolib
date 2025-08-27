@@ -22,6 +22,7 @@ tonic.workspace = true
 tower.workspace = true
 webpki-roots = "0.25"
 zcash_client_backend.workspace = true
+lightwallet-protocol.workspace = true
 
 [features]
 test-features = []
