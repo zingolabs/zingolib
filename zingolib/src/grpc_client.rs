@@ -22,7 +22,7 @@ pub async fn get_zcb_client(
         .authority()
         .ok_or(zingo_netutils::GetClientError::InvalidAuthority)?
         .clone();
-    
+
     if uri.scheme_str() == Some("https") {
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor_ref| {
@@ -48,7 +48,7 @@ pub async fn get_zcb_client(
                     .wrap_connector(s)
             })
             .service(http_connector);
-        
+
         let client = zingo_netutils::client::client_from_connector(connector, false);
         let svc = tower::ServiceBuilder::new()
             .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -68,7 +68,7 @@ pub async fn get_zcb_client(
                 request
             })
             .service(client);
-        
+
         Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
     } else {
         let connector = tower::ServiceBuilder::new().service(http_connector);
@@ -91,7 +91,7 @@ pub async fn get_zcb_client(
                 request
             })
             .service(client);
-        
+
         Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
     }
 }
