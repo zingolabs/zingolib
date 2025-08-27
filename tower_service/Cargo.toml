@@ -1,0 +1,13 @@
+[package]
+name = "tower_service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+http = "1"
+http-body-util = "0.1"
+hyper = "1"
+hyper-util = "0.1"
+prost = "0.13"
+tonic = "0.12"
+tower = "0.5"
