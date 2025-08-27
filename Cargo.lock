@@ -3176,6 +3176,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightwallet-protocol"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/lightwallet-protocol-rust.git?branch=main#7343f4e095aed8d0f4dbb5057a4e313ee2c22e60"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8595,6 +8605,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "lightwallet-protocol",
  "prost",
  "rustls-pemfile",
  "thiserror 2.0.12",
@@ -8602,7 +8613,6 @@ dependencies = [
  "tonic",
  "tower 0.5.2",
  "webpki-roots 0.25.4",
- "zcash_client_backend",
 ]
 
 [[package]]
