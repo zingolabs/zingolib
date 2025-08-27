@@ -8,7 +8,7 @@ use pepper_sync::{
     wallet::{KeyIdInterface, TransparentCoin},
 };
 use unified::{ReceiverSelection, UnifiedAddressId};
-use zcash_keys::address::UnifiedAddress;
+use zcash_keys::address::unified::Address;
 use zcash_primitives::legacy::{TransparentAddress, keys::NonHardenedChildIndex};
 use zip32::DiversifierIndex;
 
@@ -51,7 +51,7 @@ impl LightWallet {
         &mut self,
         receivers: ReceiverSelection,
         account_id: zip32::AccountId,
-    ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
+    ) -> Result<(UnifiedAddressId, unified::Address), KeyError> {
         let address_id = UnifiedAddressId {
             account_id,
             address_index: self
@@ -427,7 +427,7 @@ impl LightWallet {
     pub fn is_sapling_address_in_unified_addresses(
         &self,
         address: &sapling_crypto::PaymentAddress,
-    ) -> Option<(UnifiedAddressId, UnifiedAddress)> {
+    ) -> Option<(UnifiedAddressId, unified::Address)> {
         self.unified_addresses
             .iter()
             .find(|(_, unified_address)| unified_address.sapling() == Some(address))
@@ -438,7 +438,7 @@ impl LightWallet {
     pub fn is_orchard_address_in_unified_addresses(
         &self,
         address: &orchard::Address,
-    ) -> Option<(UnifiedAddressId, UnifiedAddress)> {
+    ) -> Option<(UnifiedAddressId, unified::Address)> {
         self.unified_addresses
             .iter()
             .find(|(_, unified_address)| unified_address.orchard() == Some(address))

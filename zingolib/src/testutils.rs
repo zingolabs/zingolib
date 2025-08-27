@@ -9,7 +9,7 @@ use std::{io::Read, string::String, time::Duration};
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
-use zcash_keys::address::UnifiedAddress;
+use zcash_keys::address::unified::Address;
 use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
@@ -643,7 +643,7 @@ pub fn encoded_orchard_only_from_ua(
         panic!("not unified address")
     };
 
-    UnifiedAddress::from_receivers(
+    unified::Address::from_receivers(
         Some(
             unified_address
                 .orchard()

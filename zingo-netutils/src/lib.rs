@@ -71,7 +71,18 @@ impl GrpcConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
+        Output = Result<
+            CompactTxStreamerClient<
+                CompactTxStreamerClient<
+                    BoxCloneService<
+                        tonic::Request<tonic::body::Body>,
+                        tonic::Response<hyper::body::Incoming>,
+                        hyper::Error,
+                    >,
+                >,
+            >,
+            GetClientError,
+        >,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
@@ -114,7 +125,7 @@ impl GrpcConnector {
                 let client = client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                    .map_request(move |mut request: http::Request<tonic::body::Body>| {
                         let path_and_query = request
                             .uri()
                             .path_and_query()
@@ -140,7 +151,7 @@ impl GrpcConnector {
                 let client = client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
+                    .map_request(move |mut request: http::Request<tonic::body::Body>| {
                         let path_and_query = request
                             .uri()
                             .path_and_query()

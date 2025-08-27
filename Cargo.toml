@@ -18,7 +18,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-bip0039 = { version = "0.12", features = [ "rand" ] }
+bip0039 = { version = "0.12", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 
 zip32 = "0.2.0"
@@ -26,8 +26,8 @@ orchard = "0.11.0"
 sapling-crypto = "0.5.0"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.1"
-zcash_address = "0.7.0"
-zcash_client_backend = { version = "0.18.1", features = [
+zcash_address = "0.8"
+zcash_client_backend = { version = "0.19.1", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
@@ -35,16 +35,16 @@ zcash_client_backend = { version = "0.18.1", features = [
 ] }
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust.git", branch = "main" }
 zcash_encoding = "0.3.0"
-zcash_keys = { version = "0.8.0", features = [
+zcash_keys = { version = "0.9", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
 zcash_note_encryption = "0.4.1"
-zcash_primitives = "0.22.1"
-zcash_proofs = "0.22.0"
-zcash_protocol = "=0.5.1"
-zcash_transparent = "0.2.3"
+zcash_primitives = "0.23"
+zcash_proofs = "0.23"
+zcash_protocol = "=0.5.4"
+zcash_transparent = "0.3"
 
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
@@ -94,12 +94,8 @@ tempfile = "3"
 thiserror = "2"
 tokio = "1"
 tokio-rustls = "0.26"
-tonic = { version = "0.12", features = [
-    "tls",
-    "tls-roots",
-    "tls-webpki-roots",
-] }
-tonic-build = "0.12"
+tonic = { version = "0.13", features = ["tls-webpki-roots"] }
+tonic-build = "0.13"
 tower = { version = "0.5" }
 tracing = "0.1"
 tracing-subscriber = "0.3"

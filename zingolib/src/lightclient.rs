@@ -14,7 +14,7 @@ use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
-use zcash_keys::address::UnifiedAddress;
+use zcash_keys::address::unified::Address;
 use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress};
 
 use pepper_sync::{
@@ -206,7 +206,7 @@ impl LightClient {
         &mut self,
         receivers: ReceiverSelection,
         account_id: zip32::AccountId,
-    ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
+    ) -> Result<(UnifiedAddressId, unified::Address), KeyError> {
         self.wallet
             .write()
             .await

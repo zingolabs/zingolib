@@ -11,7 +11,7 @@ use pepper_sync::{
         },
     },
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_keys::{address::unified::Address, keys::UnifiedFullViewingKey};
 use zcash_primitives::consensus::BlockHeight;
 use zip32::{AccountId, DiversifierIndex};
 
@@ -65,10 +65,10 @@ impl SyncWallet for LightWallet {
                 return Ok(());
             }
 
-            UnifiedAddress::from_receivers(Some(address), wallet_address.sapling().cloned(), None)
+            unified::Address::from_receivers(Some(address), wallet_address.sapling().cloned(), None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         } else {
-            UnifiedAddress::from_receivers(Some(address), None, None)
+            unified::Address::from_receivers(Some(address), None, None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         };
         self.unified_addresses.insert(address_id, unified_address);
@@ -108,10 +108,10 @@ impl SyncWallet for LightWallet {
                 return Ok(());
             }
 
-            UnifiedAddress::from_receivers(wallet_address.orchard().cloned(), Some(address), None)
+            unified::Address::from_receivers(wallet_address.orchard().cloned(), Some(address), None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         } else {
-            UnifiedAddress::from_receivers(None, Some(address), None)
+            unified::Address::from_receivers(None, Some(address), None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         };
         self.unified_addresses.insert(address_id, unified_address);

@@ -7,7 +7,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 
 use pepper_sync::keys::transparent::TransparentScope;
 use zcash_address::unified::{Encoding as _, Ufvk};
-use zcash_client_backend::address::UnifiedAddress;
+use zcash_client_backend::address::unified::Address;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -125,7 +125,7 @@ impl UnifiedKeyStore {
         &self,
         unified_address_index: u32,
         receivers: ReceiverSelection,
-    ) -> Result<UnifiedAddress, KeyError> {
+    ) -> Result<unified::Address, KeyError> {
         let orchard_receiver = if receivers.orchard {
             let fvk = orchard::keys::FullViewingKey::try_from(self)?;
             Some(fvk.address_at(unified_address_index, orchard::keys::Scope::External))
@@ -140,7 +140,7 @@ impl UnifiedKeyStore {
         };
 
         let unified_address =
-            UnifiedAddress::from_receivers(orchard_receiver, sapling_receiver, None)
+            unified::Address::from_receivers(orchard_receiver, sapling_receiver, None)
                 .ok_or(KeyError::UnifiedAddressError)?;
 
         Ok(unified_address)

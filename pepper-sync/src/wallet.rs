@@ -18,9 +18,9 @@ use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use tokio::sync::mpsc;
-use zcash_address::unified::ParseError;
+use zcash_address::unified::{self, Encoding, ParseError};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
+use zcash_keys::encoding::encode_payment_address;
 use zcash_primitives::{
     block::BlockHash,
     legacy::Script,
@@ -927,7 +927,7 @@ pub trait OutgoingNoteInterface: Sized {
     fn recipient(&self) -> Self::Address;
 
     /// Recipient unified address as given by recipient and recorded in an encoded memo (all original receivers).
-    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress>;
+    fn recipient_full_unified_address(&self) -> Option<&unified::Address>;
 
     /// Encoded recipient address recorded in note on chain (single receiver).
     fn encoded_recipient<P>(&self, parameters: &P) -> Result<String, Self::Error>
@@ -955,7 +955,7 @@ pub struct OutgoingNote<N> {
     /// Memo.
     pub(crate) memo: Memo,
     /// Recipient's full unified address from encoded memo.
-    pub(crate) recipient_full_unified_address: Option<UnifiedAddress>,
+    pub(crate) recipient_full_unified_address: Option<unified::Address>,
 }
 
 /// Outgoing sapling note.
@@ -992,7 +992,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         self.note.recipient()
     }
 
-    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {
+    fn recipient_full_unified_address(&self) -> Option<&unified::Address> {
         self.recipient_full_unified_address.as_ref()
     }
 
@@ -1054,7 +1054,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
         self.note.recipient()
     }
 
-    fn recipient_full_unified_address(&self) -> Option<&UnifiedAddress> {
+    fn recipient_full_unified_address(&self) -> Option<&unified::Address> {
         self.recipient_full_unified_address.as_ref()
     }
 

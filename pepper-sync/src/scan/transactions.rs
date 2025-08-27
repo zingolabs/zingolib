@@ -13,7 +13,8 @@ use sapling_crypto::{
     bundle::{GrothProofBytes, OutputDescription},
     note_encryption::SaplingDomain,
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_address::unified;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
 use zcash_primitives::{
     memo::Memo,
@@ -472,7 +473,7 @@ fn parse_encoded_memos<N, Nf: Copy>(wallet_notes: &[WalletNote<N, Nf>]) -> Vec<P
 
 fn add_recipient_unified_address<P, Nz>(
     consensus_parameters: &P,
-    unified_addresses: Vec<UnifiedAddress>,
+    unified_addresses: Vec<unified::Address>,
     outgoing_notes: &mut [OutgoingNote<Nz>],
 ) -> Result<(), ScanError>
 where

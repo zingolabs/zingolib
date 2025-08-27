@@ -8,8 +8,7 @@
 #![warn(missing_docs)]
 use std::io::{self, Read, Write};
 
-use zcash_address::unified::{Address, Container, Encoding, Receiver};
-use zcash_client_backend::address::UnifiedAddress;
+use zcash_address::unified::{self, Address, Container, Encoding, Receiver};
 use zcash_encoding::{CompactSize, Vector};
 
 /// A parsed memo.
@@ -24,12 +23,12 @@ pub enum ParsedMemo {
     /// the memo including only a list of unified addresses
     Version0 {
         /// The list of unified addresses
-        uas: Vec<UnifiedAddress>,
+        uas: Vec<unified::Address>,
     },
     /// the memo including unified addresses and ephemeral indexes
     Version1 {
         /// the list of unified addresses
-        uas: Vec<UnifiedAddress>,
+        uas: Vec<unified::Address>,
         /// The ephemeral address indexes
         rejection_address_indexes: Vec<u32>,
     },
@@ -40,7 +39,7 @@ pub enum ParsedMemo {
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
 #[deprecated(note = "prefer version 1")]
-pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+pub fn create_wallet_internal_memo_version_0(uas: &[unified::Address]) -> io::Result<[u8; 511]> {
     let mut version_and_data = Vec::new();
     CompactSize::write(&mut version_and_data, 0usize)?;
     Vector::write(&mut version_and_data, uas, |w, ua| {
@@ -65,7 +64,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
 /// Ephemeral address indexes are CompactSize encoded, so for most use cases will only be
 /// one byte.
 pub fn create_wallet_internal_memo_version_1(
-    uas: &[UnifiedAddress],
+    uas: &[unified::Address],
     refund_address_indexes: &[u32],
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
@@ -113,10 +112,10 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
 /// of receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn write_unified_address_to_raw_encoding<W: Write>(
-    ua: &UnifiedAddress,
+    ua: &unified::Address,
     writer: W,
 ) -> io::Result<()> {
-    let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::MAIN_NETWORK);
+    let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::NetworkType::Main);
     let (_mainnet, address) =
         Address::decode(&mainnet_encoded_ua).expect("freshly encoded ua to decode!");
     let receivers = address.items();
@@ -137,7 +136,7 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
 /// A helper function to decode a UA from a CompactSize specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
-pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
+pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<unified::Address> {
     let receivers = Vector::read(reader, |mut r| {
         let typecode: usize = CompactSize::read_t(&mut r)?;
         let addr_len: usize = CompactSize::read_t(&mut r)?;
@@ -147,7 +146,7 @@ pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<
     })?;
     let address = Address::try_from_items(receivers)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    UnifiedAddress::try_from(address).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    unified::Address::try_from(address).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
@@ -204,7 +203,6 @@ mod tests {
     use super::*;
     use rand::{self, Rng};
     use test_vectors::TestVector;
-    use zcash_primitives::consensus::MAIN_NETWORK;
 
     fn get_some_number_of_ephemeral_indexes() -> Vec<u32> {
         // Generate a random number of elements between 0 and 10
@@ -213,12 +211,9 @@ mod tests {
         // Create a vector of increasing natural numbers
         (0..count).collect::<Vec<u32>>()
     }
-    fn get_serialiazed_ua(test_vector: &TestVector) -> (UnifiedAddress, Vec<u8>) {
-        let zcash_keys::address::Address::Unified(ua) =
-            zcash_keys::address::Address::decode(&MAIN_NETWORK, test_vector.unified_addr).unwrap()
-        else {
-            panic!("Couldn't decode test_vector UA")
-        };
+    fn get_serialiazed_ua(test_vector: &TestVector) -> (unified::Address, Vec<u8>) {
+        let (_network, ua) = unified::Address::decode(test_vector.unified_addr)
+            .expect("Couldn't decode testvector UA");
         let mut serialized_ua = Vec::new();
         write_unified_address_to_raw_encoding(&ua, &mut serialized_ua).unwrap();
         (ua, serialized_ua)

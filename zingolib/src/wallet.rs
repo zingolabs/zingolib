@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
-use zcash_keys::address::UnifiedAddress;
+use zcash_keys::address::unified::Address;
 use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
@@ -118,7 +118,7 @@ pub struct LightWallet {
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// Unified_addresses
-    unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    unified_addresses: BTreeMap<UnifiedAddressId, unified::Address>,
     /// Transparent addresses
     transparent_addresses: BTreeMap<TransparentAddressId, String>,
     /// Wallet blocks
@@ -279,7 +279,7 @@ impl LightWallet {
     }
 
     /// Returns unified addresses.
-    pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
+    pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, unified::Address> {
         &self.unified_addresses
     }
 

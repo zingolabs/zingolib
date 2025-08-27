@@ -12,6 +12,7 @@ use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore, TreeState, memory::MemoryShardStore},
 };
+use zcash_address::unified::Encoding;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
@@ -820,7 +821,12 @@ impl OutgoingSaplingNote {
         Optional::write(
             &mut writer,
             self.recipient_full_unified_address.as_ref(),
-            |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
+            |w, unified_address| {
+                write_string(
+                    w,
+                    &unified_address.encode(&consensus_parameters.network_type()),
+                )
+            },
         )?;
 
         Ok(())

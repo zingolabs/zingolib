@@ -10,8 +10,11 @@ use orchard::{
 use sapling_crypto::{
     self as sapling, NullifierDerivingKey, SaplingIvk, note_encryption::SaplingDomain,
 };
-use zcash_address::{ZcashAddress, unified::ParseError};
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_address::{
+    ZcashAddress,
+    unified::{self, Encoding, ParseError},
+};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
 use zcash_protocol::consensus;
 use zip32::Scope;
@@ -215,17 +218,26 @@ pub(crate) fn encode_orchard_receiver(
 pub fn decode_unified_address(
     consensus_parameters: &impl consensus::Parameters,
     encoded_address: &str,
-) -> std::io::Result<UnifiedAddress> {
-    if let zcash_keys::address::Address::Unified(unified_address) =
-        decode_address(consensus_parameters, encoded_address)?
-    {
-        Ok(unified_address)
-    } else {
-        Err(std::io::Error::new(
+) -> std::io::Result<unified::Address> {
+    let network_type = consensus_parameters.network_type();
+    // if let unified_address = decode_address(consensus_parameters, encoded_address)? {
+    let (address_network, decoded_ua) = unified::Address::decode(encoded_address).map_err(|e| {
+        std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "failed to decode unified address. incorrect address type.".to_string(),
-        ))
+            format!(
+                "failed to decode unified address. incorrect address type: {}",
+                e
+            ),
+        )
+    })?;
+
+    if network_type != address_network {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "failed to decode unified address. network type mismatch.".to_string(),
+        ));
     }
+    Ok(decoded_ua)
 }
 
 /// Decode string to [`zcash_keys::address::Address`] enum.

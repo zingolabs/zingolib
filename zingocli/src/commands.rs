@@ -264,7 +264,7 @@ impl Command for ParseAddressCommand {
                             "chain_name" => chain_name_string,
                             "address_kind" => "unified",
                             "receivers_available" => receivers_available,
-                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                            "only_orchard_ua" => zcash_keys::address::unified::Address::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
                         }
                         .to_string()
                     } else {

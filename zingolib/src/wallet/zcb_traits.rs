@@ -11,7 +11,7 @@ use zcash_client_backend::{
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
 };
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_keys::{address::unified::Address, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
     legacy::{
@@ -133,7 +133,7 @@ impl WalletRead for LightWallet {
         &self,
         _account: Self::AccountId,
         _address_filter: zcash_keys::keys::UnifiedAddressRequest,
-    ) -> Result<Option<UnifiedAddress>, Self::Error> {
+    ) -> Result<Option<unified::Address>, Self::Error> {
         unimplemented!()
     }
 
@@ -358,7 +358,7 @@ impl WalletWrite for LightWallet {
         &mut self,
         _account: Self::AccountId,
         _request: zcash_keys::keys::UnifiedAddressRequest,
-    ) -> Result<Option<(UnifiedAddress, zip32::DiversifierIndex)>, Self::Error> {
+    ) -> Result<Option<(unified::Address, zip32::DiversifierIndex)>, Self::Error> {
         unimplemented!()
     }
 
@@ -367,7 +367,7 @@ impl WalletWrite for LightWallet {
         _account: Self::AccountId,
         _diversifier_index: zip32::DiversifierIndex,
         _request: zcash_keys::keys::UnifiedAddressRequest,
-    ) -> Result<Option<UnifiedAddress>, Self::Error> {
+    ) -> Result<Option<unified::Address>, Self::Error> {
         unimplemented!()
     }
 

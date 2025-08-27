@@ -12,7 +12,7 @@ use zcash_address::unified::Typecode;
 use zcash_client_backend::wallet::TransparentAddressMetadata;
 use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::{
-    address::UnifiedAddress,
+    address::unified::Address,
     keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::legacy::TransparentAddress;
@@ -46,7 +46,7 @@ pub struct WalletCapability {
     // TODO: Remove this field and exclusively use the TxMap field instead
     rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
     /// Cache of unified_addresses
-    unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
+    unified_addresses: append_only_vec::AppendOnlyVec<unified::Address>,
     addresses_write_lock: AtomicBool,
 }
 impl Default for WalletCapability {
