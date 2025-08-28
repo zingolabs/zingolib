@@ -1,4 +1,5 @@
 #![warn(missing_docs)]
+#![allow(clippy::result_large_err)]
 //! Pepper Sync
 //!
 //! Pepper-sync is a crate providing a sync engine for the zcash network providing the following features:
