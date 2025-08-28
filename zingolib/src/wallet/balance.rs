@@ -437,7 +437,7 @@ impl LightWallet {
         };
         let Some((_, anchor_height)) = self
             .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
-            .expect("infalliable")
+            .expect("infallible")
         else {
             return Ok(Zatoshis::ZERO);
         };
