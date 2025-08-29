@@ -4,7 +4,7 @@ use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
     WalletTransaction,
 };
-use shardtree::store::ShardStore;
+use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::{PoolType, value::Zatoshis};
 
@@ -435,33 +435,12 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon() else {
             return Ok(Zatoshis::ZERO);
         };
-        let Some(wallet_height) = self.sync_state.wallet_height() else {
+        let Some((_, anchor_height)) = self
+            .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
+            .expect("infallible")
+        else {
             return Ok(Zatoshis::ZERO);
         };
-        let anchor_height = wallet_height + 1 - u32::from(self.wallet_settings.min_confirmations);
-        if anchor_height == 0.into() {
-            return Ok(Zatoshis::ZERO);
-        }
-        if self
-            .shard_trees
-            .orchard
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Ok(Zatoshis::ZERO);
-        }
-        if self
-            .shard_trees
-            .sapling
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Ok(Zatoshis::ZERO);
-        }
 
         let spendable_balance = self.get_filtered_balance::<N, _>(
             |note, transaction: &WalletTransaction| {
@@ -469,7 +448,7 @@ impl LightWallet {
                     && transaction.status().is_confirmed()
                     && transaction.status().get_height() <= anchor_height
                     && note.position().is_some()
-                    && self.can_build_witness::<N>(transaction.status().get_height())
+                    && self.can_build_witness::<N>(transaction.status().get_height(), anchor_height)
                     && if include_potentially_spent_notes {
                         true
                     } else {
