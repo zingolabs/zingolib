@@ -3,9 +3,9 @@ members = ["lib", "android", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.3" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.3" }
-darkside-tests = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.3" }
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.4" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.4" }
+darkside-tests = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.4" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
@@ -13,7 +13,7 @@ zcash_primitives = "0.22.0"
 zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
 zcash_address = "0.7.0"
 zcash_protocol = "=0.5.1"
-zcash_client_backend = { version = "0.18.0" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
+zcash_client_backend = { version = "0.18.1" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
 
 # Zingolabs
 zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
@@ -34,10 +34,10 @@ log = "0.4"
 uniffi_build = "0.29"
 
 [patch.crates-io]
-zcash_script = { git = "https://github.com/juanky201271/zcash_script", branch = "fixing_cross_compiling_32_bits" }
+zcash_script = { git = "https://github.com/juanky201271/zcash_script", branch = "fixing_cross_compiling_32_bits_v_0.3.2" }
 
 [profile.release]
-debug = false
+debug = 1
 lto = false
 codegen-units = 1
 overflow-checks = false
