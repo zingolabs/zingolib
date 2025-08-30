@@ -3,12 +3,15 @@ use std::num::NonZeroU32;
 use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::{ActivationHeights, localhost_uri};
+use zingo_infra_services::network::localhost_uri;
 
 use super::super::LightWallet;
 use crate::config::ChainType;
 use crate::lightclient::LightClient;
+use crate::testutils::ZingolibLocalNetwork;
 use crate::wallet::WalletSettings;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
@@ -275,10 +278,11 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 let lightwalletd_uri = localhost_uri(0);
+
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(ActivationHeights::default()),
+                    crate::config::ChainType::Regtest(ZingolibLocalNetwork::default()), // TODO: need to implement this
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),

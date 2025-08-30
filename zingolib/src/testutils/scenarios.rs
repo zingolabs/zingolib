@@ -21,6 +21,7 @@ use bip0039::Mnemonic;
 
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
+use zcash_protocol::local_consensus::LocalNetwork;
 
 use testvectors::{
     REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART, seeds,
@@ -35,7 +36,7 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
-use crate::testutils::increase_height_and_wait_for_client;
+use crate::testutils::{ZingolibLocalNetwork, increase_height_and_wait_for_client};
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::{LightWallet, WalletSettings};
@@ -102,7 +103,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        activation_heights: ActivationHeights,
+        activation_heights: ZingolibLocalNetwork,
     ) -> ZingoConfig {
         //! Each client requires a unique data_dir, we use the
         //! client_number counter for this.
@@ -119,7 +120,7 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        activation_heights: ActivationHeights,
+        activation_heights: ZingolibLocalNetwork,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
@@ -142,7 +143,7 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        activation_heights: ActivationHeights,
+        activation_heights: ZingolibLocalNetwork,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
@@ -159,7 +160,7 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        activation_heights: ActivationHeights,
+        activation_heights: ZingolibLocalNetwork,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(activation_heights);
         let mut wallet = LightWallet::new(
@@ -182,7 +183,7 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    activation_heights: ActivationHeights,
+    activation_heights: ZingolibLocalNetwork,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
     let (local_net, mut client_builder) =
@@ -201,7 +202,7 @@ pub async fn unfunded_client(
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    unfunded_client(ActivationHeights::default(), None).await
+    unfunded_client(ZingolibLocalNetwork::default(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -216,7 +217,7 @@ pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, Light
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    activation_heights: ActivationHeights,
+    activation_heights: ZingolibLocalNetwork,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
     let (local_net, mut client_builder) =
@@ -230,13 +231,13 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    activation_heights: ActivationHeights,
+    activation_heights: ZingolibLocalNetwork,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient) {
     let (local_net, mut client_builder) =
@@ -258,7 +259,7 @@ pub async fn faucet_recipient(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient)
 {
-    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
+    faucet_recipient(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -267,7 +268,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    activation_heights: ActivationHeights,
+    activation_heights: ZingolibLocalNetwork,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<Lightwalletd, Zcashd>,
@@ -359,7 +360,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            ActivationHeights::default(),
+            ZingolibLocalNetwork::default(),
             None,
         )
         .await;
@@ -370,7 +371,7 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    activation_heights: ActivationHeights,
+    activation_heights: ZingolibLocalNetwork,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
     let miner_address = match mine_to_pool {
@@ -408,7 +409,7 @@ pub async fn custom_clients(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+        custom_clients(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await;
 
     (local_net, client_builder)
 }
@@ -442,12 +443,13 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<Lightwalletd, Z
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().activation_heights().into(),
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -468,12 +470,13 @@ pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> LocalNet<Ligh
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().activation_heights().into(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -523,12 +526,13 @@ pub async fn funded_transparent_mobileclient(value: u64) -> LocalNet<Lightwallet
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().activation_heights().into(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -563,12 +567,13 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().activation_heights().into(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await

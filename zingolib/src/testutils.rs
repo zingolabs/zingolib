@@ -11,10 +11,12 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::Lightwalletd;
+use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::validator::{Validator, Zcashd};
 
 use crate::config::ZingoConfig;
@@ -35,6 +37,55 @@ pub mod lightclient;
 pub mod macros;
 pub mod paths;
 pub mod scenarios;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZingolibLocalNetwork {
+    inner: LocalNetwork,
+}
+
+impl Parameters for ZingolibLocalNetwork {
+    fn network_type(&self) -> consensus::NetworkType {
+        self.inner.network_type()
+    }
+
+    fn activation_height(&self, nu: consensus::NetworkUpgrade) -> Option<BlockHeight> {
+        self.inner.activation_height(nu)
+    }
+}
+
+impl Default for ZingolibLocalNetwork {
+    fn default() -> Self {
+        ZingolibLocalNetwork {
+            inner: LocalNetwork {
+                overwinter: Some(BlockHeight::from_u32(1)),
+                sapling: Some(BlockHeight::from_u32(1)),
+                blossom: Some(BlockHeight::from_u32(1)),
+                heartwood: Some(BlockHeight::from_u32(1)),
+                canopy: Some(BlockHeight::from_u32(1)),
+                nu5: Some(BlockHeight::from_u32(1)),
+                nu6: Some(BlockHeight::from_u32(1)),
+                nu6_1: Some(BlockHeight::from_u32(1)),
+            },
+        }
+    }
+}
+
+impl From<ActivationHeights> for ZingolibLocalNetwork {
+    fn from(activation_heights: ActivationHeights) -> Self {
+        ZingolibLocalNetwork {
+            inner: LocalNetwork {
+                overwinter: Some(BlockHeight::from_u32(activation_heights.overwinter.into())),
+                sapling: Some(BlockHeight::from_u32(activation_heights.sapling.into())),
+                blossom: Some(BlockHeight::from_u32(activation_heights.blossom.into())),
+                heartwood: Some(BlockHeight::from_u32(activation_heights.heartwood.into())),
+                canopy: Some(BlockHeight::from_u32(activation_heights.canopy.into())),
+                nu5: Some(BlockHeight::from_u32(activation_heights.nu5.into())),
+                nu6: Some(BlockHeight::from_u32(activation_heights.nu6.into())),
+                nu6_1: Some(BlockHeight::from_u32(1)),
+            },
+        }
+    }
+}
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
@@ -270,7 +321,7 @@ pub async fn generate_n_blocks_return_new_height(
     local_net.validator().generate_blocks(n).await.unwrap();
     assert_eq!(local_net.validator().get_chain_height().await, target);
 
-    target
+    BlockHeight::from_u32(target.into())
 }
 
 /// Will hang if chain does not reach `target_block_height`
