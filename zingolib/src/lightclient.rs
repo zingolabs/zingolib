@@ -321,7 +321,6 @@ mod tests {
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zcash_protocol::{consensus::BlockHeight, local_consensus::LocalNetwork};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 

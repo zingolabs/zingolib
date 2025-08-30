@@ -147,6 +147,7 @@ mod fast {
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
+            ZingolibLocalNetwork,
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             lightclient::{from_inputs, get_base_address},
         },
@@ -456,12 +457,12 @@ mod fast {
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(true, local_net.validator().activation_heights());
+            client_builder.build_faucet(true, local_net.validator().activation_heights().into());
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         let network = recipient.wallet.read().await.network;
 
@@ -511,7 +512,7 @@ mod fast {
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         if let Some(_ua) =
             recipient
@@ -613,7 +614,7 @@ mod fast {
             Some(100_000),
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
-            ActivationHeights::default(),
+            ZingolibLocalNetwork::default(),
             None,
         )
         .await;
@@ -1172,7 +1173,7 @@ mod fast {
             seed_phrase,
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         let network = recipient.wallet.read().await.network;
         let (new_address_id, new_address) = recipient
@@ -1245,7 +1246,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
 
         assert_eq!(
@@ -1257,7 +1258,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await;
+            scenarios::faucet(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1268,7 +1269,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[tokio::test]
     async fn mine_to_sapling() {
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
+            scenarios::faucet(PoolType::SAPLING, ZingolibLocalNetwork::default(), None).await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1278,9 +1279,12 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent() {
-        let (local_net, mut faucet, _recipient) =
-            scenarios::faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None)
-                .await;
+        let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
+            PoolType::Transparent,
+            ZingolibLocalNetwork::default(),
+            None,
+        )
+        .await;
         check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1303,7 +1307,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu6: 13.into(),
         };
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
+            scenarios::unfunded_client(activation_heights.into(), None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
             .await
             .unwrap();
@@ -1321,7 +1325,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu6: 7.into(),
         };
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
+            scenarios::unfunded_client(activation_heights.into(), None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
             .await
             .unwrap();
@@ -1331,7 +1335,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
-        let activation_heights = ActivationHeights::default();
+        let activation_heights = ZingolibLocalNetwork::default();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1341,7 +1345,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     }
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
-        let activation_heights = ActivationHeights::default();
+        let activation_heights = ZingolibLocalNetwork::default();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1393,8 +1397,8 @@ mod slow {
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
-        assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
-        encoded_sapling_address_from_ua,
+        ZingolibLocalNetwork, assert_transaction_summary_equality,
+        assert_transaction_summary_exists, build_fvk_client, encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -1707,17 +1711,17 @@ mod slow {
         tracing_subscriber::fmt().init();
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().into());
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(local_net.validator().activation_heights()),
+            ChainType::Regtest(local_net.validator().activation_heights().into()),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -2476,7 +2480,7 @@ TransactionSummary {
         // consistent with all the notes in the relevant block changing state.
         // NOTE that the balance doesn't give insight into the distribution across notes.
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
+            scenarios::faucet(PoolType::SAPLING, ZingolibLocalNetwork::default(), None).await;
 
         let amount_to_send = 10_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
@@ -2518,7 +2522,7 @@ TransactionSummary {
         };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
-            activation_heights,
+            activation_heights.into(),
             None,
         )
         .await;
@@ -2550,7 +2554,7 @@ TransactionSummary {
                 Some(100_000),
                 Some(100_000),
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                ActivationHeights::default(),
+                ZingolibLocalNetwork::default(),
                 None,
             )
             .await;
@@ -2638,7 +2642,7 @@ TransactionSummary {
                 Some(funding_value),
                 None,
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                ActivationHeights::default(),
+                ZingolibLocalNetwork::default(),
                 None,
             )
             .await;
@@ -3330,12 +3334,12 @@ TransactionSummary {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().into());
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
@@ -3375,12 +3379,12 @@ TransactionSummary {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().into());
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().into(),
         );
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");

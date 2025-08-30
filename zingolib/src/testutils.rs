@@ -38,6 +38,8 @@ pub mod macros;
 pub mod paths;
 pub mod scenarios;
 
+/// A struct representing a Local Network.
+/// Used as a hack for compatiblility with `ActivationHeights` from `infra`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZingolibLocalNetwork {
     inner: LocalNetwork,
@@ -83,6 +85,20 @@ impl From<ActivationHeights> for ZingolibLocalNetwork {
                 nu6: Some(BlockHeight::from_u32(activation_heights.nu6.into())),
                 nu6_1: Some(BlockHeight::from_u32(1)),
             },
+        }
+    }
+}
+
+impl From<ZingolibLocalNetwork> for ActivationHeights {
+    fn from(zingolib_local_network: ZingolibLocalNetwork) -> Self {
+        ActivationHeights {
+            overwinter: u32::from(zingolib_local_network.inner.overwinter.unwrap()).into(),
+            sapling: u32::from(zingolib_local_network.inner.sapling.unwrap()).into(),
+            blossom: u32::from(zingolib_local_network.inner.blossom.unwrap()).into(),
+            heartwood: u32::from(zingolib_local_network.inner.heartwood.unwrap()).into(),
+            canopy: u32::from(zingolib_local_network.inner.canopy.unwrap()).into(),
+            nu5: u32::from(zingolib_local_network.inner.nu5.unwrap()).into(),
+            nu6: u32::from(zingolib_local_network.inner.nu6.unwrap()).into(),
         }
     }
 }

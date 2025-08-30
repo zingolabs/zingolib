@@ -595,9 +595,7 @@ impl InputSource for LightWallet {
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
 
-        let at_least_value = match target_value {
-            TargetValue::AtLeast(value) => value,
-        };
+        let TargetValue::AtLeast(at_least_value) = target_value;
         let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
 
         // prioritises selecting spendable notes that are guaranteed to be unspent first

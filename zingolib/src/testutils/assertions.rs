@@ -27,11 +27,10 @@ pub fn compare_fee<NoteRef>(
 ) -> Result<Zatoshis, ProposalToTransactionRecordComparisonError> {
     let recorded_fee_result = wallet.calculate_transaction_fee(transaction);
     let proposed_fee = step.balance().fee_required();
-    if let Ok(recorded_fee) = recorded_fee_result {
-        if recorded_fee == proposed_fee {
+    if let Ok(recorded_fee) = recorded_fee_result
+        && recorded_fee == proposed_fee {
             return Ok(recorded_fee);
         }
-    }
     Err(ProposalToTransactionRecordComparisonError::Mismatch(
         recorded_fee_result,
         proposed_fee,

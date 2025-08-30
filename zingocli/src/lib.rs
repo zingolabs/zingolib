@@ -21,10 +21,10 @@ use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
+use zingolib::testutils::ZingolibLocalNetwork;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
@@ -381,11 +381,11 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(ActivationHeights::default()),
+                "regtest" => ChainType::Regtest(ZingolibLocalNetwork::default()),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(ActivationHeights::default())
+            ChainType::Regtest(ZingolibLocalNetwork::default())
         } else {
             ChainType::Mainnet
         };
@@ -649,7 +649,7 @@ pub fn run_cli() {
                                 zcashd_bin: ZCASHD_BIN.clone(),
                                 zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                                 rpc_listen_port: None,
-                                activation_heights: ActivationHeights::default(),
+                                activation_heights: ZingolibLocalNetwork::default().into(),
                                 miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
                                 chain_cache: None,
                             },

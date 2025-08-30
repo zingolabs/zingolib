@@ -152,7 +152,7 @@ where
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
             (
-                Option::unwrap(MARGINAL_FEE * (4 as u64)),
+                Option::unwrap(MARGINAL_FEE * 4_u64),
                 recorded_value,
                 recorded_change
             )
@@ -168,7 +168,7 @@ where
         assert_eq!(
             (recorded_fee, recorded_value),
             (
-                Option::unwrap(MARGINAL_FEE * (3 as u64)),
+                Option::unwrap(MARGINAL_FEE * 3_u64),
                 Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
             )
         );
@@ -191,7 +191,7 @@ where
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
             (
-                Option::unwrap(MARGINAL_FEE * (2 as u64)),
+                Option::unwrap(MARGINAL_FEE * 2_u64),
                 Zatoshis::from_u64(50_000).unwrap(),
                 recorded_change
             )
@@ -238,7 +238,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            Option::unwrap(MARGINAL_FEE * (11 as u64)),
+            Option::unwrap(MARGINAL_FEE * 11_u64),
             recorded_value,
             recorded_change
         )
@@ -262,7 +262,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            Option::unwrap(MARGINAL_FEE * (4 as u64)),
+            Option::unwrap(MARGINAL_FEE * 4_u64),
             Zatoshis::from_u64(10_000).unwrap(),
             recorded_change
         )

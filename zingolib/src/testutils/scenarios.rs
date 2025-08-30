@@ -21,14 +21,13 @@ use bip0039::Mnemonic;
 
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
-use zcash_protocol::local_consensus::LocalNetwork;
 
 use testvectors::{
     REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART, seeds,
 };
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::{ActivationHeights, localhost_uri};
+use zingo_infra_services::network::localhost_uri;
 use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -390,7 +389,7 @@ pub async fn custom_clients(
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights,
+            activation_heights: activation_heights.into(),
             miner_address: Some(miner_address),
             chain_cache,
         },
@@ -416,7 +415,7 @@ pub async fn custom_clients_default() -> (LocalNet<Lightwalletd, Zcashd>, Client
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
-    let activation_heights = ActivationHeights::default();
+    let activation_heights = ZingolibLocalNetwork::default();
     LocalNet::<Lightwalletd, Zcashd>::launch(
         LightwalletdConfig {
             lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
@@ -428,7 +427,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights,
+            activation_heights: activation_heights.into(),
             miner_address: Some(REG_Z_ADDR_FROM_ABANDONART),
             chain_cache: None,
         },

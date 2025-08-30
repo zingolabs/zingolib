@@ -325,8 +325,8 @@ pub mod scenarios {
         darkside_types::{RawTransaction, TreeState},
     };
     use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::ClientBuilder;
+    use zingolib::{lightclient::LightClient, testutils::ZingolibLocalNetwork};
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,
@@ -345,12 +345,12 @@ pub mod scenarios {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
             let client_builder =
                 ClientBuilder::new(darkside_connector.0.clone(), tempfile::tempdir().unwrap());
-            let activation_heights = ActivationHeights::default();
+            let activation_heights = ZingolibLocalNetwork::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
                 client_builder,
-                activation_heights,
+                activation_heights: activation_heights.into(),
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
@@ -381,7 +381,7 @@ pub mod scenarios {
                 testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights,
+                self.activation_heights.into(),
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -406,9 +406,12 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient =
-                self.client_builder
-                    .build_client(seed, birthday, true, self.activation_heights);
+            let lightclient = self.client_builder.build_client(
+                seed,
+                birthday,
+                true,
+                self.activation_heights.into(),
+            );
             self.lightclients.push(lightclient);
             self
         }
