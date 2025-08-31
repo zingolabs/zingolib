@@ -574,16 +574,20 @@ impl InputSource for LightWallet {
         unimplemented!()
     }
 
-    // TODO: use `confirmations_policy`
     fn select_spendable_notes(
         &self,
         account: Self::AccountId,
         target_value: TargetValue,
         sources: &[ShieldedProtocol],
-        target_height: TargetHeight,
-        _confirmations_policy: ConfirmationsPolicy,
+        _target_height: TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
+        let (_, anchor_height) = self
+            .get_target_and_anchor_heights(confirmations_policy.trusted())
+            .unwrap()
+            .unwrap(); // TODO: remove unwraps
+
         let mut exclude_sapling = exclude
             .iter()
             .filter(|&note_id| note_id.pool_type() == PoolType::SAPLING)
@@ -607,7 +611,7 @@ impl InputSource for LightWallet {
                 let notes = self
                     .select_spendable_notes_by_pool::<SaplingNote>(
                         &mut remaining_value_needed,
-                        target_height.into(),
+                        anchor_height,
                         &exclude_sapling,
                         account,
                         include_potentially_spent_notes,
@@ -622,7 +626,7 @@ impl InputSource for LightWallet {
                 let notes = self
                     .select_spendable_notes_by_pool::<OrchardNote>(
                         &mut remaining_value_needed,
-                        target_height.into(),
+                        anchor_height,
                         &exclude_orchard,
                         account,
                         include_potentially_spent_notes,
@@ -637,7 +641,7 @@ impl InputSource for LightWallet {
             let notes = self
                 .select_spendable_notes_by_pool::<SaplingNote>(
                     &mut remaining_value_needed,
-                    target_height.into(),
+                    anchor_height,
                     &exclude_sapling,
                     account,
                     include_potentially_spent_notes,
@@ -651,7 +655,7 @@ impl InputSource for LightWallet {
             let notes = self
                 .select_spendable_notes_by_pool::<OrchardNote>(
                     &mut remaining_value_needed,
-                    target_height.into(),
+                    anchor_height,
                     &exclude_orchard,
                     account,
                     include_potentially_spent_notes,

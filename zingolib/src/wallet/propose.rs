@@ -61,12 +61,7 @@ impl LightWallet {
             request,
             // TODO: Is this the right configuration?
             // self.wallet_settings.min_confirmations,
-            ConfirmationsPolicy::new(
-                self.wallet_settings.min_confirmations,
-                self.wallet_settings.min_confirmations,
-                true,
-            )
-            .unwrap(), // Won't fail because trusted == untrusted
+            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
         )
         .map_err(ProposeSendError::Proposal)
     }

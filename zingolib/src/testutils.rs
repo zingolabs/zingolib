@@ -66,6 +66,7 @@ impl Default for ZingolibLocalNetwork {
                 canopy: Some(BlockHeight::from_u32(1)),
                 nu5: Some(BlockHeight::from_u32(1)),
                 nu6: Some(BlockHeight::from_u32(1)),
+                // TODO: Blocked on `infra`. Trying with 100 makes everything work.
                 nu6_1: Some(BlockHeight::from_u32(1)),
             },
         }

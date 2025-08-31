@@ -280,7 +280,7 @@ impl NetworkSeedVersion {
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(ZingolibLocalNetwork::default()), // TODO: need to implement this
+                    crate::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
