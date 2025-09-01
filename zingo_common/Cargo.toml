@@ -1,5 +1,5 @@
 [package]
-name = "tower_service"
+name = "zingo_common"
 version = "0.1.0"
 edition = "2024"
 

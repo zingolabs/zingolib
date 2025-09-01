@@ -13,7 +13,7 @@ members = [
     "pepper-sync",
     "zingo-testvectors",
     "zingo-price",
-    "tower_service",
+    "zingo_common",
 ]
 resolver = "2"
 
@@ -119,7 +119,7 @@ zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
-tower_service = { path = "tower_service" }
+zingo_common = { path = "zingo_common" }
 webpki-roots = "0.25"
 
 [profile.test]

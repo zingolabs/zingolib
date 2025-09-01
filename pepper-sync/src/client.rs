@@ -306,7 +306,7 @@ pub(crate) async fn get_transparent_address_transactions(
 ///
 /// Checks at intervals if `shutdown_mempool` is set to prevent hanging on awating mempool monitor handle.
 pub(crate) async fn get_mempool_transaction_stream(
-    client: &mut CompactTxStreamerClient<tower_service::UnderlyingTowerService>,
+    client: &mut CompactTxStreamerClient<zingo_common::UnderlyingTowerService>,
     shutdown_mempool: Arc<AtomicBool>,
 ) -> Result<tonic::Streaming<RawTransaction>, MempoolError> {
     tracing::debug!("Fetching mempool stream");

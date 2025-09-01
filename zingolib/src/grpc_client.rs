@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-use tower_service::UnderlyingTowerService;
+use zingo_common::UnderlyingTowerService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// Creates a zcash_client_backend compatible GRPC client from a URI

@@ -13,7 +13,7 @@ use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-pub use tower_service::UnderlyingTowerService;
+pub use zingo_common::UnderlyingTowerService;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
