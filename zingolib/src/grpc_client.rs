@@ -6,14 +6,14 @@ use std::sync::Arc;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-use tower_service::UnderlyingService;
+use tower_service::UnderlyingTowerService;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 /// Creates a zcash_client_backend compatible GRPC client from a URI
 /// This duplicates the connection logic from zingo_netutils but creates a zcash_client_backend client
 pub async fn get_zcb_client(
     uri: Uri,
-) -> Result<CompactTxStreamerClient<UnderlyingService>, zingo_netutils::GetClientError> {
+) -> Result<CompactTxStreamerClient<UnderlyingTowerService>, zingo_netutils::GetClientError> {
     let uri = Arc::new(uri);
     let mut http_connector = HttpConnector::new();
     http_connector.enforce_http(false);

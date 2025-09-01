@@ -13,7 +13,7 @@ use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-pub use tower_service::UnderlyingService;
+pub use tower_service::UnderlyingTowerService;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
@@ -71,7 +71,7 @@ impl GrpcConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
+        Output = Result<CompactTxStreamerClient<UnderlyingTowerService>, GetClientError>,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {

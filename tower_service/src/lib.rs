@@ -5,7 +5,7 @@ use tonic::Status;
 use tower::util::BoxCloneService;
 
 /// The underlying service type used for gRPC connections
-pub type UnderlyingService = BoxCloneService<
+pub type UnderlyingTowerService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
     http::Response<hyper::body::Incoming>,
     hyper_util::client::legacy::Error,

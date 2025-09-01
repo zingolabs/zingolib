@@ -7,7 +7,7 @@ use hyper::Uri;
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
 use tower::ServiceExt;
-use zingo_netutils::UnderlyingService;
+use zingo_netutils::UnderlyingTowerService;
 
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
@@ -32,7 +32,7 @@ impl DarksideConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<DarksideStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+        Output = Result<DarksideStreamerClient<UnderlyingTowerService>, Box<dyn std::error::Error>>,
     > {
         let uri = Arc::new(self.0.clone());
         async move {
