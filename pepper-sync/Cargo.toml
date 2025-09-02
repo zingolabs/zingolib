@@ -17,7 +17,7 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-zingo_common = { workspace = true }
+zlp_common = { workspace = true }
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
 

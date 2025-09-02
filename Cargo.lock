@@ -400,14 +400,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
- "axum-core",
+ "axum-core 0.4.5",
  "bytes",
  "futures-util",
  "http",
  "http-body",
  "http-body-util",
  "itoa",
- "matchit",
+ "matchit 0.7.3",
+ "memchr",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "rustversion",
+ "serde",
+ "sync_wrapper",
+ "tower 0.5.2",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
+dependencies = [
+ "axum-core 0.5.2",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "itoa",
+ "matchit 0.8.4",
  "memchr",
  "mime",
  "percent-encoding",
@@ -429,6 +455,25 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
+ "rustversion",
+ "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68464cd0412f486726fb3373129ef5d2993f90c34bc2bc1c1e9943b2f4fc7ca6"
+dependencies = [
+ "bytes",
+ "futures-core",
  "http",
  "http-body",
  "http-body-util",
@@ -1299,12 +1344,12 @@ dependencies = [
  "orchard",
  "portpicker",
  "proptest",
- "prost",
+ "prost 0.13.5",
  "sapling-crypto",
  "serde_json",
  "tempfile",
  "tokio",
- "tonic",
+ "tonic 0.12.3",
  "tonic-build",
  "tower 0.5.2",
  "tracing-subscriber",
@@ -1443,7 +1488,7 @@ checksum = "357422a457ccb850dc8f1c1680e0670079560feaad6c2e247e3f345c4fab8a3f"
 dependencies = [
  "heck",
  "indexmap 2.11.0",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -3167,7 +3212,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.3",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -3274,8 +3319,8 @@ name = "lightwallet-protocol"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/lightwallet-protocol-rust.git?branch=main#7343f4e095aed8d0f4dbb5057a4e313ee2c22e60"
 dependencies = [
- "prost",
- "tonic",
+ "prost 0.13.5",
+ "tonic 0.12.3",
  "tonic-build",
 ]
 
@@ -3386,6 +3431,12 @@ name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
+
+[[package]]
+name = "matchit"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "maybe-rayon"
@@ -4023,7 +4074,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.16",
  "tokio",
- "tonic",
+ "tonic 0.12.3",
  "tracing",
  "zcash_address 0.7.1",
  "zcash_client_backend",
@@ -4035,8 +4086,8 @@ dependencies = [
  "zcash_transparent 0.2.3",
  "zingo-memo",
  "zingo-status",
- "zingo_common",
  "zip32",
+ "zlp_common",
 ]
 
 [[package]]
@@ -4329,7 +4380,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.13.5",
+]
+
+[[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
 ]
 
 [[package]]
@@ -4339,13 +4400,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost",
+ "prost 0.13.5",
  "prost-types",
  "regex",
  "syn 2.0.106",
@@ -4359,7 +4420,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -4371,7 +4445,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
- "prost",
+ "prost 0.13.5",
 ]
 
 [[package]]
@@ -6250,7 +6324,7 @@ checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
 dependencies = [
  "async-stream",
  "async-trait",
- "axum",
+ "axum 0.7.9",
  "base64",
  "bytes",
  "h2",
@@ -6262,7 +6336,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.13.5",
  "rustls-native-certs",
  "rustls-pemfile",
  "socket2 0.5.10",
@@ -6274,6 +6348,35 @@ dependencies = [
  "tower-service",
  "tracing",
  "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "tonic"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67ac5a8627ada0968acec063a4746bf79588aa03ccb66db2f75d7dce26722a40"
+dependencies = [
+ "async-trait",
+ "axum 0.8.4",
+ "base64",
+ "bytes",
+ "h2",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-timeout",
+ "hyper-util",
+ "percent-encoding",
+ "pin-project",
+ "socket2 0.6.0",
+ "sync_wrapper",
+ "tokio",
+ "tokio-stream",
+ "tower 0.5.2",
+ "tower-layer",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -6296,11 +6399,11 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "878d81f52e7fcfd80026b7fdb6a9b578b3c3653ba987f87f0dce4b64043cba27"
 dependencies = [
- "prost",
+ "prost 0.13.5",
  "prost-types",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -7112,11 +7215,15 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
+ "indexmap 2.11.0",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -7793,7 +7900,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0978bf7171b3d90bac376700cb56d606feb40f251a475a5d6634613564460b22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8241,7 +8348,7 @@ dependencies = [
  "orchard",
  "pasta_curves",
  "percent-encoding",
- "prost",
+ "prost 0.13.5",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "rayon",
@@ -8255,7 +8362,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls 0.24.1",
- "tonic",
+ "tonic 0.12.3",
  "tonic-build",
  "tor-rtcompat",
  "tower 0.4.13",
@@ -8763,7 +8870,7 @@ dependencies = [
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
  "nix 0.29.0",
- "prost",
+ "prost 0.13.5",
  "rand 0.8.5",
  "semver",
  "serde",
@@ -8771,7 +8878,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.12.3",
  "tonic-build",
  "tonic-reflection",
  "tower 0.4.13",
@@ -8961,7 +9068,6 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9"
 dependencies = [
  "getset",
  "hex",
@@ -8980,6 +9086,7 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
+ "zlp_common",
 ]
 
 [[package]]
@@ -9005,14 +9112,14 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "lightwallet-protocol",
- "prost",
+ "prost 0.13.5",
  "rustls-pemfile",
  "thiserror 2.0.16",
  "tokio-rustls 0.26.2",
- "tonic",
+ "tonic 0.12.3",
  "tower 0.5.2",
  "webpki-roots 0.25.4",
- "zingo_common",
+ "zlp_common",
 ]
 
 [[package]]
@@ -9047,19 +9154,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo_common"
-version = "0.1.0"
-dependencies = [
- "http",
- "http-body-util",
- "hyper",
- "hyper-util",
- "prost",
- "tonic",
- "tower 0.5.2",
-]
-
-[[package]]
 name = "zingolib"
 version = "0.0.1"
 dependencies = [
@@ -9089,7 +9183,7 @@ dependencies = [
  "orchard",
  "pepper-sync",
  "portpicker",
- "prost",
+ "prost 0.13.5",
  "rand 0.8.5",
  "ring 0.17.14",
  "rust-embed",
@@ -9104,7 +9198,7 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tokio-rustls 0.26.2",
- "tonic",
+ "tonic 0.12.3",
  "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
@@ -9123,8 +9217,8 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo-testvectors",
- "zingo_common",
  "zip32",
+ "zlp_common",
 ]
 
 [[package]]
@@ -9150,6 +9244,23 @@ dependencies = [
  "percent-encoding",
  "zcash_address 0.7.1",
  "zcash_protocol 0.5.1",
+]
+
+[[package]]
+name = "zlp_common"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zingolabs_rust_primitives.git?branch=main#d7fb28565e4ac6dbf2d40fb7fd1c0f5d6cb0b357"
+dependencies = [
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "portpicker",
+ "prost 0.14.1",
+ "tonic 0.14.1",
+ "tower 0.5.2",
+ "zcash_primitives 0.24.0",
+ "zcash_protocol 0.6.1",
 ]
 
 [[package]]

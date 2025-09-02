@@ -20,7 +20,7 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-zingo_common = { workspace = true }
+zlp_common = { workspace = true }
 webpki-roots = { workspace = true }
 lightwallet-protocol.workspace = true
 

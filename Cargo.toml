@@ -13,7 +13,6 @@ members = [
     "pepper-sync",
     "zingo-testvectors",
     "zingo-price",
-    "zingo_common",
 ]
 resolver = "2"
 
@@ -109,7 +108,7 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 # Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zingo-infra-services = { path = "../../infras/infrastructure/services" }
 
 # Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
@@ -119,7 +118,7 @@ zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
-zingo_common = { path = "zingo_common" }
+zlp_common = { git = "https://github.com/zingolabs/zingolabs_rust_primitives.git", branch = "main" }
 webpki-roots = "0.25"
 
 [profile.test]

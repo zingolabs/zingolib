@@ -320,7 +320,7 @@ mod tests {
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingo_infra_services::network::ActivationHeights;
+    use zlp_common::ActivationHeights;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
