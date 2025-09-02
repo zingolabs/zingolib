@@ -1,20 +1,21 @@
 //! libtonode tests use zcashd regtest mode to mock a chain
 
 use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Indexer, Lightwalletd};
+use zingo_infra_services::indexer::Indexer;
 use zingo_infra_services::network::localhost_uri;
-use zingo_infra_services::validator::{Validator, Zcashd};
+use zingo_infra_services::validator::Validator;
 
 use crate::lightclient::LightClient;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::scenarios::ClientBuilder;
 use crate::testutils::scenarios::custom_clients_default;
+use crate::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use crate::testutils::timestamped_test_log;
 
 /// includes utilities for connecting to zcashd regtest
 pub struct LibtonodeEnvironment {
     /// Local network
-    pub local_net: LocalNet<Lightwalletd, Zcashd>,
+    pub local_net: LocalNet<DefaultIndexer, DefaultValidator>,
     /// Client builder
     pub client_builder: ClientBuilder,
 }

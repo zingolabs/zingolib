@@ -14,18 +14,16 @@ use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
-use testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zcash_protocol::PoolType;
 use zingo_infra_services::network::ActivationHeights;
-use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
+use zingolib::testutils::scenarios::LocalNetwork;
+use zingolib::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -646,21 +644,11 @@ pub fn run_cli() {
             let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
                 RT.block_on(async move {
                     Some(
-                        LocalNet::<Lightwalletd, Zcashd>::launch(
-                            LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-                                listen_port: None,
-                                zcashd_conf: PathBuf::new(),
-                                darkside: false,
-                            },
-                            ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN.clone(),
-                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-                                rpc_listen_port: None,
-                                activation_heights: ActivationHeights::default(),
-                                miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
-                                chain_cache: None,
-                            },
+                        <(DefaultIndexer, DefaultValidator) as LocalNetwork<
+                            DefaultIndexer,
+                            DefaultValidator,
+                        >>::launch(
+                            None, PoolType::ORCHARD, ActivationHeights::default(), None
                         )
                         .await,
                     )

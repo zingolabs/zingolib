@@ -15,6 +15,9 @@ ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
 test-elevation = ["portpicker", "testvectors", "tempfile"]
 zaino-test = ['test-elevation']
+test_zainod_zcashd = []
+test_lwd_zebrad = []
+test_lwd_zcashd = []
 
 [dependencies]
 zingo-memo = { workspace = true }

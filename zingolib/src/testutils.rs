@@ -14,12 +14,13 @@ use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::validator::{Validator, Zcashd};
+use zingo_infra_services::indexer::Indexer;
+use zingo_infra_services::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
+use crate::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
@@ -223,7 +224,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
 
 /// Send from sender to recipient and then bump chain and sync both lightclients
 pub async fn send_value_between_clients_and_sync(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+    local_net: &LocalNet<DefaultIndexer, DefaultValidator>,
     sender: &mut LightClient,
     recipient: &mut LightClient,
     value: u64,
@@ -248,8 +249,8 @@ pub async fn send_value_between_clients_and_sync(
 /// it _also_ ensures that the client state is synced.
 /// Unsynced clients are very interesting to us.  See increase_server_height
 /// to reliably increase the server without syncing the client
-pub async fn increase_height_and_wait_for_client(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+pub async fn increase_height_and_wait_for_client<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     client: &mut LightClient,
     n: u32,
 ) -> Result<(), LightClientError> {
@@ -261,8 +262,8 @@ pub async fn increase_height_and_wait_for_client(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn generate_n_blocks_return_new_height(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     n: u32,
 ) -> BlockHeight {
     let start_height = local_net.validator().get_chain_height().await;
