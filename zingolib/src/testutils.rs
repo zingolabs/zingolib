@@ -223,8 +223,8 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
 }
 
 /// Send from sender to recipient and then bump chain and sync both lightclients
-pub async fn send_value_between_clients_and_sync(
-    local_net: &LocalNet<DefaultIndexer, DefaultValidator>,
+pub async fn send_value_between_clients_and_sync<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     sender: &mut LightClient,
     recipient: &mut LightClient,
     value: u64,
