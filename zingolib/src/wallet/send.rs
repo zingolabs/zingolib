@@ -326,7 +326,7 @@ fn check_note_shards_are_scanned(
         .iter()
         .filter(|&shard_range| shard_range.contains(&note_height))
         .all(|note_shard_range| {
-            dbg!(note_shard_range);
+            //dbg!(note_shard_range);
             scan_ranges
                 .iter()
                 .filter(|&scan_range| {
