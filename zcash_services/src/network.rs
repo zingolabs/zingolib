@@ -71,6 +71,7 @@ impl ActivationHeights {
             NetworkUpgrade::Canopy => self.canopy,
             NetworkUpgrade::Nu5 => self.nu5,
             NetworkUpgrade::Nu6 => self.nu6,
+            NetworkUpgrade::Nu6_1 => todo!(),
         }
     }
 }
