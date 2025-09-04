@@ -2,13 +2,13 @@
 
 use std::path::PathBuf;
 
+use crate::{GetClientError, GrpcConnector};
 use http_body_util::combinators::UnsyncBoxBody;
 use lightwallet_protocol::CompactTxStreamerClient;
 use portpicker::Port;
 use testvectors::seeds;
 use tower::util::BoxCloneService;
 use zcash_services::network;
-use zingo_netutils::{GetClientError, GrpcConnector};
 use zingolib::{
     config::RegtestNetwork, lightclient::LightClient, testutils::scenarios::setup::ClientBuilder,
 };
@@ -44,4 +44,21 @@ pub fn build_lightclients(
     );
 
     (faucet, recipient)
+}
+
+/// ?
+use http_body::Body;
+use hyper_util::client::legacy::{Client, connect::Connect};
+/// a utility used in multiple places
+pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
+where
+    C: Connect + Clone,
+    B: Body + Send,
+    B::Data: Send,
+{
+    Box::new(
+        Client::builder(hyper_util::rt::TokioExecutor::new())
+            .http2_only(http2_only)
+            .build(connector),
+    )
 }

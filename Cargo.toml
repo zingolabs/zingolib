@@ -13,7 +13,6 @@ members = [
     "pepper-sync",
     "zingo-testvectors",
     "zingo-price",
-    "tower_service",
 ]
 resolver = "2"
 
@@ -120,6 +119,13 @@ zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 webpki-roots = "0.25"
+
+# Dependencies introduced zcash_services_*
+getset = "0.1.6"
+zebra-chain = "2.0.0"
+zebra-node-services = "1.0.1"
+zebra-rpc = "2.0.1"
+sha2 = "0.10.9"
 
 [profile.test]
 opt-level = 3

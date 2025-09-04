@@ -6,14 +6,13 @@
 #![warn(missing_docs)]
 use std::sync::Arc;
 
-use client::client_from_connector;
+pub use ::client;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
 use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-pub use tower_service::UnderlyingService;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
@@ -24,25 +23,6 @@ pub enum GetClientError {
     InvalidAuthority,
     #[error("bad uri: invalid path and/or query")]
     InvalidPathAndQuery,
-}
-
-/// ?
-pub mod client {
-    use http_body::Body;
-    use hyper_util::client::legacy::{Client, connect::Connect};
-    /// a utility used in multiple places
-    pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
-    where
-        C: Connect + Clone,
-        B: Body + Send,
-        B::Data: Send,
-    {
-        Box::new(
-            Client::builder(hyper_util::rt::TokioExecutor::new())
-                .http2_only(http2_only)
-                .build(connector),
-        )
-    }
 }
 
 /// The connector, containing the URI to connect to.
@@ -71,7 +51,7 @@ impl GrpcConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
+        Output = Result<CompactTxStreamerClient<client::UnderlyingService>, GetClientError>,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
@@ -111,7 +91,7 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = client_from_connector(connector, false);
+                let client = client::client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
@@ -137,7 +117,7 @@ impl GrpcConnector {
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = client_from_connector(connector, true);
+                let client = client::client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {

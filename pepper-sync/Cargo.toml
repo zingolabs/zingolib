@@ -17,7 +17,6 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-tower_service = { workspace = true }
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
 
@@ -72,3 +71,4 @@ byteorder = { workspace = true, optional = true }
 
 # temp
 zcash_address.workspace = true
+zingo-netutils = { path = "../zingo-netutils" }
