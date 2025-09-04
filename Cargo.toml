@@ -130,5 +130,8 @@ zebra-node-services = "1.0.1"
 zebra-rpc = "2.0.1"
 sha2 = "0.10.9"
 
+[patch.crates-io]
+zcash_protocol = { git = "https://github.com/zcash/librustzcash.git", rev = "8be259c579762f1b0f569453a20c0d0dbeae6c07" }
+
 [profile.test]
 opt-level = 3
