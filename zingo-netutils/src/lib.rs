@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 use std::sync::Arc;
 
-pub use ::client;
+pub mod client;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
 use lightwallet_protocol::CompactTxStreamerClient;
