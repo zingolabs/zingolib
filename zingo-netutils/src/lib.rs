@@ -9,10 +9,10 @@ use std::sync::Arc;
 pub mod client;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
-use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]

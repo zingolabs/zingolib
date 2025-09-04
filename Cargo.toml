@@ -45,7 +45,6 @@ zcash_proofs = { path = "../../../librustzcash/zcash_proofs" }
 zcash_protocol = { path = "../../../librustzcash/components/zcash_protocol" }
 zcash_transparent = { path = "../../../librustzcash/zcash_transparent" }
 
-lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust.git", branch = "main" }
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
 bs58 = "0.5"

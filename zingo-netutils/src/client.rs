@@ -2,7 +2,6 @@
 
 use crate::{GetClientError, GrpcConnector};
 use http_body_util::combinators::UnsyncBoxBody;
-use lightwallet_protocol::CompactTxStreamerClient;
 use tower::util::BoxCloneService;
 
 /// The underlying service type used for gRPC connections
@@ -22,6 +21,7 @@ pub async fn build_client(
 /// ?
 use http_body::Body;
 use hyper_util::client::legacy::{Client, connect::Connect};
+use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 /// a utility used in multiple places
 pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
 where
