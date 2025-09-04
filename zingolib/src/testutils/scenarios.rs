@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use bip0039::Mnemonic;
-use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
@@ -374,8 +373,7 @@ pub fn build_lightclients_for_port(
     indexer_port: portpicker::Port,
     activation_heights: ActivationHeights,
 ) -> (LightClient, LightClient) {
-    let mut client_builder =
-        ClientBuilder::new(localhost_uri(indexer_port), lightclient_dir);
+    let mut client_builder = ClientBuilder::new(localhost_uri(indexer_port), lightclient_dir);
     let faucet = client_builder.build_faucet(true, activation_heights);
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),

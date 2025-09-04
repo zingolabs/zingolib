@@ -7,7 +7,7 @@ use hyper::Uri;
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
 use tower::ServiceExt;
-use zingo_netutils::UnderlyingService;
+use zingo_netutils::client::UnderlyingService;
 
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
