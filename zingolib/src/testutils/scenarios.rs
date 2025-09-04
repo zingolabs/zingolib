@@ -25,10 +25,10 @@ use zcash_protocol::PoolType;
 use testvectors::{
     REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART, seeds,
 };
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::{ActivationHeights, localhost_uri};
-use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
+use zcash_services::LocalNet;
+use zcash_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zcash_services::network::{ActivationHeights, localhost_uri};
+use zcash_services::validator::{Validator, Zcashd, ZcashdConfig};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 

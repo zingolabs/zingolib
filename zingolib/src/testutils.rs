@@ -13,9 +13,9 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::validator::{Validator, Zcashd};
+use zcash_services::LocalNet;
+use zcash_services::indexer::Lightwalletd;
+use zcash_services::validator::{Validator, Zcashd};
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;

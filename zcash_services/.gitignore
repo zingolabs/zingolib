@@ -1,0 +1,7 @@
+# ignore binaries
+/fetched_resources/test_binaries/lightwalletd/lightwalletd
+/fetched_resources/test_binaries/zainod/zainod
+/fetched_resources/test_binaries/zcashd/zcashd
+/fetched_resources/test_binaries/zcash-cli/zcash-cli
+/fetched_resources/test_binaries/zebrad/zebrad
+/fetched_resources/test_binaries/zingo-cli/zingo-cli

@@ -21,7 +21,7 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
-use zingo_infra_services::network::ActivationHeights;
+use zcash_services::network::ActivationHeights;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingolib::data::{PollReport, proposal};

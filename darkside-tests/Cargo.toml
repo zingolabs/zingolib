@@ -11,7 +11,7 @@ chain_generic_tests = []
 zingolib = { workspace = true, features = ["darkside_tests"] }
 zingo-netutils = { workspace = true }
 testvectors = { workspace = true }
-zingo-infra-services = { workspace = true }
+zcash_services = { workspace = true }
 
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }

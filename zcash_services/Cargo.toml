@@ -1,0 +1,33 @@
+[package]
+name = "zcash_services"
+version = "0.1.0"
+edition = "2021"
+license = "MIT License"
+
+[badges]
+github = { repository = "zingolabs/zingolib" }
+
+[dependencies]
+# Zcash
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+# Zebra
+zebra-node-services = { workspace = true }
+zebra-rpc = { workspace = true }
+zebra-chain = { workspace = true }
+# Community
+tempfile = { workspace = true }
+portpicker = { workspace = true }
+http = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+getset = { workspace = true }
+json = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+[build-dependencies]
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["zstd", "rustls-tls-manual-roots"] }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["macros", "fs", "rt-multi-thread"] }

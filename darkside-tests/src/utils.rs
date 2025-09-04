@@ -12,7 +12,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingo_infra_services::{
+use zcash_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
@@ -314,7 +314,7 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_infra_services::{indexer::Lightwalletd, network::ActivationHeights};
+    use zcash_services::{indexer::Lightwalletd, network::ActivationHeights};
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,

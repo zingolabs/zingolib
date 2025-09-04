@@ -19,10 +19,10 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::ActivationHeights;
-use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
+use zcash_services::LocalNet;
+use zcash_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zcash_services::network::ActivationHeights;
+use zcash_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};

@@ -26,7 +26,7 @@ use log4rs::{
 use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
-use zingo_infra_services::network::ActivationHeights;
+use zcash_services::network::ActivationHeights;
 
 use crate::wallet::WalletSettings;
 

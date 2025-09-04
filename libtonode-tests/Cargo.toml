@@ -14,7 +14,7 @@ zingo-status = { workspace = true }
 pepper-sync = { workspace = true }
 testvectors = { workspace = true }
 
-zingo-infra-services = { workspace = true }
+zcash_services = { workspace = true }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }

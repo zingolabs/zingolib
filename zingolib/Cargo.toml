@@ -33,7 +33,7 @@ webpki-roots = { workspace = true }
 tower = { workspace = true }
 
 # TODO: separate activation heights into different crate and make this optional for test-elevation
-zingo-infra-services = { workspace = true }
+zcash_services = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }

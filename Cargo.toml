@@ -109,7 +109,7 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 # Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zcash_services = { path = "zcash_services" }
 
 # Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
@@ -119,7 +119,6 @@ zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
-tower_service = { path = "tower_service" }
 webpki-roots = "0.25"
 
 [profile.test]
