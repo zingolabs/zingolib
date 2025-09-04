@@ -23,10 +23,8 @@ zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
-hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
-http-body-util = { workspace = true }
 tokio-rustls = { workspace = true }
 webpki-roots = { workspace = true }
 tower = { workspace = true }
