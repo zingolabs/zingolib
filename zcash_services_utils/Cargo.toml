@@ -12,7 +12,6 @@ github = { repository = "zingolabs/zingolib" }
 zcash_services = { workspace = true }
 # Zingo
 zingo-netutils = { workspace = true }
-lightwallet-protocol = { workspace = true }
 zingolib = { workspace = true, features = ["test-elevation"] }
 testvectors = { workspace = true }
 #Zcash
