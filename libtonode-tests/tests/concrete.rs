@@ -1271,6 +1271,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         );
     }
 
+    #[ignore = "zebrad does not currently support mining to shielded pools"]
     #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) =
@@ -1282,6 +1283,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         check_client_balances!(faucet, o: 2_500_000_000u64 s: 0 t: 0);
     }
 
+    #[ignore = "zebrad does not currently support mining to shielded pools"]
     #[tokio::test]
     async fn mine_to_sapling() {
         let (local_net, mut faucet) =
@@ -1344,8 +1346,6 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .unwrap();
     }
 
-    // test fails with error message: "66: tx unpaid action limit exceeded"
-    #[ignore]
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
         let activation_heights = ActivationHeights::default();
@@ -1355,7 +1355,22 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .await
             .unwrap();
         faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            faucet
+                .account_balance(zip32::AccountId::ZERO)
+                .await
+                .unwrap()
+                .confirmed_orchard_balance
+                .unwrap()
+                .into_u64(),
+            2_499_970_000
+        );
     }
+
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
         let activation_heights = ActivationHeights::default();

@@ -20,7 +20,6 @@ use zingo_infra_services::validator::Validator;
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
-use crate::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{

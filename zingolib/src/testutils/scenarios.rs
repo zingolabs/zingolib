@@ -24,16 +24,15 @@ use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use testvectors::{
-    REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART, seeds,
+    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+    REG_Z_ADDR_FROM_ABANDONART, seeds,
 };
-use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{
     Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
 };
 use zingo_infra_services::network::{ActivationHeights, Network, localhost_uri};
-use zingo_infra_services::validator::{
-    Validator, ZEBRAD_DEFAULT_MINER, Zcashd, ZcashdConfig, Zebrad, ZebradConfig,
-};
+use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zingo_infra_services::{LocalNet, Process};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
@@ -41,6 +40,7 @@ use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
+use crate::testutils::lightclient::from_inputs::quick_send;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::{LightWallet, WalletSettings};
@@ -120,7 +120,7 @@ impl LocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
                 rpc_listen_port: None,
                 indexer_listen_port: None,
                 activation_heights,
-                miner_address: ZEBRAD_DEFAULT_MINER,
+                miner_address: REG_T_ADDR_FROM_ABANDONART,
                 chain_cache,
                 network: Network::Regtest,
             },
@@ -216,12 +216,33 @@ impl LocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
                 rpc_listen_port: None,
                 indexer_listen_port: None,
                 activation_heights,
-                miner_address: ZEBRAD_DEFAULT_MINER,
+                miner_address: REG_T_ADDR_FROM_ABANDONART,
                 chain_cache,
                 network: Network::Regtest,
             },
         )
         .await
+    }
+}
+
+/// Generate 100 blocks and shield the faucet if attempting to mine to a shielded pool as Zebrad does not currently
+/// support this. Also generates an additional block to confirm the shield, dumps the excess funds and generates a
+/// final block to confirm the send.
+async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
+    mine_to_pool: PoolType,
+    faucet: &mut LightClient,
+) {
+    if !matches!(mine_to_pool, PoolType::Transparent) {
+        local_net.validator().generate_blocks(100).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+        quick_send(faucet, vec![(FUND_OFFLOAD_ORCHARD_ONLY, 624_960_000, None)])
+            .await
+            .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
     }
 }
 
@@ -409,6 +430,11 @@ pub async fn faucet(
         custom_clients(mine_to_pool, activation_heights, chain_cache).await;
 
     let mut faucet = client_builder.build_faucet(true, activation_heights);
+
+    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+    }
+
     faucet.sync_and_await().await.unwrap();
 
     (local_net, faucet)
@@ -439,6 +465,11 @@ pub async fn faucet_recipient(
         true,
         activation_heights,
     );
+
+    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+    }
+
     faucet.sync_and_await().await.unwrap();
     recipient.sync_and_await().await.unwrap();
 

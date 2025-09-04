@@ -38,6 +38,8 @@ pub const REG_Z_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 /// TODO: Add Doc Comment Here!
 pub const REG_T_ADDR_FROM_ABANDONART: &str = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
+/// TODO: Add Doc Comment Here!
+pub const FUND_OFFLOAD_ORCHARD_ONLY: &str = "uregtest1duh3glf8uk5he5cpmlzsfvkn34de4uudyahdr7p6j0p6zs2tujgdxqmzgvtquwc5cphwufku93a0p5ksxzwx0qk92kkd5nrdzs5tngw6";
 
 /// Regtest block rewards
 pub mod block_rewards {
