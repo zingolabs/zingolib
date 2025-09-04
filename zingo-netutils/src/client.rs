@@ -2,6 +2,7 @@
 
 use crate::{GetClientError, GrpcConnector};
 use http_body_util::combinators::UnsyncBoxBody;
+use prost;
 use tower::util::BoxCloneService;
 
 /// The underlying service type used for gRPC connections

@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 use std::sync::Arc;
 
+use prost;
 pub mod client;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -94,24 +95,31 @@ impl GrpcConnector {
                 let client = client::client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
-                        let path_and_query = request
-                            .uri()
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/"));
-                        let uri = Uri::builder()
-                            .scheme(scheme.clone())
-                            .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC server and
-                            //the method being called
-                            .path_and_query(path_and_query)
-                            .build()
-                            .unwrap();
+                    .map_request(
+                        move |mut request: http::Request<
+                            http_body_util::combinators::UnsyncBoxBody<
+                                prost::bytes::Bytes,
+                                tonic::Status,
+                            >,
+                        >| {
+                            let path_and_query = request
+                                .uri()
+                                .path_and_query()
+                                .cloned()
+                                .unwrap_or(PathAndQuery::from_static("/"));
+                            let uri = Uri::builder()
+                                .scheme(scheme.clone())
+                                .authority(authority.clone())
+                                //here. The Request's uri contains the path to the GRPC server and
+                                //the method being called
+                                .path_and_query(path_and_query)
+                                .build()
+                                .unwrap();
 
-                        *request.uri_mut() = uri;
-                        request
-                    })
+                            *request.uri_mut() = uri;
+                            request
+                        },
+                    )
                     .service(client);
 
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
@@ -120,24 +128,31 @@ impl GrpcConnector {
                 let client = client::client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
-                        let path_and_query = request
-                            .uri()
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/"));
-                        let uri = Uri::builder()
-                            .scheme(scheme.clone())
-                            .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC server and
-                            //the method being called
-                            .path_and_query(path_and_query)
-                            .build()
-                            .unwrap();
+                    .map_request(
+                        move |mut request: http::Request<
+                            http_body_util::combinators::UnsyncBoxBody<
+                                prost::bytes::Bytes,
+                                tonic::Status,
+                            >,
+                        >| {
+                            let path_and_query = request
+                                .uri()
+                                .path_and_query()
+                                .cloned()
+                                .unwrap_or(PathAndQuery::from_static("/"));
+                            let uri = Uri::builder()
+                                .scheme(scheme.clone())
+                                .authority(authority.clone())
+                                //here. The Request's uri contains the path to the GRPC server and
+                                //the method being called
+                                .path_and_query(path_and_query)
+                                .build()
+                                .unwrap();
 
-                        *request.uri_mut() = uri;
-                        request
-                    })
+                            *request.uri_mut() = uri;
+                            request
+                        },
+                    )
                     .service(client);
 
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
