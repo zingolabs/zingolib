@@ -56,6 +56,8 @@ pub mod serialization;
 /// For example, this is useful when targetting transparent outputs as scanning the whole shard will not affect the
 /// spendability of the scan target but will significantly reduce memory usage and/or storage as well as prioritise
 /// creating spendable notes.
+///
+/// Scan targets with block heights below sapling activation height are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScanTarget {
     /// Block height.
