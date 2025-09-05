@@ -109,7 +109,7 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 # Zingolabs
-zingo-infra-services = { git = "https://github.com/Oscar-Pepper/infrastructure.git", branch = "zingolib_integration_pt2" }
+zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zingo-infra-services-0.2.0" }
 
 # Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }

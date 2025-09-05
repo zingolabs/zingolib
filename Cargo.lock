@@ -9001,7 +9001,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=zingolib_integration_pt2#6007c02f0e972e063935447a1ef9b8cfaf0d77ed"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.2.0#ce6240c52bce1810bc0cf1eba80ef579eb96b278"
 dependencies = [
  "getset",
  "hex",
