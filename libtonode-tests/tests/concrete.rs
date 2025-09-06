@@ -1305,6 +1305,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             canopy: 9.into(),
             nu5: 11.into(),
             nu6: 13.into(),
+            nu6_1: 15.into(),
         };
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights.into(), None).await;
@@ -1323,6 +1324,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             canopy: 3.into(),
             nu5: 5.into(),
             nu6: 7.into(),
+            nu6_1: 9.into(),
         };
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights.into(), None).await;
@@ -2519,6 +2521,7 @@ TransactionSummary {
             canopy: 3.into(),
             nu5: 5.into(),
             nu6: 5.into(),
+            nu6_1: 5.into(),
         };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
@@ -3717,17 +3720,27 @@ TransactionSummary {
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
                 .pretty(4),
             "2".to_string()
         );
+
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
                 .pretty(4),

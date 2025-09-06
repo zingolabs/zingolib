@@ -66,8 +66,7 @@ impl Default for ZingolibLocalNetwork {
                 canopy: Some(BlockHeight::from_u32(1)),
                 nu5: Some(BlockHeight::from_u32(1)),
                 nu6: Some(BlockHeight::from_u32(1)),
-                // TODO: Blocked on `infra`. Trying with 100 makes more tests to pass
-                nu6_1: Some(BlockHeight::from_u32(100)),
+                nu6_1: Some(BlockHeight::from_u32(1)),
             },
         }
     }
@@ -84,7 +83,7 @@ impl From<ActivationHeights> for ZingolibLocalNetwork {
                 canopy: Some(BlockHeight::from_u32(activation_heights.canopy.into())),
                 nu5: Some(BlockHeight::from_u32(activation_heights.nu5.into())),
                 nu6: Some(BlockHeight::from_u32(activation_heights.nu6.into())),
-                nu6_1: Some(BlockHeight::from_u32(1)),
+                nu6_1: Some(BlockHeight::from_u32(activation_heights.nu6_1.into())),
             },
         }
     }
@@ -100,6 +99,7 @@ impl From<ZingolibLocalNetwork> for ActivationHeights {
             canopy: u32::from(zingolib_local_network.inner.canopy.unwrap()).into(),
             nu5: u32::from(zingolib_local_network.inner.nu5.unwrap()).into(),
             nu6: u32::from(zingolib_local_network.inner.nu6.unwrap()).into(),
+            nu6_1: u32::from(zingolib_local_network.inner.nu6_1.unwrap()).into(),
         }
     }
 }
