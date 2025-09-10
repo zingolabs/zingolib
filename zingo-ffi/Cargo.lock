@@ -5044,6 +5044,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustios"
+version = "2.0.0"
+dependencies = [
+ "env_logger 0.10.2",
+ "json",
+ "pepper-sync",
+ "regchest_utils",
+ "rustls 0.23.31",
+ "tokio",
+ "zingolib",
+ "zingomobile_utils",
+]
+
+[[package]]
 name = "rustix"
 version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
