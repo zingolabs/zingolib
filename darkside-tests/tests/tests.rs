@@ -16,11 +16,11 @@ use zingo_infra_services::network::localhost_uri;
 use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
-use zingolib::testutils::ZingolibLocalNetwork;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::wallet::balance::AccountBalance;
+use zingolib::wallet::network::ZingolibLocalNetwork;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]

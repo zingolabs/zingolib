@@ -24,8 +24,8 @@ use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
 use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::ZingolibLocalNetwork;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
+use zingolib::wallet::network::ZingolibLocalNetwork;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;

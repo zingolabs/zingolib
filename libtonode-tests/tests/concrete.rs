@@ -147,12 +147,12 @@ mod fast {
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
-            ZingolibLocalNetwork,
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
             keys::unified::{ReceiverSelection, UnifiedAddressId},
+            network::ZingolibLocalNetwork,
             summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
@@ -1297,16 +1297,18 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 3.into(),
-            blossom: 5.into(),
-            heartwood: 7.into(),
-            canopy: 9.into(),
-            nu5: 11.into(),
-            nu6: 13.into(),
-            nu6_1: 15.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(3)),
+                blossom: Some(BlockHeight::from(5)),
+                heartwood: Some(BlockHeight::from(7)),
+                canopy: Some(BlockHeight::from(9)),
+                nu5: Some(BlockHeight::from(11)),
+                nu6: Some(BlockHeight::from(13)),
+                nu6_1: Some(BlockHeight::from(15)),
+            });
+
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights.into(), None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
@@ -1316,16 +1318,17 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn sync_all_epochs_from_heartwood() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 1.into(),
-            blossom: 1.into(),
-            heartwood: 1.into(),
-            canopy: 3.into(),
-            nu5: 5.into(),
-            nu6: 7.into(),
-            nu6_1: 9.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(1)),
+                blossom: Some(BlockHeight::from(1)),
+                heartwood: Some(BlockHeight::from(1)),
+                canopy: Some(BlockHeight::from(3)),
+                nu5: Some(BlockHeight::from(5)),
+                nu6: Some(BlockHeight::from(7)),
+                nu6_1: Some(BlockHeight::from(9)),
+            });
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights.into(), None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
@@ -1399,13 +1402,14 @@ mod slow {
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
-        ZingolibLocalNetwork, assert_transaction_summary_equality,
-        assert_transaction_summary_exists, build_fvk_client, encoded_sapling_address_from_ua,
+        assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
+        encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
+    use zingolib::wallet::network::ZingolibLocalNetwork;
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::data::{
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
@@ -2513,16 +2517,17 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 1.into(),
-            blossom: 1.into(),
-            heartwood: 1.into(),
-            canopy: 3.into(),
-            nu5: 5.into(),
-            nu6: 5.into(),
-            nu6_1: 5.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(1)),
+                blossom: Some(BlockHeight::from(1)),
+                heartwood: Some(BlockHeight::from(1)),
+                canopy: Some(BlockHeight::from(3)),
+                nu5: Some(BlockHeight::from(5)),
+                nu6: Some(BlockHeight::from(5)),
+                nu6_1: Some(BlockHeight::from(5)),
+            });
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             activation_heights.into(),

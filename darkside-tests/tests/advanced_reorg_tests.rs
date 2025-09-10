@@ -20,7 +20,7 @@ use zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
-use zingolib::{testutils::ZingolibLocalNetwork, wallet::summary::data::ValueTransferKind};
+use zingolib::wallet::{network::ZingolibLocalNetwork, summary::data::ValueTransferKind};
 use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{

@@ -28,6 +28,7 @@ use testvectors::{
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
 use zingo_infra_services::network::localhost_uri;
+use zingo_infra_services::utils::ExecutableLocation;
 use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -35,13 +36,14 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
-use crate::testutils::{ZingolibLocalNetwork, increase_height_and_wait_for_client};
+use crate::testutils::increase_height_and_wait_for_client;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
+use crate::wallet::network::ZingolibLocalNetwork;
 use crate::wallet::{LightWallet, WalletSettings};
 
 /// Helper function to get the test binary path
-fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
+fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
     // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
     // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
     let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
@@ -57,28 +59,31 @@ fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
         .join("bins")
         .join(binary_name);
     if path.exists() {
-        Some(path.canonicalize().unwrap())
+        ExecutableLocation::Specific(path.canonicalize().unwrap())
     } else {
-        None
+        ExecutableLocation::Global(binary_name.to_string())
     }
 }
 
 /// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zcashd"));
+pub static ZCASHD_BIN: LazyLock<ExecutableLocation> =
+    LazyLock::new(|| get_test_binary_path("zcashd"));
 
 /// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> =
+pub static ZCASH_CLI_BIN: LazyLock<ExecutableLocation> =
     LazyLock::new(|| get_test_binary_path("zcash-cli"));
 
 /// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zebrad"));
+pub static ZEBRAD_BIN: LazyLock<ExecutableLocation> =
+    LazyLock::new(|| get_test_binary_path("zebrad"));
 
 /// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> =
+pub static LIGHTWALLETD_BIN: LazyLock<ExecutableLocation> =
     LazyLock::new(|| get_test_binary_path("lightwalletd"));
 
 /// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zainod"));
+pub static ZAINOD_BIN: LazyLock<ExecutableLocation> =
+    LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {

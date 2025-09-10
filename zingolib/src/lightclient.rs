@@ -315,8 +315,7 @@ mod tests {
     use crate::{
         config::{ChainType, ZingoConfig},
         lightclient::error::LightClientError,
-        testutils::ZingolibLocalNetwork,
-        wallet::LightWallet,
+        wallet::{LightWallet, network::ZingolibLocalNetwork},
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;

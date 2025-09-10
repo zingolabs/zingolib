@@ -9,8 +9,8 @@ use zingo_infra_services::network::localhost_uri;
 use super::super::LightWallet;
 use crate::config::ChainType;
 use crate::lightclient::LightClient;
-use crate::testutils::ZingolibLocalNetwork;
 use crate::wallet::WalletSettings;
+use crate::wallet::network::ZingolibLocalNetwork;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
