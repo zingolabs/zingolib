@@ -3994,7 +3994,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "bip32",
  "byteorder",
@@ -7189,7 +7189,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "tower_service"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "http",
  "http-body-util",
@@ -9100,32 +9100,8 @@ dependencies = [
  "zcash_keys 0.8.2",
  "zcash_primitives 0.22.1",
  "zcash_protocol 0.5.1",
- "zingo-infra-services 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9)",
+ "zingo-infra-services",
  "zingolib",
-]
-
-[[package]]
-name = "zingo-infra-services"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#f54d3f6807b26383a0bf6b43f8be5fb8ad460cfa"
-dependencies = [
- "getset",
- "hex",
- "http",
- "json",
- "portpicker",
- "reqwest",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
- "zebra-chain",
- "zebra-node-services",
- "zebra-rpc",
 ]
 
 [[package]]
@@ -9155,7 +9131,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "zcash_address 0.7.1",
  "zcash_client_backend",
@@ -9167,7 +9143,7 @@ dependencies = [
 [[package]]
 name = "zingo-netutils"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "http",
  "http-body",
@@ -9188,7 +9164,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -9204,7 +9180,7 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "byteorder",
  "zcash_primitives 0.22.1",
@@ -9213,7 +9189,7 @@ dependencies = [
 [[package]]
 name = "zingo-testvectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "bip0039",
 ]
@@ -9221,7 +9197,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=2.0.5#ddcc6faf746370c927ef796b0a64a3edde21bf51"
+source = "git+https://github.com/juanky201271/zingolib?branch=dev_infrastructure_commit_pinned#7740d8bdebc76df80c927d819235128e1f2cebc6"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9277,7 +9253,7 @@ dependencies = [
  "zcash_proofs 0.22.0",
  "zcash_protocol 0.5.1",
  "zcash_transparent 0.2.3",
- "zingo-infra-services 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
+ "zingo-infra-services",
  "zingo-memo",
  "zingo-netutils",
  "zingo-price",

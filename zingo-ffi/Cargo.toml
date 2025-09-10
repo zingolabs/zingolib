@@ -3,8 +3,8 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.5" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.5" }
+zingolib = { git = "https://github.com/juanky201271/zingolib", default-features = true, branch = "dev_infrastructure_commit_pinned" }
+pepper-sync = { git = "https://github.com/juanky201271/zingolib", branch = "dev_infrastructure_commit_pinned" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
