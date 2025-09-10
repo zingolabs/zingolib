@@ -14,8 +14,8 @@ zcash_address = "0.7.0"
 zcash_protocol = "=0.5.1"
 zcash_client_backend = { version = "0.18.1" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
 
-# Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+# Zingolabs -> same commit that zingolib
+zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", rev = "a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9" }
 
 bip0039 = { version = "0.12", features = [ "rand" ] }
 uniffi = "0.29"

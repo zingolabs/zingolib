@@ -7380,9 +7380,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.18"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
+checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
 
 [[package]]
 name = "unicode-normalization"
@@ -9100,7 +9100,7 @@ dependencies = [
  "zcash_keys 0.8.2",
  "zcash_primitives 0.22.1",
  "zcash_protocol 0.5.1",
- "zingo-infra-services",
+ "zingo-infra-services 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9)",
  "zingolib",
 ]
 
@@ -9108,6 +9108,30 @@ dependencies = [
 name = "zingo-infra-services"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#f54d3f6807b26383a0bf6b43f8be5fb8ad460cfa"
+dependencies = [
+ "getset",
+ "hex",
+ "http",
+ "json",
+ "portpicker",
+ "reqwest",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "zcash_primitives 0.22.1",
+ "zcash_protocol 0.5.1",
+ "zebra-chain",
+ "zebra-node-services",
+ "zebra-rpc",
+]
+
+[[package]]
+name = "zingo-infra-services"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9#a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9"
 dependencies = [
  "getset",
  "hex",
@@ -9253,7 +9277,7 @@ dependencies = [
  "zcash_proofs 0.22.0",
  "zcash_protocol 0.5.1",
  "zcash_transparent 0.2.3",
- "zingo-infra-services",
+ "zingo-infra-services 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingo-memo",
  "zingo-netutils",
  "zingo-price",
