@@ -5,7 +5,6 @@ resolver = "2"
 [workspace.dependencies]
 zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.5" }
 pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.5" }
-darkside-tests = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.5" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
