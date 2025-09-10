@@ -297,7 +297,7 @@ impl ScanRange {
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: CompactTxStreamerClient<tower_service::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
@@ -354,6 +354,9 @@ where
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
         .map_err(SyncError::WalletError)?;
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+    if chain_height == 0.into() {
+        return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
+    }
     if wallet_height > chain_height {
         if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
@@ -1060,10 +1063,9 @@ where
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?
         .get(&transaction.txid())
+        && (tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)))
     {
-        if tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)) {
-            return Ok(());
-        }
+        return Ok(());
     }
 
     scan_pending_transaction(
@@ -1461,7 +1463,7 @@ fn checked_birthday<W: SyncWallet>(
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    mut client: CompactTxStreamerClient<tower_service::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,

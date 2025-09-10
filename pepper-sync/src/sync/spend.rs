@@ -252,15 +252,14 @@ where
                 {
                     note.spending_transaction = Some(scan_target.txid);
 
-                    if remove_marks {
-                        if let Some(height) = transaction_height {
-                            if let Some(position) = note.position {
-                                shard_trees
-                                    .sapling
-                                    .remove_mark(position, Some(&height))
-                                    .expect("infallible");
-                            }
-                        }
+                    if remove_marks
+                        && let Some(height) = transaction_height
+                        && let Some(position) = note.position
+                    {
+                        shard_trees
+                            .sapling
+                            .remove_mark(position, Some(&height))
+                            .expect("infallible");
                     }
                 }
             });
@@ -277,15 +276,14 @@ where
                 {
                     note.spending_transaction = Some(scan_target.txid);
 
-                    if remove_marks {
-                        if let Some(height) = transaction_height {
-                            if let Some(position) = note.position {
-                                shard_trees
-                                    .orchard
-                                    .remove_mark(position, Some(&height))
-                                    .expect("infallible");
-                            }
-                        }
+                    if remove_marks
+                        && let Some(height) = transaction_height
+                        && let Some(position) = note.position
+                    {
+                        shard_trees
+                            .orchard
+                            .remove_mark(position, Some(&height))
+                            .expect("infallible");
                     }
                 }
             });

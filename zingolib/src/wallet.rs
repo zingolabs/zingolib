@@ -148,6 +148,7 @@ impl LightWallet {
     ///
     /// For wallets from fresh entropy, it is worth considering setting `birthday` to 100 blocks below current height
     /// of block chain to protect from re-orgs.
+    #[allow(clippy::result_large_err)]
     pub fn new(
         network: ChainType,
         wallet_base: WalletBase,
@@ -331,6 +332,7 @@ impl LightWallet {
         })
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn create_new_account(&mut self) -> Result<(), WalletError> {
         let last_account = self.unified_key_store.keys().copied().max();
         let account_id = last_account.map_or(Ok(zip32::AccountId::ZERO), |last_account| {

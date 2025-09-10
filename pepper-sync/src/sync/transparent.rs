@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
@@ -38,8 +39,16 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         .get_transparent_addresses_mut()
         .map_err(SyncError::WalletError)?;
     let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
+    let sapling_activation_height = consensus_parameters
+        .activation_height(consensus::NetworkUpgrade::Sapling)
+        .expect("sapling activation height should always return Some");
+    let block_range_start = wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
+    let checked_block_range_start = match block_range_start.cmp(&sapling_activation_height) {
+        cmp::Ordering::Greater | cmp::Ordering::Equal => block_range_start,
+        cmp::Ordering::Less => sapling_activation_height,
+    };
     let block_range = Range {
-        start: wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1,
+        start: checked_block_range_start,
         end: chain_height + 1,
     };
 
@@ -96,8 +105,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
             for scope in scopes.iter() {
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
-                    .iter()
-                    .map(|(id, _)| id)
+                    .keys()
                     .filter(|id| id.account_id() == *account_id && id.scope() == *scope)
                     .next_back()
                 {

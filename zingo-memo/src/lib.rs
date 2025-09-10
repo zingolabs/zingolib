@@ -17,7 +17,7 @@ use zcash_encoding::{CompactSize, Vector};
 /// as the blockchain only records the pool-specific receiver corresponding to the key we sent with.
 /// We also record the index of any ephemeral addresses sent to. On rescan, this tells us:
 /// * this transaction is the first step of a multistep proposal that is sending
-///     to a TEX address in the second step
+///   to a TEX address in the second step
 /// * what ephemeral address we need to derive in order to sync the second step
 #[derive(Debug)]
 pub enum ParsedMemo {
@@ -229,16 +229,19 @@ mod tests {
             let (ua, _serialized_ua) = get_serialiazed_ua(test_vector);
             // version0
             #[allow(deprecated)]
-            let version0_bytes = create_wallet_internal_memo_version_0(&[ua.clone()]).unwrap();
+            let version0_bytes =
+                create_wallet_internal_memo_version_0(std::slice::from_ref(&ua)).unwrap();
             let success_parse = parse_zingo_memo(version0_bytes).expect("To succeed in parse.");
             if let ParsedMemo::Version0 { uas } = success_parse {
                 assert_eq!(uas[0], ua);
             };
             // version1
             let random_rejection_indexes = get_some_number_of_ephemeral_indexes();
-            let version1_bytes =
-                create_wallet_internal_memo_version_1(&[ua.clone()], &random_rejection_indexes)
-                    .expect("To create version 1 bytes");
+            let version1_bytes = create_wallet_internal_memo_version_1(
+                std::slice::from_ref(&ua),
+                &random_rejection_indexes,
+            )
+            .expect("To create version 1 bytes");
             let success_parse = parse_zingo_memo(version1_bytes).expect("To succeed in parse.");
             if let ParsedMemo::Version1 {
                 uas,

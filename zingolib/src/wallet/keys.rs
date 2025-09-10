@@ -91,16 +91,14 @@ impl LightWallet {
                     && address_id.account_id() == account_id
             })
             .max_by_key(|(address_id, _)| address_id.address_index());
-        if enforce_no_gap {
-            if let Some((_, address)) = latest_address {
-                if !self
-                    .wallet_outputs::<TransparentCoin>()
-                    .iter()
-                    .any(|&output| output.address() == address.as_str())
-                {
-                    return Err(KeyError::GapError);
-                }
-            }
+        if enforce_no_gap
+            && let Some((_, address)) = latest_address
+            && !self
+                .wallet_outputs::<TransparentCoin>()
+                .iter()
+                .any(|&output| output.address() == address.as_str())
+        {
+            return Err(KeyError::GapError);
         }
 
         let address_index =

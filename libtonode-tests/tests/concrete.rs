@@ -131,7 +131,7 @@ mod fast {
     use bip0039::Mnemonic;
     use pepper_sync::{
         keys::transparent::{self, TransparentAddressId, TransparentScope},
-        wallet::{OutputInterface, TransparentCoin},
+        wallet::{OrchardNote, OutputInterface, TransparentCoin},
     };
     use zcash_address::ZcashAddress;
     use zcash_client_backend::{
@@ -604,6 +604,23 @@ mod fast {
     async fn basic_scenario() {
         let (_local_net, _faucet, _recipient, _) =
             scenarios::faucet_funded_recipient_default(100_000).await;
+    }
+
+    #[tokio::test]
+    async fn spendable_balance_includes_notes_in_incomplete_shards() {
+        let (_local_net, _faucet, recipient, _) =
+            scenarios::faucet_funded_recipient_default(100_000).await;
+
+        assert_eq!(
+            recipient
+                .wallet
+                .read()
+                .await
+                .spendable_balance::<OrchardNote>(zip32::AccountId::ZERO, false)
+                .unwrap()
+                .into_u64(),
+            100_000
+        );
     }
 
     #[tokio::test]

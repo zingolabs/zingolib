@@ -109,10 +109,13 @@ fn parse_seed(s: &str) -> Result<String, String> {
     match s.parse::<String>() {
         Ok(s) => {
             let count = s.split_whitespace().count();
-            if count == 24 {
+            if [12, 15, 18, 21, 24].contains(&count) {
                 Ok(s)
             } else {
-                Err(format!("Expected 24 words, but received: {}.", count))
+                Err(format!(
+                    "Expected 12/15/18/21/24 words, but received: {}.",
+                    count
+                ))
             }
         }
         Err(_) => Err("Unexpected failure to parse String!!".to_string()),
@@ -290,7 +293,8 @@ pub fn command_loop(
 pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
-    from: Option<String>,
+    seed: Option<String>,
+    ufvk: Option<String>,
     birthday: u64,
     data_dir: PathBuf,
     sync: bool,
@@ -317,21 +321,16 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let seed = matches.get_one::<String>("seed");
-        let viewkey = matches.get_one::<String>("viewkey");
-        let from = if seed.is_some() && viewkey.is_some() {
+        let seed = matches.get_one::<String>("seed").cloned();
+        let ufvk = matches.get_one::<String>("viewkey").cloned();
+        if seed.is_some() && ufvk.is_some() {
             return Err("Cannot load a wallet from both seed phrase and viewkey!".to_string());
-        } else if seed.is_some() {
-            seed
-        } else if viewkey.is_some() {
-            viewkey
-        } else {
-            None
-        };
+        }
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
-        if from.is_some() && maybe_birthday.is_none() {
+        let from_provided = seed.is_some() || ufvk.is_some();
+        if from_provided && maybe_birthday.is_none() {
             eprintln!("ERROR!");
             eprintln!(
                 "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
@@ -342,7 +341,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                     .to_string(),
             );
         }
-        let from = from.map(|seed| seed.to_string());
         if matches.contains_id("chain") && is_regtest {
             return Err("regtest mode incompatible with custom chain selection".to_string());
         }
@@ -403,7 +401,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         Ok(Self {
             params,
             server,
-            from,
+            seed,
+            ufvk,
             birthday,
             data_dir,
             sync,
@@ -442,12 +441,12 @@ pub fn startup(
     )
     .unwrap();
 
-    let mut lightclient = match filled_template.from.clone() {
-        Some(phrase) => LightClient::create_from_wallet(
+    let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
+        LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(phrase).map_err(|e| {
+                    mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
                             format!("Invalid seed phrase. {}", e),
@@ -458,56 +457,46 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e),
-                )
-            })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
             config.clone(),
             false,
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else if let Some(ufvk) = filled_template.ufvk.clone() {
+        // Create client from UFVK
+        LightClient::create_from_wallet(
+            LightWallet::new(
+                config.chain,
+                WalletBase::Ufvk(ufvk),
+                (filled_template.birthday as u32).into(),
+                config.wallet_settings.clone(),
             )
-        })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
+            config.clone(),
+            false,
+        )
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else if config.wallet_path_exists() {
+        // Open existing wallet from path
+        LightClient::create_from_wallet_path(config.clone())
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else {
+        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
+        println!("Creating a new wallet");
+        // Call the lightwalletd server to get the current block-height
+        // Do a getinfo first, before opening the wallet
+        let server_uri = config.get_lightwalletd_uri();
 
-        None => {
-            if config.wallet_path_exists() {
-                LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
-                })?
-            } else {
-                println!("Creating a new wallet");
-                // Call the lightwalletd server to get the current block-height
-                // Do a getinfo first, before opening the wallet
-                let server_uri = config.get_lightwalletd_uri();
-                let chain_height = RT
-                    .block_on(async move {
-                        zingolib::grpc_connector::get_latest_block(server_uri)
-                            .await
-                            .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
-                    })
-                    .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to create lightclient. {}", e),
-                        )
-                    })?;
-                // Create a wallet with height - 100, to protect against reorgs
-                LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
-                })?
-            }
-        }
+        let chain_height = RT
+            .block_on(async move {
+                zingolib::grpc_connector::get_latest_block(server_uri)
+                    .await
+                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+            })
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?;
+
+        LightClient::new(config.clone(), chain_height - 100, false)
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     };
 
     if filled_template.command.is_none() {
@@ -659,14 +648,14 @@ pub fn run_cli() {
                     Some(
                         LocalNet::<Lightwalletd, Zcashd>::launch(
                             LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN,
+                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                                 listen_port: None,
                                 zcashd_conf: PathBuf::new(),
                                 darkside: false,
                             },
                             ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN,
-                                zcash_cli_bin: ZCASH_CLI_BIN,
+                                zcashd_bin: ZCASHD_BIN.clone(),
+                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                                 rpc_listen_port: None,
                                 activation_heights: ActivationHeights::default(),
                                 miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
