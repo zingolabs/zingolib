@@ -273,6 +273,7 @@ pub mod send_with_proposal {
                 .await
                 .unwrap();
             }
+            #[ignore = "this needs to pass CI, but we arent there with testnet"]
             #[tokio::test]
             /// this is a networked sync test. its execution time scales linearly since last updated
             /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
