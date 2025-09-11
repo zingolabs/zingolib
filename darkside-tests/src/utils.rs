@@ -327,7 +327,7 @@ pub mod scenarios {
     };
     use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
-    use zingolib::{testutils::scenarios::ClientBuilder, wallet::network::ZingolibLocalNetwork};
+    use zingolib::testutils::scenarios::ClientBuilder;
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,
@@ -346,12 +346,12 @@ pub mod scenarios {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
             let client_builder =
                 ClientBuilder::new(darkside_connector.0.clone(), tempfile::tempdir().unwrap());
-            let activation_heights = ZingolibLocalNetwork::default();
+            let activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
                 client_builder,
-                activation_heights: activation_heights.into(),
+                activation_heights,
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
