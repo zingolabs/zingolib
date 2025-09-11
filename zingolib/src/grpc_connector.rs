@@ -1,7 +1,5 @@
 //! TODO: Add Mod Description Here!
 
-use std::sync::Arc;
-
 use tonic::Request;
 
 use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
@@ -9,14 +7,9 @@ use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo
 #[cfg(feature = "test-elevation")]
 use zcash_client_backend::proto::service::TreeState;
 
-pub(crate) use zingo_netutils::GrpcConnector;
-
 /// Get server info.
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-    let client = Arc::new(GrpcConnector::new(uri.clone()));
-
-    let mut client = client
-        .get_client()
+    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {:?}", e))?;
 
@@ -32,9 +25,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 /// TODO: Add Doc Comment Here!
 #[cfg(feature = "test-elevation")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
-    let client = Arc::new(GrpcConnector::new(uri.clone()));
-    let mut client = client
-        .get_client()
+    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {:?}", e))?;
 
@@ -52,9 +43,7 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 
 /// get_latest_block GRPC call
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
-    let client = Arc::new(GrpcConnector::new(uri.clone()));
-    let mut client = client
-        .get_client()
+    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {:?}", e))?;
 
@@ -73,9 +62,7 @@ pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,
 ) -> Result<String, String> {
-    let client = Arc::new(GrpcConnector::new(uri));
-    let mut client = client
-        .get_client()
+    let mut client = crate::grpc_client::get_zcb_client(uri)
         .await
         .map_err(|e| format!("Error getting client: {:?}", e))?;
 

@@ -115,6 +115,7 @@ zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
+webpki-roots = "0.25"
 
 [profile.test]
 opt-level = 3

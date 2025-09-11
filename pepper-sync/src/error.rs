@@ -182,6 +182,9 @@ pub enum ServerError {
     /// Fetcher task was dropped.
     #[error("fetcher task was dropped.")]
     FetcherDropped,
+    /// Server reports only the genesis block exists.
+    #[error("server reports only the genesis block exists.")]
+    GenesisBlockOnly,
 }
 
 /// Sync mode error.

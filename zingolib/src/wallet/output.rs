@@ -288,7 +288,10 @@ impl LightWallet {
                 .filter(|&note| {
                     note.nullifier().is_some()
                         && note.position().is_some()
-                        && self.can_build_witness::<N>(transaction.status().get_height())
+                        && self.can_build_witness::<N>(
+                            transaction.status().get_height(),
+                            anchor_height,
+                        )
                 })
             })
             .collect())
