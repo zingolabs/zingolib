@@ -43,56 +43,39 @@ impl From<ActivationHeights> for ZingolibLocalNetwork {
         ZingolibLocalNetwork {
             inner: zcash_protocol::local_consensus::LocalNetwork {
                 overwinter: Some(
-                    BlockHeight::from(
-                        activation_heights
+                    activation_heights
                             .activation_height(
                                 zcash_protocol::consensus::NetworkUpgrade::Overwinter,
                             )
                             .unwrap_or(1.into()),
-                    )
-                    .into(),
                 ),
-                sapling: BlockHeight::from(
-                    activation_heights
+                sapling: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                blossom: BlockHeight::from(
-                    activation_heights
+                blossom: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Blossom)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                heartwood: BlockHeight::from(
-                    activation_heights
+                heartwood: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Heartwood)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                canopy: BlockHeight::from(
-                    activation_heights
+                canopy: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Canopy)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                nu5: BlockHeight::from(
-                    activation_heights
+                nu5: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu5)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                nu6: BlockHeight::from(
-                    activation_heights
+                nu6: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu6)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
-                nu6_1: BlockHeight::from(
-                    activation_heights
+                nu6_1: activation_heights
                         .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu6_1)
-                        .unwrap_or(1.into()),
-                )
+                        .unwrap_or(1.into())
                 .into(),
             },
         }
