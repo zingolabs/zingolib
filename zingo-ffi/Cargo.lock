@@ -4947,20 +4947,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust"
-version = "2.0.0"
-dependencies = [
- "env_logger 0.10.2",
- "json",
- "pepper-sync",
- "regchest_utils",
- "rustls 0.23.31",
- "tokio",
- "zingolib",
- "zingomobile_utils",
-]
-
-[[package]]
 name = "rust-embed"
 version = "6.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5008,6 +4994,20 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rustandroid"
+version = "2.0.0"
+dependencies = [
+ "env_logger 0.10.2",
+ "json",
+ "pepper-sync",
+ "regchest_utils",
+ "rustls 0.23.31",
+ "tokio",
+ "zingolib",
+ "zingomobile_utils",
 ]
 
 [[package]]
