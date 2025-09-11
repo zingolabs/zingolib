@@ -29,13 +29,13 @@ RUN apt update \
 # Build lightwalletd
 RUN git clone https://github.com/zcash/lightwalletd \
     && cd lightwalletd \
-    && git checkout v0.4.16 \
+    && git checkout v0.4.18 \
     && make
 
 # Build zcashd and fetch params
 RUN git clone https://github.com/zcash/zcash.git \
     && cd zcash/ \
-    && git checkout v6.2.0 \
+    && git checkout v6.3.0 \
     && ./zcutil/build.sh -j$(nproc)
 
 FROM debian:bookworm-slim AS runner
