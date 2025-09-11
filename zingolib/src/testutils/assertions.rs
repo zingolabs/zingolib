@@ -23,7 +23,6 @@ pub fn compare_fee<NoteRef>(
     wallet: &LightWallet,
     transaction: &WalletTransaction,
     step: &Step<NoteRef>,
-    // TODO: Should this be `Zatoshis`? Or should it be `ZatBalance`?
 ) -> Result<Zatoshis, ProposalToTransactionRecordComparisonError> {
     let recorded_fee_result = wallet.calculate_transaction_fee(transaction);
     let proposed_fee = step.balance().fee_required();
