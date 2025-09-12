@@ -1,6 +1,6 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::value::ZatBalance;
+use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{
     KeyIdInterface, NoteInterface, OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface,
@@ -74,10 +74,10 @@ impl LightWallet {
     pub fn calculate_transaction_fee(
         &self,
         transaction: &WalletTransaction,
-    ) -> Result<u64, FeeError> {
+    ) -> Result<Zatoshis, FeeError> {
         Ok(transaction
             .transaction()
-            .fee_paid(|outpoint| -> Result<ZatBalance, FeeError> {
+            .fee_paid(|outpoint| -> Result<Option<Zatoshis>, FeeError> {
                 let outpoint = OutputId::from(outpoint);
                 let prevout = self
                     .wallet_outputs::<TransparentCoin>()
@@ -88,10 +88,10 @@ impl LightWallet {
                         spend: format!("{:?}", outpoint),
                     })?;
 
-                Ok(ZatBalance::from_u64(prevout.value())
-                    .expect("value converted from checked type"))
+                Ok(Some(
+                    Zatoshis::from_u64(prevout.value()).expect("value converted from checked type"),
+                ))
             })?
-            .try_into()
             .expect("fee should not be negative"))
     }
 
