@@ -272,20 +272,26 @@ where
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
-            Vec<u64>,
-            (Vec<u64>, Vec<ConfirmationStatus>),
+            Vec<Zatoshis>,
+            (Vec<Zatoshis>, Vec<ConfirmationStatus>),
         ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
                 compare_fee(wallet, transaction, step),
-                (transaction.total_value_received(), transaction.status()),
+                (
+                    Zatoshis::from_u64(transaction.total_value_received()),
+                    transaction.status(),
+                ),
             )
         })
         .await
         .into_iter()
         .map(|stepwise_result| {
-            stepwise_result
-                .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
-                .unwrap()
+            let (fee_comparison_result, others) = stepwise_result.unwrap();
+            let (balance, confirmation_status) = others;
+            (
+                fee_comparison_result.unwrap(),
+                (balance.unwrap(), confirmation_status),
+            )
         })
         .unzip();
 
@@ -356,8 +362,8 @@ where
     });
 
     Ok((
-        sender_recorded_fees.iter().sum(),
-        recipients_confirmed_outputs.into_iter().flatten().sum(),
-        sender_recorded_outputs.iter().sum(), // this construction will be problematic when 2-step transactions mean some value is received and respent.
+        sender_recorded_fees.into_iter().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
+        recipients_confirmed_outputs.into_iter().flatten().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
+        sender_recorded_outputs.into_iter().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()), // this construction will be problematic when 2-step transactions mean some value is received and respent.
     ))
 }
