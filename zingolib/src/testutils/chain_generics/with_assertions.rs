@@ -362,8 +362,15 @@ where
     });
 
     Ok((
-        sender_recorded_fees.into_iter().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
-        recipients_confirmed_outputs.into_iter().flatten().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
-        sender_recorded_outputs.into_iter().fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()), // this construction will be problematic when 2-step transactions mean some value is received and respent.
+        sender_recorded_fees
+            .into_iter()
+            .fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
+        recipients_confirmed_outputs
+            .into_iter()
+            .flatten()
+            .fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()),
+        sender_recorded_outputs
+            .into_iter()
+            .fold(Zatoshis::ZERO, |acc, x| (acc + x).unwrap()), // this construction will be problematic when 2-step transactions mean some value is received and respent.
     ))
 }
