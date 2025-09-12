@@ -1,11 +1,10 @@
 [workspace]
-members = ["lib", "android", "zingomobile_utils"]
+members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.5" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.5" }
-darkside-tests = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.5" }
+zingolib = { git = "https://github.com/juanky201271/zingolib", default-features = true, branch = "dev_infrastructure_commit_pinned" }
+pepper-sync = { git = "https://github.com/juanky201271/zingolib", branch = "dev_infrastructure_commit_pinned" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
@@ -15,13 +14,13 @@ zcash_address = "0.7.0"
 zcash_protocol = "=0.5.1"
 zcash_client_backend = { version = "0.18.1" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
 
-# Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+# Zingolabs -> same commit that zingolib
+zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", rev = "a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9" }
 
 bip0039 = { version = "0.12", features = [ "rand" ] }
 uniffi = "0.29"
 tokio = { version = "1.24", features = ["full"] }
-rustls = { version = "0.23.13", features = ["ring"] }
+rustls = { version = "0.23", features = ["ring"] }
 serde_json = "1"
 android_logger = "0.11"
 base64 = "0.22"
