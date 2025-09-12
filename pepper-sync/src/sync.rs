@@ -297,7 +297,7 @@ impl ScanRange {
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<tower_service::UnderlyingService>,
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
@@ -1463,7 +1463,7 @@ fn checked_birthday<W: SyncWallet>(
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<tower_service::UnderlyingService>,
+    mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,

@@ -315,20 +315,18 @@ mod tests {
     use crate::{
         config::{ChainType, ZingoConfig},
         lightclient::error::LightClientError,
-        wallet::LightWallet,
+        wallet::{LightWallet, network::ZingolibLocalNetwork},
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use testvectors::seeds::CHIMNEY_BETTER_SEED;
-    use zingo_infra_services::network::ActivationHeights;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
 
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let activation_heights = ActivationHeights::default();
-        let config = ZingoConfig::build(ChainType::Regtest(activation_heights))
+        let config = ZingoConfig::build(ChainType::Regtest(ZingolibLocalNetwork::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .create();
         let mut lc = LightClient::create_from_wallet(
