@@ -15,13 +15,13 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-use zingolib::wallet::network::ZingolibLocalNetwork;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
+use zingo_infra_services::network::ActivationHeights;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingolib::data::{PollReport, proposal};
@@ -219,7 +219,7 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
+                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

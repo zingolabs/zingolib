@@ -7,7 +7,6 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;
-use zcash_protocol::value::Zatoshis;
 
 use crate::lightclient::LightClient;
 use crate::testutils::assertions::compare_fee;
@@ -50,7 +49,7 @@ pub async fn propose_send_bump_sync_all_recipients<CC>(
     payments: Vec<(&str, u64, Option<&str>)>,
     recipients: Vec<&mut LightClient>,
     test_mempool: bool,
-) -> Result<(Zatoshis, Zatoshis, Zatoshis), String>
+) -> Result<(u64, u64, u64), String>
 where
     CC: ConductChain,
 {
@@ -81,7 +80,7 @@ pub async fn assure_propose_shield_bump_sync<CC>(
     environment: &mut CC,
     client: &mut LightClient,
     test_mempool: bool,
-) -> Result<(Zatoshis, Zatoshis), String>
+) -> Result<(u64, u64), String>
 where
     CC: ConductChain,
 {
@@ -106,7 +105,7 @@ pub async fn follow_proposal<CC, NoteRef>(
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
     txids: NonEmpty<TxId>,
     test_mempool: bool,
-) -> Result<(Zatoshis, Zatoshis, Zatoshis), String>
+) -> Result<(u64, u64, u64), String>
 where
     CC: ConductChain,
 {
@@ -121,26 +120,20 @@ where
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
-        Vec<Zatoshis>,
-        (Vec<Zatoshis>, Vec<ConfirmationStatus>),
+        Vec<u64>,
+        (Vec<u64>, Vec<ConfirmationStatus>),
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
-            (
-                Zatoshis::from_u64(transaction.total_value_received()),
-                transaction.status(),
-            ),
+            (transaction.total_value_received(), transaction.status()),
         )
     })
     .await
     .into_iter()
     .map(|stepwise_result| {
-        let (fee_comparison_result, others) = stepwise_result.unwrap();
-        let (balance, confirmation_status) = others;
-        (
-            fee_comparison_result.unwrap(),
-            (balance.unwrap(), confirmation_status),
-        )
+        stepwise_result
+            .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+            .unwrap()
     })
     .unzip();
 
@@ -163,26 +156,20 @@ where
 
         // check that each record has the expected fee and status, returning the fee and outputs
         let (sender_mempool_fees, (sender_mempool_outputs, sender_mempool_statuses)): (
-            Vec<Zatoshis>,
-            (Vec<Zatoshis>, Vec<ConfirmationStatus>),
+            Vec<u64>,
+            (Vec<u64>, Vec<ConfirmationStatus>),
         ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
             (
                 compare_fee(wallet, transaction, step),
-                (
-                    Zatoshis::from_u64(transaction.total_value_received()),
-                    transaction.status(),
-                ),
+                (transaction.total_value_received(), transaction.status()),
             )
         })
         .await
         .into_iter()
         .map(|stepwise_result| {
-            let (fee_comparison_result, others) = stepwise_result.unwrap();
-            let (balance, confirmation_status) = others;
-            (
-                fee_comparison_result.unwrap(),
-                (balance.unwrap(), confirmation_status),
-            )
+            stepwise_result
+                .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+                .unwrap()
         })
         .unzip();
 
@@ -195,23 +182,20 @@ where
             );
         }
 
-        let mut recipients_mempool_outputs: Vec<Vec<Zatoshis>> = vec![];
+        let mut recipients_mempool_outputs: Vec<Vec<u64>> = vec![];
         for recipient in recipients.iter_mut() {
             recipient.sync_and_await().await.unwrap();
 
             // check that each record has the status, returning the output value
             let (recipient_mempool_outputs, recipient_mempool_statuses): (
-                Vec<Zatoshis>,
+                Vec<u64>,
                 Vec<ConfirmationStatus>,
             ) = for_each_proposed_transaction(
                 recipient,
                 proposal,
                 &txids,
                 |_wallet, transaction, _step| {
-                    (
-                        Zatoshis::from_u64(transaction.total_value_received()).unwrap(),
-                        transaction.status(),
-                    )
+                    (transaction.total_value_received(), transaction.status())
                 },
             )
             .await
@@ -241,26 +225,20 @@ where
 
     // check that each record has the expected fee and status, returning the fee and outputs
     let (sender_confirmed_fees, (sender_confirmed_outputs, sender_confirmed_statuses)): (
-        Vec<Zatoshis>,
-        (Vec<Zatoshis>, Vec<ConfirmationStatus>),
+        Vec<u64>,
+        (Vec<u64>, Vec<ConfirmationStatus>),
     ) = for_each_proposed_transaction(sender, proposal, &txids, |wallet, transaction, step| {
         (
             compare_fee(wallet, transaction, step),
-            (
-                Zatoshis::from_u64(transaction.total_value_received()).unwrap(),
-                transaction.status(),
-            ),
+            (transaction.total_value_received(), transaction.status()),
         )
     })
     .await
     .into_iter()
     .map(|stepwise_result| {
-        let (fee_comparison_result, others) = stepwise_result.unwrap();
-        let (balance, confirmation_status) = others;
-        (
-            fee_comparison_result.unwrap(),
-            (balance, confirmation_status),
-        )
+        stepwise_result
+            .map(|(fee_comparison_result, others)| (fee_comparison_result.unwrap(), others))
+            .unwrap()
     })
     .unzip();
 
@@ -279,7 +257,7 @@ where
 
         // check that each record has the status, returning the output value
         let (recipient_confirmed_outputs, recipient_confirmed_statuses): (
-            Vec<Zatoshis>,
+            Vec<u64>,
             Vec<ConfirmationStatus>,
         ) = for_each_proposed_transaction(
             recipient,
@@ -292,7 +270,6 @@ where
         .await
         .into_iter()
         .map(|stepwise_result| stepwise_result.unwrap())
-        .map(|(value, status)| (Zatoshis::from_u64(value).unwrap(), status))
         .collect();
         for status in recipient_confirmed_statuses {
             assert_eq!(
@@ -308,24 +285,9 @@ where
         assert_eq!(recipients_confirmed_outputs, *recipient_mempool_outputs);
     });
 
-    let total_fees = sender_confirmed_fees
-        .iter()
-        .copied()
-        .sum::<Option<Zatoshis>>()
-        .ok_or_else(|| "overflow while summing fees".to_string())?;
-
-    let total_received = recipients_confirmed_outputs
-        .iter()
-        .flatten()
-        .copied()
-        .sum::<Option<Zatoshis>>()
-        .ok_or_else(|| "overflow while summing received".to_string())?;
-
-    let total_change = sender_confirmed_outputs
-        .iter()
-        .copied()
-        .sum::<Option<Zatoshis>>()
-        .ok_or_else(|| "overflow while summing change".to_string())?;
-
-    Ok((total_fees, total_received, total_change))
+    Ok((
+        sender_confirmed_fees.iter().sum(),
+        recipients_confirmed_outputs.into_iter().flatten().sum(),
+        sender_confirmed_outputs.iter().sum(), // this construction will be problematic when 2-step transactions mean some value is received and respent.
+    ))
 }

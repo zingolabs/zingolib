@@ -25,7 +25,6 @@ use send::SendProgress;
 
 pub mod error;
 pub(crate) mod legacy;
-pub mod network;
 pub mod traits;
 pub mod utils;
 

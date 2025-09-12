@@ -33,16 +33,13 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder.build_faucet(
-            false,
-            self.local_net.validator().activation_heights().into(),
-        )
+        self.client_builder
+            .build_faucet(false, self.local_net.validator().activation_heights())
     }
 
     fn zingo_config(&mut self) -> crate::config::ZingoConfig {
-        self.client_builder.make_unique_data_dir_and_load_config(
-            self.local_net.validator().activation_heights().into(),
-        )
+        self.client_builder
+            .make_unique_data_dir_and_load_config(self.local_net.validator().activation_heights())
     }
 
     async fn bump_chain(&mut self) {

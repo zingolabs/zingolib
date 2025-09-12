@@ -26,8 +26,9 @@ use log4rs::{
 use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
+use zingo_infra_services::network::ActivationHeights;
 
-use crate::wallet::{WalletSettings, network::ZingolibLocalNetwork};
+use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
@@ -495,7 +496,7 @@ pub enum ChainType {
     /// Public testnet
     Testnet,
     /// Local testnet
-    Regtest(ZingolibLocalNetwork),
+    Regtest(ActivationHeights),
     /// Mainnet
     Mainnet,
 }
@@ -526,11 +527,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest(activation_heights) => Some(
-                activation_heights
-                    .activation_height(nu)
-                    .unwrap_or(BlockHeight::from_u32(1)),
-            ),
+            Regtest(activation_heights) => Some(activation_heights.activation_height(nu)),
         }
     }
 }

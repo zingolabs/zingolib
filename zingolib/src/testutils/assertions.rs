@@ -5,7 +5,6 @@ use nonempty::NonEmpty;
 use pepper_sync::wallet::WalletTransaction;
 use zcash_client_backend::proposal::{Proposal, Step};
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::value::Zatoshis;
 
 use crate::{lightclient::LightClient, wallet::LightWallet};
 
@@ -15,7 +14,7 @@ pub enum ProposalToTransactionRecordComparisonError {
     #[error("{0:?}")]
     LookupError(#[from] LookupRecordsPairStepsError),
     #[error("Mismatch: Recorded fee: {0:?} ; Expected fee: {1:?}")]
-    Mismatch(Result<Zatoshis, crate::wallet::error::FeeError>, Zatoshis),
+    Mismatch(Result<u64, crate::wallet::error::FeeError>, u64),
 }
 
 /// compares a proposal with a fulfilled record and returns the agreed fee
@@ -23,9 +22,9 @@ pub fn compare_fee<NoteRef>(
     wallet: &LightWallet,
     transaction: &WalletTransaction,
     step: &Step<NoteRef>,
-) -> Result<Zatoshis, ProposalToTransactionRecordComparisonError> {
+) -> Result<u64, ProposalToTransactionRecordComparisonError> {
     let recorded_fee_result = wallet.calculate_transaction_fee(transaction);
-    let proposed_fee = step.balance().fee_required();
+    let proposed_fee = step.balance().fee_required().into_u64();
     if let Ok(recorded_fee) = recorded_fee_result
         && recorded_fee == proposed_fee
     {
@@ -47,7 +46,7 @@ pub async fn lookup_fees_with_proposal_check<N>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
     txids: &NonEmpty<TxId>,
-) -> Vec<Result<Zatoshis, ProposalToTransactionRecordComparisonError>> {
+) -> Vec<Result<u64, ProposalToTransactionRecordComparisonError>> {
     for_each_proposed_transaction(client, proposal, txids, |records, record, step| {
         compare_fee(records, record, step)
     })

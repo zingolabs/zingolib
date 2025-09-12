@@ -9,18 +9,11 @@ use std::sync::Arc;
 use client::client_from_connector;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
+use lightwallet_protocol::CompactTxStreamerClient;
 use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
-use tower::util::BoxCloneService;
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-
-/// ?
-pub type UnderlyingService = BoxCloneService<
-    http::Request<tonic::body::Body>,
-    http::Response<hyper::body::Incoming>,
-    hyper_util::client::legacy::Error,
->;
+pub use tower_service::UnderlyingService;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
@@ -121,7 +114,7 @@ impl GrpcConnector {
                 let client = client_from_connector(connector, false);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<_>| {
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
                         let path_and_query = request
                             .uri()
                             .path_and_query()
@@ -147,7 +140,7 @@ impl GrpcConnector {
                 let client = client_from_connector(connector, true);
                 let svc = tower::ServiceBuilder::new()
                     //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<_>| {
+                    .map_request(move |mut request: http::Request<tonic::body::BoxBody>| {
                         let path_and_query = request
                             .uri()
                             .path_and_query()

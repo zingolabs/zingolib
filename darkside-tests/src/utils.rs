@@ -15,7 +15,6 @@ use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transacti
 use zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
-    utils::ExecutableLocation,
 };
 
 use super::{
@@ -29,7 +28,7 @@ use crate::{
 };
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 
-const LIGHTWALLETD_BIN: Option<ExecutableLocation> = None;
+const LIGHTWALLETD_BIN: Option<PathBuf> = None;
 
 pub async fn prepare_darksidewalletd(
     uri: http::Uri,
@@ -214,7 +213,7 @@ pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(Lightwalletd, DarksideConnector), String> {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.unwrap(), // TODO: What should we do if there's no binary?
+        lightwalletd_bin: LIGHTWALLETD_BIN,
         listen_port: set_port,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -382,7 +381,7 @@ pub mod scenarios {
                 testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights.into(),
+                self.activation_heights,
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -407,12 +406,9 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient = self.client_builder.build_client(
-                seed,
-                birthday,
-                true,
-                self.activation_heights.into(),
-            );
+            let lightclient =
+                self.client_builder
+                    .build_client(seed, birthday, true, self.activation_heights);
             self.lightclients.push(lightclient);
             self
         }

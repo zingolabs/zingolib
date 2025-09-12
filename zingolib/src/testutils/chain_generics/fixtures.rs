@@ -3,7 +3,6 @@
 
 use pepper_sync::wallet::SaplingNote;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
@@ -151,11 +150,7 @@ where
             .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
-            (
-                Option::unwrap(MARGINAL_FEE * 4_u64),
-                recorded_value,
-                recorded_change
-            )
+            (MARGINAL_FEE.into_u64() * 4, recorded_value, recorded_change)
         );
 
         let (recorded_fee, recorded_value) = with_assertions::assure_propose_shield_bump_sync(
@@ -167,10 +162,7 @@ where
         .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value),
-            (
-                Option::unwrap(MARGINAL_FEE * 3_u64),
-                Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
-            )
+            (MARGINAL_FEE.into_u64() * 3, 100_000 - recorded_fee)
         );
 
         let (recorded_fee, recorded_value, recorded_change) =
@@ -190,11 +182,7 @@ where
             .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
-            (
-                Option::unwrap(MARGINAL_FEE * 2_u64),
-                Zatoshis::from_u64(50_000).unwrap(),
-                recorded_change
-            )
+            (MARGINAL_FEE.into_u64() * 2, 50_000, recorded_change)
         );
     }
 }
@@ -238,7 +226,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            Option::unwrap(MARGINAL_FEE * 11_u64),
+            11 * MARGINAL_FEE.into_u64(),
             recorded_value,
             recorded_change
         )
@@ -261,11 +249,7 @@ where
         .unwrap();
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
-        (
-            Option::unwrap(MARGINAL_FEE * 4_u64),
-            Zatoshis::from_u64(10_000).unwrap(),
-            recorded_change
-        )
+        (4 * MARGINAL_FEE.into_u64(), 10_000, recorded_change)
     );
 }
 
@@ -308,7 +292,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            Zatoshis::from_u64(expected_fee_for_transaction_1).unwrap(),
+            expected_fee_for_transaction_1,
             recorded_value,
             recorded_change
         )
@@ -362,9 +346,9 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            Zatoshis::from_u64(expected_fee_for_transaction_2).unwrap(),
-            Zatoshis::from_u64(expected_value_from_transaction_2).unwrap(),
-            Zatoshis::from_u64(0).unwrap()
+            expected_fee_for_transaction_2,
+            expected_value_from_transaction_2,
+            0
         )
     );
 
@@ -528,10 +512,6 @@ pub async fn any_source_sends_to_any_receiver<CC>(
         .unwrap();
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
-        (
-            Zatoshis::from_u64(expected_fee).unwrap(),
-            Zatoshis::from_u64(receiver_value).unwrap(),
-            Zatoshis::from_u64(change).unwrap()
-        )
+        (expected_fee, receiver_value, change)
     );
 }

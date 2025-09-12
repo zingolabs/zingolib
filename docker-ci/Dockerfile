@@ -1,4 +1,4 @@
-FROM debian:trixie-slim AS builder
+FROM debian:bookworm-slim AS builder
 
 WORKDIR /usr/src
 
@@ -21,6 +21,7 @@ RUN apt update \
     curl \
     bsdmainutils \
     automake \
+    libtinfo5 \
     golang \
     ca-certificates \
     && update-ca-certificates
