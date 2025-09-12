@@ -27,8 +27,7 @@ use testvectors::{
 };
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::localhost_uri;
-use zingo_infra_services::utils::ExecutableLocation;
+use zingo_infra_services::network::{ActivationHeights, localhost_uri};
 use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -39,11 +38,10 @@ use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::network::ZingolibLocalNetwork;
 use crate::wallet::{LightWallet, WalletSettings};
 
 /// Helper function to get the test binary path
-fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
+fn get_test_binary_path(binary_name: &str) -> Option<PathBuf> {
     // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
     // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
     let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
@@ -59,31 +57,28 @@ fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
         .join("bins")
         .join(binary_name);
     if path.exists() {
-        ExecutableLocation::Specific(path.canonicalize().unwrap())
+        Some(path.canonicalize().unwrap())
     } else {
-        ExecutableLocation::Global(binary_name.to_string())
+        None
     }
 }
 
 /// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASHD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zcashd"));
+pub static ZCASHD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zcashd"));
 
 /// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASH_CLI_BIN: LazyLock<ExecutableLocation> =
+pub static ZCASH_CLI_BIN: LazyLock<Option<PathBuf>> =
     LazyLock::new(|| get_test_binary_path("zcash-cli"));
 
 /// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZEBRAD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zebrad"));
+pub static ZEBRAD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zebrad"));
 
 /// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static LIGHTWALLETD_BIN: LazyLock<ExecutableLocation> =
+pub static LIGHTWALLETD_BIN: LazyLock<Option<PathBuf>> =
     LazyLock::new(|| get_test_binary_path("lightwalletd"));
 
 /// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZAINOD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zainod"));
+pub static ZAINOD_BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
@@ -107,7 +102,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         //! Each client requires a unique data_dir, we use the
         //! client_number counter for this.
@@ -124,7 +119,7 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
@@ -147,7 +142,7 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: ActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
@@ -164,7 +159,7 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: ActivationHeights,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(activation_heights);
         let mut wallet = LightWallet::new(
@@ -187,7 +182,7 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
     let (local_net, mut client_builder) =
@@ -206,7 +201,7 @@ pub async fn unfunded_client(
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    unfunded_client(ZingolibLocalNetwork::default(), None).await
+    unfunded_client(ActivationHeights::default(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -221,7 +216,7 @@ pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, Light
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
     let (local_net, mut client_builder) =
@@ -235,13 +230,13 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    faucet(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
+    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient) {
     let (local_net, mut client_builder) =
@@ -263,7 +258,7 @@ pub async fn faucet_recipient(
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient)
 {
-    faucet_recipient(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
+    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -272,7 +267,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<Lightwalletd, Zcashd>,
@@ -364,7 +359,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            ZingolibLocalNetwork::default(),
+            ActivationHeights::default(),
             None,
         )
         .await;
@@ -375,7 +370,7 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
     let miner_address = match mine_to_pool {
@@ -394,7 +389,7 @@ pub async fn custom_clients(
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights: activation_heights.into(),
+            activation_heights,
             miner_address: Some(miner_address),
             chain_cache,
         },
@@ -413,14 +408,14 @@ pub async fn custom_clients(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await;
+        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
 
     (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
-    let activation_heights = ZingolibLocalNetwork::default();
+    let activation_heights = ActivationHeights::default();
     LocalNet::<Lightwalletd, Zcashd>::launch(
         LightwalletdConfig {
             lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
@@ -432,7 +427,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights: activation_heights.into(),
+            activation_heights,
             miner_address: Some(REG_Z_ADDR_FROM_ABANDONART),
             chain_cache: None,
         },
@@ -447,13 +442,12 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<Lightwalletd, Z
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights(),
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -474,13 +468,12 @@ pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> LocalNet<Ligh
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -530,13 +523,12 @@ pub async fn funded_transparent_mobileclient(value: u64) -> LocalNet<Lightwallet
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -571,13 +563,12 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await

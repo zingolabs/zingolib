@@ -43,7 +43,7 @@ impl DarksideConnector {
             let uri = uri.clone();
             let svc = tower::ServiceBuilder::new()
                 //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                .map_request(move |mut req: http::Request<tonic::body::Body>| {
+                .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                     let uri = Uri::builder()
                         .scheme(uri.scheme().unwrap().clone())
                         .authority(uri.authority().unwrap().clone())

@@ -17,9 +17,9 @@ darkside_test = []
 
 [dependencies]
 # Zingo
+tower_service = { workspace = true }
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
 
 # Zcash
 zcash_encoding = { workspace = true, optional = true }
