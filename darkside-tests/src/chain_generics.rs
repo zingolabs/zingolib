@@ -103,7 +103,7 @@ pub(crate) mod conduct_chain {
                 .make_unique_data_dir_and_load_config(self.activation_heights)
         }
 
-        async fn bump_chain(&mut self) {
+        async fn increase_chain_height(&mut self) {
             let height_before =
                 zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
                     .await
@@ -216,6 +216,10 @@ pub(crate) mod conduct_chain {
                 .apply_staged(new_height as i32)
                 .await
                 .unwrap();
+        }
+
+        fn confirmation_patience_blocks(&self) -> usize {
+            1
         }
     }
 }

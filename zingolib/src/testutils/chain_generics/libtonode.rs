@@ -42,11 +42,24 @@ impl ConductChain for LibtonodeEnvironment {
             .make_unique_data_dir_and_load_config(self.local_net.validator().activation_heights())
     }
 
-    async fn bump_chain(&mut self) {
-        self.local_net.validator().generate_blocks(1).await.unwrap();
+    async fn increase_chain_height(&mut self) {
+        let start_height = self.local_net.validator().get_chain_height().await;
+        self.local_net
+            .validator()
+            .generate_blocks(1)
+            .await
+            .expect("Called for side effect, failed!");
+        assert_eq!(
+            self.local_net.validator().get_chain_height().await,
+            start_height + 1
+        );
     }
 
     fn lightserver_uri(&self) -> Option<http::Uri> {
         Some(localhost_uri(self.local_net.indexer().listen_port()))
+    }
+
+    fn confirmation_patience_blocks(&self) -> usize {
+        1
     }
 }
