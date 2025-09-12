@@ -1644,7 +1644,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1889,7 +1889,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3168,7 +3168,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.3",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -4037,7 +4037,7 @@ dependencies = [
  "zcash_address 0.7.1",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_keys 0.8.2",
+ "zcash_keys 0.10.1",
  "zcash_note_encryption",
  "zcash_primitives 0.22.1",
  "zcash_protocol 0.5.1",
@@ -4511,7 +4511,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.0",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5117,7 +5117,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6010,7 +6010,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7830,7 +7830,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0978bf7171b3d90bac376700cb56d606feb40f251a475a5d6634613564460b22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8372,6 +8372,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6c8d3d5a08a66f76264c72172e692ec362218b091181cda30c04d00a4561cd8"
 dependencies = [
  "bech32",
+ "bip32",
  "blake2b_simd",
  "bls12_381",
  "bs58",
@@ -8380,7 +8381,9 @@ dependencies = [
  "group",
  "memuse",
  "nonempty",
+ "orchard",
  "rand_core 0.6.4",
+ "sapling-crypto",
  "secrecy",
  "subtle",
  "tracing",
@@ -8989,7 +8992,7 @@ dependencies = [
  "tracing-subscriber",
  "zcash_address 0.7.1",
  "zcash_client_backend",
- "zcash_keys 0.8.2",
+ "zcash_keys 0.10.1",
  "zcash_primitives 0.22.1",
  "zcash_protocol 0.5.1",
  "zingo-infra-services",
@@ -9030,7 +9033,7 @@ dependencies = [
  "zcash_address 0.7.1",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_keys 0.8.2",
+ "zcash_keys 0.10.1",
  "zcash_primitives 0.22.1",
 ]
 
@@ -9140,7 +9143,7 @@ dependencies = [
  "zcash_address 0.7.1",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_keys 0.8.2",
+ "zcash_keys 0.10.1",
  "zcash_primitives 0.22.1",
  "zcash_proofs 0.22.0",
  "zcash_protocol 0.5.1",

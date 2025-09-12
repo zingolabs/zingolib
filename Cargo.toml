@@ -35,7 +35,7 @@ zcash_client_backend = { version = "0.18.1", features = [
 ] }
 lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust.git", branch = "main" }
 zcash_encoding = "0.3.0"
-zcash_keys = { version = "0.8.0", features = [
+zcash_keys = { version = "0.10.1", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
