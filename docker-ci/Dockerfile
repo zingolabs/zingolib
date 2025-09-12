@@ -55,6 +55,7 @@ RUN apt update \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libclang-dev \
     ca-certificates \
     && update-ca-certificates
 
