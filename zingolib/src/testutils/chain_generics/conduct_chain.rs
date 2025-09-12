@@ -51,15 +51,14 @@ pub trait ConductChain {
 
     /// moves the chain tip forward, creating 1 new block
     /// and confirming transactions that were received by the server
-    async fn bump_chain(&mut self);
+    async fn increase_chain_height(&mut self);
 
     /// builds a client and funds it in orchard and syncs it
     async fn fund_client_orchard(&mut self, value: u64) -> LightClient {
         let mut faucet = self.create_faucet().await;
         let mut recipient = self.create_client().await;
 
-        self.bump_chain().await;
-
+        self.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
         from_inputs::quick_send(
@@ -73,10 +72,13 @@ pub trait ConductChain {
         .await
         .unwrap();
 
-        self.bump_chain().await;
+        self.increase_chain_height().await;
 
         recipient.sync_and_await().await.unwrap();
 
         recipient
     }
+
+    /// how many blocks of leeway to allow the chain to Confirm a transaction
+    fn confirmation_patience_blocks(&self) -> usize;
 }

@@ -38,7 +38,7 @@ where
 
     let mut recipient = environment.create_client().await;
     dbg!("TEST 1");
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
         vec![
@@ -97,7 +97,7 @@ where
     assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
     dbg!("TEST 2");
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
         vec![(&sender_orchard_addr, send_value_self, None)],
@@ -137,7 +137,7 @@ where
 
     for _ in 0..n {
         let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::propose_send_bump_sync_all_recipients(
+            with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &mut primary,
                 vec![
@@ -174,7 +174,7 @@ where
         );
 
         let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::propose_send_bump_sync_all_recipients(
+            with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &mut secondary,
                 vec![(
@@ -215,7 +215,7 @@ where
 
     // send a bunch of dust
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut primary,
             vec![
@@ -246,7 +246,7 @@ where
 
     // combine the only valid sapling note with the only valid orchard note to send
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(
@@ -294,7 +294,7 @@ where
     let secondary_sapling_addr =
         get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut primary,
             transaction_1_values
@@ -346,7 +346,7 @@ where
     let primary_orchard_addr =
         get_base_address(&primary, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(
@@ -411,7 +411,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
     let secondary_fund = 100_000 + expected_fee - underflow_amount;
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut primary,
         vec![(&secondary_addr, secondary_fund, None)],
@@ -498,7 +498,7 @@ pub async fn any_source_sends_to_any_receiver<CC>(
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut primary,
         vec![(
@@ -513,7 +513,7 @@ pub async fn any_source_sends_to_any_receiver<CC>(
     .unwrap();
 
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(

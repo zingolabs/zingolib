@@ -687,7 +687,7 @@ mod fast {
         let mut faucet = environment.create_faucet().await;
         let mut recipient = environment.create_client().await;
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
@@ -710,7 +710,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let no_messages = &recipient.messages_containing(None).await.unwrap();
@@ -735,7 +735,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let single_message = &recipient.messages_containing(None).await.unwrap();
@@ -919,7 +919,7 @@ mod fast {
         let mut faucet = environment.create_faucet().await;
         let mut recipient = environment.create_client().await;
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
@@ -952,7 +952,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let value_transfers = &recipient.value_transfers(true).await.unwrap();

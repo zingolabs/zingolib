@@ -14,7 +14,7 @@ jobs:
   build-test-artifacts:
     name: Build test artifacts
     container:
-      image: zingodevops/ci-build:007
+      image: zingodevops/ci-build:009
     runs-on: ubuntu-24.04
     if: github.event.pull_request.draft == false
     env:
@@ -50,7 +50,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:007
+      image: zingodevops/ci-build:009
       options: --security-opt seccomp=unconfined
     strategy:
       matrix:
