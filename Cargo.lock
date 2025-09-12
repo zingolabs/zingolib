@@ -1644,7 +1644,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1889,7 +1889,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3168,7 +3168,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.3",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -3248,7 +3248,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "zcash_address 0.7.1",
+ "zcash_address 0.9.0",
  "zcash_client_backend",
  "zcash_primitives 0.22.1",
  "zcash_protocol 0.5.1",
@@ -4034,7 +4034,7 @@ dependencies = [
  "tonic",
  "tower_service",
  "tracing",
- "zcash_address 0.7.1",
+ "zcash_address 0.9.0",
  "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys 0.8.2",
@@ -4312,17 +4312,17 @@ dependencies = [
 
 [[package]]
 name = "proptest"
-version = "1.7.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fcdab19deb5195a31cf7726a210015ff1496ba1464fd42cb4f537b8b01b471f"
+checksum = "14cae93065090804185d3b75f0bf93b8eeda30c7a9b4a33d3bdb3988d6229e50"
 dependencies = [
  "bit-set",
  "bit-vec",
  "bitflags 2.9.3",
  "lazy_static",
  "num-traits 0.2.19",
- "rand 0.9.2",
- "rand_chacha 0.9.0",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rand_xorshift",
  "regex-syntax 0.8.6",
  "rusty-fork",
@@ -4511,7 +4511,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.0",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4647,11 +4647,11 @@ dependencies = [
 
 [[package]]
 name = "rand_xorshift"
-version = "0.4.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
+checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
- "rand_core 0.9.3",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -5117,7 +5117,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6010,7 +6010,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7830,7 +7830,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0978bf7171b3d90bac376700cb56d606feb40f251a475a5d6634613564460b22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8232,7 +8232,6 @@ dependencies = [
  "bs58",
  "core2",
  "f4jumble",
- "proptest",
  "zcash_encoding",
  "zcash_protocol 0.5.1",
 ]
@@ -8247,6 +8246,7 @@ dependencies = [
  "bs58",
  "core2",
  "f4jumble",
+ "proptest",
  "zcash_encoding",
  "zcash_protocol 0.6.1",
 ]
@@ -8987,7 +8987,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing-subscriber",
- "zcash_address 0.7.1",
+ "zcash_address 0.9.0",
  "zcash_client_backend",
  "zcash_keys 0.8.2",
  "zcash_primitives 0.22.1",
@@ -9027,7 +9027,7 @@ name = "zingo-memo"
 version = "0.0.1"
 dependencies = [
  "rand 0.8.5",
- "zcash_address 0.7.1",
+ "zcash_address 0.9.0",
  "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys 0.8.2",
@@ -9137,7 +9137,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-roots 0.25.4",
- "zcash_address 0.7.1",
+ "zcash_address 0.9.0",
  "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys 0.8.2",
