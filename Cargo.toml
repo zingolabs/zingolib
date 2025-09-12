@@ -44,7 +44,7 @@ zcash_note_encryption = "0.4.1"
 zcash_primitives = "0.22.1"
 zcash_proofs = "0.22.0"
 zcash_protocol = "=0.5.1"
-zcash_transparent = "0.2.3"
+zcash_transparent = "0.4.0"
 
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
