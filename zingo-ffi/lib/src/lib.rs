@@ -45,7 +45,7 @@ use tokio::runtime::Runtime;
 use zcash_primitives::memo::MemoBytes;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::data::proposal::total_fee;
-use zingo_infra_services::network::ActivationHeights;
+use zingolib::wallet::network::ZingolibLocalNetwork;
 
 
 // We'll use a RwLock to store a global lightclient instance,
@@ -75,7 +75,7 @@ fn construct_uri_load_config(
     let chaintype = match chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
-        "regtest" => ChainType::Regtest(ActivationHeights::default()),
+        "regtest" => ChainType::Regtest(ZingolibLocalNetwork::default()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let performancetype = match performance_level.as_str() {
@@ -545,7 +545,7 @@ pub fn parse_address(address: String) -> String {
             [
                 ChainType::Mainnet,
                 ChainType::Testnet,
-                ChainType::Regtest(ActivationHeights::default()),
+                ChainType::Regtest(ZingolibLocalNetwork::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

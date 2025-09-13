@@ -3,19 +3,27 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/juanky201271/zingolib", default-features = true, branch = "dev_infrastructure_commit_pinned" }
-pepper-sync = { git = "https://github.com/juanky201271/zingolib", branch = "dev_infrastructure_commit_pinned" }
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, branch = "deps/update-lrz-crates_02" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "deps/update-lrz-crates_02" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
-zcash_primitives = "0.22.0"
-zcash_keys = { version = "0.8.0" , features = ["transparent-inputs", "sapling", "orchard" ] }
-zcash_address = "0.7.0"
-zcash_protocol = "=0.5.1"
-zcash_client_backend = { version = "0.18.1" , features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
-
-# Zingolabs -> same commit that zingolib
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", rev = "a33373bb2ff4c91dab34f4b1bd3b3e51959b84b9" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b", features = [
+    "transparent-inputs",
+    "sapling",
+    "orchard",
+] }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b", features = [
+    "local-consensus",
+] }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b", features = [
+    "lightwalletd-tonic",
+    "orchard",
+    "transparent-inputs",
+    "tor",
+] }
 
 bip0039 = { version = "0.12", features = [ "rand" ] }
 uniffi = "0.29"
