@@ -1316,7 +1316,7 @@ dependencies = [
  "tower 0.5.2",
  "tracing-subscriber",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zingo-infra-services",
  "zingo-netutils",
  "zingo-testvectors",
@@ -3251,7 +3251,7 @@ dependencies = [
  "zcash_address 0.7.1",
  "zcash_client_backend",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zingo-infra-services",
  "zingo-status",
  "zingo-testvectors",
@@ -4040,7 +4040,7 @@ dependencies = [
  "zcash_keys 0.8.2",
  "zcash_note_encryption",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_transparent 0.2.3",
  "zingo-memo",
  "zingo-status",
@@ -8234,7 +8234,7 @@ dependencies = [
  "f4jumble",
  "proptest",
  "zcash_encoding",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
 ]
 
 [[package]]
@@ -8308,7 +8308,7 @@ dependencies = [
  "zcash_keys 0.8.2",
  "zcash_note_encryption",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_transparent 0.2.3",
  "zip32",
  "zip321",
@@ -8360,7 +8360,7 @@ dependencies = [
  "tracing",
  "zcash_address 0.7.1",
  "zcash_encoding",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_transparent 0.2.3",
  "zip32",
 ]
@@ -8440,7 +8440,7 @@ dependencies = [
  "zcash_address 0.7.1",
  "zcash_encoding",
  "zcash_note_encryption",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_spec",
  "zcash_transparent 0.2.3",
  "zip32",
@@ -8537,9 +8537,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_protocol"
-version = "0.5.1"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0acf60e235c5ba42c83f1e7e3763cf90a436583e6de71557fed26bab2d65dc"
+checksum = "42344f5735237d6e0eedd3680f1c92f64e9c4144045d7b5c82f4867c2cbc0a02"
 dependencies = [
  "core2",
  "document-features",
@@ -8605,7 +8605,7 @@ dependencies = [
  "subtle",
  "zcash_address 0.7.1",
  "zcash_encoding",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_spec",
  "zip32",
 ]
@@ -8991,7 +8991,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys 0.8.2",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zingo-infra-services",
  "zingo-testvectors",
  "zingolib",
@@ -9016,7 +9016,7 @@ dependencies = [
  "tokio",
  "tracing",
  "zcash_primitives 0.22.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
@@ -9143,7 +9143,7 @@ dependencies = [
  "zcash_keys 0.8.2",
  "zcash_primitives 0.22.1",
  "zcash_proofs 0.22.0",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
  "zcash_transparent 0.2.3",
  "zingo-infra-services",
  "zingo-memo",
@@ -9176,7 +9176,7 @@ dependencies = [
  "nom",
  "percent-encoding",
  "zcash_address 0.7.1",
- "zcash_protocol 0.5.1",
+ "zcash_protocol 0.5.4",
 ]
 
 [[package]]
