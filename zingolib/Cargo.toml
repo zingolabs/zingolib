@@ -23,7 +23,6 @@ zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
-tower_service = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
