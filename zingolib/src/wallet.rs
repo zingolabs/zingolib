@@ -497,8 +497,8 @@ mod tests {
     use zcash_protocol::consensus::BlockHeight;
 
     use crate::{
-        config::{ChainType, RegtestNetwork},
-        wallet::{LightWallet, WalletSettings},
+        config::ChainType,
+        wallet::{LightWallet, WalletSettings, network::ZingolibLocalNetwork},
     };
 
     // TODO: move to relevant mod
@@ -554,7 +554,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_offline() {
-        let chain_type = ChainType::Regtest(RegtestNetwork::all_upgrades_active());
+        let chain_type = ChainType::Regtest(ZingolibLocalNetwork::default());
         let settings = WalletSettings {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
             sync_config: pepper_sync::config::SyncConfig {

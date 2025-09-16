@@ -87,7 +87,7 @@ impl LightClient {
         )
     }
 
-    pub fn new_with_timestamp(config: ZingoConfig, timestamp: time::OffsetDateTime) {
+    pub fn new_with_timestamp(_config: ZingoConfig, _timestamp: time::OffsetDateTime) {
         // Check if is online
     }
 
@@ -321,7 +321,7 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, RegtestNetwork, ZingoConfig, ZingoConfigBuilder},
+        config::{ChainType, ZingoConfig, ZingoConfigBuilder},
         lightclient::error::LightClientError,
         wallet::{LightWallet, network::ZingolibLocalNetwork},
     };
