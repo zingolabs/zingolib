@@ -1,10 +1,15 @@
 [workspace]
-members = ["lib", "android", "ios", "zingomobile_utils"]
+members = [
+    "lib", 
+    "android", 
+    "ios", 
+    "zingomobile_utils"
+]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, branch = "deps/update-lrz-crates_02" }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "deps/update-lrz-crates_02" }
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.0.6" }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.0.6" }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
@@ -27,7 +32,7 @@ zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "d
 
 bip0039 = { version = "0.12", features = [ "rand" ] }
 uniffi = "0.29"
-tokio = { version = "1.24", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 rustls = { version = "0.23", features = ["ring"] }
 serde_json = "1"
 android_logger = "0.11"
