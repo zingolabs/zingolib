@@ -4,11 +4,13 @@ use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zingo_infra_services::network::localhost_uri;
 
 use super::super::LightWallet;
 use crate::config::ChainType;
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
+use crate::wallet::network::ZingolibLocalNetwork;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
@@ -273,15 +275,12 @@ impl NetworkSeedVersion {
     pub async fn load_example_wallet_with_client(&self) -> LightClient {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
-                let lightwalletd_uri =
-                    crate::testutils::scenarios::setup::TestEnvironmentGenerator::new(None)
-                        .get_lightwalletd_uri();
+                let lightwalletd_uri = localhost_uri(0);
+
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(
-                        crate::config::RegtestNetwork::all_upgrades_active(),
-                    ),
+                    crate::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),

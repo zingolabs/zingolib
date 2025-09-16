@@ -11,10 +11,11 @@ use std::str::FromStr;
 
 use indoc::indoc;
 use json::object;
-use lazy_static::lazy_static;
 use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
+use std::sync::LazyLock;
 use tokio::runtime::Runtime;
+use zingolib::wallet::network::ZingolibLocalNetwork;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -29,9 +30,7 @@ use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 
-lazy_static! {
-    pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
-}
+pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
 /// This command interface is used both by cli and also consumers.
 pub trait Command {
@@ -220,9 +219,7 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(
-                    zingolib::config::RegtestNetwork::all_upgrades_active(),
-                ),
+                zingolib::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

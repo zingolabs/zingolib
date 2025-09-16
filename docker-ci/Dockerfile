@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS builder
+FROM debian:trixie-slim AS builder
 
 WORKDIR /usr/src
 
@@ -21,7 +21,6 @@ RUN apt update \
     curl \
     bsdmainutils \
     automake \
-    libtinfo5 \
     golang \
     ca-certificates \
     && update-ca-certificates
@@ -29,16 +28,16 @@ RUN apt update \
 # Build lightwalletd
 RUN git clone https://github.com/zcash/lightwalletd \
     && cd lightwalletd \
-    && git checkout v0.4.16 \
+    && git checkout v0.4.18 \
     && make
 
 # Build zcashd and fetch params
 RUN git clone https://github.com/zcash/zcash.git \
     && cd zcash/ \
-    && git checkout v6.2.0 \
+    && git checkout v6.3.0 \
     && ./zcutil/build.sh -j$(nproc)
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim AS runner
 
 # Copy regtest binaries and zcash params from builder
 COPY --from=builder /usr/src/lightwalletd/lightwalletd /usr/bin/
@@ -56,6 +55,7 @@ RUN apt update \
     libssl-dev \
     build-essential \
     protobuf-compiler \
+    libclang-dev \
     ca-certificates \
     && update-ca-certificates
 

@@ -125,7 +125,7 @@ pub(super) fn parse_send_all_args(
 pub(super) fn parse_max_send_value_args(
     args: &[&str],
 ) -> Result<(ZcashAddress, bool), CommandError> {
-    if args.len() > 2 {
+    if args.len() != 1 {
         return Err(CommandError::InvalidArguments);
     }
     let address: ZcashAddress;

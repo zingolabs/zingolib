@@ -282,7 +282,7 @@ impl TransactionSummaries {
         TransactionSummaries(transaction_summaries)
     }
     /// Implicitly dispatch to the wrapped data
-    pub fn iter(&self) -> std::slice::Iter<TransactionSummary> {
+    pub fn iter(&self) -> std::slice::Iter<'_, TransactionSummary> {
         self.0.iter()
     }
     /// Sum total of all fees paid in sending transactions

@@ -73,7 +73,7 @@ pub(crate) mod conduct_chain {
                 .await;
             let config = self
                 .client_builder
-                .make_unique_data_dir_and_load_config(self.regtest_network);
+                .make_unique_data_dir_and_load_config(self.activation_heights.into());
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
@@ -100,10 +100,10 @@ pub(crate) mod conduct_chain {
 
         fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
             self.client_builder
-                .make_unique_data_dir_and_load_config(self.regtest_network)
+                .make_unique_data_dir_and_load_config(self.activation_heights.into())
         }
 
-        async fn bump_chain(&mut self) {
+        async fn increase_chain_height(&mut self) {
             let height_before =
                 zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
                     .await
@@ -216,6 +216,10 @@ pub(crate) mod conduct_chain {
                 .apply_staged(new_height as i32)
                 .await
                 .unwrap();
+        }
+
+        fn confirmation_patience_blocks(&self) -> usize {
+            1
         }
     }
 }

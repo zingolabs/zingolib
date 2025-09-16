@@ -429,7 +429,7 @@ pub mod proposal {
                 step.shielded_inputs().cloned(),
                 step.balance().clone(),
                 self.fee_rule.unwrap(),
-                self.min_target_height.unwrap(),
+                self.min_target_height.unwrap().into(),
                 step.is_shielding(),
             )
             .unwrap()
@@ -534,6 +534,8 @@ pub mod proposal {
                         zcash_client_backend::wallet::Note::Sapling(note),
                         zip32::Scope::External,
                         Position::from(1),
+                        None, // mined_height. TODO: How should we use this here?
+                        None, // max_shielding_input_height. TODO: How should we use this here?
                     )),
                 )))
                 .prior_step_inputs(vec![])

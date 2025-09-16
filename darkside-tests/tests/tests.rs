@@ -1,35 +1,50 @@
+use std::path::PathBuf;
+
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
-use darkside_tests::utils::DarksideHandler;
 use darkside_tests::utils::update_tree_states_for_transaction;
+use tempfile::TempDir;
 use testvectors::seeds::DARKSIDE_SEED;
+use zingo_infra_services::indexer::Indexer;
+use zingo_infra_services::indexer::Lightwalletd;
+use zingo_infra_services::indexer::LightwalletdConfig;
+use zingo_infra_services::network::localhost_uri;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
-use zingolib::config::RegtestNetwork;
 use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::scenarios::setup::ClientBuilder;
+use zingolib::testutils::scenarios::ClientBuilder;
+use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::wallet::balance::AccountBalance;
+use zingolib::wallet::network::ZingolibLocalNetwork;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
-        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    let activation_heights = ZingolibLocalNetwork::default();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -59,22 +74,27 @@ async fn simple_sync() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let mut light_client = ClientBuilder::new(
-        server_id.clone(),
-        darkside_handler.darkside_dir.clone(),
-    )
-    .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+    let activation_heights = ZingolibLocalNetwork::default();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights,
+    );
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -120,26 +140,29 @@ async fn reorg_receipt_sync_generic() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let darkside_handler = DarksideHandler::new(None);
+    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
+        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+        listen_port: None,
+        zcashd_conf: PathBuf::new(),
+        darkside: true,
+    })
+    .unwrap();
 
-    let server_id = zingolib::config::construct_lightwalletd_uri(Some(format!(
-        "http://127.0.0.1:{}",
-        darkside_handler.grpc_port
-    )));
+    let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let mut client_manager =
-        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
-    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let wallet_dir = TempDir::new().unwrap();
+    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
+    let activation_heights = ZingolibLocalNetwork::default();
     let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network);
+        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
         testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        regtest_network,
+        activation_heights,
     );
 
     light_client.sync_and_await().await.unwrap();

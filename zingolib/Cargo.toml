@@ -23,6 +23,16 @@ zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
+hyper = { workspace = true }
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+tower = { workspace = true }
+
+# TODO: separate activation heights into different crate and make this optional for test-elevation
+zingo-infra-services = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -56,7 +66,6 @@ hex = { workspace = true }
 http.workspace = true
 json = { workspace = true }
 jubjub = { workspace = true }
-lazy_static = { workspace = true }
 log = { workspace = true }
 log4rs.workspace = true
 nonempty.workspace = true
@@ -78,11 +87,13 @@ tracing-subscriber = { workspace = true }
 bech32 = { workspace = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 tracing.workspace = true
-time = "0.3.41"
+time.workspace = true
 
 [dev-dependencies]
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
+testvectors = { workspace = true }
+tempfile = { workspace = true }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }

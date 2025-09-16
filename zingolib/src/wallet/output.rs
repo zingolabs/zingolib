@@ -227,6 +227,7 @@ impl LightWallet {
     /// Any notes that the wallet cannot construct a witness for with the current sync state will not be returned.
     /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
     /// cannot guarantee the notes are unspent.
+    #[allow(clippy::result_large_err)]
     pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
@@ -287,7 +288,10 @@ impl LightWallet {
                 .filter(|&note| {
                     note.nullifier().is_some()
                         && note.position().is_some()
-                        && self.can_build_witness::<N>(transaction.status().get_height())
+                        && self.can_build_witness::<N>(
+                            transaction.status().get_height(),
+                            anchor_height,
+                        )
                 })
             })
             .collect())
@@ -338,6 +342,7 @@ impl LightWallet {
     ///
     /// Selects notes with smallest value that satisfies the target value, without creating dust as change. Otherwise,
     /// selects the note with the largest value and repeats.
+    #[allow(clippy::result_large_err)]
     pub(crate) fn select_spendable_notes_by_pool<'a, N: NoteInterface>(
         &'a self,
         remaining_value_needed: &mut RemainingNeeded,

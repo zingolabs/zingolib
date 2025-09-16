@@ -2,7 +2,7 @@ name: Coverage (Weekly)
 
 on:
   schedule:
-    - cron: '30 8 * * 0'
+    - cron: "30 8 * * 0"
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:005
+      image: zingodevops/ci-build:009
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
@@ -39,4 +39,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./cobertura.xml
           fail_ci_if_error: true
-

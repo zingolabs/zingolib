@@ -3,19 +3,19 @@
 
 #![warn(missing_docs)]
 
-pub mod scenarios;
-
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
-
-use json::JsonValue;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
+use zingo_infra_services::LocalNet;
+use zingo_infra_services::indexer::Lightwalletd;
+use zingo_infra_services::validator::{Validator, Zcashd};
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -27,19 +27,14 @@ use crate::wallet::summary::data::{
 };
 use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 use lightclient::get_base_address;
-use regtest::RegtestManager;
 
 pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
-/// lightclient helpers
 pub mod lightclient;
-/// macros to help test
 pub mod macros;
-/// TODO: Add Doc Comment Here!
 pub mod paths;
-/// TODO: Add Doc Comment Here!
-pub mod regtest;
+pub mod scenarios;
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
@@ -86,25 +81,6 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         false,
     )
     .unwrap()
-}
-
-fn poll_server_height(manager: &RegtestManager) -> JsonValue {
-    let temp_tips = manager.get_chain_tip().unwrap().stdout;
-    let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
-    tips[0]["height"].clone()
-}
-
-/// TODO: Add Doc Comment Here!
-/// This function _DOES NOT SYNC THE CLIENT/WALLET_.
-pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
-    let start_height = poll_server_height(manager).as_fixed_point_u64(2).unwrap();
-    let target = start_height + n as u64;
-    manager
-        .generate_n_blocks(n)
-        .expect("Called for side effect, failed!");
-    while poll_server_height(manager).as_fixed_point_u64(2).unwrap() < target {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// TODO: doc comment
@@ -247,7 +223,7 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
 
 /// Send from sender to recipient and then bump chain and sync both lightclients
 pub async fn send_value_between_clients_and_sync(
-    manager: &RegtestManager,
+    local_net: &LocalNet<Lightwalletd, Zcashd>,
     sender: &mut LightClient,
     recipient: &mut LightClient,
     value: u64,
@@ -263,7 +239,7 @@ pub async fn send_value_between_clients_and_sync(
     )
     .await
     .unwrap();
-    increase_height_and_wait_for_client(manager, sender, 1).await?;
+    increase_height_and_wait_for_client(local_net, sender, 1).await?;
     recipient.sync_and_await().await?;
     Ok(txid.first().to_string())
 }
@@ -273,49 +249,45 @@ pub async fn send_value_between_clients_and_sync(
 /// Unsynced clients are very interesting to us.  See increase_server_height
 /// to reliably increase the server without syncing the client
 pub async fn increase_height_and_wait_for_client(
-    manager: &RegtestManager,
+    local_net: &LocalNet<Lightwalletd, Zcashd>,
     client: &mut LightClient,
     n: u32,
 ) -> Result<(), LightClientError> {
     sync_to_target_height(
         client,
-        generate_n_blocks_return_new_height(manager, n)
-            .await
-            .expect("should find target height"),
+        generate_n_blocks_return_new_height(local_net, n).await,
     )
     .await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn generate_n_blocks_return_new_height(
-    manager: &RegtestManager,
+    local_net: &LocalNet<Lightwalletd, Zcashd>,
     n: u32,
-) -> Result<u32, String> {
-    let start_height = manager.get_current_height().unwrap();
+) -> BlockHeight {
+    let start_height = local_net.validator().get_chain_height().await;
     let target = start_height + n;
-    manager
-        .generate_n_blocks(n)
-        .expect("Called for side effect, failed!");
-    assert_eq!(manager.get_current_height().unwrap(), target);
-    Ok(target)
+    local_net.validator().generate_blocks(n).await.unwrap();
+    assert_eq!(local_net.validator().get_chain_height().await, target);
+
+    BlockHeight::from_u32(target.into())
 }
 
 /// Will hang if chain does not reach `target_block_height`
 pub async fn sync_to_target_height(
     client: &mut LightClient,
-    target_block_height: u32,
+    target_block_height: BlockHeight,
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
     client.sync_and_await().await?;
-    while u32::from(
-        client
-            .wallet
-            .read()
-            .await
-            .sync_state
-            .fully_scanned_height()
-            .unwrap(),
-    ) < target_block_height
+    while client
+        .wallet
+        .read()
+        .await
+        .sync_state
+        .fully_scanned_height()
+        .unwrap()
+        < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
         client.sync_and_await().await?;

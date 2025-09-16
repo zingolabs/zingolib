@@ -14,15 +14,21 @@ use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
+use testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::commands::RT;
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_infra_services::LocalNet;
+use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::regtest;
+use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
+use zingolib::wallet::network::ZingolibLocalNetwork;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
+
+use crate::commands::RT;
 
 pub mod version;
 
@@ -33,6 +39,10 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short('n')
+                .action(clap::ArgAction::SetTrue))
+            .arg(Arg::new("waitsync")
+                .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
+                .long("waitsync")
                 .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("regtest")
                 .long("regtest")
@@ -99,10 +109,13 @@ fn parse_seed(s: &str) -> Result<String, String> {
     match s.parse::<String>() {
         Ok(s) => {
             let count = s.split_whitespace().count();
-            if count == 24 {
+            if [12, 15, 18, 21, 24].contains(&count) {
                 Ok(s)
             } else {
-                Err(format!("Expected 24 words, but received: {}.", count))
+                Err(format!(
+                    "Expected 12/15/18/21/24 words, but received: {}.",
+                    count
+                ))
             }
         }
         Err(_) => Err("Unexpected failure to parse String!!".to_string()),
@@ -142,19 +155,6 @@ fn report_permission_error() {
             "User {} must have permission to write to '{}/.zcash/' .",
             user, home
         );
-    }
-}
-
-/// If the regtest flag was passed but a non regtest network is selected
-/// exit immediately and vice versa.
-fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
-    match (regtest_manager.is_some(), chain) {
-        (true, ChainType::Regtest(_)) => println!("regtest detected and network set correctly!"),
-        (true, _) => panic!("Regtest flag detected, but unexpected network set! Exiting."),
-        (false, ChainType::Regtest(_)) => {
-            println!("WARNING! regtest network in use but no regtest flag recognized!")
-        }
-        _ => {}
     }
 }
 
@@ -293,38 +293,21 @@ pub fn command_loop(
 pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
-    from: Option<String>,
+    seed: Option<String>,
+    ufvk: Option<String>,
     birthday: u64,
     data_dir: PathBuf,
     sync: bool,
+    waitsync: bool,
     command: Option<String>,
-    regtest_manager: Option<regtest::RegtestManager>,
-    #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
-    child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
     tor_enabled: bool,
 }
 
-fn short_circuit_on_help(params: Vec<String>) {
-    for h in commands::HelpCommand::exec_without_lc(params).lines() {
-        println!("{}", h);
-    }
-    std::process::exit(0x0100);
-}
-
-/// This type manages setup of the zingo-cli utility among its responsibilities:
-///  * parse arguments with standard clap: <https://crates.io/crates/clap>
-///  * behave correctly as a function of each parameter that may have been passed
-///      * add details of above here
-///  * handle parameters as efficiently as possible.
-///      * If a ShortCircuitCommand is specified, then the system should execute
-///        only logic necessary to support that command, in other words "help"
-///        the ShortCircuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
-        let is_regtest = matches.get_flag("regtest"); // Begin short_circuit section
-        let tor_enabled = matches.get_flag("tor"); // Begin short_circuit section
-
+        let is_regtest = matches.get_flag("regtest");
+        let tor_enabled = matches.get_flag("tor");
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
         } else {
@@ -338,21 +321,16 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let seed = matches.get_one::<String>("seed");
-        let viewkey = matches.get_one::<String>("viewkey");
-        let from = if seed.is_some() && viewkey.is_some() {
+        let seed = matches.get_one::<String>("seed").cloned();
+        let ufvk = matches.get_one::<String>("viewkey").cloned();
+        if seed.is_some() && ufvk.is_some() {
             return Err("Cannot load a wallet from both seed phrase and viewkey!".to_string());
-        } else if seed.is_some() {
-            seed
-        } else if viewkey.is_some() {
-            viewkey
-        } else {
-            None
-        };
+        }
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
             .map(|bday| bday.to_string());
-        if from.is_some() && maybe_birthday.is_none() {
+        let from_provided = seed.is_some() || ufvk.is_some();
+        if from_provided && maybe_birthday.is_none() {
             eprintln!("ERROR!");
             eprintln!(
                 "Please specify the wallet birthday (eg. '--birthday 600000') to restore a wallet. (If you want to load the entire blockchain instead, you can use birthday 0. /this would require extensive time and computational resources)"
@@ -363,7 +341,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                     .to_string(),
             );
         }
-        let from = from.map(|seed| seed.to_string());
         if matches.contains_id("chain") && is_regtest {
             return Err("regtest mode incompatible with custom chain selection".to_string());
         }
@@ -377,7 +354,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        let clean_regtest_data = !matches.get_flag("no-clean");
+        // TODO: handle no-clean parameter
+        let _clean_regtest_data = !matches.get_flag("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
         } else if is_regtest {
@@ -385,34 +363,27 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let mut server = matches
+        let server = matches
             .get_one::<http::Uri>("server")
-            .map(|server| server.to_string());
-        let mut child_process_handler = None;
-        // Regtest specific launch:
-        //   * spawn zcashd in regtest mode
-        //   * spawn lighwalletd and connect it to zcashd
-        let regtest_manager = if is_regtest {
-            let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
-            child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
-            server = Some("http://127.0.0.1".to_string());
-            Some(regtest_manager)
-        } else {
-            None
-        };
+            .map(ToString::to_string)
+            .or_else(|| {
+                if is_regtest {
+                    Some("http://127.0.0.1".to_string())
+                } else {
+                    None
+                }
+            });
+        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => {
-                    ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
-                }
+                "regtest" => ChainType::Regtest(ZingolibLocalNetwork::default()),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(zingolib::config::RegtestNetwork::all_upgrades_active())
+            ChainType::Regtest(ZingolibLocalNetwork::default())
         } else {
             ChainType::Mainnet
         };
@@ -426,16 +397,17 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         }
 
         let sync = !matches.get_flag("nosync");
+        let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             params,
             server,
-            from,
+            seed,
+            ufvk,
             birthday,
             data_dir,
             sync,
+            waitsync,
             command,
-            regtest_manager,
-            child_process_handler,
             chaintype,
             tor_enabled,
         })
@@ -454,15 +426,9 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    // Try to get the configuration
-    let data_dir = if let Some(regtest_manager) = filled_template.regtest_manager.clone() {
-        regtest_manager.zingo_datadir
-    } else {
-        filled_template.data_dir.clone()
-    };
     let config = zingolib::config::load_clientconfig(
         filled_template.server.clone(),
-        Some(data_dir),
+        Some(filled_template.data_dir.clone()),
         filled_template.chaintype,
         WalletSettings {
             sync_config: SyncConfig {
@@ -474,14 +440,13 @@ pub fn startup(
         1.try_into().unwrap(),
     )
     .unwrap();
-    regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
-    let mut lightclient = match filled_template.from.clone() {
-        Some(phrase) => LightClient::create_from_wallet(
+    let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
+        LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(phrase).map_err(|e| {
+                    mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
                             format!("Invalid seed phrase. {}", e),
@@ -492,56 +457,46 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create wallet. {}", e),
-                )
-            })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
             config.clone(),
             false,
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create lightclient. {}", e),
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else if let Some(ufvk) = filled_template.ufvk.clone() {
+        // Create client from UFVK
+        LightClient::create_from_wallet(
+            LightWallet::new(
+                config.chain,
+                WalletBase::Ufvk(ufvk),
+                (filled_template.birthday as u32).into(),
+                config.wallet_settings.clone(),
             )
-        })?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
+            config.clone(),
+            false,
+        )
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else if config.wallet_path_exists() {
+        // Open existing wallet from path
+        LightClient::create_from_wallet_path(config.clone())
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+    } else {
+        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
+        println!("Creating a new wallet");
+        // Call the lightwalletd server to get the current block-height
+        // Do a getinfo first, before opening the wallet
+        let server_uri = config.get_lightwalletd_uri();
 
-        None => {
-            if config.wallet_path_exists() {
-                LightClient::create_from_wallet_path(config.clone()).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
-                })?
-            } else {
-                println!("Creating a new wallet");
-                // Call the lightwalletd server to get the current block-height
-                // Do a getinfo first, before opening the wallet
-                let server_uri = config.get_lightwalletd_uri();
-                let chain_height = RT
-                    .block_on(async move {
-                        zingolib::grpc_connector::get_latest_block(server_uri)
-                            .await
-                            .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
-                    })
-                    .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to create lightclient. {}", e),
-                        )
-                    })?;
-                // Create a wallet with height - 100, to protect against reorgs
-                LightClient::new(config.clone(), chain_height - 100, false).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to create lightclient. {}", e),
-                    )
-                })?
-            }
-        }
+        let chain_height = RT
+            .block_on(async move {
+                zingolib::grpc_connector::get_latest_block(server_uri)
+                    .await
+                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+            })
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?;
+
+        LightClient::new(config.clone(), chain_height - 100, false)
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
     };
 
     if filled_template.command.is_none() {
@@ -603,6 +558,42 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
     } else {
+        // Optionally wait for background sync to finish before executing command
+        if cli_config.sync && cli_config.waitsync {
+            use std::{thread, time::Duration};
+            loop {
+                // Poll sync task status
+                command_transmitter
+                    .send(("sync".to_string(), vec!["poll".to_string()]))
+                    .unwrap();
+                match resp_receiver.recv() {
+                    Ok(resp) => {
+                        if resp.starts_with("Error:") {
+                            eprintln!(
+                                "Sync error while waiting: {}\nProceeding to execute the command.",
+                                resp
+                            );
+                            break;
+                        } else if resp.starts_with("Sync completed succesfully:") {
+                            // Sync finished; proceed
+                            break;
+                        } else if resp == "Sync task has not been launched." {
+                            // Try to launch sync and continue waiting
+                            command_transmitter
+                                .send(("sync".to_string(), vec!["run".to_string()]))
+                                .unwrap();
+                            let _ = resp_receiver.recv();
+                            thread::sleep(Duration::from_millis(500));
+                        } else {
+                            // Not ready yet
+                            thread::sleep(Duration::from_millis(500));
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
         command_transmitter
             .send((
                 cli_config.command.clone().unwrap(),
@@ -643,7 +634,50 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
+        Ok(mut cli_config) => {
+            let _wallet_dir = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
+                let wallet_dir = tempfile::tempdir().unwrap();
+                cli_config.data_dir = wallet_dir.path().to_path_buf();
+
+                Some(wallet_dir)
+            } else {
+                None
+            };
+            let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
+                RT.block_on(async move {
+                    Some(
+                        LocalNet::<Lightwalletd, Zcashd>::launch(
+                            LightwalletdConfig {
+                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+                                listen_port: None,
+                                zcashd_conf: PathBuf::new(),
+                                darkside: false,
+                            },
+                            ZcashdConfig {
+                                zcashd_bin: ZCASHD_BIN.clone(),
+                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
+                                rpc_listen_port: None,
+                                activation_heights: ZingolibLocalNetwork::default().into(),
+                                miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
+                                chain_cache: None,
+                            },
+                        )
+                        .await,
+                    )
+                })
+            } else {
+                None
+            };
+
+            dispatch_command_or_start_interactive(&cli_config)
+        }
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
+}
+
+fn short_circuit_on_help(params: Vec<String>) {
+    for h in commands::HelpCommand::exec_without_lc(params).lines() {
+        println!("{}", h);
+    }
+    std::process::exit(0x0100);
 }
