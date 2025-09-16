@@ -23,7 +23,6 @@ zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
-tower_service = { workspace = true }
 hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
@@ -92,6 +91,8 @@ tracing.workspace = true
 [dev-dependencies]
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
+testvectors = { workspace = true }
+tempfile = { workspace = true }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }

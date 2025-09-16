@@ -137,7 +137,8 @@ pub mod send_with_proposal {
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
-                conduct_chain::ConductChain as _, live_chain::LiveChain, with_assertions,
+                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                with_assertions,
             },
             wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
         };
@@ -182,7 +183,8 @@ pub mod send_with_proposal {
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
-        /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// waits up to five blocks for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// as of now, average block time is supposedly about 75 seconds
         mod testnet {
             use zcash_protocol::{PoolType, ShieldedProtocol};
 
@@ -190,155 +192,138 @@ pub mod send_with_proposal {
 
             use super::*;
 
-            /// requires 1 confirmation: expect 3 minute runtime
-            #[ignore = "live testnet: testnet relies on NU6"]
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
-            async fn glory_goddess_simple_send() {
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            async fn testnet_send_to_self_orchard_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
                     examples::TestnetSeedVersion::GloryGoddess,
                 );
+
                 let mut client = sync_example_wallet(case).await;
 
-                with_assertions::assure_propose_shield_bump_sync(
-                    &mut LiveChain::setup().await,
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
+                    vec![(&client_addr, 20_000, None)],
+                    vec![],
                     true,
                 )
                 .await
                 .unwrap();
             }
-
-            #[ignore = "live testnet: testnet relies on NU6"]
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
-            /// this is a live sync test. its execution time scales linearly since last updated
-            /// this is a live send test. whether it can work depends on the state of live wallet on the blockchain
-            /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-            async fn testnet_send_to_self_orchard() {
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            async fn testnet_send_to_self_sapling_glory_goddess() {
                 let case = examples::NetworkSeedVersion::Testnet(
-                    examples::TestnetSeedVersion::ChimneyBetter(
-                        examples::ChimneyBetterVersion::Latest,
-                    ),
-                );
-
-                let mut client = sync_example_wallet(case).await;
-                let client_addr =
-                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
-
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
-                    &mut client,
-                    vec![(&client_addr, 10_000, None)],
-                    vec![],
-                    false,
-                )
-                .await
-                .unwrap();
-            }
-
-            #[ignore = "live testnet: testnet relies on NU6"]
-            #[tokio::test]
-            /// this is a live sync test. its execution time scales linearly since last updated
-            /// note: live send waits 2 minutes for confirmation. expect 3min runtime
-            async fn testnet_shield() {
-                let case = examples::NetworkSeedVersion::Testnet(
-                    examples::TestnetSeedVersion::ChimneyBetter(
-                        examples::ChimneyBetterVersion::Latest,
-                    ),
+                    examples::TestnetSeedVersion::GloryGoddess,
                 );
 
                 let mut client = sync_example_wallet(case).await;
 
-                with_assertions::assure_propose_shield_bump_sync(
-                    &mut LiveChain::setup().await,
-                    &mut client,
-                    true,
-                )
-                .await
-                .unwrap();
-            }
-        }
-
-        /// live sync: execution time increases linearly until example wallet is upgraded
-        /// live send MAINNET: spends on-chain ZEC.
-        /// - waits 150 seconds for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
-        mod mainnet {
-            use zcash_protocol::{PoolType, ShieldedProtocol};
-
-            use crate::testutils::lightclient::get_base_address;
-
-            use super::*;
-
-            /// requires 1 confirmation: expect 3 minute runtime
-            #[tokio::test]
-            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            async fn mainnet_send_to_self_orchard() {
-                let case = examples::NetworkSeedVersion::Mainnet(
-                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-                );
-
-                let mut client = sync_example_wallet(case).await;
-                let client_addr =
-                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
-
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
-                    &mut client,
-                    vec![(&client_addr, 10_000, None)],
-                    vec![],
-                    false,
-                )
-                .await
-                .unwrap();
-            }
-
-            /// requires 1 confirmation: expect 3 minute runtime
-            #[tokio::test]
-            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            async fn mainnet_send_to_self_sapling() {
-                let case = examples::NetworkSeedVersion::Mainnet(
-                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
-                );
-
-                let mut client = sync_example_wallet(case).await;
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
 
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
                     &mut client,
-                    vec![(&client_addr, 400_000, None)],
+                    vec![(&client_addr, 20_000, None)],
                     vec![],
-                    false,
+                    true,
                 )
                 .await
                 .unwrap();
             }
-
-            /// requires 2 confirmations: expect 6 minute runtime
+            #[ignore = "only one test can be run per testnet wallet at a time"]
             #[tokio::test]
-            #[ignore = "dont automatically run hot tests! this test spends actual zec!"]
-            async fn mainnet_send_to_self_transparent_and_then_shield() {
-                let case = examples::NetworkSeedVersion::Mainnet(
-                    examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            /// about 273 seconds
+            async fn testnet_send_to_self_transparent_and_then_shield_glory_goddess() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
                 );
 
                 let mut client = sync_example_wallet(case).await;
+
                 let client_addr = get_base_address(&client, PoolType::Transparent).await;
 
-                with_assertions::propose_send_bump_sync_all_recipients(
-                    &mut LiveChain::setup().await,
+                let environment = &mut NetworkedTestEnvironment::setup().await;
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    environment,
                     &mut client,
-                    vec![(&client_addr, 400_000, None)],
+                    vec![(&client_addr, 100_001, None)],
                     vec![],
-                    false,
+                    true,
                 )
                 .await
                 .unwrap();
 
-                with_assertions::assure_propose_shield_bump_sync(
-                    &mut LiveChain::setup().await,
+                let _ = with_assertions::assure_propose_shield_bump_sync(
+                    environment,
                     &mut client,
-                    false,
+                    true,
+                )
+                .await
+                .unwrap();
+            }
+            #[ignore = "this needs to pass CI, but we arent there with testnet"]
+            #[tokio::test]
+            /// this is a networked sync test. its execution time scales linearly since last updated
+            /// this is a networked send test. whether it can work depends on the state of live wallet on the blockchain
+            async fn testnet_send_to_self_all_pools_glory_goddess() {
+                let case = examples::NetworkSeedVersion::Testnet(
+                    examples::TestnetSeedVersion::GloryGoddess,
+                );
+
+                let mut client = sync_example_wallet(case).await;
+                let environment = &mut NetworkedTestEnvironment::setup().await;
+
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 14_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let client_addr =
+                    get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut client,
+                    vec![(&client_addr, 15_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let client_addr = get_base_address(&client, PoolType::Transparent).await;
+                with_assertions::assure_propose_send_bump_sync_all_recipients(
+                    environment,
+                    &mut client,
+                    vec![(&client_addr, 100_000, None)],
+                    vec![],
+                    true,
+                )
+                .await
+                .unwrap();
+
+                let _ = with_assertions::assure_propose_shield_bump_sync(
+                    environment,
+                    &mut client,
+                    true,
                 )
                 .await
                 .unwrap();

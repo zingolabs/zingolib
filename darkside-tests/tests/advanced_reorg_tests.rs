@@ -18,9 +18,9 @@ use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
-    network::{ActivationHeights, localhost_uri},
+    network::localhost_uri,
 };
-use zingolib::wallet::summary::data::ValueTransferKind;
+use zingolib::wallet::{network::ZingolibLocalNetwork, summary::data::ValueTransferKind};
 use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
@@ -51,7 +51,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -215,7 +215,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -379,7 +379,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -565,7 +565,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -826,7 +826,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -1032,7 +1032,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        ActivationHeights::default(),
+        ZingolibLocalNetwork::default(),
     );
 
     light_client.sync_and_await().await.unwrap();

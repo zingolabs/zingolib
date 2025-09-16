@@ -33,20 +33,36 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder
-            .build_faucet(false, self.local_net.validator().activation_heights())
+        self.client_builder.build_faucet(
+            false,
+            self.local_net.validator().activation_heights().into(),
+        )
     }
 
     fn zingo_config(&mut self) -> crate::config::ZingoConfig {
-        self.client_builder
-            .make_unique_data_dir_and_load_config(self.local_net.validator().activation_heights())
+        self.client_builder.make_unique_data_dir_and_load_config(
+            self.local_net.validator().activation_heights().into(),
+        )
     }
 
-    async fn bump_chain(&mut self) {
-        self.local_net.validator().generate_blocks(1).await.unwrap();
+    async fn increase_chain_height(&mut self) {
+        let start_height = self.local_net.validator().get_chain_height().await;
+        self.local_net
+            .validator()
+            .generate_blocks(1)
+            .await
+            .expect("Called for side effect, failed!");
+        assert_eq!(
+            self.local_net.validator().get_chain_height().await,
+            start_height + 1
+        );
     }
 
     fn lightserver_uri(&self) -> Option<http::Uri> {
         Some(localhost_uri(self.local_net.indexer().listen_port()))
+    }
+
+    fn confirmation_patience_blocks(&self) -> usize {
+        1
     }
 }

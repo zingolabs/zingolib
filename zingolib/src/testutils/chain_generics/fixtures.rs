@@ -3,6 +3,7 @@
 
 use pepper_sync::wallet::SaplingNote;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
@@ -37,7 +38,7 @@ where
 
     let mut recipient = environment.create_client().await;
     dbg!("TEST 1");
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
         vec![
@@ -96,7 +97,7 @@ where
     assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
     dbg!("TEST 2");
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
         vec![(&sender_orchard_addr, send_value_self, None)],
@@ -136,7 +137,7 @@ where
 
     for _ in 0..n {
         let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::propose_send_bump_sync_all_recipients(
+            with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &mut primary,
                 vec![
@@ -150,7 +151,11 @@ where
             .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
-            (MARGINAL_FEE.into_u64() * 4, recorded_value, recorded_change)
+            (
+                Option::unwrap(MARGINAL_FEE * 4_u64),
+                recorded_value,
+                recorded_change
+            )
         );
 
         let (recorded_fee, recorded_value) = with_assertions::assure_propose_shield_bump_sync(
@@ -162,11 +167,14 @@ where
         .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value),
-            (MARGINAL_FEE.into_u64() * 3, 100_000 - recorded_fee)
+            (
+                Option::unwrap(MARGINAL_FEE * 3_u64),
+                Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
+            )
         );
 
         let (recorded_fee, recorded_value, recorded_change) =
-            with_assertions::propose_send_bump_sync_all_recipients(
+            with_assertions::assure_propose_send_bump_sync_all_recipients(
                 &mut environment,
                 &mut secondary,
                 vec![(
@@ -182,7 +190,11 @@ where
             .unwrap();
         assert_eq!(
             (recorded_fee, recorded_value, recorded_change),
-            (MARGINAL_FEE.into_u64() * 2, 50_000, recorded_change)
+            (
+                Option::unwrap(MARGINAL_FEE * 2_u64),
+                Zatoshis::from_u64(50_000).unwrap(),
+                recorded_change
+            )
         );
     }
 }
@@ -203,7 +215,7 @@ where
 
     // send a bunch of dust
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut primary,
             vec![
@@ -226,7 +238,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            11 * MARGINAL_FEE.into_u64(),
+            Option::unwrap(MARGINAL_FEE * 11_u64),
             recorded_value,
             recorded_change
         )
@@ -234,7 +246,7 @@ where
 
     // combine the only valid sapling note with the only valid orchard note to send
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(
@@ -249,7 +261,11 @@ where
         .unwrap();
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
-        (4 * MARGINAL_FEE.into_u64(), 10_000, recorded_change)
+        (
+            Option::unwrap(MARGINAL_FEE * 4_u64),
+            Zatoshis::from_u64(10_000).unwrap(),
+            recorded_change
+        )
     );
 }
 
@@ -278,7 +294,7 @@ where
     let secondary_sapling_addr =
         get_base_address(&secondary, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut primary,
             transaction_1_values
@@ -292,7 +308,7 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            expected_fee_for_transaction_1,
+            Zatoshis::from_u64(expected_fee_for_transaction_1).unwrap(),
             recorded_value,
             recorded_change
         )
@@ -330,7 +346,7 @@ where
     let primary_orchard_addr =
         get_base_address(&primary, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(
@@ -346,9 +362,9 @@ where
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
         (
-            expected_fee_for_transaction_2,
-            expected_value_from_transaction_2,
-            0
+            Zatoshis::from_u64(expected_fee_for_transaction_2).unwrap(),
+            Zatoshis::from_u64(expected_value_from_transaction_2).unwrap(),
+            Zatoshis::from_u64(0).unwrap()
         )
     );
 
@@ -395,7 +411,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
     let secondary_fund = 100_000 + expected_fee - underflow_amount;
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut primary,
         vec![(&secondary_addr, secondary_fund, None)],
@@ -482,7 +498,7 @@ pub async fn any_source_sends_to_any_receiver<CC>(
 
     let expected_fee = fee_tables::one_to_one(Some(shpool), pool, true);
 
-    with_assertions::propose_send_bump_sync_all_recipients(
+    with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut primary,
         vec![(
@@ -497,7 +513,7 @@ pub async fn any_source_sends_to_any_receiver<CC>(
     .unwrap();
 
     let (recorded_fee, recorded_value, recorded_change) =
-        with_assertions::propose_send_bump_sync_all_recipients(
+        with_assertions::assure_propose_send_bump_sync_all_recipients(
             &mut environment,
             &mut secondary,
             vec![(
@@ -512,6 +528,10 @@ pub async fn any_source_sends_to_any_receiver<CC>(
         .unwrap();
     assert_eq!(
         (recorded_fee, recorded_value, recorded_change),
-        (expected_fee, receiver_value, change)
+        (
+            Zatoshis::from_u64(expected_fee).unwrap(),
+            Zatoshis::from_u64(receiver_value).unwrap(),
+            Zatoshis::from_u64(change).unwrap()
+        )
     );
 }

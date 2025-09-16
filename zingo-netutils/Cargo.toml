@@ -20,9 +20,8 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-tower_service = { workspace = true }
 webpki-roots = { workspace = true }
-lightwallet-protocol.workspace = true
+zcash_client_backend = { workspace = true }
 
 [features]
 test-features = []
