@@ -26,12 +26,18 @@ The binary will be available at `target/release/zingo-cli-regtest`.
 
 ## Running
 
+By default, zingo-cli stores wallet data in a `wallets/` directory in the current working directory.
+
 ### Mainnet
 
 To connect to mainnet:
 
 ```bash
+# Uses default wallet location: ./wallets/
 ./target/release/zingo-cli
+
+# Or specify a custom data directory:
+./target/release/zingo-cli --data-dir /path/to/mainnet-wallet
 ```
 
 ### Testnet
@@ -39,12 +45,14 @@ To connect to mainnet:
 To connect to testnet, use the `--chain` flag:
 
 ```bash
+# Uses default wallet location: ./wallets-testnet/
 ./target/release/zingo-cli --chain testnet
+
+# Or specify a custom data directory:
+./target/release/zingo-cli --chain testnet --data-dir /path/to/testnet-wallet
 ```
 
-**Note:** If you have an existing wallet created for a different network (mainnet), you'll need to either:
-- Use a different data directory: `./target/release/zingo-cli --chain testnet --data-dir /path/to/testnet-wallet`
-- Or remove/rename your existing wallet directory before switching networks
+**Note:** Each network (mainnet, testnet) requires its own wallet data. If you get an error about wallet chain name mismatch, ensure you're using the correct data directory for your chosen network.
 
 ### Regtest Mode
 
