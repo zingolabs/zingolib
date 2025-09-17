@@ -6,13 +6,13 @@ A command-line interface for the Zingo wallet.
 
 ### Default Build (Mainnet/Testnet)
 
-To build the standard zingocli binary that works with mainnet and testnet:
+To build the standard zingo-cli binary that works with mainnet and testnet:
 
 ```bash
 cargo build --release
 ```
 
-The binary will be available at `target/release/zingocli`.
+The binary will be available at `target/release/zingo-cli`.
 
 ### Regtest Build
 
@@ -31,7 +31,7 @@ The binary will be available at `target/release/zingo-cli-regtest`.
 To connect to mainnet:
 
 ```bash
-./target/release/zingocli
+./target/release/zingo-cli
 ```
 
 ### Testnet
@@ -39,7 +39,7 @@ To connect to mainnet:
 To connect to testnet, use the `--chain` flag:
 
 ```bash
-./target/release/zingocli --chain testnet
+./target/release/zingo-cli --chain testnet
 ```
 
 ### Regtest Mode
