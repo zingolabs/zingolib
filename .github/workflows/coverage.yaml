@@ -21,9 +21,6 @@ jobs:
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./libtonode-tests/regtest/bin/
 
-      - name: Symlink zcash parameters
-        run: ln -s /root/.zcash-params /github/home
-
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
