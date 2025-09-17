@@ -65,7 +65,7 @@ To run in regtest mode, use the specially compiled regtest binary:
 This will:
 - Launch a local regtest network (zcashd and lightwalletd)
 - Start the network on port 17555
-- Create a new wallet automatically
+- Create a new, temporary wallet automatically
 
 Note: The regtest binary is purpose-built with only the necessary dependencies for regtest operation, as indicated by the project's dependency elision approach.
 
