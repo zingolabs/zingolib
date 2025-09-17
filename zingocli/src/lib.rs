@@ -635,7 +635,7 @@ pub fn run_regtest_cli() {
     std::fs::create_dir_all(&data_dir).expect("Failed to create regtest directory");
 
     // Use a temporary directory for wallet data in regtest
-    let wallet_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let wallet_dir = zingolib::tempfile::tempdir().expect("Failed to create temp dir");
     let wallet_data_dir = wallet_dir.path().to_path_buf();
 
     let cli_config = ConfigTemplate {

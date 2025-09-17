@@ -12,7 +12,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingo_infra_services::{
+use zingolib::zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
@@ -208,7 +208,7 @@ impl TreeState {
 /// Returns a darkside handler and darkside connector.
 /// Generates a genesis block and adds initial treestate.
 pub async fn init_darksidewalletd(
-    set_port: Option<portpicker::Port>,
+    set_port: Option<zingolib::portpicker::Port>,
 ) -> Result<(Lightwalletd, DarksideConnector), String> {
     let mut lightwalletd_config = LightwalletdConfig::default_test();
     lightwalletd_config.listen_port = set_port;
@@ -309,7 +309,7 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingo_infra_services::{indexer::Lightwalletd, network::ActivationHeights};
+    use zingolib::zingo_infra_services::{indexer::Lightwalletd, network::ActivationHeights};
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -319,9 +319,9 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
-    use testvectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::ClientBuilder;
+    use zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,
@@ -336,10 +336,12 @@ pub mod scenarios {
     }
     impl DarksideEnvironment {
         /// Initialises and launches darksidewalletd, stages the genesis block and creates the lightclient builder
-        pub async fn new(set_port: Option<portpicker::Port>) -> DarksideEnvironment {
+        pub async fn new(set_port: Option<zingolib::portpicker::Port>) -> DarksideEnvironment {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
-            let client_builder =
-                ClientBuilder::new(darkside_connector.0.clone(), tempfile::tempdir().unwrap());
+            let client_builder = ClientBuilder::new(
+                darkside_connector.0.clone(),
+                zingolib::tempfile::tempdir().unwrap(),
+            );
             let activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
@@ -373,7 +375,7 @@ pub mod scenarios {
                 panic!("Error: Faucet already exists!");
             }
             self.faucet = Some(self.client_builder.build_client(
-                testvectors::seeds::DARKSIDE_SEED.to_string(),
+                zingolib::testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
                 self.activation_heights.into(),

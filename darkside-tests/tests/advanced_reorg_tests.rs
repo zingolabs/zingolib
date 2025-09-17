@@ -13,14 +13,14 @@ use darkside_tests::{
     utils::{read_dataset, read_lines},
 };
 
-use tempfile::TempDir;
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_infra_services::{
+use zingolib::tempfile::TempDir;
+use zingolib::wallet::{network::ZingolibLocalNetwork, summary::data::ValueTransferKind};
+use zingolib::zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
-use zingolib::wallet::{network::ZingolibLocalNetwork, summary::data::ValueTransferKind};
 use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{

@@ -17,8 +17,14 @@ pub mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;
 
-#[cfg(feature = "testvectors")]
+#[cfg(feature = "test-elevation")]
+pub use portpicker;
+#[cfg(feature = "test-elevation")]
+pub use tempfile;
+#[cfg(feature = "test-elevation")]
 pub use testvectors;
+#[cfg(feature = "test-elevation")]
+pub use zingo_infra_services;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

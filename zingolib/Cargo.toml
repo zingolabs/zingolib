@@ -13,7 +13,7 @@ license = "MIT"
 [features]
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-test-elevation = ["portpicker", "testvectors", "tempfile"]
+test-elevation = ["portpicker", "testvectors", "tempfile", "zingo-infra-services"]
 testvectors = ["dep:testvectors"]
 zaino-test = ['test-elevation']
 
@@ -32,8 +32,7 @@ tokio-rustls = { workspace = true }
 webpki-roots = { workspace = true }
 tower = { workspace = true }
 
-# TODO: separate activation heights into different crate and make this optional for test-elevation
-zingo-infra-services = { workspace = true }
+zingo-infra-services = { workspace = true, optional = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
