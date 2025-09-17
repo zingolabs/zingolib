@@ -9,10 +9,10 @@ path = "src/bin/zingo-cli-regtest.rs"
 required-features = ["regtest"]
 
 [features]
-regtest = []
+regtest = ["zingolib/test-elevation"]
 
 [dependencies]
-zingolib = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true }
 pepper-sync = { workspace = true }
 
 zcash_protocol = { workspace = true }
