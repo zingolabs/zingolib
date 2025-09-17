@@ -14,18 +14,12 @@ use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
-use testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::wallet::network::ZingolibLocalNetwork;
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -44,17 +38,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
                 .long("waitsync")
                 .action(clap::ArgAction::SetTrue))
-            .arg(Arg::new("regtest")
-                .long("regtest")
-                .help("Regtest mode")
-                .action(clap::ArgAction::SetTrue) )
-            .arg(Arg::new("no-clean")
-                .long("no-clean")
-                .help("Don't clean regtest state before running. Regtest mode only")
-                .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet" or "testnet""#))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -306,7 +292,6 @@ pub struct ConfigTemplate {
 
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
-        let is_regtest = matches.get_flag("regtest");
         let tor_enabled = matches.get_flag("tor");
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
@@ -341,9 +326,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                     .to_string(),
             );
         }
-        if matches.contains_id("chain") && is_regtest {
-            return Err("regtest mode incompatible with custom chain selection".to_string());
-        }
         let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
@@ -354,36 +336,22 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        // TODO: handle no-clean parameter
-        let _clean_regtest_data = !matches.get_flag("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
-        } else if is_regtest {
-            zingolib::testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
         let server = matches
             .get_one::<http::Uri>("server")
-            .map(ToString::to_string)
-            .or_else(|| {
-                if is_regtest {
-                    Some("http://127.0.0.1".to_string())
-                } else {
-                    None
-                }
-            });
+            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(ZingolibLocalNetwork::default()),
                 _ => return Err(chain.clone()),
             }
-        } else if is_regtest {
-            ChainType::Regtest(ZingolibLocalNetwork::default())
         } else {
             ChainType::Mainnet
         };
@@ -634,41 +602,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(mut cli_config) => {
-            let _wallet_dir = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                let wallet_dir = tempfile::tempdir().unwrap();
-                cli_config.data_dir = wallet_dir.path().to_path_buf();
-
-                Some(wallet_dir)
-            } else {
-                None
-            };
-            let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                RT.block_on(async move {
-                    Some(
-                        LocalNet::<Lightwalletd, Zcashd>::launch(
-                            LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-                                listen_port: None,
-                                zcashd_conf: PathBuf::new(),
-                                darkside: false,
-                            },
-                            ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN.clone(),
-                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-                                rpc_listen_port: None,
-                                activation_heights: ZingolibLocalNetwork::default().into(),
-                                miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
-                                chain_cache: None,
-                            },
-                        )
-                        .await,
-                    )
-                })
-            } else {
-                None
-            };
-
+        Ok(cli_config) => {
             dispatch_command_or_start_interactive(&cli_config)
         }
         Err(e) => eprintln!("Error filling config template: {:?}", e),
