@@ -3,6 +3,9 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2024"
 
+[features]
+regtest = ["zingolib/testvectors"]
+
 [dependencies]
 zingolib = { workspace = true, features = ["test-elevation"] }
 pepper-sync = { workspace = true }

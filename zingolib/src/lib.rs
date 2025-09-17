@@ -17,7 +17,7 @@ pub mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "testvectors")]
 pub use testvectors;
 
 // This line includes the generated `git_description()` function directly into this scope.
