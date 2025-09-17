@@ -14,6 +14,7 @@ license = "MIT"
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
 test-elevation = ["portpicker", "testvectors", "tempfile"]
+test-utils = ["testvectors"]
 zaino-test = ['test-elevation']
 
 [dependencies]
