@@ -6,6 +6,9 @@
 
 mod commands;
 
+#[cfg(feature = "regtest")]
+mod regtest;
+
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -602,9 +605,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(cli_config) => {
-            dispatch_command_or_start_interactive(&cli_config)
-        }
+        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
 }

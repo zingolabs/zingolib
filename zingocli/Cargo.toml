@@ -4,12 +4,12 @@ version = "0.2.0"
 edition = "2024"
 
 [features]
-regtest = ["zingolib/testvectors"]
+regtest = ["dep:zingo-infra-services", "dep:tempfile", "zingolib/testvectors"]
 
 [dependencies]
 zingolib = { workspace = true, features = ["test-elevation"] }
 pepper-sync = { workspace = true }
-zingo-infra-services = { workspace = true }
+zingo-infra-services = { workspace = true, optional = true }
 
 zcash_protocol = { workspace = true }
 
@@ -29,4 +29,4 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
-tempfile = { workspace = true }
+tempfile = { workspace = true, optional = true }
