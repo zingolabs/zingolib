@@ -615,8 +615,8 @@ pub fn run_cli() {
 /// It bypasses clap entirely and directly sets up a regtest environment
 #[cfg(feature = "regtest")]
 pub fn run_regtest_cli() {
-    use zingolib::wallet::network::ZingolibLocalNetwork;
     use crate::commands::RT;
+    use zingolib::wallet::network::ZingolibLocalNetwork;
 
     println!("Launching local regtest network...");
 
@@ -640,14 +640,15 @@ pub fn run_regtest_cli() {
 
     let cli_config = ConfigTemplate {
         params: vec![],
-        server: zingolib::config::construct_lightwalletd_uri(
-            Some(format!("http://127.0.0.1:{}", lightwalletd_port))
-        ),
+        server: zingolib::config::construct_lightwalletd_uri(Some(format!(
+            "http://127.0.0.1:{}",
+            lightwalletd_port
+        ))),
         seed: None,
         ufvk: None,
         birthday: 0,
         data_dir: wallet_data_dir,
-        sync: false,  // Don't auto-sync in regtest
+        sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
         chaintype: ChainType::Regtest(ZingolibLocalNetwork::default()),
