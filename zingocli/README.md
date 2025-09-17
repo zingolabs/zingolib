@@ -42,6 +42,10 @@ To connect to testnet, use the `--chain` flag:
 ./target/release/zingo-cli --chain testnet
 ```
 
+**Note:** If you have an existing wallet created for a different network (mainnet), you'll need to either:
+- Use a different data directory: `./target/release/zingo-cli --chain testnet --data-dir /path/to/testnet-wallet`
+- Or remove/rename your existing wallet directory before switching networks
+
 ### Regtest Mode
 
 To run in regtest mode, use the specially compiled regtest binary:
