@@ -12,9 +12,6 @@ ci = ["zingolib/ci"]
 zingolib = { workspace = true, features = ["test-elevation"] }
 zingo-status = { workspace = true }
 pepper-sync = { workspace = true }
-testvectors = { workspace = true }
-
-zingo-infra-services = { workspace = true }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }
@@ -27,7 +24,6 @@ bip0039.workspace = true
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 itertools = { workspace = true }
-tempfile.workspace = true
 proptest.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

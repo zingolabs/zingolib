@@ -3320,7 +3320,6 @@ dependencies = [
  "pepper-sync",
  "proptest",
  "rustls 0.23.31",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3328,9 +3327,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
- "zingo-infra-services",
  "zingo-status",
- "zingo-testvectors",
  "zingolib",
  "zip32",
 ]
