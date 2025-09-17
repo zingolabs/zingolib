@@ -610,6 +610,58 @@ pub fn run_cli() {
     }
 }
 
+/// Run CLI in regtest mode
+/// This function is only available when the regtest feature is enabled
+/// It bypasses clap entirely and directly sets up a regtest environment
+#[cfg(feature = "regtest")]
+pub fn run_regtest_cli() {
+    use zingolib::wallet::network::ZingolibLocalNetwork;
+    use crate::commands::RT;
+
+    println!("Launching local regtest network...");
+
+    // Launch the local network first
+    let local_net = RT.block_on(regtest::launch_local_net());
+
+    // Get the lightwalletd port from the launched network
+    let lightwalletd_port = local_net.indexer().port();
+
+    println!("Local network launched on port {}", lightwalletd_port);
+
+    // Create a regtest-specific config directly
+    let data_dir = regtest::get_regtest_dir();
+
+    // Ensure the regtest directory exists
+    std::fs::create_dir_all(&data_dir).expect("Failed to create regtest directory");
+
+    // Use a temporary directory for wallet data in regtest
+    let wallet_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let wallet_data_dir = wallet_dir.path().to_path_buf();
+
+    let cli_config = ConfigTemplate {
+        params: vec![],
+        server: zingolib::config::construct_lightwalletd_uri(
+            Some(format!("http://127.0.0.1:{}", lightwalletd_port))
+        ),
+        seed: None,
+        ufvk: None,
+        birthday: 0,
+        data_dir: wallet_data_dir,
+        sync: false,  // Don't auto-sync in regtest
+        waitsync: false,
+        command: None,
+        chaintype: ChainType::Regtest(ZingolibLocalNetwork::default()),
+        tor_enabled: false,
+    };
+
+    // Keep the local network and temp dir alive for the duration of the CLI
+    let _local_net = local_net;
+    let _wallet_dir = wallet_dir;
+
+    // Start the CLI in interactive mode
+    dispatch_command_or_start_interactive(&cli_config)
+}
+
 fn short_circuit_on_help(params: Vec<String>) {
     for h in commands::HelpCommand::exec_without_lc(params).lines() {
         println!("{}", h);
