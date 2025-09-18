@@ -25,3 +25,6 @@ zcash_client_backend = { workspace = true }
 
 [features]
 test-features = []
+
+[dev-dependencies]
+rustls-pemfile.workspace = true

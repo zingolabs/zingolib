@@ -34,3 +34,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 http = { workspace = true }
+
+[dev-dependencies]
+rustls.workspace = true

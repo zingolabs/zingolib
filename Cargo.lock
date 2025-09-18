@@ -1094,6 +1094,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e47641d3deaf41fb1538ac1f54735925e275eaf3bf4d55c81b137fba797e5cbb"
 
 [[package]]
+name = "concat-idents"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f76990911f2267d837d9d0ad060aa63aaad170af40904b29461734c339030d4d"
+dependencies = [
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3314,6 +3324,7 @@ dependencies = [
  "json",
  "pepper-sync",
  "proptest",
+ "rustls 0.23.31",
  "tempfile",
  "tokio",
  "tracing",
@@ -5221,6 +5232,15 @@ dependencies = [
  "rustls-pki-types",
  "schannel",
  "security-framework 3.4.0",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -9171,6 +9191,7 @@ dependencies = [
 name = "zingo-memo"
 version = "0.0.1"
 dependencies = [
+ "rand 0.8.5",
  "zcash_address 0.9.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_client_backend",
  "zcash_encoding 0.3.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
@@ -9189,6 +9210,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "prost",
+ "rustls-pemfile",
  "thiserror 2.0.16",
  "tokio-rustls",
  "tonic 0.13.1",
@@ -9208,6 +9230,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.16",
+ "tokio",
  "zcash_client_backend",
  "zcash_encoding 0.3.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
 ]
@@ -9239,6 +9262,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
+ "concat-idents",
  "dirs",
  "futures",
  "hex",
