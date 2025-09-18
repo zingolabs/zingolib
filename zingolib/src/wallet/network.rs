@@ -1,5 +1,5 @@
 use zcash_protocol::consensus::{BlockHeight, Parameters};
-#[cfg(feature = "test-elevation")]
+#[cfg(any(test, feature = "test-elevation"))]
 use zingo_infra_services::network::ActivationHeights;
 
 /// A struct representing a Local Network.
@@ -39,7 +39,7 @@ impl Default for ZingolibLocalNetwork {
     }
 }
 
-#[cfg(feature = "test-elevation")]
+#[cfg(any(test, feature = "test-elevation"))]
 impl From<ActivationHeights> for ZingolibLocalNetwork {
     fn from(activation_heights: ActivationHeights) -> Self {
         ZingolibLocalNetwork {
@@ -82,7 +82,7 @@ impl From<ActivationHeights> for ZingolibLocalNetwork {
     }
 }
 
-#[cfg(feature = "test-elevation")]
+#[cfg(any(test, feature = "test-elevation"))]
 impl From<ZingolibLocalNetwork> for ActivationHeights {
     fn from(zingolib_local_network: ZingolibLocalNetwork) -> Self {
         ActivationHeights::new(zingolib_local_network.inner)
