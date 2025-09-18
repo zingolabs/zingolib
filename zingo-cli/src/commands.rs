@@ -217,7 +217,7 @@ impl Command for ParseAddressCommand {
             zcash_client_backend::address::Address,
             zingolib::config::ChainType,
         )> {
-            let chains = vec![
+            let chains = [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
                 #[cfg(feature = "regtest")]
