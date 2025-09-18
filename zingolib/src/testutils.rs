@@ -37,6 +37,12 @@ pub mod macros;
 pub mod paths;
 pub mod scenarios;
 
+// Re-export test dependencies for convenience
+pub use portpicker;
+pub use tempfile;
+pub use testvectors;
+pub use zingo_infra_services;
+
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();

@@ -4,10 +4,10 @@
 use std::path::PathBuf;
 use zingolib::testutils::local_network::ZingolibLocalNetwork;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::testvectors::REG_O_ADDR_FROM_ABANDONART;
-use zingolib::zingo_infra_services::LocalNet;
-use zingolib::zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingolib::zingo_infra_services::validator::{Zcashd, ZcashdConfig};
+use zingolib::testutils::testvectors::REG_O_ADDR_FROM_ABANDONART;
+use zingolib::testutils::zingo_infra_services::LocalNet;
+use zingolib::testutils::zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
+use zingolib::testutils::zingo_infra_services::validator::{Zcashd, ZcashdConfig};
 
 /// Launch a local regtest network
 pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {

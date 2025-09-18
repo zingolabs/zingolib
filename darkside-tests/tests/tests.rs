@@ -4,12 +4,12 @@ use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
 use darkside_tests::utils::update_tree_states_for_transaction;
-use zingolib::tempfile::TempDir;
-use zingolib::testvectors::seeds::DARKSIDE_SEED;
-use zingolib::zingo_infra_services::indexer::Indexer;
-use zingolib::zingo_infra_services::indexer::Lightwalletd;
-use zingolib::zingo_infra_services::indexer::LightwalletdConfig;
-use zingolib::zingo_infra_services::network::localhost_uri;
+use zingolib::testutils::tempfile::TempDir;
+use zingolib::testutils::testvectors::seeds::DARKSIDE_SEED;
+use zingolib::testutils::zingo_infra_services::indexer::Indexer;
+use zingolib::testutils::zingo_infra_services::indexer::Lightwalletd;
+use zingolib::testutils::zingo_infra_services::indexer::LightwalletdConfig;
+use zingolib::testutils::zingo_infra_services::network::localhost_uri;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
@@ -159,7 +159,7 @@ async fn sent_transaction_reorged_into_mempool() {
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
-        zingolib::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+        zingolib::testutils::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
         activation_heights,

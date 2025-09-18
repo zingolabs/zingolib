@@ -7,8 +7,8 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use zcash_protocol::value::Zatoshis;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
-use zingolib::testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
@@ -143,7 +143,9 @@ mod fast {
     };
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::zingo_infra_services::{network::ActivationHeights, validator::Validator};
+    use zingolib::testutils::zingo_infra_services::{
+        network::ActivationHeights, validator::Validator,
+    };
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::local_network::ZingolibLocalNetwork,
@@ -1416,11 +1418,13 @@ mod slow {
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::local_network::ZingolibLocalNetwork;
+    use zingolib::testutils::testvectors::TEST_TXID;
+    use zingolib::testutils::zingo_infra_services::network::ActivationHeights;
+    use zingolib::testutils::zingo_infra_services::validator::Validator;
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
         encoded_sapling_address_from_ua,
     };
-    use zingolib::testvectors::TEST_TXID;
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
@@ -1430,8 +1434,6 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
     };
     use zingolib::wallet::{WalletSettings, summary};
-    use zingolib::zingo_infra_services::network::ActivationHeights;
-    use zingolib::zingo_infra_services::validator::Validator;
     use zip32::AccountId;
 
     use super::*;
@@ -1868,7 +1870,7 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(
                     &mut watch_client,
-                    vec![(zingolib::testvectors::EXT_TADDR, 1000, None)]
+                    vec![(zingolib::testutils::testvectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
                 Err(QuickSendError::SendError(SendError::CalculateSendError(
@@ -1918,7 +1920,11 @@ mod slow {
         let sent_value = 20_000;
         let sent_transaction_error = from_inputs::quick_send(
             &mut recipient,
-            vec![(zingolib::testvectors::EXT_TADDR, sent_value, None)],
+            vec![(
+                zingolib::testutils::testvectors::EXT_TADDR,
+                sent_value,
+                None,
+            )],
         )
         .await
         .unwrap_err();
