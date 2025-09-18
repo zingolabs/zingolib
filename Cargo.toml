@@ -6,7 +6,7 @@
 members = [
     "libtonode-tests",
     "darkside-tests",
-    "zingocli",
+    "zingo-cli",
     "zingolib",
     "zingo-netutils",
     "zingo-memo",
