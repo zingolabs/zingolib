@@ -461,7 +461,6 @@ impl WalletWrite for LightWallet {
             .collect())
     }
 
-    // TODO: implement
     fn set_transaction_status(
         &mut self,
         _txid: TxId,
@@ -470,13 +469,12 @@ impl WalletWrite for LightWallet {
         unimplemented!()
     }
 
-    // TODO: implement
     fn notify_address_checked(
         &mut self,
         _request: zcash_client_backend::data_api::TransactionsInvolvingAddress,
         _as_of_height: BlockHeight,
     ) -> Result<(), Self::Error> {
-        todo!()
+        unimplemented!()
     }
 }
 
@@ -585,8 +583,8 @@ impl InputSource for LightWallet {
     ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
             .get_target_and_anchor_heights(confirmations_policy.trusted())
-            .unwrap()
-            .unwrap(); // TODO: remove unwraps
+            .expect("infallible")
+            .ok_or(WalletError::NoSyncData)?;
 
         let mut exclude_sapling = exclude
             .iter()
@@ -771,9 +769,7 @@ impl InputSource for LightWallet {
         Ok(self
             .spendable_transparent_coins(
                 target_height.into(),
-                // TODO: Should we use the `trusted` or `untrusted` confirmations?
-                NonZeroU32::new(min_confirmations.trusted().into())
-                    .ok_or(WalletError::MinimumConfirmationError)?,
+                min_confirmations.allow_zero_conf_shielding(),
             )
             .into_iter()
             .filter(|&output| output.address() == address)
