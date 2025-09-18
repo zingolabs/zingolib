@@ -30,7 +30,7 @@ impl LightWallet {
                     if txid == transaction.txid() {
                         let spend = Op::transaction_inputs(transaction)
                             .into_iter()
-                            .find(|&input| (output.spend_link() == Some(input.clone())));
+                            .find(|&input| output.spend_link() == Some(input.clone()));
 
                         if spend.is_none() {
                             return Some(Err(SpendError::IncorrectSpendingTransaction {
