@@ -1,7 +1,5 @@
 //! creating proposals from wallet data
 
-use std::num::NonZeroU32;
-
 use zcash_client_backend::{
     data_api::wallet::{ConfirmationsPolicy, input_selection::GreedyInputSelector},
     fees::{DustAction, DustOutputPolicy},

@@ -1,7 +1,5 @@
 //! All things needed to create, manaage, and use notes
 
-use std::num::NonZeroU32;
-
 use shardtree::store::ShardStore;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
