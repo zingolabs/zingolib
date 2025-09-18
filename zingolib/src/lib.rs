@@ -12,7 +12,7 @@ pub mod lightclient;
 pub mod utils;
 pub mod wallet;
 
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(test)]
 pub mod mocks;
 #[cfg(any(test, feature = "test-elevation"))]
 pub mod testutils;
