@@ -327,8 +327,7 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let activation_heights = ActivationHeights::default();
-        let config = ZingoConfig::build(ChainType::Regtest(activation_heights))
+        let config = ZingoConfig::build(ChainType::Regtest(ActivationHeights::default().inner()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .create();
         let mut lc = LightClient::create_from_wallet(

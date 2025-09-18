@@ -1,7 +1,9 @@
 //! creating proposals from wallet data
 
+use std::num::NonZeroU32;
+
 use zcash_client_backend::{
-    data_api::wallet::input_selection::GreedyInputSelector,
+    data_api::wallet::{ConfirmationsPolicy, input_selection::GreedyInputSelector},
     fees::{DustAction, DustOutputPolicy},
     zip321::TransactionRequest,
 };
@@ -57,7 +59,9 @@ impl LightWallet {
             &input_selector,
             &change_strategy,
             request,
-            self.wallet_settings.min_confirmations,
+            // TODO: Is this the right configuration?
+            // self.wallet_settings.min_confirmations,
+            ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
         )
         .map_err(ProposeSendError::Proposal)
     }
@@ -113,7 +117,8 @@ impl LightWallet {
             Zatoshis::const_from_u64(10_000),
             &transparent_addresses,
             account_id,
-            1,
+            // TODO: Should `allow_zero_conf_shielding` be true?
+            ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).unwrap(), true),
         )
         .map_err(ProposeShieldError::Component)?;
 

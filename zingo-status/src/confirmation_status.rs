@@ -253,16 +253,16 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Calculated(_) => {
+            Self::Calculated(_h) => {
                 write!(f, "calculated")
             }
-            Self::Transmitted(_) => {
+            Self::Transmitted(_h) => {
                 write!(f, "transmitted")
             }
-            Self::Mempool(_) => {
+            Self::Mempool(_h) => {
                 write!(f, "mempool")
             }
-            Self::Confirmed(_) => {
+            Self::Confirmed(_h) => {
                 write!(f, "confirmed")
             }
         }

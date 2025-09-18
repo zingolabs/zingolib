@@ -270,7 +270,7 @@ pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
     local_net.validator().generate_blocks(n).await.unwrap();
     assert_eq!(local_net.validator().get_chain_height().await, target);
 
-    target
+    BlockHeight::from_u32(target.into())
 }
 
 /// Will hang if chain does not reach `target_block_height`

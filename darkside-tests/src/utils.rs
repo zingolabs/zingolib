@@ -2,7 +2,7 @@ use std::{
     fs,
     fs::File,
     io::{self, BufRead, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use http::Uri;
@@ -27,8 +27,6 @@ use crate::{
     darkside_types::{self, Empty},
 };
 use zingolib::testutils::paths::get_cargo_manifest_dir;
-
-const LIGHTWALLETD_BIN: Option<PathBuf> = None;
 
 pub async fn prepare_darksidewalletd(
     uri: http::Uri,
@@ -212,13 +210,10 @@ impl TreeState {
 pub async fn init_darksidewalletd(
     set_port: Option<portpicker::Port>,
 ) -> Result<(Lightwalletd, DarksideConnector), String> {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN,
-        listen_port: set_port,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let mut lightwalletd_config = LightwalletdConfig::default_test();
+    lightwalletd_config.listen_port = set_port;
+    lightwalletd_config.darkside = true;
+    let lightwalletd = Lightwalletd::launch(lightwalletd_config).unwrap();
     let server_id = localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);
 
@@ -381,7 +376,7 @@ pub mod scenarios {
                 testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights,
+                self.activation_heights.inner(),
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -406,9 +401,12 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient =
-                self.client_builder
-                    .build_client(seed, birthday, true, self.activation_heights);
+            let lightclient = self.client_builder.build_client(
+                seed,
+                birthday,
+                true,
+                self.activation_heights.inner(),
+            );
             self.lightclients.push(lightclient);
             self
         }

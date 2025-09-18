@@ -297,7 +297,7 @@ impl ScanRange {
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<tower_service::UnderlyingService>,
+    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
@@ -354,6 +354,9 @@ where
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
         .map_err(SyncError::WalletError)?;
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+    if chain_height == 0.into() {
+        return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
+    }
     if wallet_height > chain_height {
         if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
@@ -630,11 +633,12 @@ where
 
     let session_blocks_scanned =
         total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
-    let percentage_session_blocks_scanned = (session_blocks_scanned as f32
+    let percentage_session_blocks_scanned = ((session_blocks_scanned as f32
         / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
-        * 100.0;
+        * 100.0)
+        .clamp(0.0, 100.0);
     let percentage_total_blocks_scanned =
-        (total_blocks_scanned as f32 / total_blocks as f32) * 100.0;
+        ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
 
     let session_sapling_outputs_scanned = total_sapling_outputs_scanned
         - sync_state
@@ -651,11 +655,12 @@ where
         + sync_state
             .initial_sync_state
             .previously_scanned_orchard_outputs;
-    let percentage_session_outputs_scanned = (session_outputs_scanned as f32
+    let percentage_session_outputs_scanned = ((session_outputs_scanned as f32
         / (total_outputs - previously_scanned_outputs) as f32)
-        * 100.0;
+        * 100.0)
+        .clamp(0.0, 100.0);
     let percentage_total_outputs_scanned =
-        (total_outputs_scanned as f32 / total_outputs as f32) * 100.0;
+        ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
 
     Ok(SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
@@ -1460,7 +1465,7 @@ fn checked_birthday<W: SyncWallet>(
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<tower_service::UnderlyingService>,
+    mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,

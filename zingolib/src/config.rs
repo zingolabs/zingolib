@@ -26,7 +26,6 @@ use log4rs::{
 use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
-use zingo_infra_services::network::ActivationHeights;
 
 use crate::wallet::WalletSettings;
 
@@ -40,8 +39,10 @@ pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xc
 pub const ZENNIES_FOR_ZINGO_DONATION_ADDRESS: &str = "u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494";
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
-/// TODO: Add Doc Comment Here!
+/// The lightserver that handles blockchain requests
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
+/// Used for testnet
+pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str = "https://testnet.zec.rocks";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
@@ -273,7 +274,7 @@ impl ZingoConfig {
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
-                ("https://lightwalletd.testnet.electriccoin.co:9067")
+                (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
                     .parse::<http::Uri>()
                     .unwrap(),
             )
@@ -284,7 +285,7 @@ impl ZingoConfig {
     /// create a ZingoConfig that helps a LightClient connect to a server.
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_lightwalletd_uri(("https://zec.rocks:443").parse::<http::Uri>().unwrap())
+            .set_lightwalletd_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
             .create()
     }
 
@@ -496,7 +497,7 @@ pub enum ChainType {
     /// Public testnet
     Testnet,
     /// Local testnet
-    Regtest(ActivationHeights),
+    Regtest(zcash_protocol::local_consensus::LocalNetwork),
     /// Mainnet
     Mainnet,
 }
@@ -527,7 +528,11 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest(activation_heights) => Some(activation_heights.activation_height(nu)),
+            Regtest(activation_heights) => Some(
+                activation_heights
+                    .activation_height(nu)
+                    .unwrap_or(BlockHeight::from_u32(1)),
+            ),
         }
     }
 }

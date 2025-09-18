@@ -43,7 +43,7 @@ async fn simple_sync() {
         DARKSIDE_SEED.to_string(),
         0,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
 
     let result = light_client.sync_and_await().await.unwrap();
@@ -93,7 +93,7 @@ async fn reorg_receipt_sync_generic() {
         DARKSIDE_SEED.to_string(),
         0,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
     light_client.sync_and_await().await.unwrap();
 
@@ -156,13 +156,17 @@ async fn sent_transaction_reorged_into_mempool() {
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
     let activation_heights = ActivationHeights::default();
-    let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
+    let mut light_client = client_manager.build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights.inner(),
+    );
     let mut recipient = client_manager.build_client(
         testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
 
     light_client.sync_and_await().await.unwrap();

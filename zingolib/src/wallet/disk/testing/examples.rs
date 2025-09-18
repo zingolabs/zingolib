@@ -4,7 +4,7 @@ use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::{ActivationHeights, localhost_uri};
+use zingo_infra_services::network::localhost_uri;
 
 use super::super::LightWallet;
 use crate::config::ChainType;
@@ -275,10 +275,22 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 let lightwalletd_uri = localhost_uri(0);
+
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(ActivationHeights::default()),
+                    crate::config::ChainType::Regtest(
+                        zcash_protocol::local_consensus::LocalNetwork {
+                            overwinter: Some(1.into()),
+                            sapling: Some(1.into()),
+                            blossom: Some(1.into()),
+                            heartwood: Some(1.into()),
+                            canopy: Some(1.into()),
+                            nu5: Some(1.into()),
+                            nu6: Some(1.into()),
+                            nu6_1: Some(1.into()),
+                        },
+                    ),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),

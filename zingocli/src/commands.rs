@@ -21,7 +21,6 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
-use zingo_infra_services::network::ActivationHeights;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingolib::data::{PollReport, proposal};
@@ -219,7 +218,18 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
+                zingolib::config::ChainType::Regtest(
+                    zcash_protocol::local_consensus::LocalNetwork {
+                        overwinter: Some(1.into()),
+                        sapling: Some(1.into()),
+                        blossom: Some(1.into()),
+                        heartwood: Some(1.into()),
+                        canopy: Some(1.into()),
+                        nu5: Some(1.into()),
+                        nu6: Some(1.into()),
+                        nu6_1: Some(1.into()),
+                    },
+                ),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))

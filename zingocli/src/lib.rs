@@ -377,11 +377,29 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(ActivationHeights::default()),
+                "regtest" => ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
+                    overwinter: Some(1.into()),
+                    sapling: Some(1.into()),
+                    blossom: Some(1.into()),
+                    heartwood: Some(1.into()),
+                    canopy: Some(1.into()),
+                    nu5: Some(1.into()),
+                    nu6: Some(1.into()),
+                    nu6_1: Some(1.into()),
+                }),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(ActivationHeights::default())
+            ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(1.into()),
+                sapling: Some(1.into()),
+                blossom: Some(1.into()),
+                heartwood: Some(1.into()),
+                canopy: Some(1.into()),
+                nu5: Some(1.into()),
+                nu6: Some(1.into()),
+                nu6_1: Some(1.into()),
+            })
         } else {
             ChainType::Mainnet
         };

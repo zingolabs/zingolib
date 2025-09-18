@@ -456,12 +456,12 @@ mod fast {
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(true, local_net.validator().activation_heights());
+            client_builder.build_faucet(true, local_net.validator().activation_heights().inner());
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         let network = recipient.wallet.read().await.network;
 
@@ -511,7 +511,7 @@ mod fast {
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         if let Some(_ua) =
             recipient
@@ -686,7 +686,7 @@ mod fast {
         let mut faucet = environment.create_faucet().await;
         let mut recipient = environment.create_client().await;
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
@@ -709,7 +709,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let no_messages = &recipient.messages_containing(None).await.unwrap();
@@ -734,7 +734,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let single_message = &recipient.messages_containing(None).await.unwrap();
@@ -918,7 +918,7 @@ mod fast {
         let mut faucet = environment.create_faucet().await;
         let mut recipient = environment.create_client().await;
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         faucet.sync_and_await().await.unwrap();
 
         check_client_balances!(faucet, o: 2_500_000_000u64  s: 0 t: 0u64);
@@ -951,7 +951,7 @@ mod fast {
         .await
         .unwrap();
 
-        environment.bump_chain().await;
+        environment.increase_chain_height().await;
         recipient.sync_and_await().await.unwrap();
 
         let value_transfers = &recipient.value_transfers(true).await.unwrap();
@@ -1189,7 +1189,7 @@ mod fast {
             seed_phrase,
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         let network = recipient.wallet.read().await.network;
         let (new_address_id, new_address) = recipient
@@ -1262,7 +1262,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
 
         assert_eq!(
@@ -1312,15 +1312,18 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 3.into(),
-            blossom: 5.into(),
-            heartwood: 7.into(),
-            canopy: 9.into(),
-            nu5: 11.into(),
-            nu6: 13.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(3)),
+                blossom: Some(BlockHeight::from(5)),
+                heartwood: Some(BlockHeight::from(7)),
+                canopy: Some(BlockHeight::from(9)),
+                nu5: Some(BlockHeight::from(11)),
+                nu6: Some(BlockHeight::from(13)),
+                nu6_1: Some(BlockHeight::from(15)),
+            });
+
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
@@ -1330,15 +1333,17 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn sync_all_epochs_from_heartwood() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 1.into(),
-            blossom: 1.into(),
-            heartwood: 1.into(),
-            canopy: 3.into(),
-            nu5: 5.into(),
-            nu6: 7.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(1)),
+                blossom: Some(BlockHeight::from(1)),
+                heartwood: Some(BlockHeight::from(1)),
+                canopy: Some(BlockHeight::from(3)),
+                nu5: Some(BlockHeight::from(5)),
+                nu6: Some(BlockHeight::from(7)),
+                nu6_1: Some(BlockHeight::from(9)),
+            });
         let (local_net, mut lightclient) =
             scenarios::unfunded_client(activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
@@ -1739,17 +1744,17 @@ mod slow {
         tracing_subscriber::fmt().init();
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().inner());
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(local_net.validator().activation_heights()),
+            ChainType::Regtest(local_net.validator().activation_heights().inner()),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -2539,15 +2544,17 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let activation_heights = ActivationHeights {
-            overwinter: 1.into(),
-            sapling: 1.into(),
-            blossom: 1.into(),
-            heartwood: 1.into(),
-            canopy: 3.into(),
-            nu5: 5.into(),
-            nu6: 5.into(),
-        };
+        let activation_heights =
+            ActivationHeights::new(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(BlockHeight::from(1)),
+                sapling: Some(BlockHeight::from(1)),
+                blossom: Some(BlockHeight::from(1)),
+                heartwood: Some(BlockHeight::from(1)),
+                canopy: Some(BlockHeight::from(3)),
+                nu5: Some(BlockHeight::from(5)),
+                nu6: Some(BlockHeight::from(5)),
+                nu6_1: Some(BlockHeight::from(5)),
+            });
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
             activation_heights,
@@ -3362,12 +3369,12 @@ TransactionSummary {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().inner());
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
@@ -3407,12 +3414,12 @@ TransactionSummary {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().activation_heights());
+            client_builder.build_faucet(false, local_net.validator().activation_heights().inner());
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().activation_heights(),
+            local_net.validator().activation_heights().inner(),
         );
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");
@@ -3745,17 +3752,27 @@ TransactionSummary {
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
                 .pretty(4),
             "2".to_string()
         );
+
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("aaaa"))])
             .await
             .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+
         assert_eq!(
             JsonValue::from(faucet.do_total_memobytes_to_address().await.unwrap())[&base_uaddress]
                 .pretty(4),
