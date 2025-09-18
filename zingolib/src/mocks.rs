@@ -64,7 +64,7 @@ pub fn random_zaddr() -> (
 pub mod nullifier {
     //! Module for mocking nullifiers from [`sapling_crypto::Nullifier`] and [`orchard::note::Nullifier`]
 
-    use crate::utils::build_method;
+    use crate::testutils::build_method;
 
     macro_rules! build_assign_unique_nullifier {
         () => {
@@ -158,7 +158,7 @@ mod sapling_crypto_note {
     use sapling_crypto::Rseed;
     use sapling_crypto::value::NoteValue;
 
-    use crate::utils::build_method;
+    use crate::testutils::build_method;
 
     use super::default_zaddr;
 
@@ -225,7 +225,7 @@ pub mod orchard_note {
     use rand::{Rng, rngs::OsRng};
     use zip32::Scope;
 
-    use crate::utils::build_method;
+    use crate::testutils::build_method;
 
     /// A struct to build a mock [`orchard::Note`].
     #[derive(Clone)]
@@ -385,8 +385,8 @@ pub mod proposal {
     use zcash_protocol::{PoolType, ShieldedProtocol};
 
     use super::{default_txid, default_zaddr};
+    use crate::testutils::{build_method, build_method_push};
     use crate::utils::conversion::address_from_str;
-    use crate::utils::{build_method, build_method_push};
     use crate::wallet::output::OutputRef;
 
     /// Provides a builder for constructing a mock [`zcash_client_backend::proposal::Proposal`].

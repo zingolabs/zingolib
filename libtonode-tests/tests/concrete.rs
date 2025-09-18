@@ -978,7 +978,7 @@ mod fast {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
         use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
-        use zingolib::{utils, wallet::LightWallet};
+        use zingolib::{testutils, wallet::LightWallet};
 
         use super::*;
 
@@ -994,7 +994,7 @@ mod fast {
                 TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
-            let tex_string = utils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
+            let tex_string = testutils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
