@@ -33,13 +33,13 @@ use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
+use super::local_network::ZingolibLocalNetwork;
 use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::local_network::ZingolibLocalNetwork;
 use crate::wallet::{LightWallet, WalletSettings};
 
 /// Helper function to get the test binary path

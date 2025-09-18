@@ -1,3 +1,4 @@
+//! Local network configuration for testing
 use zcash_protocol::consensus::{BlockHeight, Parameters};
 #[cfg(any(test, feature = "test-elevation"))]
 use zingo_infra_services::network::ActivationHeights;

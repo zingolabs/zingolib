@@ -15,7 +15,8 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-use zingolib::wallet::local_network::ZingolibLocalNetwork;
+#[cfg(feature = "regtest")]
+use zingolib::testutils::local_network::ZingolibLocalNetwork;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -216,19 +217,25 @@ impl Command for ParseAddressCommand {
             zcash_client_backend::address::Address,
             zingolib::config::ChainType,
         )> {
-            [
+            let chains = vec![
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
+                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
-            ]
-            .iter()
-            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+            ];
+
+            chains
+                .iter()
+                .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
         }
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
+            #[allow(unreachable_patterns)]
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
+                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
+                _ => unreachable!("Invalid chain type"),
             };
             match recipient_address {
                 Address::Sapling(_) => object! {

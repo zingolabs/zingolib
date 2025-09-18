@@ -616,7 +616,7 @@ pub fn run_cli() {
 #[cfg(feature = "regtest")]
 pub fn run_regtest_cli() {
     use crate::commands::RT;
-    use zingolib::wallet::local_network::ZingolibLocalNetwork;
+    use zingolib::testutils::local_network::ZingolibLocalNetwork;
 
     println!("Launching local regtest network...");
 

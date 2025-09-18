@@ -146,13 +146,13 @@ mod fast {
     use zingolib::zingo_infra_services::{network::ActivationHeights, validator::Validator};
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        testutils::local_network::ZingolibLocalNetwork,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
             keys::unified::{ReceiverSelection, UnifiedAddressId},
-            local_network::ZingolibLocalNetwork,
             summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
@@ -1415,6 +1415,7 @@ mod slow {
     use zingolib::config::ChainType;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
+    use zingolib::testutils::local_network::ZingolibLocalNetwork;
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
         encoded_sapling_address_from_ua,
@@ -1424,7 +1425,6 @@ mod slow {
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
-    use zingolib::wallet::local_network::ZingolibLocalNetwork;
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::data::{
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,

@@ -7,6 +7,7 @@ use zcash_protocol::value::Zatoshis;
 use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
+#[cfg(any(test, feature = "test-elevation"))]
 use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
 use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
 use crate::data::proposal::ProportionalFeeProposal;
@@ -23,6 +24,7 @@ impl LightClient {
         let zfz_address = match self.config().chain {
             ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
             ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+            #[cfg(any(test, feature = "test-elevation"))]
             ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         };
         let dev_donation_receiver = Receiver::new(

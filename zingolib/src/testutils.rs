@@ -32,6 +32,7 @@ pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
 pub mod lightclient;
+pub mod local_network;
 pub mod macros;
 pub mod paths;
 pub mod scenarios;

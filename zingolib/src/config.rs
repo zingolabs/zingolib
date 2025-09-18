@@ -27,7 +27,9 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
-use crate::wallet::{WalletSettings, local_network::ZingolibLocalNetwork};
+#[cfg(any(test, feature = "test-elevation"))]
+use crate::testutils::local_network::ZingolibLocalNetwork;
+use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
@@ -385,6 +387,7 @@ impl ZingoConfig {
 
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
+                    #[cfg(any(test, feature = "test-elevation"))]
                     ChainType::Regtest(_) => zcash_data_location.push("regtest"),
                     ChainType::Mainnet => {}
                 };
@@ -497,6 +500,7 @@ pub enum ChainType {
     /// Public testnet
     Testnet,
     /// Local testnet
+    #[cfg(any(test, feature = "test-elevation"))]
     Regtest(ZingolibLocalNetwork),
     /// Mainnet
     Mainnet,
@@ -507,6 +511,7 @@ impl std::fmt::Display for ChainType {
         use ChainType::*;
         let name = match self {
             Testnet => "test",
+            #[cfg(any(test, feature = "test-elevation"))]
             Regtest(_) => "regtest",
             Mainnet => "main",
         };
@@ -519,6 +524,7 @@ impl Parameters for ChainType {
         match self {
             ChainType::Mainnet => NetworkType::Main,
             ChainType::Testnet => NetworkType::Test,
+            #[cfg(any(test, feature = "test-elevation"))]
             ChainType::Regtest(_) => NetworkType::Regtest,
         }
     }
@@ -528,6 +534,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
+            #[cfg(any(test, feature = "test-elevation"))]
             Regtest(activation_heights) => Some(
                 activation_heights
                     .activation_height(nu)
