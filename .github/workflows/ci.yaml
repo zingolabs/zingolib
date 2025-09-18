@@ -22,9 +22,18 @@ jobs:
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
 
+  cargo-hack-build:
+    uses: ./.github/workflows/cargo-hack.yaml
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # with:                # (optional) override defaults
+    #   hack-flags: "--workspace --all-features --all-targets --target-dir target/hack"
+    #   rustflags: "-D warnings"
+    #   toolchain: "stable"
+
   run-doc-tests:
     name: Run doc tests
     runs-on: ubuntu-24.04
+    needs: cargo-hack-build
     if: github.event.pull_request.draft == false
     env:
       RUSTFLAGS: -D warnings
@@ -48,5 +57,6 @@ jobs:
 
   test:
     uses: ./.github/workflows/test.yaml
+    needs: cargo-hack-build
     with:
       nextest-flags: "-E 'not test(slow)'"
