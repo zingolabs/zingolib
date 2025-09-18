@@ -656,10 +656,6 @@ pub fn run_regtest_cli() {
         tor_enabled: false,
     };
 
-    // Keep the local network and temp dir alive for the duration of the CLI
-    let _local_net = local_net;
-    let _wallet_dir = wallet_dir;
-
     // Start the CLI in interactive mode
     dispatch_command_or_start_interactive(&cli_config)
 }
