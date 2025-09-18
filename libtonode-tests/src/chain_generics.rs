@@ -5,11 +5,11 @@ use zingo_infra_services::indexer::{Indexer, Lightwalletd};
 use zingo_infra_services::network::localhost_uri;
 use zingo_infra_services::validator::{Validator, Zcashd};
 
-use crate::lightclient::LightClient;
-use crate::testutils::chain_generics::conduct_chain::ConductChain;
-use crate::testutils::scenarios::ClientBuilder;
-use crate::testutils::scenarios::custom_clients_default;
-use crate::testutils::timestamped_test_log;
+use zingolib::lightclient::LightClient;
+use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+use zingolib::testutils::scenarios::ClientBuilder;
+use zingolib::testutils::scenarios::custom_clients_default;
+use zingolib::testutils::timestamped_test_log;
 
 /// includes utilities for connecting to zcashd regtest
 pub struct LibtonodeEnvironment {
@@ -39,7 +39,7 @@ impl ConductChain for LibtonodeEnvironment {
         )
     }
 
-    fn zingo_config(&mut self) -> crate::config::ZingoConfig {
+    fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
         self.client_builder.make_unique_data_dir_and_load_config(
             self.local_net.validator().activation_heights().into(),
         )
