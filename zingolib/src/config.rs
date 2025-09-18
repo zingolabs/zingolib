@@ -27,8 +27,6 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
-#[cfg(any(test, feature = "test-elevation"))]
-use crate::testutils::local_network::ZingolibLocalNetwork;
 use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
@@ -36,12 +34,6 @@ pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclq
 /// Regtest address for donation in test environments
 #[cfg(any(test, feature = "test-elevation"))]
 pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d0ck55c04r65ld6f0shetcn77z8j7m64hm4ku3wguf60s75f0g3s7r7g89z22f3ff5tsfgr45efj4pe2gyg5krqp5vvl3afu0280zp9ru2379zat5y6nkqkwjxsvpq5900kchcgzaw8v8z3ggt5yymnuj9hymtv3p533fcrk2wnj48g5vg42vle08c2xtanq0e";
-
-/// Creates a mock ChainType for use in tests
-#[cfg(any(test, feature = "test-elevation"))]
-pub fn mock_regtest_chain_type() -> ChainType {
-    ChainType::Regtest(ZingolibLocalNetwork::default())
-}
 
 /// Gets the appropriate donation address for the given chain type
 #[cfg(any(test, feature = "test-elevation"))]
@@ -59,6 +51,55 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     match chain {
         ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+    }
+}
+/// The networks a zingolib client can run against
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChainType {
+    /// Public testnet
+    Testnet,
+    /// Local testnet
+    #[cfg(any(test, feature = "test-elevation"))]
+    Regtest(crate::testutils::local_network::ZingolibLocalNetwork),
+    /// Mainnet
+    Mainnet,
+}
+
+impl std::fmt::Display for ChainType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ChainType::*;
+        let name = match self {
+            Testnet => "test",
+            #[cfg(any(test, feature = "test-elevation"))]
+            Regtest(_) => "regtest",
+            Mainnet => "main",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl Parameters for ChainType {
+    fn network_type(&self) -> NetworkType {
+        match self {
+            ChainType::Mainnet => NetworkType::Main,
+            ChainType::Testnet => NetworkType::Test,
+            #[cfg(any(test, feature = "test-elevation"))]
+            ChainType::Regtest(_) => NetworkType::Regtest,
+        }
+    }
+
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        use ChainType::*;
+        match self {
+            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Testnet => TEST_NETWORK.activation_height(nu),
+            #[cfg(any(test, feature = "test-elevation"))]
+            Regtest(activation_heights) => Some(
+                activation_heights
+                    .activation_height(nu)
+                    .unwrap_or(BlockHeight::from_u32(1)),
+            ),
+        }
     }
 }
 /// TODO: Add Doc Comment Here!
@@ -517,56 +558,6 @@ impl ZingoConfig {
         //println!("LogFile:\n{}", log_path.to_str().unwrap());
 
         log_path.into_boxed_path()
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ChainType {
-    /// Public testnet
-    Testnet,
-    /// Local testnet
-    #[cfg(any(test, feature = "test-elevation"))]
-    Regtest(ZingolibLocalNetwork),
-    /// Mainnet
-    Mainnet,
-}
-
-impl std::fmt::Display for ChainType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ChainType::*;
-        let name = match self {
-            Testnet => "test",
-            #[cfg(any(test, feature = "test-elevation"))]
-            Regtest(_) => "regtest",
-            Mainnet => "main",
-        };
-        write!(f, "{name}")
-    }
-}
-
-impl Parameters for ChainType {
-    fn network_type(&self) -> NetworkType {
-        match self {
-            ChainType::Mainnet => NetworkType::Main,
-            ChainType::Testnet => NetworkType::Test,
-            #[cfg(any(test, feature = "test-elevation"))]
-            ChainType::Regtest(_) => NetworkType::Regtest,
-        }
-    }
-
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        use ChainType::*;
-        match self {
-            Mainnet => MAIN_NETWORK.activation_height(nu),
-            Testnet => TEST_NETWORK.activation_height(nu),
-            #[cfg(any(test, feature = "test-elevation"))]
-            Regtest(activation_heights) => Some(
-                activation_heights
-                    .activation_height(nu)
-                    .unwrap_or(BlockHeight::from_u32(1)),
-            ),
-        }
     }
 }
 

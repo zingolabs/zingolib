@@ -4,7 +4,6 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::value::Zatoshis;
 
-use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::config::get_donation_address_for_chain;
 use crate::data::proposal::ProportionalFeeProposal;
