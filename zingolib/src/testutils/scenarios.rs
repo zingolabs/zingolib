@@ -39,7 +39,7 @@ use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::network::ZingolibLocalNetwork;
+use crate::wallet::local_network::ZingolibLocalNetwork;
 use crate::wallet::{LightWallet, WalletSettings};
 
 /// Helper function to get the test binary path

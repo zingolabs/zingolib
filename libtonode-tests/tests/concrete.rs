@@ -152,7 +152,7 @@ mod fast {
         },
         wallet::{
             keys::unified::{ReceiverSelection, UnifiedAddressId},
-            network::ZingolibLocalNetwork,
+            local_network::ZingolibLocalNetwork,
             summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
@@ -1424,7 +1424,7 @@ mod slow {
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
-    use zingolib::wallet::network::ZingolibLocalNetwork;
+    use zingolib::wallet::local_network::ZingolibLocalNetwork;
     use zingolib::wallet::output::SpendStatus;
     use zingolib::wallet::summary::data::{
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,

@@ -15,7 +15,7 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-use zingolib::wallet::network::ZingolibLocalNetwork;
+use zingolib::wallet::local_network::ZingolibLocalNetwork;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;

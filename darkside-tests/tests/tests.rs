@@ -20,7 +20,7 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::wallet::balance::AccountBalance;
-use zingolib::wallet::network::ZingolibLocalNetwork;
+use zingolib::wallet::local_network::ZingolibLocalNetwork;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
