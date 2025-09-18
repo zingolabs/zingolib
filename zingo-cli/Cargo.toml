@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 
 [features]
-regtest = ["zingolib/test-elevation"]
+regtest = ["zingolib/testutils"]
 
 [dependencies]
 zingolib = { workspace = true }

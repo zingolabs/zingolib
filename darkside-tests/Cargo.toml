@@ -8,7 +8,7 @@ edition = "2024"
 chain_generic_tests = []
 
 [dependencies]
-zingolib = { workspace = true, features = ["darkside_tests", "test-elevation"] }
+zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
 zingo-netutils = { workspace = true }
 
 orchard = { workspace = true }

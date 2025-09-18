@@ -14,7 +14,7 @@ pub mod wallet;
 
 #[cfg(test)]
 pub mod mocks;
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 
 // This line includes the generated `git_description()` function directly into this scope.

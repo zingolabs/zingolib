@@ -13,8 +13,8 @@ license = "MIT"
 [features]
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-test-elevation = ["portpicker", "testvectors", "tempfile", "zingo-infra-services"]
-zaino-test = ['test-elevation']
+testutils = ["portpicker", "testvectors", "tempfile", "zingo-infra-services"]
+zaino-test = ['testutils']
 
 [dependencies]
 zingo-memo = { workspace = true }
