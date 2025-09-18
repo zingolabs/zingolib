@@ -3,11 +3,6 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2024"
 
-[[bin]]
-name = "zingo-cli-regtest"
-path = "src/bin/zingo-cli-regtest.rs"
-required-features = ["regtest"]
-
 [features]
 regtest = ["zingolib/test-elevation"]
 
