@@ -1,7 +1,9 @@
 //! Sync configuration.
 
+#[cfg(feature = "wallet_essentials")]
 use std::io::{Read, Write};
 
+#[cfg(feature = "wallet_essentials")]
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 /// Performance level.
@@ -26,6 +28,7 @@ pub enum PerformanceLevel {
     Maximum,
 }
 
+#[cfg(feature = "wallet_essentials")]
 impl PerformanceLevel {
     fn serialized_version() -> u8 {
         0
@@ -84,6 +87,7 @@ pub struct SyncConfig {
     pub performance_level: PerformanceLevel,
 }
 
+#[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
         1
