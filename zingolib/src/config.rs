@@ -39,8 +39,8 @@ pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d
 #[cfg(any(test, feature = "testutils"))]
 pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     match chain {
-        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
     }
 }
@@ -49,8 +49,8 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
 #[cfg(not(any(test, feature = "testutils")))]
 pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     match chain {
-        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
     }
 }
 /// The networks a zingolib client can run against
@@ -58,11 +58,11 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
 pub enum ChainType {
     /// Public testnet
     Testnet,
+    /// Mainnet
+    Mainnet,
     /// Local testnet
     #[cfg(any(test, feature = "testutils"))]
     Regtest(crate::testutils::local_network::ZingolibLocalNetwork),
-    /// Mainnet
-    Mainnet,
 }
 
 impl std::fmt::Display for ChainType {
@@ -70,9 +70,9 @@ impl std::fmt::Display for ChainType {
         use ChainType::*;
         let name = match self {
             Testnet => "test",
+            Mainnet => "main",
             #[cfg(any(test, feature = "testutils"))]
             Regtest(_) => "regtest",
-            Mainnet => "main",
         };
         write!(f, "{name}")
     }
@@ -81,8 +81,8 @@ impl std::fmt::Display for ChainType {
 impl Parameters for ChainType {
     fn network_type(&self) -> NetworkType {
         match self {
-            ChainType::Mainnet => NetworkType::Main,
             ChainType::Testnet => NetworkType::Test,
+            ChainType::Mainnet => NetworkType::Main,
             #[cfg(any(test, feature = "testutils"))]
             ChainType::Regtest(_) => NetworkType::Regtest,
         }
@@ -91,8 +91,8 @@ impl Parameters for ChainType {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         use ChainType::*;
         match self {
-            Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
+            Mainnet => MAIN_NETWORK.activation_height(nu),
             #[cfg(any(test, feature = "testutils"))]
             Regtest(activation_heights) => Some(
                 activation_heights
@@ -105,8 +105,8 @@ impl Parameters for ChainType {
 
 /// Converts a chain name string to a ChainType variant.
 ///
-/// When compiled with the `testutils` feature, accepts "mainnet", "testnet", or "regtest".
-/// Without the feature, only accepts "mainnet" or "testnet".
+/// When compiled with the `testutils` feature, accepts "testnet", "mainnet", or "regtest".
+/// Without the feature, only accepts "testnet" or "mainnet".
 ///
 /// # Arguments
 /// * `chain_name` - The chain name as a string
@@ -117,13 +117,13 @@ impl Parameters for ChainType {
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
     match chain_name {
-        "mainnet" => Ok(ChainType::Mainnet),
         "testnet" => Ok(ChainType::Testnet),
+        "mainnet" => Ok(ChainType::Mainnet),
         "regtest" => Ok(ChainType::Regtest(
             crate::testutils::local_network::ZingolibLocalNetwork::default(),
         )),
         _ => Err(format!(
-            "Invalid chain '{}'. Expected one of: mainnet, testnet, regtest",
+            "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
             chain_name
         )),
     }
@@ -131,7 +131,7 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
 
 /// Converts a chain name string to a ChainType variant.
 ///
-/// When compiled without the `testutils` feature, only accepts "mainnet" or "testnet".
+/// When compiled without the `testutils` feature, only accepts "testnet" or "mainnet".
 ///
 /// # Arguments
 /// * `chain_name` - The chain name as a string
@@ -142,10 +142,10 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
 #[cfg(not(any(test, feature = "testutils")))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
     match chain_name {
-        "mainnet" => Ok(ChainType::Mainnet),
         "testnet" => Ok(ChainType::Testnet),
+        "mainnet" => Ok(ChainType::Mainnet),
         _ => Err(format!(
-            "Invalid chain '{}'. Expected one of: mainnet, testnet",
+            "Invalid chain '{}'. Expected one of: testnet, mainnet",
             chain_name
         )),
     }
@@ -502,9 +502,9 @@ impl ZingoConfig {
 
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
+                    ChainType::Mainnet => {}
                     #[cfg(any(test, feature = "testutils"))]
                     ChainType::Regtest(_) => zcash_data_location.push("regtest"),
-                    ChainType::Mainnet => {}
                 };
             }
 
