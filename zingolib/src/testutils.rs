@@ -634,9 +634,6 @@ macro_rules! build_method {
     };
 }
 
-#[allow(unused_imports)]
-pub(crate) use build_method;
-
 #[allow(unused_macros)]
 macro_rules! build_method_push {
     ($name:ident, $localtype:ty) => {
@@ -656,6 +653,8 @@ macro_rules! build_push_list {
     };
 }
 
+#[allow(unused_imports)]
+pub(crate) use build_method;
 #[allow(unused_imports)]
 pub(crate) use build_method_push;
 #[allow(unused_imports)]
