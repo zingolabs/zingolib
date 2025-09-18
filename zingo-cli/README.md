@@ -14,27 +14,32 @@ cargo build --release
 
 The binary will be available at `target/release/zingo-cli`.
 
-### Regtest Build
+### Build with Regtest Support
 
-To build a special binary for regtest mode, compile the purpose-built `zingo-cli-regtest` binary:
+To build zingo-cli with regtest support in addition to mainnet and testnet:
 
 ```bash
-cargo build --release -p zingo-cli --features regtest --bin zingo-cli-regtest
+cargo build --release --features regtest
 ```
 
-The binary will be available at `target/release/zingo-cli-regtest`.
+The binary will be available at `target/release/zingo-cli`.
 
 ## Running
 
 By default, zingo-cli stores wallet data in a `wallets/` directory in the current working directory.
 
+The `--chain` argument allows you to select which network to connect to. If not specified, it defaults to mainnet.
+
 ### Mainnet
 
-To connect to mainnet:
+To connect to mainnet (default):
 
 ```bash
 # Uses default wallet location: ./wallets/
 ./target/release/zingo-cli
+
+# Or explicitly specify mainnet:
+./target/release/zingo-cli --chain mainnet
 
 # Or specify a custom data directory:
 ./target/release/zingo-cli --data-dir /path/to/mainnet-wallet
@@ -42,24 +47,22 @@ To connect to mainnet:
 
 ### Testnet
 
-To connect to testnet, use the `--chain` flag:
+To connect to testnet:
 
 ```bash
-# Uses default wallet location: ./wallets-testnet/
+# Uses default wallet location: ./wallets/
 ./target/release/zingo-cli --chain testnet
 
 # Or specify a custom data directory:
 ./target/release/zingo-cli --chain testnet --data-dir /path/to/testnet-wallet
 ```
 
-**Note:** Each network (mainnet, testnet) requires its own wallet data. If you get an error about wallet chain name mismatch, ensure you're using the correct data directory for your chosen network.
-
 ### Regtest Mode
 
-To run in regtest mode, use the specially compiled regtest binary:
+To run in regtest mode (requires building with the `regtest` feature):
 
 ```bash
-./target/release/zingo-cli-regtest
+./target/release/zingo-cli --chain regtest
 ```
 
 This will:
@@ -67,7 +70,7 @@ This will:
 - Start the network on port 17555
 - Create a new, temporary wallet automatically
 
-Note: The regtest binary is purpose-built with only the necessary dependencies for regtest operation, as indicated by the project's dependency elision approach.
+**Note:** Each network (mainnet, testnet, regtest) requires its own wallet data. If you get an error about wallet chain name mismatch, ensure you're using the correct data directory for your chosen network.
 
 ## Exiting the CLI
 
