@@ -33,8 +33,34 @@ use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
-/// TODO: Add Doc Comment Here!
+/// Regtest address for donation in test environments
+#[cfg(any(test, feature = "test-elevation"))]
 pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d0ck55c04r65ld6f0shetcn77z8j7m64hm4ku3wguf60s75f0g3s7r7g89z22f3ff5tsfgr45efj4pe2gyg5krqp5vvl3afu0280zp9ru2379zat5y6nkqkwjxsvpq5900kchcgzaw8v8z3ggt5yymnuj9hymtv3p533fcrk2wnj48g5vg42vle08c2xtanq0e";
+
+/// Creates a mock ChainType for use in tests
+#[cfg(any(test, feature = "test-elevation"))]
+pub fn mock_regtest_chain_type() -> ChainType {
+    ChainType::Regtest(ZingolibLocalNetwork::default())
+}
+
+/// Gets the appropriate donation address for the given chain type
+#[cfg(any(test, feature = "test-elevation"))]
+pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
+    match chain {
+        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
+        ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+        ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+    }
+}
+
+/// Gets the appropriate donation address for the given chain type (non-test version)
+#[cfg(not(any(test, feature = "test-elevation")))]
+pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
+    match chain {
+        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
+        ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
+    }
+}
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww";
 /// TODO: Add Doc Comment Here!

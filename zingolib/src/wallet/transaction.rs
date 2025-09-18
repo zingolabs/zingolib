@@ -10,11 +10,7 @@ use pepper_sync::wallet::{
 use super::LightWallet;
 use super::error::{FeeError, RemovalError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
-#[cfg(any(test, feature = "test-elevation"))]
-use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
-use crate::config::{
-    ChainType, ZENNIES_FOR_ZINGO_DONATION_ADDRESS, ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-};
+use crate::config::get_donation_address_for_chain;
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -124,12 +120,7 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
     ) -> Result<TransactionKind, SpendError> {
-        let zfz_address = match self.network {
-            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-            #[cfg(any(test, feature = "test-elevation"))]
-            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        };
+        let zfz_address = get_donation_address_for_chain(&self.network);
 
         let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
         let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
