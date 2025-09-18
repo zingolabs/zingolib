@@ -50,6 +50,37 @@ use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 
 /// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(feature = "test_zainod_zcashd")]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Zainod, validator::Zcashd};
+
+    pub type DefaultIndexer = Zainod;
+    pub type DefaultValidator = Zcashd;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Lightwalletd, validator::Zebrad};
+
+    pub type DefaultIndexer = Lightwalletd;
+    pub type DefaultValidator = Zebrad;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(all(
+    not(feature = "test_zainod_zcashd"),
+    not(feature = "test_lwd_zebrad"),
+    feature = "test_lwd_zcashd"
+))]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Lightwalletd, validator::Zcashd};
+
+    pub type DefaultIndexer = Lightwalletd;
+    pub type DefaultValidator = Zcashd;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(not(any(
     feature = "test_zainod_zcashd",
     feature = "test_lwd_zebrad",
@@ -61,33 +92,6 @@ pub mod network_combo {
 
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zebrad;
-}
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(feature = "test_zainod_zcashd")]
-#[allow(missing_docs)]
-pub mod network_combo {
-    use zingo_infra_services::{indexer::Zainod, validator::Zcashd};
-
-    pub type DefaultIndexer = Zainod;
-    pub type DefaultValidator = Zcashd;
-}
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(feature = "test_lwd_zebrad")]
-#[allow(missing_docs)]
-pub mod network_combo {
-    use zingo_infra_services::{indexer::Lightwalletd, validator::Zebrad};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zebrad;
-}
-/// Default regtest network processes for testing and zingo-cli regtest mode
-#[cfg(feature = "test_lwd_zcashd")]
-#[allow(missing_docs)]
-pub mod network_combo {
-    use zingo_infra_services::{indexer::Lightwalletd, validator::Zcashd};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zcashd;
 }
 
 /// Trait for generalising local network functionality across any combination of zcash processes.
