@@ -1,5 +1,6 @@
 //! Sync configuration.
 
+#[cfg(feature = "wallet_essentials")]
 use std::io::{Read, Write};
 
 #[cfg(feature = "wallet_essentials")]
@@ -27,13 +28,13 @@ pub enum PerformanceLevel {
     Maximum,
 }
 
+#[cfg(feature = "wallet_essentials")]
 impl PerformanceLevel {
     fn serialized_version() -> u8 {
         0
     }
 
     /// Deserialize into `reader`
-    #[cfg(feature = "wallet_essentials")]
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
@@ -52,7 +53,6 @@ impl PerformanceLevel {
     }
 
     /// Serialize into `writer`
-    #[cfg(feature = "wallet_essentials")]
     pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
 
@@ -87,13 +87,13 @@ pub struct SyncConfig {
     pub performance_level: PerformanceLevel,
 }
 
+#[cfg(feature = "wallet_essentials")]
 impl SyncConfig {
     fn serialized_version() -> u8 {
         1
     }
 
     /// Deserialize into `reader`
-    #[cfg(feature = "wallet_essentials")]
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u8()?;
 
@@ -118,7 +118,6 @@ impl SyncConfig {
     }
 
     /// Serialize into `writer`
-    #[cfg(feature = "wallet_essentials")]
     pub fn write<W: Write>(&mut self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
         writer.write_u8(self.transparent_address_discovery.gap_limit)?;
