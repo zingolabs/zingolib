@@ -102,6 +102,46 @@ impl Parameters for ChainType {
         }
     }
 }
+
+/// Converts a chain name string to a ChainType variant.
+///
+/// When compiled with the `test-elevation` feature, accepts "mainnet", "testnet", or "regtest".
+/// Without the feature, only accepts "mainnet" or "testnet".
+///
+/// # Arguments
+/// * `chain_name` - The chain name as a string
+///
+/// # Returns
+/// * `Ok(ChainType)` - The corresponding ChainType variant
+/// * `Err(String)` - An error message if the chain name is invalid
+#[cfg(any(test, feature = "test-elevation"))]
+pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+    match chain_name {
+        "mainnet" => Ok(ChainType::Mainnet),
+        "testnet" => Ok(ChainType::Testnet),
+        "regtest" => Ok(ChainType::Regtest(crate::testutils::local_network::ZingolibLocalNetwork::default())),
+        _ => Err(format!("Invalid chain '{}'. Expected one of: mainnet, testnet, regtest", chain_name)),
+    }
+}
+
+/// Converts a chain name string to a ChainType variant.
+///
+/// When compiled without the `test-elevation` feature, only accepts "mainnet" or "testnet".
+///
+/// # Arguments
+/// * `chain_name` - The chain name as a string
+///
+/// # Returns
+/// * `Ok(ChainType)` - The corresponding ChainType variant
+/// * `Err(String)` - An error message if the chain name is invalid
+#[cfg(not(any(test, feature = "test-elevation")))]
+pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+    match chain_name {
+        "mainnet" => Ok(ChainType::Mainnet),
+        "testnet" => Ok(ChainType::Testnet),
+        _ => Err(format!("Invalid chain '{}'. Expected one of: mainnet, testnet", chain_name)),
+    }
+}
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww";
 /// TODO: Add Doc Comment Here!

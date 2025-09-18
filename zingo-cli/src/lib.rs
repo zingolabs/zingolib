@@ -43,7 +43,12 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet" or "testnet""#))
+                .value_name("CHAIN")
+                .help(if cfg!(feature = "regtest") {
+                    r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
+                } else {
+                    r#"What chain to expect. One of "mainnet" or "testnet". Defaults to "mainnet""#
+                }))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -350,11 +355,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            match chain.as_str() {
-                "mainnet" => ChainType::Mainnet,
-                "testnet" => ChainType::Testnet,
-                _ => return Err(chain.clone()),
-            }
+            zingolib::config::chain_from_str(chain)?
         } else {
             ChainType::Mainnet
         };
