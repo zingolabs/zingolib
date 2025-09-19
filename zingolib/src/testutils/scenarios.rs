@@ -19,17 +19,22 @@ use std::sync::LazyLock;
 
 use bip0039::Mnemonic;
 
+use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use testvectors::{
-    REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART, REG_Z_ADDR_FROM_ABANDONART, seeds,
+    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+    REG_Z_ADDR_FROM_ABANDONART, seeds,
 };
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::network::localhost_uri;
+use zebra_chain::parameters::NetworkKind;
+use zingo_infra_services::indexer::{
+    Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
+};
+use zingo_infra_services::network::{ActivationHeights, localhost_uri};
 use zingo_infra_services::utils::ExecutableLocation;
-use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig};
+use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zingo_infra_services::{LocalNet, Process};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
@@ -37,10 +42,215 @@ use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::increase_height_and_wait_for_client;
+use crate::testutils::lightclient::from_inputs::quick_send;
 use crate::wallet::WalletBase;
 use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::network::ZingolibLocalNetwork;
 use crate::wallet::{LightWallet, WalletSettings};
+use network_combo::DefaultIndexer;
+use network_combo::DefaultValidator;
+
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(feature = "test_zainod_zcashd")]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Zainod, validator::Zcashd};
+
+    pub type DefaultIndexer = Zainod;
+    pub type DefaultValidator = Zcashd;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Lightwalletd, validator::Zebrad};
+
+    pub type DefaultIndexer = Lightwalletd;
+    pub type DefaultValidator = Zebrad;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(all(
+    not(feature = "test_zainod_zcashd"),
+    not(feature = "test_lwd_zebrad"),
+    feature = "test_lwd_zcashd"
+))]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Lightwalletd, validator::Zcashd};
+
+    pub type DefaultIndexer = Lightwalletd;
+    pub type DefaultValidator = Zcashd;
+}
+/// Default regtest network processes for testing and zingo-cli regtest mode
+#[cfg(not(any(
+    feature = "test_zainod_zcashd",
+    feature = "test_lwd_zebrad",
+    feature = "test_lwd_zcashd"
+)))]
+#[allow(missing_docs)]
+pub mod network_combo {
+    use zingo_infra_services::{indexer::Zainod, validator::Zebrad};
+
+    pub type DefaultIndexer = Zainod;
+    pub type DefaultValidator = Zebrad;
+}
+
+/// Trait for generalising local network functionality across any combination of zcash processes.
+pub trait LocalNetwork<I: Indexer, V: Validator> {
+    /// Launch local network.
+    fn launch(
+        indexer_listen_port: Option<Port>,
+        mine_to_pool: PoolType,
+        activation_heights: ActivationHeights,
+        chain_cache: Option<PathBuf>,
+    ) -> impl Future<Output = LocalNet<I, V>>;
+}
+
+impl LocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
+    async fn launch(
+        indexer_listen_port: Option<Port>,
+        _mine_to_pool: PoolType,
+        activation_heights: ActivationHeights,
+        chain_cache: Option<PathBuf>,
+    ) -> LocalNet<Zainod, Zebrad> {
+        LocalNet::<Zainod, Zebrad>::launch(
+            ZainodConfig {
+                zainod_bin: ZAINOD_BIN.clone(),
+                listen_port: indexer_listen_port,
+                validator_port: 0,
+                chain_cache: None,
+                network: NetworkKind::Regtest,
+            },
+            ZebradConfig {
+                zebrad_bin: ZEBRAD_BIN.clone(),
+                network_listen_port: None,
+                rpc_listen_port: None,
+                indexer_listen_port: None,
+                activation_heights,
+                miner_address: REG_T_ADDR_FROM_ABANDONART,
+                chain_cache,
+                network: NetworkKind::Regtest,
+            },
+        )
+        .await
+    }
+}
+
+impl LocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
+    async fn launch(
+        indexer_listen_port: Option<Port>,
+        mine_to_pool: PoolType,
+        activation_heights: ActivationHeights,
+        chain_cache: Option<PathBuf>,
+    ) -> LocalNet<Zainod, Zcashd> {
+        let miner_address = match mine_to_pool {
+            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
+            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
+            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
+        };
+
+        LocalNet::<Zainod, Zcashd>::launch(
+            ZainodConfig {
+                zainod_bin: ZAINOD_BIN.clone(),
+                listen_port: indexer_listen_port,
+                validator_port: 0,
+                chain_cache: None,
+                network: NetworkKind::Regtest,
+            },
+            ZcashdConfig {
+                zcashd_bin: ZCASHD_BIN.clone(),
+                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
+                rpc_listen_port: None,
+                activation_heights,
+                miner_address: Some(miner_address),
+                chain_cache,
+            },
+        )
+        .await
+    }
+}
+
+impl LocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
+    async fn launch(
+        indexer_listen_port: Option<Port>,
+        mine_to_pool: PoolType,
+        activation_heights: ActivationHeights,
+        chain_cache: Option<PathBuf>,
+    ) -> LocalNet<Lightwalletd, Zcashd> {
+        let miner_address = match mine_to_pool {
+            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
+            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
+            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
+        };
+
+        LocalNet::<Lightwalletd, Zcashd>::launch(
+            LightwalletdConfig {
+                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+                listen_port: indexer_listen_port,
+                zcashd_conf: PathBuf::new(),
+                darkside: false,
+            },
+            ZcashdConfig {
+                zcashd_bin: ZCASHD_BIN.clone(),
+                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
+                rpc_listen_port: None,
+                activation_heights,
+                miner_address: Some(miner_address),
+                chain_cache,
+            },
+        )
+        .await
+    }
+}
+
+impl LocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
+    async fn launch(
+        indexer_listen_port: Option<Port>,
+        _mine_to_pool: PoolType,
+        activation_heights: ActivationHeights,
+        chain_cache: Option<PathBuf>,
+    ) -> LocalNet<Lightwalletd, Zebrad> {
+        LocalNet::<Lightwalletd, Zebrad>::launch(
+            LightwalletdConfig {
+                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
+                listen_port: indexer_listen_port,
+                zcashd_conf: PathBuf::new(),
+                darkside: false,
+            },
+            ZebradConfig {
+                zebrad_bin: ZEBRAD_BIN.clone(),
+                network_listen_port: None,
+                rpc_listen_port: None,
+                indexer_listen_port: None,
+                activation_heights,
+                miner_address: REG_T_ADDR_FROM_ABANDONART,
+                chain_cache,
+                network: NetworkKind::Regtest,
+            },
+        )
+        .await
+    }
+}
+
+/// Generate 100 blocks and shield the faucet if attempting to mine to a shielded pool as Zebrad does not currently
+/// support this. Also generates an additional block to confirm the shield, dumps the excess funds and generates a
+/// final block to confirm the send.
+async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
+    mine_to_pool: PoolType,
+    faucet: &mut LightClient,
+) {
+    if !matches!(mine_to_pool, PoolType::Transparent) {
+        local_net.validator().generate_blocks(100).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+        faucet.quick_shield(zip32::AccountId::ZERO).await.unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+        faucet.sync_and_await().await.unwrap();
+        quick_send(faucet, vec![(FUND_OFFLOAD_ORCHARD_ONLY, 624_960_000, None)])
+            .await
+            .unwrap();
+        local_net.validator().generate_blocks(1).await.unwrap();
+    }
+}
 
 /// Helper function to get the test binary path
 fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
@@ -107,7 +317,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
     ) -> ZingoConfig {
         //! Each client requires a unique data_dir, we use the
         //! client_number counter for this.
@@ -124,7 +334,7 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
@@ -147,7 +357,7 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
@@ -164,7 +374,7 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        activation_heights: ZingolibLocalNetwork,
+        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(activation_heights);
         let mut wallet = LightWallet::new(
@@ -187,9 +397,9 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
+) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
     let (local_net, mut client_builder) =
         custom_clients(PoolType::ORCHARD, activation_heights, chain_cache).await;
 
@@ -197,7 +407,7 @@ pub async fn unfunded_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
     lightclient.sync_and_await().await.unwrap();
 
@@ -205,8 +415,9 @@ pub async fn unfunded_client(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    unfunded_client(ZingolibLocalNetwork::default(), None).await
+pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient)
+{
+    unfunded_client(ActivationHeights::default(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -221,39 +432,53 @@ pub async fn unfunded_client_default() -> (LocalNet<Lightwalletd, Zcashd>, Light
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
+) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, activation_heights.inner());
+
+    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+    }
+
     faucet.sync_and_await().await.unwrap();
 
     (local_net, faucet)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient) {
-    faucet(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
+pub async fn faucet_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
+    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient) {
+) -> (
+    LocalNet<DefaultIndexer, DefaultValidator>,
+    LightClient,
+    LightClient,
+) {
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, activation_heights.inner());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
+
+    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+        zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
+    }
+
     faucet.sync_and_await().await.unwrap();
     recipient.sync_and_await().await.unwrap();
 
@@ -261,9 +486,12 @@ pub async fn faucet_recipient(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_recipient_default() -> (LocalNet<Lightwalletd, Zcashd>, LightClient, LightClient)
-{
-    faucet_recipient(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await
+pub async fn faucet_recipient_default() -> (
+    LocalNet<DefaultIndexer, DefaultValidator>,
+    LightClient,
+    LightClient,
+) {
+    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -272,10 +500,10 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<Lightwalletd, Zcashd>,
+    LocalNet<DefaultIndexer, DefaultValidator>,
     LightClient,
     LightClient,
     Option<String>,
@@ -353,7 +581,7 @@ pub async fn faucet_funded_recipient(
 pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
 ) -> (
-    LocalNet<Lightwalletd, Zcashd>,
+    LocalNet<DefaultIndexer, DefaultValidator>,
     LightClient,
     LightClient,
     String,
@@ -364,7 +592,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            ZingolibLocalNetwork::default(),
+            ActivationHeights::default(),
             None,
         )
         .await;
@@ -375,35 +603,19 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    activation_heights: ZingolibLocalNetwork,
+    activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
-    let miner_address = match mine_to_pool {
-        PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
-        PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
-        PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
-    };
-    let local_net = LocalNet::<Lightwalletd, Zcashd>::launch(
-        LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-            listen_port: None,
-            zcashd_conf: PathBuf::new(),
-            darkside: false,
-        },
-        ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN.clone(),
-            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-            rpc_listen_port: None,
-            activation_heights: activation_heights.into(),
-            miner_address: Some(miner_address),
-            chain_cache,
-        },
-    )
+) -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder) {
+    let local_net = <(DefaultIndexer, DefaultValidator) as LocalNetwork<
+        DefaultIndexer,
+        DefaultValidator,
+    >>::launch(None, mine_to_pool, activation_heights, chain_cache)
     .await;
+
     local_net.validator().generate_blocks(2).await.unwrap();
 
     let client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
     );
 
@@ -411,49 +623,39 @@ pub async fn custom_clients(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn custom_clients_default() -> (LocalNet<Lightwalletd, Zcashd>, ClientBuilder) {
+pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder)
+{
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, ZingolibLocalNetwork::default(), None).await;
+        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
 
     (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_mobileclient() -> LocalNet<Lightwalletd, Zcashd> {
-    let activation_heights = ZingolibLocalNetwork::default();
-    LocalNet::<Lightwalletd, Zcashd>::launch(
-        LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-            listen_port: Some(20_000),
-            zcashd_conf: PathBuf::new(),
-            darkside: false,
-        },
-        ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN.clone(),
-            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-            rpc_listen_port: None,
-            activation_heights: activation_heights.into(),
-            miner_address: Some(REG_Z_ADDR_FROM_ABANDONART),
-            chain_cache: None,
-        },
+pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidator> {
+    <(DefaultIndexer, DefaultValidator) as LocalNetwork<DefaultIndexer, DefaultValidator>>::launch(
+        Some(20_000),
+        PoolType::SAPLING,
+        ActivationHeights::default(),
+        None,
     )
     .await
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<Lightwalletd, Zcashd> {
+pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer, DefaultValidator> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+        client_builder.build_faucet(true, local_net.validator().activation_heights().inner());
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights().inner(),
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -468,19 +670,21 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<Lightwalletd, Z
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> LocalNet<Lightwalletd, Zcashd> {
+pub async fn funded_orchard_with_3_txs_mobileclient(
+    value: u64,
+) -> LocalNet<DefaultIndexer, DefaultValidator> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+        client_builder.build_faucet(true, local_net.validator().activation_heights().inner());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights().inner(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -524,19 +728,21 @@ pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> LocalNet<Ligh
 }
 
 /// This scenario funds a client with transparent funds.
-pub async fn funded_transparent_mobileclient(value: u64) -> LocalNet<Lightwalletd, Zcashd> {
+pub async fn funded_transparent_mobileclient(
+    value: u64,
+) -> LocalNet<DefaultIndexer, DefaultValidator> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+        client_builder.build_faucet(true, local_net.validator().activation_heights().inner());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights().inner(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -565,19 +771,19 @@ pub async fn funded_transparent_mobileclient(value: u64) -> LocalNet<Lightwallet
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     value: u64,
-) -> LocalNet<Lightwalletd, Zcashd> {
+) -> LocalNet<DefaultIndexer, DefaultValidator> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().activation_heights().into());
+        client_builder.build_faucet(true, local_net.validator().activation_heights().inner());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights().into(),
+        local_net.validator().activation_heights().inner(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await

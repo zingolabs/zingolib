@@ -1,8 +1,8 @@
+use libtonode_tests::chain_generics::LibtonodeEnvironment;
 use tokio::runtime::Runtime;
-use zingolib::testutils::{
-    chain_generics::{fixtures, libtonode::LibtonodeEnvironment},
-    int_to_pooltype, int_to_shieldedprotocol,
-};
+use zingolib::testutils::chain_generics::fixtures;
+use zingolib::testutils::int_to_pooltype;
+use zingolib::testutils::int_to_shieldedprotocol;
 
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(1))]
@@ -23,9 +23,10 @@ proptest::proptest! {
 }
 
 mod chain_generics {
-    use zcash_protocol::{PoolType, ShieldedProtocol};
+    use libtonode_tests::chain_generics::LibtonodeEnvironment;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::ShieldedProtocol;
     use zingolib::testutils::chain_generics::fixtures;
-    use zingolib::testutils::chain_generics::libtonode::LibtonodeEnvironment;
 
     #[tokio::test]
     async fn generate_a_range_of_value_transfers() {
