@@ -9,7 +9,6 @@ use zingo_infra_services::network::localhost_uri;
 use super::super::LightWallet;
 use crate::config::ChainType;
 use crate::lightclient::LightClient;
-use crate::testutils::local_network::ZingolibLocalNetwork;
 use crate::wallet::WalletSettings;
 
 /// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
@@ -280,9 +279,7 @@ impl NetworkSeedVersion {
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(
-                        crate::testutils::default_regtest_heights(),
-                    ),
+                    crate::config::ChainType::Regtest(crate::testutils::default_regtest_heights()),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),

@@ -62,7 +62,7 @@ pub enum ChainType {
     Mainnet,
     /// Local testnet
     #[cfg(any(test, feature = "testutils"))]
-    Regtest(crate::testutils::local_network::ZingolibLocalNetwork),
+    Regtest(zcash_protocol::local_consensus::LocalNetwork),
 }
 
 impl std::fmt::Display for ChainType {
@@ -116,12 +116,12 @@ impl Parameters for ChainType {
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+    use crate::testutils;
+
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(
-            crate::testutils::local_network::ZingolibLocalNetwork::default(),
-        )),
+        "regtest" => Ok(ChainType::Regtest(testutils::default_regtest_heights())),
         _ => Err(format!(
             "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
             chain_name
@@ -606,52 +606,6 @@ impl ZingoConfig {
         //println!("LogFile:\n{}", log_path.to_str().unwrap());
 
         log_path.into_boxed_path()
-    }
-}
-
-/// TODO: Add Doc Comment Here!
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ChainType {
-    /// Public testnet
-    Testnet,
-    /// Local testnet
-    Regtest(zcash_protocol::local_consensus::LocalNetwork),
-    /// Mainnet
-    Mainnet,
-}
-
-impl std::fmt::Display for ChainType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ChainType::*;
-        let name = match self {
-            Testnet => "test",
-            Regtest(_) => "regtest",
-            Mainnet => "main",
-        };
-        write!(f, "{name}")
-    }
-}
-
-impl Parameters for ChainType {
-    fn network_type(&self) -> NetworkType {
-        match self {
-            ChainType::Mainnet => NetworkType::Main,
-            ChainType::Testnet => NetworkType::Test,
-            ChainType::Regtest(_) => NetworkType::Regtest,
-        }
-    }
-
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        use ChainType::*;
-        match self {
-            Mainnet => MAIN_NETWORK.activation_height(nu),
-            Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest(activation_heights) => Some(
-                activation_heights
-                    .activation_height(nu)
-                    .unwrap_or(BlockHeight::from_u32(1)),
-            ),
-        }
     }
 }
 

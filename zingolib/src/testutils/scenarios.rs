@@ -38,7 +38,6 @@ use zingo_infra_services::{LocalNet, Process};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
-use super::local_network::ZingolibLocalNetwork;
 use crate::config::{ChainType, ZingoConfig, load_clientconfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;

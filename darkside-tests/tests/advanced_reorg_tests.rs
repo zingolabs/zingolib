@@ -15,7 +15,6 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
-use zingolib::testutils::local_network::ZingolibLocalNetwork;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::testutils::zingo_infra_services::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},

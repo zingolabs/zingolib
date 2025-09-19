@@ -18,9 +18,11 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::local_network::ZingolibLocalNetwork;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
+use zingolib::testutils::tempfile;
+use zingolib::testutils::testvectors;
+use zingolib::testutils::zingo_infra_services;
 use zingolib::wallet::balance::AccountBalance;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
