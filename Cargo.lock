@@ -3315,6 +3315,7 @@ name = "libtonode-tests"
 version = "0.2.0"
 dependencies = [
  "bip0039",
+ "http",
  "itertools 0.14.0",
  "json",
  "pepper-sync",
