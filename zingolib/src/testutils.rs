@@ -11,11 +11,13 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
+use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::validator::{Validator, Zcashd};
+use zingo_infra_services::indexer::Indexer;
+use zingo_infra_services::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -36,6 +38,26 @@ pub mod macros;
 pub mod paths;
 pub mod scenarios;
 
+// Re-export test dependencies for convenience
+pub use portpicker;
+pub use tempfile;
+pub use testvectors;
+pub use zingo_infra_services;
+
+/// This function provides a DRY and succint instance of the most common regtest height
+/// config.
+pub fn default_regtest_heights() -> LocalNetwork {
+    LocalNetwork {
+        overwinter: Some(1.into()),
+        sapling: Some(1.into()),
+        blossom: Some(1.into()),
+        heartwood: Some(1.into()),
+        canopy: Some(1.into()),
+        nu5: Some(1.into()),
+        nu6: Some(1.into()),
+        nu6_1: Some(1.into()),
+    }
+}
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
@@ -222,8 +244,8 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
 }
 
 /// Send from sender to recipient and then bump chain and sync both lightclients
-pub async fn send_value_between_clients_and_sync(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+pub async fn send_value_between_clients_and_sync<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     sender: &mut LightClient,
     recipient: &mut LightClient,
     value: u64,
@@ -248,8 +270,8 @@ pub async fn send_value_between_clients_and_sync(
 /// it _also_ ensures that the client state is synced.
 /// Unsynced clients are very interesting to us.  See increase_server_height
 /// to reliably increase the server without syncing the client
-pub async fn increase_height_and_wait_for_client(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+pub async fn increase_height_and_wait_for_client<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     client: &mut LightClient,
     n: u32,
 ) -> Result<(), LightClientError> {
@@ -261,8 +283,8 @@ pub async fn increase_height_and_wait_for_client(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn generate_n_blocks_return_new_height(
-    local_net: &LocalNet<Lightwalletd, Zcashd>,
+pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
+    local_net: &LocalNet<I, V>,
     n: u32,
 ) -> BlockHeight {
     let start_height = local_net.validator().get_chain_height().await;
@@ -270,7 +292,7 @@ pub async fn generate_n_blocks_return_new_height(
     local_net.validator().generate_blocks(n).await.unwrap();
     assert_eq!(local_net.validator().get_chain_height().await, target);
 
-    BlockHeight::from_u32(target.into())
+    target
 }
 
 /// Will hang if chain does not reach `target_block_height`
@@ -611,8 +633,57 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 
 /// helperized test print.
 /// if someone figures out how to improve this code it can be done in one place right here.
-pub(crate) fn timestamped_test_log(text: &str) {
+pub fn timestamped_test_log(text: &str) {
     println!("{}: {}", crate::utils::now(), text);
+}
+
+#[allow(unused_macros)]
+macro_rules! build_method {
+    ($name:ident, $localtype:ty) => {
+        #[doc = "Set the $name field of the builder."]
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
+            self.$name = Some($name);
+            self
+        }
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! build_method_push {
+    ($name:ident, $localtype:ty) => {
+        #[doc = "Push a $ty to the builder."]
+        pub fn $name(&mut self, $name: $localtype) -> &mut Self {
+            self.$name.push($name);
+            self
+        }
+    };
+}
+#[allow(unused_macros)]
+macro_rules! build_push_list {
+    ($name:ident, $builder:ident, $struct:ident) => {
+        for i in &$builder.$name {
+            $struct.$name.push(i.build());
+        }
+    };
+}
+
+#[allow(unused_imports)]
+pub(crate) use build_method;
+#[allow(unused_imports)]
+pub(crate) use build_method_push;
+#[allow(unused_imports)]
+pub(crate) use build_push_list;
+
+/// Take a P2PKH taddr and interpret it as a tex addr
+pub fn interpret_taddr_as_tex_addr(
+    taddr_bytes: [u8; 20],
+    p: &impl zcash_primitives::consensus::Parameters,
+) -> String {
+    bech32::encode::<bech32::Bech32m>(
+        bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),
+        &taddr_bytes,
+    )
+    .unwrap()
 }
 
 /// Decodes unified address and re-encode as sapling address.

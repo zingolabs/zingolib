@@ -4,7 +4,7 @@ use tonic::Request;
 
 use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
 
-#[cfg(feature = "test-elevation")]
+#[cfg(feature = "testutils")]
 use zcash_client_backend::proto::service::TreeState;
 
 /// Get server info.
@@ -23,7 +23,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 }
 
 /// TODO: Add Doc Comment Here!
-#[cfg(feature = "test-elevation")]
+#[cfg(feature = "testutils")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
     let mut client = crate::grpc_client::get_zcb_client(uri.clone())
         .await

@@ -4,11 +4,8 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::value::Zatoshis;
 
-use crate::config::ChainType;
 use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
-use crate::config::ZENNIES_FOR_ZINGO_DONATION_ADDRESS;
-use crate::config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS;
-use crate::config::ZENNIES_FOR_ZINGO_TESTNET_ADDRESS;
+use crate::config::get_donation_address_for_chain;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
@@ -20,11 +17,7 @@ use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
     pub(super) fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
-        let zfz_address = match self.config().chain {
-            ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-            ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-            ChainType::Regtest(_) => ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        };
+        let zfz_address = get_donation_address_for_chain(&self.config().chain);
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
             Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
