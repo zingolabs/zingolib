@@ -617,7 +617,6 @@ pub fn run_cli() {
 #[cfg(feature = "regtest")]
 pub fn run_regtest_cli() {
     use crate::commands::RT;
-    use zingolib::testutils::local_network::ZingolibLocalNetwork;
 
     println!("Launching local regtest network...");
 
@@ -652,7 +651,7 @@ pub fn run_regtest_cli() {
         sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
-        chaintype: ChainType::Regtest(ZingolibLocalNetwork::default()),
+        chaintype: ChainType::Regtest(zingolib::testutils::default_regtest_heights()),
         tor_enabled: false,
     };
 
