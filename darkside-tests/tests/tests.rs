@@ -9,6 +9,7 @@ use testvectors::seeds::DARKSIDE_SEED;
 use zingo_infra_services::indexer::Indexer;
 use zingo_infra_services::indexer::Lightwalletd;
 use zingo_infra_services::indexer::LightwalletdConfig;
+use zingo_infra_services::network::ActivationHeights;
 use zingo_infra_services::network::localhost_uri;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
@@ -20,7 +21,6 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::wallet::balance::AccountBalance;
-use zingolib::wallet::network::ZingolibLocalNetwork;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
@@ -37,13 +37,13 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let activation_heights = ZingolibLocalNetwork::default();
+    let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
         0,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
 
     let result = light_client.sync_and_await().await.unwrap();
@@ -87,13 +87,13 @@ async fn reorg_receipt_sync_generic() {
         .await
         .unwrap();
 
-    let activation_heights = ZingolibLocalNetwork::default();
+    let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
         0,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
     light_client.sync_and_await().await.unwrap();
 
@@ -155,14 +155,18 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
-    let activation_heights = ZingolibLocalNetwork::default();
-    let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
+    let activation_heights = ActivationHeights::default();
+    let mut light_client = client_manager.build_client(
+        DARKSIDE_SEED.to_string(),
+        0,
+        true,
+        activation_heights.inner(),
+    );
     let mut recipient = client_manager.build_client(
         testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        activation_heights.inner(),
     );
 
     light_client.sync_and_await().await.unwrap();

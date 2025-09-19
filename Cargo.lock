@@ -9164,7 +9164,7 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=91a1125a328edbbe459c16acb18b2f7e22008b28#91a1125a328edbbe459c16acb18b2f7e22008b28"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.3.0#d1540464571f7d14bfed7997c4cf144d6b52e923"
 dependencies = [
  "getset",
  "hex",
@@ -9307,6 +9307,7 @@ dependencies = [
  "zcash_proofs 0.24.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_protocol 0.6.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_transparent 0.4.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
+ "zebra-chain",
  "zingo-infra-services",
  "zingo-memo",
  "zingo-netutils",

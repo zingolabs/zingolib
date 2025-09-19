@@ -14,18 +14,16 @@ use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
-use testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingo_infra_services::validator::{Zcashd, ZcashdConfig};
+use zcash_protocol::PoolType;
+use zingo_infra_services::network::ActivationHeights;
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::wallet::network::ZingolibLocalNetwork;
+use zingolib::testutils::scenarios::LocalNetwork;
+use zingolib::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -379,11 +377,29 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(ZingolibLocalNetwork::default()),
+                "regtest" => ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
+                    overwinter: Some(1.into()),
+                    sapling: Some(1.into()),
+                    blossom: Some(1.into()),
+                    heartwood: Some(1.into()),
+                    canopy: Some(1.into()),
+                    nu5: Some(1.into()),
+                    nu6: Some(1.into()),
+                    nu6_1: Some(1.into()),
+                }),
                 _ => return Err(chain.clone()),
             }
         } else if is_regtest {
-            ChainType::Regtest(ZingolibLocalNetwork::default())
+            ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
+                overwinter: Some(1.into()),
+                sapling: Some(1.into()),
+                blossom: Some(1.into()),
+                heartwood: Some(1.into()),
+                canopy: Some(1.into()),
+                nu5: Some(1.into()),
+                nu6: Some(1.into()),
+                nu6_1: Some(1.into()),
+            })
         } else {
             ChainType::Mainnet
         };
@@ -646,21 +662,11 @@ pub fn run_cli() {
             let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
                 RT.block_on(async move {
                     Some(
-                        LocalNet::<Lightwalletd, Zcashd>::launch(
-                            LightwalletdConfig {
-                                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-                                listen_port: None,
-                                zcashd_conf: PathBuf::new(),
-                                darkside: false,
-                            },
-                            ZcashdConfig {
-                                zcashd_bin: ZCASHD_BIN.clone(),
-                                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-                                rpc_listen_port: None,
-                                activation_heights: ZingolibLocalNetwork::default().into(),
-                                miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
-                                chain_cache: None,
-                            },
+                        <(DefaultIndexer, DefaultValidator) as LocalNetwork<
+                            DefaultIndexer,
+                            DefaultValidator,
+                        >>::launch(
+                            None, PoolType::ORCHARD, ActivationHeights::default(), None
                         )
                         .await,
                     )

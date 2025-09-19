@@ -11,10 +11,14 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-test-elevation = ["portpicker", "testvectors", "tempfile"]
+test-elevation = ["portpicker", "testvectors", "tempfile", "zebra-chain"]
 zaino-test = ['test-elevation']
+test_zainod_zcashd = []
+test_lwd_zebrad = []
+test_lwd_zcashd = []
 
 [dependencies]
 zingo-memo = { workspace = true }
@@ -30,6 +34,8 @@ http-body-util = { workspace = true }
 tokio-rustls = { workspace = true }
 webpki-roots = { workspace = true }
 tower = { workspace = true }
+
+zebra-chain = { workspace = true, optional = true }
 
 # TODO: separate activation heights into different crate and make this optional for test-elevation
 zingo-infra-services = { workspace = true }
