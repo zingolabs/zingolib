@@ -147,7 +147,7 @@ mod fast {
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
-            chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
+            chain_generics::conduct_chain::ConductChain,
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
@@ -158,6 +158,7 @@ mod fast {
     };
 
     use super::*;
+    use libtonode_tests::chain_generics::LibtonodeEnvironment;
 
     // FIXME: zingo2, large test to re-integrate
     // #[tokio::test]
