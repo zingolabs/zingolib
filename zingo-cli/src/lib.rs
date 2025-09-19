@@ -6,6 +6,9 @@
 
 mod commands;
 
+#[cfg(feature = "regtest")]
+mod regtest;
+
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -18,12 +21,8 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zcash_protocol::PoolType;
-use zingo_infra_services::network::ActivationHeights;
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::scenarios::LocalNetwork;
-use zingolib::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -42,17 +41,14 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .help("Block execution of the specified command until the background sync completes. Has no effect if --nosync is set.")
                 .long("waitsync")
                 .action(clap::ArgAction::SetTrue))
-            .arg(Arg::new("regtest")
-                .long("regtest")
-                .help("Regtest mode")
-                .action(clap::ArgAction::SetTrue) )
-            .arg(Arg::new("no-clean")
-                .long("no-clean")
-                .help("Don't clean regtest state before running. Regtest mode only")
-                .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("chain")
                 .long("chain").short('c')
-                .help(r#"What chain to expect, if it's not inferable from the server URI. One of "mainnet", "testnet", or "regtest""#))
+                .value_name("CHAIN")
+                .help(if cfg!(feature = "regtest") {
+                    r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
+                } else {
+                    r#"What chain to expect. One of "mainnet" or "testnet". Defaults to "mainnet""#
+                }))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -304,7 +300,6 @@ pub struct ConfigTemplate {
 
 impl ConfigTemplate {
     fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
-        let is_regtest = matches.get_flag("regtest");
         let tor_enabled = matches.get_flag("tor");
         let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
             vals.cloned().collect()
@@ -339,9 +334,6 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                     .to_string(),
             );
         }
-        if matches.contains_id("chain") && is_regtest {
-            return Err("regtest mode incompatible with custom chain selection".to_string());
-        }
         let birthday = match maybe_birthday.unwrap_or("0".to_string()).parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
@@ -352,54 +344,18 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             }
         };
 
-        // TODO: handle no-clean parameter
-        let _clean_regtest_data = !matches.get_flag("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
-        } else if is_regtest {
-            zingolib::testutils::paths::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
         };
         let server = matches
             .get_one::<http::Uri>("server")
-            .map(ToString::to_string)
-            .or_else(|| {
-                if is_regtest {
-                    Some("http://127.0.0.1".to_string())
-                } else {
-                    None
-                }
-            });
+            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            match chain.as_str() {
-                "mainnet" => ChainType::Mainnet,
-                "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
-                    overwinter: Some(1.into()),
-                    sapling: Some(1.into()),
-                    blossom: Some(1.into()),
-                    heartwood: Some(1.into()),
-                    canopy: Some(1.into()),
-                    nu5: Some(1.into()),
-                    nu6: Some(1.into()),
-                    nu6_1: Some(1.into()),
-                }),
-                _ => return Err(chain.clone()),
-            }
-        } else if is_regtest {
-            ChainType::Regtest(zcash_protocol::local_consensus::LocalNetwork {
-                overwinter: Some(1.into()),
-                sapling: Some(1.into()),
-                blossom: Some(1.into()),
-                heartwood: Some(1.into()),
-                canopy: Some(1.into()),
-                nu5: Some(1.into()),
-                nu6: Some(1.into()),
-                nu6_1: Some(1.into()),
-            })
+            zingolib::config::chain_from_str(chain)?
         } else {
             ChainType::Mainnet
         };
@@ -650,35 +606,57 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(mut cli_config) => {
-            let _wallet_dir = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                let wallet_dir = tempfile::tempdir().unwrap();
-                cli_config.data_dir = wallet_dir.path().to_path_buf();
-
-                Some(wallet_dir)
-            } else {
-                None
-            };
-            let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                RT.block_on(async move {
-                    Some(
-                        <(DefaultIndexer, DefaultValidator) as LocalNetwork<
-                            DefaultIndexer,
-                            DefaultValidator,
-                        >>::launch(
-                            None, PoolType::ORCHARD, ActivationHeights::default(), None
-                        )
-                        .await,
-                    )
-                })
-            } else {
-                None
-            };
-
-            dispatch_command_or_start_interactive(&cli_config)
-        }
+        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
+}
+
+/// Run CLI in regtest mode
+/// This function is only available when the regtest feature is enabled
+/// It bypasses clap entirely and directly sets up a regtest environment
+#[cfg(feature = "regtest")]
+pub fn run_regtest_cli() {
+    use crate::commands::RT;
+
+    println!("Launching local regtest network...");
+
+    // Launch the local network first
+    let local_net = RT.block_on(regtest::launch_local_net());
+
+    // Get the lightwalletd port from the launched network
+    let lightwalletd_port = local_net.indexer().port();
+
+    println!("Local network launched on port {}", lightwalletd_port);
+
+    // Create a regtest-specific config directly
+    let data_dir = regtest::get_regtest_dir();
+
+    // Ensure the regtest directory exists
+    std::fs::create_dir_all(&data_dir).expect("Failed to create regtest directory");
+
+    // Use a temporary directory for wallet data in regtest
+    let wallet_dir = zingolib::testutils::tempfile::tempdir().expect("Failed to create temp dir");
+    let wallet_data_dir = wallet_dir.path().to_path_buf();
+
+    let cli_config = ConfigTemplate {
+        params: vec![],
+        server: zingolib::config::construct_lightwalletd_uri(Some(format!(
+            "http://127.0.0.1:{}",
+            lightwalletd_port
+        ))),
+        seed: None,
+        ufvk: None,
+        birthday: 0,
+        data_dir: wallet_data_dir,
+        sync: false, // Don't auto-sync in regtest
+        waitsync: false,
+        command: None,
+        chaintype: ChainType::Regtest(zingolib::testutils::default_regtest_heights()),
+        tor_enabled: false,
+    };
+
+    // Start the CLI in interactive mode
+    dispatch_command_or_start_interactive(&cli_config)
 }
 
 fn short_circuit_on_help(params: Vec<String>) {
