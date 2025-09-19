@@ -13,6 +13,7 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
 use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zingo_infra_services::LocalNet;
 use zingo_infra_services::indexer::Indexer;
@@ -33,7 +34,6 @@ pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
 pub mod lightclient;
-pub mod local_network;
 pub mod macros;
 pub mod paths;
 pub mod scenarios;
@@ -44,6 +44,20 @@ pub use tempfile;
 pub use testvectors;
 pub use zingo_infra_services;
 
+/// This function provides a DRY and succint instance of the most common regtest height
+/// config.
+pub fn default_regtest_heights() -> LocalNetwork {
+    LocalNetwork {
+        overwinter: Some(1.into()),
+        sapling: Some(1.into()),
+        blossom: Some(1.into()),
+        heartwood: Some(1.into()),
+        canopy: Some(1.into()),
+        nu5: Some(1.into()),
+        nu6: Some(1.into()),
+        nu6_1: Some(1.into()),
+    }
+}
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();

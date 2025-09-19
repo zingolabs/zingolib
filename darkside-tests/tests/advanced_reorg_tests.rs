@@ -52,16 +52,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -225,16 +216,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -398,16 +380,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -593,16 +566,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -863,16 +827,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -1078,16 +1033,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        },
+        zingolib::testutils::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
