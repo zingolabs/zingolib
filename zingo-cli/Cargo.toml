@@ -28,3 +28,6 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
+
+[dev-dependencies]
+zingolib = { workspace = true, features = ["testutils"] }
