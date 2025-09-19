@@ -21,12 +21,8 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zcash_protocol::PoolType;
-use zingo_infra_services::network::ActivationHeights;
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::scenarios::LocalNetwork;
-use zingolib::testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -359,14 +355,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            match chain.as_str() {
-                "mainnet" => ChainType::Mainnet,
-                "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest(zingolib::testutils::default_regtest_heights()),
-                _ => return Err(chain.clone()),
-            }
-        } else if is_regtest {
-            ChainType::Regtest(zingolib::testutils::default_regtest_heights())
+            zingolib::config::chain_from_str(chain)?
         } else {
             ChainType::Mainnet
         };
@@ -617,33 +606,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
 pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
-        Ok(mut cli_config) => {
-            let _wallet_dir = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                let wallet_dir = tempfile::tempdir().unwrap();
-                cli_config.data_dir = wallet_dir.path().to_path_buf();
-
-                Some(wallet_dir)
-            } else {
-                None
-            };
-            let _local_net = if matches!(cli_config.chaintype, ChainType::Regtest(_)) {
-                RT.block_on(async move {
-                    Some(
-                        <(DefaultIndexer, DefaultValidator) as LocalNetwork<
-                            DefaultIndexer,
-                            DefaultValidator,
-                        >>::launch(
-                            None, PoolType::ORCHARD, ActivationHeights::default(), None
-                        )
-                        .await,
-                    )
-                })
-            } else {
-                None
-            };
-
-            dispatch_command_or_start_interactive(&cli_config)
-        }
+        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {:?}", e),
     }
 }

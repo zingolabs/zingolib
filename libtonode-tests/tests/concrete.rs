@@ -148,7 +148,6 @@ mod fast {
     };
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        testutils::local_network::ZingolibLocalNetwork,
         testutils::{
             chain_generics::{conduct_chain::ConductChain, libtonode::LibtonodeEnvironment},
             lightclient::{from_inputs, get_base_address},
@@ -1429,7 +1428,6 @@ mod slow {
     use zingolib::config::ChainType;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
-    use zingolib::testutils::local_network::ZingolibLocalNetwork;
     use zingolib::testutils::testvectors::TEST_TXID;
     use zingolib::testutils::zingo_infra_services::network::ActivationHeights;
     use zingolib::testutils::zingo_infra_services::validator::Validator;

@@ -2,7 +2,6 @@
 //! This module contains all regtest-specific functionality
 
 use std::path::PathBuf;
-use zingolib::testutils::local_network::ZingolibLocalNetwork;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
 use zingolib::testutils::testvectors::REG_O_ADDR_FROM_ABANDONART;
 use zingolib::testutils::zingo_infra_services::LocalNet;
@@ -22,7 +21,7 @@ pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights: ZingolibLocalNetwork::default().into(),
+            activation_heights: zingolib::testutils::default_regtest_heights(),
             miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
             chain_cache: None,
         },
