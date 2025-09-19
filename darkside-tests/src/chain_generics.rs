@@ -73,7 +73,7 @@ pub(crate) mod conduct_chain {
                 .await;
             let config = self
                 .client_builder
-                .make_unique_data_dir_and_load_config(self.activation_heights.into());
+                .make_unique_data_dir_and_load_config(self.activation_heights.inner());
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
@@ -100,7 +100,7 @@ pub(crate) mod conduct_chain {
 
         fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
             self.client_builder
-                .make_unique_data_dir_and_load_config(self.activation_heights.into())
+                .make_unique_data_dir_and_load_config(self.activation_heights.inner())
         }
 
         async fn increase_chain_height(&mut self) {
