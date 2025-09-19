@@ -15,8 +15,6 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-#[cfg(feature = "regtest")]
-use zingolib::testutils::local_network::ZingolibLocalNetwork;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -220,13 +218,21 @@ impl Command for ParseAddressCommand {
             let chains = [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
-            ];
-
-            chains
-                .iter()
-                .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
+                zingolib::config::ChainType::Regtest(
+                    zcash_protocol::local_consensus::LocalNetwork {
+                        overwinter: Some(1.into()),
+                        sapling: Some(1.into()),
+                        blossom: Some(1.into()),
+                        heartwood: Some(1.into()),
+                        canopy: Some(1.into()),
+                        nu5: Some(1.into()),
+                        nu6: Some(1.into()),
+                        nu6_1: Some(1.into()),
+                    },
+                ),
+            ]
+            .iter()
+            .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
         }
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
             #[allow(unreachable_patterns)]

@@ -46,6 +46,8 @@ zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed
 ] }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
 
+zebra-chain = "2.0"
+
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
 bs58 = "0.5"
@@ -105,7 +107,7 @@ crossbeam-channel = "0.5"
 rayon = "1"
 
 # Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", rev = "91a1125a328edbbe459c16acb18b2f7e22008b28" }
+zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zingo-infra-services-0.3.0" }
 
 # Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }

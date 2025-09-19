@@ -609,6 +609,52 @@ impl ZingoConfig {
     }
 }
 
+/// TODO: Add Doc Comment Here!
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChainType {
+    /// Public testnet
+    Testnet,
+    /// Local testnet
+    Regtest(zcash_protocol::local_consensus::LocalNetwork),
+    /// Mainnet
+    Mainnet,
+}
+
+impl std::fmt::Display for ChainType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ChainType::*;
+        let name = match self {
+            Testnet => "test",
+            Regtest(_) => "regtest",
+            Mainnet => "main",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl Parameters for ChainType {
+    fn network_type(&self) -> NetworkType {
+        match self {
+            ChainType::Mainnet => NetworkType::Main,
+            ChainType::Testnet => NetworkType::Test,
+            ChainType::Regtest(_) => NetworkType::Regtest,
+        }
+    }
+
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        use ChainType::*;
+        match self {
+            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Testnet => TEST_NETWORK.activation_height(nu),
+            Regtest(activation_heights) => Some(
+                activation_heights
+                    .activation_height(nu)
+                    .unwrap_or(BlockHeight::from_u32(1)),
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;

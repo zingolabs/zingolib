@@ -280,7 +280,18 @@ impl NetworkSeedVersion {
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(ZingolibLocalNetwork::default()),
+                    crate::config::ChainType::Regtest(
+                        zcash_protocol::local_consensus::LocalNetwork {
+                            overwinter: Some(1.into()),
+                            sapling: Some(1.into()),
+                            blossom: Some(1.into()),
+                            heartwood: Some(1.into()),
+                            canopy: Some(1.into()),
+                            nu5: Some(1.into()),
+                            nu6: Some(1.into()),
+                            nu6_1: Some(1.into()),
+                        },
+                    ),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
