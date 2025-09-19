@@ -1,7 +1,5 @@
 //! All things needed to create, manaage, and use notes
 
-use std::num::NonZeroU32;
-
 use shardtree::store::ShardStore;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
@@ -304,8 +302,13 @@ impl LightWallet {
     pub(crate) fn spendable_transparent_coins(
         &self,
         target_height: BlockHeight,
-        min_confirmations: NonZeroU32,
+        allow_zero_conf_shielding: bool,
     ) -> Vec<&TransparentCoin> {
+        // TODO: add support for zero conf shielding
+        if allow_zero_conf_shielding {
+            panic!("zero conf shielding not currently supported!");
+        }
+
         self.wallet_transactions
             .values()
             .filter(|&transaction| transaction.status().is_confirmed())
@@ -314,8 +317,7 @@ impl LightWallet {
                     .status()
                     .get_confirmed_height()
                     .expect("transaction must be confirmed in this scope")
-                    > self.sync_state.wallet_height().unwrap_or(self.birthday) + 1
-                        - min_confirmations.get()
+                    > self.sync_state.wallet_height().unwrap_or(self.birthday)
                 {
                     return Vec::new();
                 }
