@@ -11,7 +11,6 @@
 //!   - mempool
 
 pub mod conduct_chain;
-pub mod libtonode;
 pub mod networked;
 
 pub mod fixtures;

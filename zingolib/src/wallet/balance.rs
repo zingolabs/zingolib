@@ -494,7 +494,7 @@ impl LightWallet {
     }
 }
 
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(any(test, feature = "testutils"))]
 mod test {
     // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]

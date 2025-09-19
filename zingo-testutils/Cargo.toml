@@ -10,7 +10,7 @@ default = ["grpc-proxy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zingolib = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true, features = ["testutils"] }
 zingo-netutils = { workspace = true, features = ["test-features"] }
 zingo-testvectors = { workspace = true }
 zingo-status = { workspace = true }
@@ -33,4 +33,4 @@ tonic = { workspace = true, optional = true }
 nonempty.workspace = true
 
 [dev-dependencies]
-zingolib = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true, features = ["testutils"] }
