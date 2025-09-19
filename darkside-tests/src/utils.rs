@@ -309,9 +309,7 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingolib::testutils::zingo_infra_services::{
-        indexer::Lightwalletd, network::ActivationHeights,
-    };
+    use zingolib::testutils::zingo_infra_services::indexer::Lightwalletd;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -329,7 +327,7 @@ pub mod scenarios {
         lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) activation_heights: ActivationHeights,
+        pub(crate) activation_heights: zcash_protocol::local_consensus::LocalNetwork,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -346,7 +344,7 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
             );
-            let activation_heights = ActivationHeights::default();
+            let activation_heights = zingolib::testutils::default_regtest_heights();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
@@ -382,7 +380,7 @@ pub mod scenarios {
                 zingolib::testutils::testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights.inner(),
+                self.activation_heights,
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -407,12 +405,9 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient = self.client_builder.build_client(
-                seed,
-                birthday,
-                true,
-                self.activation_heights.inner(),
-            );
+            let lightclient =
+                self.client_builder
+                    .build_client(seed, birthday, true, self.activation_heights);
             self.lightclients.push(lightclient);
             self
         }
@@ -659,7 +654,7 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_activation_heights(&self) -> ActivationHeights {
+        pub fn get_activation_heights(&self) -> zcash_protocol::local_consensus::LocalNetwork {
             self.activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {
