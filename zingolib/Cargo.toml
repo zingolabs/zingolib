@@ -93,6 +93,7 @@ rust-embed = { workspace = true, features = ["debug-embed"] }
 tracing.workspace = true
 
 [dev-dependencies]
+zingolib = { workspace = true, features = ["testutils"] }
 zingo-infra-services = { workspace = true }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }

@@ -9300,6 +9300,7 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo-testvectors",
+ "zingolib",
  "zip32",
 ]
 
