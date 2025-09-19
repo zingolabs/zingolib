@@ -1373,12 +1373,10 @@ dependencies = [
  "hyper-util",
  "incrementalmerkletree",
  "orchard",
- "portpicker",
  "proptest",
  "prost",
  "sapling-crypto",
  "serde_json",
- "tempfile",
  "tokio",
  "tonic 0.13.1",
  "tonic-build 0.13.1",
@@ -1386,9 +1384,7 @@ dependencies = [
  "tracing-subscriber",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
- "zingo-infra-services",
  "zingo-netutils",
- "zingo-testvectors",
  "zingolib",
  "zip32",
 ]
@@ -3325,7 +3321,6 @@ dependencies = [
  "pepper-sync",
  "proptest",
  "rustls 0.23.31",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3333,9 +3328,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
- "zingo-infra-services",
  "zingo-status",
- "zingo-testvectors",
  "zingolib",
  "zip32",
 ]
@@ -9148,7 +9141,6 @@ dependencies = [
  "rustls 0.23.31",
  "rustyline",
  "shellwords",
- "tempfile",
  "tokio",
  "tracing-subscriber",
  "zcash_address 0.9.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
@@ -9156,8 +9148,6 @@ dependencies = [
  "zcash_keys 0.10.0",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
- "zingo-infra-services",
- "zingo-testvectors",
  "zingolib",
  "zip32",
 ]
@@ -9165,7 +9155,6 @@ dependencies = [
 [[package]]
 name = "zingo-infra-services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zingo-infra-services-0.3.0#d1540464571f7d14bfed7997c4cf144d6b52e923"
 dependencies = [
  "getset",
  "hex",
@@ -9205,11 +9194,9 @@ version = "0.0.1"
 dependencies = [
  "http",
  "http-body",
- "http-body-util",
  "hyper",
  "hyper-rustls",
  "hyper-util",
- "prost",
  "rustls-pemfile",
  "thiserror 2.0.16",
  "tokio-rustls",
@@ -9267,8 +9254,6 @@ dependencies = [
  "futures",
  "hex",
  "http",
- "http-body-util",
- "hyper",
  "hyper-rustls",
  "hyper-util",
  "incrementalmerkletree",
@@ -9315,6 +9300,7 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo-testvectors",
+ "zingolib",
  "zip32",
 ]
 
