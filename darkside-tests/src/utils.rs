@@ -376,7 +376,7 @@ pub mod scenarios {
                 testvectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights.into(),
+                self.activation_heights.inner(),
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -405,7 +405,7 @@ pub mod scenarios {
                 seed,
                 birthday,
                 true,
-                self.activation_heights.into(),
+                self.activation_heights.inner(),
             );
             self.lightclients.push(lightclient);
             self
