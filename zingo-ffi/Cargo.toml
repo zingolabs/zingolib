@@ -46,7 +46,6 @@ log = "0.4"
 uniffi_build = "0.29"
 
 [patch.crates-io]
-bindgen = { git = "https://github.com/rust-lang/rust-bindgen", tag = "v0.72.1" }
 zcash_script = { git = "https://github.com/juanky201271/zcash_script", branch = "fixing_cross_compiling_32_bits_v_0.3.2" }
 
 [profile.release]
