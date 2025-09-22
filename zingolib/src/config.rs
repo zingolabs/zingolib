@@ -116,12 +116,12 @@ impl Parameters for ChainType {
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
-    use crate::testutils;
+    use crate::testutils::{LocalNetwork, LocalNetworkExt};
 
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(testutils::default_regtest_heights())),
+        "regtest" => Ok(ChainType::Regtest(LocalNetwork::default_regtest_heights())),
         _ => Err(format!(
             "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
             chain_name

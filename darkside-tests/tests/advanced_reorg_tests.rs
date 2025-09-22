@@ -24,7 +24,8 @@ use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
-        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
+        LocalNetwork, LocalNetworkExt, lightclient::from_inputs, paths::get_cargo_manifest_dir,
+        scenarios::ClientBuilder,
     },
     wallet::balance::AccountBalance,
 };
@@ -51,7 +52,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -215,7 +216,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -379,7 +380,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -565,7 +566,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -826,7 +827,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -1032,7 +1033,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        zingolib::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
     );
 
     light_client.sync_and_await().await.unwrap();
