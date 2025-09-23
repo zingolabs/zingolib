@@ -150,6 +150,35 @@ pub async fn lookup_statuses(
     })
 }
 
+/// TODO: Add Doc Comment Here!
+// TODO: move balance fns to wallet balance sub-module and also move this struct there
+#[deprecated = "pita interface"]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PoolBalances {
+    /// TODO: Add Doc Comment Here!
+    pub sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub verified_sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub spendable_sapling_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub unverified_sapling_balance: Option<u64>,
+
+    /// TODO: Add Doc Comment Here!
+    pub orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub verified_orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub unverified_orchard_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub spendable_orchard_balance: Option<u64>,
+
+    /// TODO: Add Doc Comment Here!
+    pub confirmed_transparent_balance: Option<u64>,
+    /// TODO: Add Doc Comment Here!
+    pub unconfirmed_transparent_balance: Option<u64>,
+}
+
 impl LightClient {
     #[deprecated = "pita interface"]
     pub async fn do_balance(&self) -> PoolBalances {
@@ -157,27 +186,33 @@ impl LightClient {
             confirmed_orchard_balance,
             unconfirmed_orchard_balance,
             total_orchard_balance,
+
             confirmed_sapling_balance,
             unconfirmed_sapling_balance,
             total_sapling_balance,
+
             confirmed_transparent_balance,
             unconfirmed_transparent_balance,
             total_transparent_balance,
         } = self.account_balance(AccountId::ZERO).await.unwrap();
 
         PoolBalances {
-            sapling_balance,
-            verified_sapling_balance,
-            spendable_sapling_balance,
-            unverified_sapling_balance,
+            sapling_balance: total_sapling_balance.map(|zatoshis| zatoshis.into_u64()),
+            verified_sapling_balance: confirmed_sapling_balance.map(|zatoshis| zatoshis.into_u64()),
+            spendable_sapling_balance: None,
+            unverified_sapling_balance: unconfirmed_sapling_balance
+                .map(|zatoshis| zatoshis.into_u64()),
 
-            orchard_balance,
-            verified_orchard_balance,
-            spendable_orchard_balance,
-            unverified_orchard_balance,
+            orchard_balance: total_orchard_balance.map(|zatoshis| zatoshis.into_u64()),
+            verified_orchard_balance: confirmed_orchard_balance.map(|zatoshis| zatoshis.into_u64()),
+            spendable_orchard_balance: None,
+            unverified_orchard_balance: unconfirmed_orchard_balance
+                .map(|zatoshis| zatoshis.into_u64()),
 
-            confirmed_transparent_balance,
-            unconfirmed_transparent_balance,
+            confirmed_transparent_balance: confirmed_transparent_balance
+                .map(|zatoshis| zatoshis.into_u64()),
+            unconfirmed_transparent_balance: unconfirmed_transparent_balance
+                .map(|zatoshis| zatoshis.into_u64()),
         }
     }
 }
