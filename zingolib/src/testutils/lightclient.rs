@@ -1,8 +1,10 @@
 //! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
 //! (obviously) in a test environment.
 
+use crate::wallet::balance::AccountBalance;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zip32::AccountId;
 
 use crate::{
     lightclient::{LightClient, error::LightClientError},
@@ -146,4 +148,36 @@ pub async fn lookup_statuses(
             .get(&txid)
             .map(|transaction_record| transaction_record.status())
     })
+}
+
+impl LightClient {
+    #[deprecated = "pita interface"]
+    pub async fn do_balance(&self) -> PoolBalances {
+        let AccountBalance {
+            confirmed_orchard_balance,
+            unconfirmed_orchard_balance,
+            total_orchard_balance,
+            confirmed_sapling_balance,
+            unconfirmed_sapling_balance,
+            total_sapling_balance,
+            confirmed_transparent_balance,
+            unconfirmed_transparent_balance,
+            total_transparent_balance,
+        } = self.account_balance(AccountId::ZERO).await.unwrap();
+
+        PoolBalances {
+            sapling_balance,
+            verified_sapling_balance,
+            spendable_sapling_balance,
+            unverified_sapling_balance,
+
+            orchard_balance,
+            verified_orchard_balance,
+            spendable_orchard_balance,
+            unverified_orchard_balance,
+
+            confirmed_transparent_balance,
+            unconfirmed_transparent_balance,
+        }
+    }
 }
