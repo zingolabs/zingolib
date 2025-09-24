@@ -3,11 +3,12 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2024"
 
+[features]
+regtest = ["zingolib/testutils"]
+
 [dependencies]
-zingolib = { workspace = true, features = ["test-elevation"] }
+zingolib = { workspace = true }
 pepper-sync = { workspace = true }
-zingo-infra-services = { workspace = true }
-testvectors = { workspace = true }
 
 zcash_protocol = { workspace = true }
 
@@ -27,4 +28,6 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
-tempfile = { workspace = true }
+
+[dev-dependencies]
+zingolib = { workspace = true, features = ["testutils"] }

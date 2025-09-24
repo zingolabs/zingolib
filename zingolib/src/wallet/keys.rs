@@ -446,7 +446,7 @@ impl LightWallet {
     }
 }
 
-#[cfg(any(test, feature = "test-elevation"))]
+#[cfg(any(test, feature = "testutils"))]
 mod test {
     use zcash_protocol::PoolType;
 

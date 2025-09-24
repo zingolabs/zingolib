@@ -1,5 +1,5 @@
 //! functionality for testing the save and load functions of LightWallet.
-//! do not compile test-elevation feature for production.
+//! do not compile testutils feature for production.
 
 use bip0039::Mnemonic;
 use zcash_keys::keys::{Era, UnifiedSpendingKey};

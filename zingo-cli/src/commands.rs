@@ -15,6 +15,8 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
+#[cfg(feature = "regtest")]
+use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -218,27 +220,20 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(
-                    zcash_protocol::local_consensus::LocalNetwork {
-                        overwinter: Some(1.into()),
-                        sapling: Some(1.into()),
-                        blossom: Some(1.into()),
-                        heartwood: Some(1.into()),
-                        canopy: Some(1.into()),
-                        nu5: Some(1.into()),
-                        nu6: Some(1.into()),
-                        nu6_1: Some(1.into()),
-                    },
-                ),
+                #[cfg(feature = "regtest")]
+                zingolib::config::ChainType::Regtest(LocalNetwork::default_regtest_heights()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
         }
         if let Some((recipient_address, chain_name)) = make_decoded_chain_pair(args[0]) {
+            #[allow(unreachable_patterns)]
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
+                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
+                _ => unreachable!("Invalid chain type"),
             };
             match recipient_address {
                 Address::Sapling(_) => object! {
@@ -836,6 +831,58 @@ impl Command for NewTransparentAddressCommand {
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
                         "encoded_address" => transparent::encode_address(&network,  transparent_address),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
+    }
+}
+
+struct NewTransparentAddressAllowGapCommand {}
+impl Command for NewTransparentAddressAllowGapCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Create a new transparent address even if the current one has not received funds.
+
+            Usage:
+            new_taddress_allow_gap
+
+            Notes:
+            This command bypasses the built-in "no-gap" rule that normally prevents creating a new
+            transparent address until the last one has received funds. The rule exists to avoid
+            large gaps in address indices, which can cause problems when restoring a wallet from
+            seed, since all unused addresses beyond the gap may not be discovered automatically.
+
+            By using this command you take responsibility for:
+              - Tracking unused addresses yourself.
+              - Ensuring you do not create excessive gaps that make wallet recovery slow or incomplete.
+              - Understanding that funds sent to skipped addresses may not appear after recovery
+                unless you explicitly rescan or adjust the gap limit.
+
+           Use only if you know why you need consecutive empty transparent addresses and are
+           prepared to manage the risks of wallet recovery and scanning.
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Create a new transparent address (even if the last one did not receive any funds)."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            // Generate without enforcing the no-gap constraint
+            let mut wallet = lightclient.wallet.write().await;
+            let network = wallet.network;
+
+            match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
+                Ok((id, transparent_address)) => {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent::encode_address(&network, transparent_address),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -2019,6 +2066,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("coins", Box::new(CoinsCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
+        (
+            "new_taddress_allow_gap",
+            Box::new(NewTransparentAddressAllowGapCommand {}),
+        ),
         ("recovery_info", Box::new(RecoveryInfoCommand {})),
         ("birthday", Box::new(BirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
