@@ -8,7 +8,6 @@ members = [
     "darkside-tests",
     "zingo-cli",
     "zingolib",
-    "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
     "zingo-testvectors",
@@ -108,11 +107,11 @@ rayon = "1"
 
 # Zingolabs
 zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zingo-infra-services-0.4.0" }
+zingo_netutils = { git = "https://github.com/zingolabs/infrastructure.git", rev = "cc2af1ac80cb6b7a7f0a0b8f331f7b0873d667bf" }
 
 # Workspace
 testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
 zingo-memo = { path = "zingo-memo" }
-zingo-netutils = { path = "zingo-netutils" }
 zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }

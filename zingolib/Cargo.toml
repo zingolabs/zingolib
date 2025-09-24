@@ -23,7 +23,7 @@ test_lwd_zcashd = []
 [dependencies]
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
+zingo_netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 testvectors = { workspace = true, optional = true }
