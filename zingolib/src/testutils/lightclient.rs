@@ -150,8 +150,8 @@ pub async fn lookup_statuses(
     })
 }
 
-/// TODO: Add Doc Comment Here!
-// TODO: move balance fns to wallet balance sub-module and also move this struct there
+#[allow(all)]
+pub mod deprecated {
 #[deprecated = "pita interface"]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoolBalances {
@@ -215,4 +215,5 @@ impl LightClient {
                 .map(|zatoshis| zatoshis.into_u64()),
         }
     }
+}
 }
