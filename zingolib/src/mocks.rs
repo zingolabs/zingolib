@@ -622,7 +622,7 @@ pub mod proposal {
             let mut builder = Self::new();
             builder
                 .recipient_address(
-                    address_from_str(testvectors::REG_O_ADDR_FROM_ABANDONART).unwrap(),
+                    address_from_str(zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART).unwrap(),
                 )
                 .amount(Zatoshis::from_u64(100_000).unwrap());
             builder

@@ -206,7 +206,7 @@ mod shielding {
                 config.chain,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(
-                        testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                        zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                     )
                     .unwrap(),
                     no_of_accounts: 1.try_into().unwrap(),

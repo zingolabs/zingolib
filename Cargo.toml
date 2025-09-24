@@ -10,7 +10,6 @@ members = [
     "zingolib",
     "zingo-memo",
     "pepper-sync",
-    "zingo-testvectors",
     "zingo-price",
 ]
 resolver = "2"
@@ -108,9 +107,9 @@ rayon = "1"
 # Zingolabs
 zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zingo-infra-services-0.4.0" }
 zingo_netutils = { git = "https://github.com/zingolabs/infrastructure.git", rev = "cc2af1ac80cb6b7a7f0a0b8f331f7b0873d667bf" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89e0b665967a0dd1950855ad37ce18d9c5a14709" }
 
 # Workspace
-testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
 zingo-memo = { path = "zingo-memo" }
 zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }

@@ -24,10 +24,6 @@ use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
-use testvectors::{
-    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
-    REG_Z_ADDR_FROM_ABANDONART, seeds,
-};
 use zebra_chain::parameters::NetworkKind;
 use zingo_infra_services::indexer::{
     Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
@@ -36,6 +32,10 @@ use zingo_infra_services::network::localhost_uri;
 use zingo_infra_services::utils::ExecutableLocation;
 use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
 use zingo_infra_services::{LocalNet, Process};
+use zingo_test_vectors::{
+    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+    REG_Z_ADDR_FROM_ABANDONART, seeds,
+};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 

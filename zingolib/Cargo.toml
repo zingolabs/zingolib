@@ -14,7 +14,7 @@ license = "MIT"
 default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "testvectors", "tempfile", "zebra-chain"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zebra-chain"]
 zaino-test = ['testutils']
 test_zainod_zcashd = []
 test_lwd_zebrad = []
@@ -26,7 +26,10 @@ zingo-status = { workspace = true }
 zingo_netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
-testvectors = { workspace = true, optional = true }
+
+# testutils feature
+zingo_test_vectors = { workspace = true, optional = true }
+
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
 tokio-rustls = { workspace = true }
@@ -97,7 +100,7 @@ zingolib = { workspace = true, features = ["testutils"] }
 zingo-infra-services = { workspace = true }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
-testvectors = { workspace = true }
+zingo_test_vectors = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
