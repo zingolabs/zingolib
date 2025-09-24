@@ -192,6 +192,7 @@ mod shielding {
     use bip0039::Mnemonic;
     use pepper_sync::config::SyncConfig;
     use zcash_protocol::consensus::Parameters;
+    use zingo_test_vectors::seeds;
 
     use crate::{
         config::ZingoConfigBuilder,
@@ -205,10 +206,8 @@ mod shielding {
             LightWallet::new(
                 config.chain,
                 WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(
-                        zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-                    )
-                    .unwrap(),
+                    mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string())
+                        .unwrap(),
                     no_of_accounts: 1.try_into().unwrap(),
                 },
                 0.into(),
