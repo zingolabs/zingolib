@@ -144,10 +144,11 @@ impl Parameters for ChainType {
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+    use zingo_common_components::protocol::activation_heights::for_test;
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(LocalNetwork::default_regtest_heights())),
+        "regtest" => Ok(ChainType::Regtest(for_test::all_height_one_nus())),
         _ => Err(format!(
             "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
             chain_name

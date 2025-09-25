@@ -9552,6 +9552,7 @@ dependencies = [
  "zingo-memo",
  "zingo-price",
  "zingo-status",
+ "zingo_common_components",
  "zingo_full_stack_tests",
  "zingo_netutils",
  "zingo_test_vectors",
