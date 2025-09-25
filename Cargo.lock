@@ -1385,6 +1385,8 @@ dependencies = [
  "tracing-subscriber",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
+ "zebra-chain",
+ "zingo_common_components",
  "zingo_netutils",
  "zingolib",
  "zip32",
@@ -3337,6 +3339,7 @@ dependencies = [
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
  "zingo-status",
+ "zingo_common_components",
  "zingolib",
  "zip32",
 ]

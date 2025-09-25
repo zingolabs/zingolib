@@ -505,7 +505,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: testnet::ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultIndexer, DefaultValidator>,
@@ -516,7 +516,7 @@ pub async fn faucet_funded_recipient(
     Option<String>,
 ) {
     let (local_net, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, activation_heights, chain_cache).await;
+        faucet_recipient(mine_to_pool, configured_activation_heights, chain_cache).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -597,7 +597,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            LocalNetwork::default_regtest_heights(),
+            for_test::all_height_one_nus(),
             None,
         )
         .await;
@@ -608,13 +608,18 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: testnet::ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder) {
     let local_net = <(DefaultIndexer, DefaultValidator) as ZingoTestLocalNetwork<
         DefaultIndexer,
         DefaultValidator,
-    >>::launch(None, mine_to_pool, activation_heights, chain_cache)
+    >>::launch(
+        None,
+        mine_to_pool,
+        configured_activation_heights,
+        chain_cache,
+    )
     .await;
 
     local_net.validator().generate_blocks(2).await.unwrap();
@@ -630,12 +635,8 @@ pub async fn custom_clients(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder)
 {
-    let (local_net, client_builder) = custom_clients(
-        PoolType::ORCHARD,
-        LocalNetwork::default_regtest_heights(),
-        None,
-    )
-    .await;
+    let (local_net, client_builder) =
+        custom_clients(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await;
 
     (local_net, client_builder)
 }
@@ -648,7 +649,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidato
     >>::launch(
         Some(20_000),
         PoolType::SAPLING,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
         None,
     )
     .await
