@@ -24,7 +24,7 @@ use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
-use zebra_chain::parameters::NetworkKind;
+use zebra_chain::parameters::{NetworkKind, testnet};
 use zingo_infra_services::indexer::{
     Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
 };
@@ -101,7 +101,7 @@ pub trait ZingoTestLocalNetwork<I: Indexer, V: Validator> {
     fn launch(
         indexer_listen_port: Option<Port>,
         mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
+        activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> impl Future<Output = LocalNet<I, V>>;
 }
@@ -110,7 +110,7 @@ impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
     async fn launch(
         indexer_listen_port: Option<Port>,
         _mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
+        activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> LocalNet<Zainod, Zebrad> {
         LocalNet::<Zainod, Zebrad>::launch(
@@ -140,7 +140,7 @@ impl ZingoTestLocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
     async fn launch(
         indexer_listen_port: Option<Port>,
         mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> LocalNet<Zainod, Zcashd> {
         let miner_address = match mine_to_pool {
@@ -161,7 +161,7 @@ impl ZingoTestLocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
                 zcashd_bin: ZCASHD_BIN.clone(),
                 zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                 rpc_listen_port: None,
-                activation_heights,
+                configured_activation_heights,
                 miner_address: Some(miner_address),
                 chain_cache,
             },
