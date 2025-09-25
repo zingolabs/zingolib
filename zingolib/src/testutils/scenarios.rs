@@ -174,7 +174,7 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
     async fn launch(
         indexer_listen_port: Option<Port>,
         mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> LocalNet<Lightwalletd, Zcashd> {
         let miner_address = match mine_to_pool {
@@ -194,7 +194,7 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
                 zcashd_bin: ZCASHD_BIN.clone(),
                 zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                 rpc_listen_port: None,
-                activation_heights,
+                configured_activation_heights,
                 miner_address: Some(miner_address),
                 chain_cache,
             },
@@ -207,7 +207,7 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
     async fn launch(
         indexer_listen_port: Option<Port>,
         _mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> LocalNet<Lightwalletd, Zebrad> {
         LocalNet::<Lightwalletd, Zebrad>::launch(
@@ -222,7 +222,7 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
                 network_listen_port: None,
                 rpc_listen_port: None,
                 indexer_listen_port: None,
-                activation_heights,
+                configured_activation_heights,
                 miner_address: REG_T_ADDR_FROM_ABANDONART,
                 chain_cache,
                 network: NetworkKind::Regtest,
@@ -667,7 +667,8 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer,
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
@@ -695,7 +696,8 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
@@ -752,12 +754,13 @@ pub async fn funded_transparent_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(,)
+        local_net.validator().get_activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -792,12 +795,13 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(,)
+        local_net.validator().get_activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await

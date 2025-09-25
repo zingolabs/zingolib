@@ -3251,7 +3251,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.3",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -9430,7 +9430,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=5e2625200bd399920d713ddfd26f2f6452bde220#5e2625200bd399920d713ddfd26f2f6452bde220"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=05b935b05de9a174f8eb1cbc11da3e8bf222e756#05b935b05de9a174f8eb1cbc11da3e8bf222e756"
 dependencies = [
  "zebra-chain",
 ]
@@ -9438,7 +9438,7 @@ dependencies = [
 [[package]]
 name = "zingo_infra_services"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=5e2625200bd399920d713ddfd26f2f6452bde220#5e2625200bd399920d713ddfd26f2f6452bde220"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=05b935b05de9a174f8eb1cbc11da3e8bf222e756#05b935b05de9a174f8eb1cbc11da3e8bf222e756"
 dependencies = [
  "getset",
  "hex",
