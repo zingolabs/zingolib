@@ -8,7 +8,9 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use zcash_protocol::value::Zatoshis;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
-use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
+use zingolib::testutils::{
+    LocalNetwork, LocalNetworkExt, increase_height_and_wait_for_client, scenarios,
+};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
@@ -631,7 +633,7 @@ mod fast {
             Some(100_000),
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
-            zingolib::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -1277,7 +1279,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     async fn mine_to_orchard() {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::ORCHARD,
-            zingolib::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -1293,7 +1295,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     async fn mine_to_sapling() {
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::SAPLING,
-            zingolib::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -1308,7 +1310,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     async fn mine_to_transparent() {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
             PoolType::Transparent,
-            zingolib::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -1363,7 +1365,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
-        let activation_heights = zingolib::testutils::default_regtest_heights();
+        let activation_heights = LocalNetwork::default_regtest_heights();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1388,7 +1390,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
-        let activation_heights = zingolib::testutils::default_regtest_heights();
+        let activation_heights = LocalNetwork::default_regtest_heights();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -2527,7 +2529,7 @@ TransactionSummary {
         // NOTE that the balance doesn't give insight into the distribution across notes.
         let (local_net, mut faucet) = scenarios::faucet(
             PoolType::SAPLING,
-            zingolib::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -2605,7 +2607,7 @@ TransactionSummary {
                 Some(100_000),
                 Some(100_000),
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                zingolib::testutils::default_regtest_heights(),
+                LocalNetwork::default_regtest_heights(),
                 None,
             )
             .await;
@@ -2693,7 +2695,7 @@ TransactionSummary {
                 Some(funding_value),
                 None,
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                zingolib::testutils::default_regtest_heights(),
+                LocalNetwork::default_regtest_heights(),
                 None,
             )
             .await;

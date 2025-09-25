@@ -22,6 +22,7 @@ use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::testutils::tempfile;
 use zingolib::testutils::testvectors;
 use zingolib::testutils::zingo_infra_services;
+use zingolib::testutils::{LocalNetwork, LocalNetworkExt};
 use zingolib::wallet::balance::AccountBalance;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
@@ -39,7 +40,7 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = LocalNetwork::default_regtest_heights();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -89,7 +90,7 @@ async fn reorg_receipt_sync_generic() {
         .await
         .unwrap();
 
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = LocalNetwork::default_regtest_heights();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -157,7 +158,7 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = LocalNetwork::default_regtest_heights();
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(

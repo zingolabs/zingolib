@@ -13,10 +13,10 @@
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
 
+use super::{LocalNetwork, LocalNetworkExt as _};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-use zcash_protocol::local_consensus::LocalNetwork;
 
 use bip0039::Mnemonic;
 
@@ -418,7 +418,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient)
 {
-    unfunded_client(crate::testutils::default_regtest_heights(), None).await
+    unfunded_client(LocalNetwork::default_regtest_heights(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -454,7 +454,7 @@ pub async fn faucet(
 pub async fn faucet_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
     faucet(
         PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
         None,
     )
     .await
@@ -499,7 +499,7 @@ pub async fn faucet_recipient_default() -> (
 ) {
     faucet_recipient(
         PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
         None,
     )
     .await
@@ -603,7 +603,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            crate::testutils::default_regtest_heights(),
+            LocalNetwork::default_regtest_heights(),
             None,
         )
         .await;
@@ -638,7 +638,7 @@ pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValida
 {
     let (local_net, client_builder) = custom_clients(
         PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
         None,
     )
     .await;
@@ -654,7 +654,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidato
     >>::launch(
         Some(20_000),
         PoolType::SAPLING,
-        crate::testutils::default_regtest_heights(),
+        LocalNetwork::default_regtest_heights(),
         None,
     )
     .await
