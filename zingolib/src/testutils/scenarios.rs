@@ -49,6 +49,7 @@ use crate::wallet::{LightWallet, WalletSettings};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 
+use zingo_common_components::protocol::activation_heights::for_test;
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -397,17 +398,21 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    activation_heights: LocalNetwork,
+    configured_activation_heights: testnet::ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
-    let (local_net, mut client_builder) =
-        custom_clients(PoolType::ORCHARD, activation_heights, chain_cache).await;
+    let (local_net, mut client_builder) = custom_clients(
+        PoolType::ORCHARD,
+        configured_activation_heights,
+        chain_cache,
+    )
+    .await;
 
     let mut lightclient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        configured_activation_heights,
     );
     lightclient.sync_and_await().await.unwrap();
 
@@ -417,7 +422,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient)
 {
-    unfunded_client(LocalNetwork::default_regtest_heights(), None).await
+    unfunded_client(for_test::all_height_one_nus(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -432,13 +437,13 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValid
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: testnet::ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
     let (local_net, mut client_builder) =
-        custom_clients(mine_to_pool, activation_heights, chain_cache).await;
+        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
 
     if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
@@ -451,18 +456,13 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
-    faucet(
-        PoolType::ORCHARD,
-        LocalNetwork::default_regtest_heights(),
-        None,
-    )
-    .await
+    faucet(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: testnet::ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultIndexer, DefaultValidator>,
@@ -470,14 +470,14 @@ pub async fn faucet_recipient(
     LightClient,
 ) {
     let (local_net, mut client_builder) =
-        custom_clients(mine_to_pool, activation_heights, chain_cache).await;
+        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        configured_activation_heights,
     );
 
     if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
@@ -496,12 +496,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(
-        PoolType::ORCHARD,
-        LocalNetwork::default_regtest_heights(),
-        None,
-    )
-    .await
+    faucet_recipient(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!

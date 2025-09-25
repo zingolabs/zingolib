@@ -118,5 +118,8 @@ pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 webpki-roots = "0.25"
 
+[patch.crates-io]
+zebra-chain = { git = "https://github.com/zingolabs/zebra.git", rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
+
 [profile.test]
 opt-level = 3

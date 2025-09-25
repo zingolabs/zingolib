@@ -9034,8 +9034,7 @@ dependencies = [
 [[package]]
 name = "zebra-chain"
 version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17a86ec712da2f25d3edc7e5cf0b1d15ef41ab35305e253f0f7cd9cecc0f1939"
+source = "git+https://github.com/zingolabs/zebra.git?rev=1168a2f391a17f3ccab65a095d9219b7455d0fea#1168a2f391a17f3ccab65a095d9219b7455d0fea"
 dependencies = [
  "bech32",
  "bitflags 2.9.4",
@@ -9078,62 +9077,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.16",
  "tokio",
- "tracing",
- "uint 0.10.0",
- "x25519-dalek",
- "zcash_address 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_encoding 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_history",
- "zcash_note_encryption",
- "zcash_primitives 0.24.1",
- "zcash_protocol 0.6.2",
- "zcash_transparent 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "zebra-chain"
-version = "2.0.0"
-source = "git+https://github.com/zingolabs/zebra.git?rev=1168a2f391a17f3ccab65a095d9219b7455d0fea#1168a2f391a17f3ccab65a095d9219b7455d0fea"
-dependencies = [
- "bech32",
- "bitflags 2.9.4",
- "bitflags-serde-legacy",
- "bitvec",
- "blake2b_simd",
- "blake2s_simd",
- "bs58",
- "byteorder",
- "chrono",
- "dirs",
- "ed25519-zebra",
- "equihash 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures",
- "group",
- "halo2_proofs",
- "hex",
- "humantime",
- "incrementalmerkletree",
- "itertools 0.14.0",
- "jubjub",
- "lazy_static",
- "num-integer",
- "orchard",
- "primitive-types",
- "rand_core 0.6.4",
- "rayon",
- "reddsa",
- "redjubjub",
- "ripemd 0.1.3",
- "sapling-crypto",
- "secp256k1",
- "serde",
- "serde-big-array",
- "serde_with",
- "sha2 0.10.9",
- "sinsemilla",
- "static_assertions",
- "tempfile",
- "thiserror 2.0.16",
  "tracing",
  "uint 0.10.0",
  "x25519-dalek",
@@ -9178,7 +9121,7 @@ dependencies = [
  "tracing-futures",
  "wagyu-zcash-parameters",
  "zcash_proofs 0.24.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
  "zebra-node-services",
  "zebra-script",
  "zebra-state",
@@ -9218,7 +9161,7 @@ dependencies = [
  "tracing",
  "tracing-error",
  "tracing-futures",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9233,7 +9176,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9275,7 +9218,7 @@ dependencies = [
  "zcash_primitives 0.24.1",
  "zcash_protocol 0.6.2",
  "zcash_transparent 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
  "zebra-consensus",
  "zebra-network",
  "zebra-node-services",
@@ -9292,7 +9235,7 @@ dependencies = [
  "thiserror 2.0.16",
  "zcash_primitives 0.24.1",
  "zcash_script",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9326,7 +9269,7 @@ dependencies = [
  "tokio",
  "tower 0.4.13",
  "tracing",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9489,7 +9432,7 @@ name = "zingo_common_components"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=000036236af0e6a6316069dc029fc7d8184f30f9#000036236af0e6a6316069dc029fc7d8184f30f9"
 dependencies = [
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9512,7 +9455,7 @@ dependencies = [
  "tracing-subscriber",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
- "zebra-chain 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
  "zingo_common_components",
@@ -9604,7 +9547,7 @@ dependencies = [
  "zcash_proofs 0.24.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_protocol 0.6.1",
  "zcash_transparent 0.4.0 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
- "zebra-chain 2.0.0 (git+https://github.com/zingolabs/zebra.git?rev=1168a2f391a17f3ccab65a095d9219b7455d0fea)",
+ "zebra-chain",
  "zingo-memo",
  "zingo-price",
  "zingo-status",
