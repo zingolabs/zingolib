@@ -54,7 +54,7 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     }
 }
 /// The networks a zingolib client can run against
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone)]
 pub enum ChainType {
     /// Public testnet
     Testnet,
@@ -62,7 +62,7 @@ pub enum ChainType {
     Mainnet,
     /// Local testnet
     #[cfg(any(test, feature = "testutils"))]
-    Regtest(zcash_protocol::local_consensus::LocalNetwork),
+    Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
 }
 
 impl std::fmt::Display for ChainType {
@@ -94,11 +94,39 @@ impl Parameters for ChainType {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
             #[cfg(any(test, feature = "testutils"))]
-            Regtest(activation_heights) => Some(
-                activation_heights
-                    .activation_height(nu)
-                    .unwrap_or(BlockHeight::from_u32(1)),
-            ),
+            Regtest(activation_heights) => {
+                Some(
+                    match nu {
+                        NetworkUpgrade::Overwinter => BlockHeight::from_u32(
+                            activation_heights.overwinter.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Sapling => BlockHeight::from_u32(
+                            activation_heights.sapling.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Blossom => BlockHeight::from_u32(
+                            activation_heights.blossom.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Heartwood => BlockHeight::from_u32(
+                            activation_heights.heartwood.expect("nu active in regtest"),
+                        ),
+
+                        NetworkUpgrade::Canopy => BlockHeight::from_u32(
+                            activation_heights.canopy.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Nu5 => BlockHeight::from_u32(
+                            activation_heights.nu5.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Nu6 => BlockHeight::from_u32(
+                            activation_heights.nu6.expect("nu active in regtest"),
+                        ),
+                        NetworkUpgrade::Nu6_1 => BlockHeight::from_u32(
+                            activation_heights.nu6_1.expect("nu active in regtest"),
+                        ),
+                    }, //activation_heights
+                       //.activation_height(nu)
+                       //.unwrap_or(BlockHeight::from_u32(1)),
+                )
+            }
         }
     }
 }
@@ -116,8 +144,6 @@ impl Parameters for ChainType {
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
-    use crate::testutils::{LocalNetwork, LocalNetworkExt};
-
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),

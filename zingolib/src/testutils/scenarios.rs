@@ -13,7 +13,6 @@
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
 
-use super::{LocalNetwork, LocalNetworkExt as _};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -379,7 +378,7 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
-            config.chain,
+            config.chain.clone(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),
