@@ -44,7 +44,7 @@ zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed
 ] }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
 
-zebra-chain = "2.0"
+zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
 
 zingo_netutils = { git = "https://github.com/zingolabs/infrastructure.git", rev = "cc2af1ac80cb6b7a7f0a0b8f331f7b0873d667bf" }
 
