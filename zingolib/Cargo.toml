@@ -28,7 +28,7 @@ pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 
 # testutils feature
-zingo_test_vectors = { workspace = true, optional = true }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89e0b665967a0dd1950855ad37ce18d9c5a14709", optional = true}
 
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
@@ -100,7 +100,6 @@ zingolib = { workspace = true, features = ["testutils"] }
 zingo-infra-services = { workspace = true }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
-zingo_test_vectors = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
