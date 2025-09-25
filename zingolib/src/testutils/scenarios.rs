@@ -110,7 +110,7 @@ impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
     async fn launch(
         indexer_listen_port: Option<Port>,
         _mine_to_pool: PoolType,
-        activation_heights: testnet::ConfiguredActivationHeights,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
         chain_cache: Option<PathBuf>,
     ) -> LocalNet<Zainod, Zebrad> {
         LocalNet::<Zainod, Zebrad>::launch(
@@ -126,7 +126,7 @@ impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
                 network_listen_port: None,
                 rpc_listen_port: None,
                 indexer_listen_port: None,
-                activation_heights,
+                configured_activation_heights,
                 miner_address: REG_T_ADDR_FROM_ABANDONART,
                 chain_cache,
                 network: NetworkKind::Regtest,
@@ -318,7 +318,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
     ) -> ZingoConfig {
         //! Each client requires a unique data_dir, we use the
         //! client_number counter for this.
@@ -328,20 +328,20 @@ impl ClientBuilder {
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), activation_heights)
+        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: testnet::ConfiguredActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
             self.server_id.clone(),
             Some(conf_path),
-            ChainType::Regtest(activation_heights),
+            ChainType::Regtest(configured_activation_heights),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
