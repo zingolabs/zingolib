@@ -41,8 +41,8 @@ pub mod scenarios;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
-pub use testvectors;
 pub use zingo_infra_services;
+pub use zingo_test_vectors;
 
 /// Extension trait for LocalNetwork providing common test configurations
 pub trait LocalNetworkExt {

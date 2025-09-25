@@ -3,7 +3,7 @@ use std::{num::NonZeroU32, time::Duration};
 use bip0039::Mnemonic;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::testutils::zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
     get_base_address_macro,
