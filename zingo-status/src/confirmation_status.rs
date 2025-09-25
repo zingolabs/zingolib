@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
@@ -250,6 +250,7 @@ impl ConfirmationStatus {
     }
 }
 
+/// a public interface, writ in stone
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -267,6 +268,42 @@ impl std::fmt::Display for ConfirmationStatus {
             }
         }
     }
+}
+#[test]
+fn stringify_display() {
+    let status = ConfirmationStatus::Transmitted(BlockHeight::from_u32(16_000));
+    let string = format!("{status}");
+    assert_eq!(string, "transmitted");
+}
+
+/// a more complete stringification
+impl std::fmt::Debug for ConfirmationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Calculated(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Calculated for {hi}")
+            }
+            Self::Transmitted(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Transmitted for {hi}")
+            }
+            Self::Mempool(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Mempool for {hi}")
+            }
+            Self::Confirmed(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Confirmed at {hi}")
+            }
+        }
+    }
+}
+#[test]
+fn stringify_debug() {
+    let status = ConfirmationStatus::Transmitted(BlockHeight::from_u32(16_000));
+    let string = format!("{status:?}");
+    assert_eq!(string, "Transmitted for 16000");
 }
 
 impl From<ConfirmationStatus> for String {
