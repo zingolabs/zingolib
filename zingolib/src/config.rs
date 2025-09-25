@@ -54,7 +54,7 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     }
 }
 /// The networks a zingolib client can run against
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
     /// Public testnet
     Testnet,
