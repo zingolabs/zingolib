@@ -320,7 +320,7 @@ mod tests {
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
-    use testvectors::seeds::CHIMNEY_BETTER_SEED;
+    use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
     use testutils::{LocalNetwork, LocalNetworkExt};
