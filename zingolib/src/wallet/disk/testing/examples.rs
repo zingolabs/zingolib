@@ -4,7 +4,7 @@ use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::localhost_uri;
+use zingo_full_stack_tests::network::localhost_uri;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
