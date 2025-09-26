@@ -652,7 +652,7 @@ pub fn run_regtest_cli() {
         sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
-        chaintype: ChainType::Regtest(LocalNetwork::default_regtest_heights()),
+        chaintype: ChainType::Regtest(for_test::all),
         tor_enabled: false,
     };
 

@@ -9391,6 +9391,7 @@ dependencies = [
  "zcash_keys 0.10.0",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
+ "zingo_common_components",
  "zingolib",
  "zip32",
 ]

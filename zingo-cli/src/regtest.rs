@@ -7,7 +7,6 @@ use zingolib::testutils::zingo_full_stack_tests::LocalNet;
 use zingolib::testutils::zingo_full_stack_tests::indexer::{Lightwalletd, LightwalletdConfig};
 use zingolib::testutils::zingo_full_stack_tests::validator::{Zcashd, ZcashdConfig};
 use zingolib::testutils::zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART;
-use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
 
 /// Launch a local regtest network
 pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {

@@ -23,6 +23,8 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+#[cfg(feature = "regtest")]
+use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -219,7 +221,7 @@ impl Command for ParseAddressCommand {
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
                 #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(LocalNetwork::default_regtest_heights()),
+                zingolib::config::ChainType::Regtest(zingo_common),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
