@@ -26,7 +26,6 @@ use crate::{
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-use zebra_chain::parameters::testnet;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 
 pub async fn prepare_darksidewalletd(

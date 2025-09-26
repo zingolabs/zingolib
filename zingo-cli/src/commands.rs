@@ -221,7 +221,7 @@ impl Command for ParseAddressCommand {
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
                 #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(zingo_common),
+                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
