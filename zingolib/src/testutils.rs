@@ -11,12 +11,12 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_primitives::consensus::NetworkConstants;
-use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
+use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
