@@ -147,7 +147,7 @@ mod fast {
     };
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::testutils::zcash_local_net::validator::Validator;
+    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
@@ -1436,7 +1436,7 @@ mod slow {
     use zingolib::config::ChainType;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
-    use zingolib::testutils::zcash_local_net::validator::Validator;
+    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
     use zingolib::testutils::zingo_test_vectors::TEST_TXID;
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,

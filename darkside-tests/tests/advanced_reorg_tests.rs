@@ -17,7 +17,7 @@ use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::zcash_local_net::{
+use zingolib::testutils::zingo_full_stack_tests::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };

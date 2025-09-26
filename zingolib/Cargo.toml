@@ -39,7 +39,7 @@ tower = { workspace = true }
 zebra-chain = { workspace = true, optional = true }
 
 # TODO: separate activation heights into different crate and make this optional for testutils
-zcash_local_net = { workspace = true }
+zingo_full_stack_tests = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -97,7 +97,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zcash_local_net = { workspace = true }
+zingo_full_stack_tests = { workspace = true }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
 tempfile = { workspace = true }

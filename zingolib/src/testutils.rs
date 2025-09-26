@@ -17,6 +17,9 @@ use zcash_local_net::validator::Validator;
 use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
+use zingo_full_stack_tests::LocalNet;
+use zingo_full_stack_tests::indexer::Indexer;
+use zingo_full_stack_tests::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -40,7 +43,7 @@ pub mod scenarios;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
-pub use zcash_local_net;
+pub use zingo_full_stack_tests;
 pub use zingo_test_vectors;
 
 /// TODO: Add Doc Comment Here!
