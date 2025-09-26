@@ -28,7 +28,7 @@ use zcash_local_net::network::localhost_uri;
 use zcash_local_net::utils::ExecutableLocation;
 use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
 use zcash_local_net::{LocalNet, Process};
-use zebra_chain::parameters::NetworkKind;
+use zebra_chain::parameters::{NetworkKind, testnet};
 use zingo_test_vectors::{
     FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
     REG_Z_ADDR_FROM_ABANDONART, seeds,

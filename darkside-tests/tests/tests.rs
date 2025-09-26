@@ -9,6 +9,7 @@ use zcash_local_net::indexer::Indexer;
 use zcash_local_net::indexer::Lightwalletd;
 use zcash_local_net::indexer::LightwalletdConfig;
 use zcash_local_net::network::localhost_uri;
+use zingo_common_components::protocol::activation_heights::for_test;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;

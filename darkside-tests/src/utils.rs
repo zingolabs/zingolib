@@ -309,10 +309,9 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingolib::testutils::{
-        LocalNetwork, LocalNetworkExt as _, zcash_local_net::indexer::Lightwalletd,
-        zingo_test_vectors,
-    };
+    use zebra_chain::parameters::testnet;
+    use zingo_common_components::protocol::activation_heights::for_test;
+    use zingolib::testutils::{zcash_local_net::indexer::Lightwalletd, zingo_test_vectors};
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,

@@ -17,9 +17,6 @@ use zcash_local_net::validator::Validator;
 use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
-use zcash_local_net::LocalNet;
-use zcash_local_net::indexer::Indexer;
-use zcash_local_net::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
