@@ -24,13 +24,13 @@ use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use zebra_chain::parameters::NetworkKind;
-use zingo_full_stack_tests::indexer::{
+use zcash_local_net::indexer::{
     Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
 };
-use zingo_full_stack_tests::network::localhost_uri;
-use zingo_full_stack_tests::utils::ExecutableLocation;
-use zingo_full_stack_tests::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
-use zingo_full_stack_tests::{LocalNet, Process};
+use zcash_local_net::network::localhost_uri;
+use zcash_local_net::utils::ExecutableLocation;
+use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zcash_local_net::{LocalNet, Process};
 use zingo_test_vectors::{
     FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
     REG_Z_ADDR_FROM_ABANDONART, seeds,
@@ -54,7 +54,7 @@ use zingo_common_components::protocol::activation_heights::for_test;
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Zainod, validator::Zcashd};
+    use zcash_local_net::{indexer::Zainod, validator::Zcashd};
 
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zcashd;
@@ -63,7 +63,7 @@ pub mod network_combo {
 #[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Lightwalletd, validator::Zebrad};
+    use zcash_local_net::{indexer::Lightwalletd, validator::Zebrad};
 
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zebrad;
@@ -76,7 +76,7 @@ pub mod network_combo {
 ))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Lightwalletd, validator::Zcashd};
+    use zcash_local_net::{indexer::Lightwalletd, validator::Zcashd};
 
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zcashd;
@@ -89,7 +89,7 @@ pub mod network_combo {
 )))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Zainod, validator::Zebrad};
+    use zcash_local_net::{indexer::Zainod, validator::Zebrad};
 
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zebrad;

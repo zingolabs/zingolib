@@ -1386,7 +1386,7 @@ dependencies = [
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
  "zebra-chain",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=c6a6f91c544e0bc48f951ab34c8af89e9279d509)",
  "zingo_netutils",
  "zingolib",
  "zip32",
@@ -3340,7 +3340,7 @@ dependencies = [
  "zcash_protocol 0.6.1",
  "zebra-chain",
  "zingo-status",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=c6a6f91c544e0bc48f951ab34c8af89e9279d509)",
  "zingolib",
  "zip32",
 ]
@@ -8722,7 +8722,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=c6a6f91c544e0bc48f951ab34c8af89e9279d509#c6a6f91c544e0bc48f951ab34c8af89e9279d509"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=5a01b06c95b5b464e0e0fa251c7d36b9ccd6b829#5a01b06c95b5b464e0e0fa251c7d36b9ccd6b829"
 dependencies = [
  "getset",
  "hex",
@@ -8742,7 +8742,7 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=5a01b06c95b5b464e0e0fa251c7d36b9ccd6b829)",
 ]
 
 [[package]]
@@ -9417,7 +9417,7 @@ dependencies = [
  "zcash_keys 0.10.0",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=c6a6f91c544e0bc48f951ab34c8af89e9279d509)",
  "zingolib",
  "zip32",
 ]
@@ -9456,6 +9456,14 @@ version = "0.0.1"
 dependencies = [
  "byteorder",
  "zcash_primitives 0.24.0",
+]
+
+[[package]]
+name = "zingo_common_components"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=5a01b06c95b5b464e0e0fa251c7d36b9ccd6b829#5a01b06c95b5b464e0e0fa251c7d36b9ccd6b829"
+dependencies = [
+ "zebra-chain",
 ]
 
 [[package]]
@@ -9557,7 +9565,7 @@ dependencies = [
  "zingo-memo",
  "zingo-price",
  "zingo-status",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?rev=c6a6f91c544e0bc48f951ab34c8af89e9279d509)",
  "zingo_netutils",
  "zingo_test_vectors",
  "zingolib",

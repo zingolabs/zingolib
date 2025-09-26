@@ -1,9 +1,9 @@
 //! libtonode tests use zcashd regtest mode to mock a chain
 
-use zingolib::testutils::zingo_full_stack_tests::LocalNet;
-use zingolib::testutils::zingo_full_stack_tests::indexer::Indexer;
-use zingolib::testutils::zingo_full_stack_tests::network::localhost_uri;
-use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
+use zingolib::testutils::zcash_local_net::LocalNet;
+use zingolib::testutils::zcash_local_net::indexer::Indexer;
+use zingolib::testutils::zcash_local_net::network::localhost_uri;
+use zingolib::testutils::zcash_local_net::validator::Validator;
 
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;

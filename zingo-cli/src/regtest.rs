@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::testutils::zingo_full_stack_tests::LocalNet;
-use zingolib::testutils::zingo_full_stack_tests::indexer::{Lightwalletd, LightwalletdConfig};
-use zingolib::testutils::zingo_full_stack_tests::validator::{Zcashd, ZcashdConfig};
+use zingolib::testutils::zcash_local_net::LocalNet;
+use zingolib::testutils::zcash_local_net::indexer::{Lightwalletd, LightwalletdConfig};
+use zingolib::testutils::zcash_local_net::validator::{Zcashd, ZcashdConfig};
 use zingolib::testutils::zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART;
 
 /// Launch a local regtest network
