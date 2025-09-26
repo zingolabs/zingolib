@@ -9435,7 +9435,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=16167681e072e4a2993faa7cfdb0076caa69a107#16167681e072e4a2993faa7cfdb0076caa69a107"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=58d5c7a7ccf0d152855725efec213a8fdbd05e88#58d5c7a7ccf0d152855725efec213a8fdbd05e88"
 dependencies = [
  "zebra-chain",
 ]
@@ -9443,7 +9443,7 @@ dependencies = [
 [[package]]
 name = "zingo_full_stack_tests"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=16167681e072e4a2993faa7cfdb0076caa69a107#16167681e072e4a2993faa7cfdb0076caa69a107"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=58d5c7a7ccf0d152855725efec213a8fdbd05e88#58d5c7a7ccf0d152855725efec213a8fdbd05e88"
 dependencies = [
  "getset",
  "hex",
@@ -9469,7 +9469,7 @@ dependencies = [
 [[package]]
 name = "zingo_netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=16167681e072e4a2993faa7cfdb0076caa69a107#16167681e072e4a2993faa7cfdb0076caa69a107"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=58d5c7a7ccf0d152855725efec213a8fdbd05e88#58d5c7a7ccf0d152855725efec213a8fdbd05e88"
 dependencies = [
  "http",
  "http-body",

@@ -98,27 +98,15 @@ impl Parameters for ChainType {
                 NetworkUpgrade::Overwinter => {
                     activation_heights.overwinter.map(BlockHeight::from_u32)
                 }
-                NetworkUpgrade::Sapling => {
-                    activation_heights.sapling.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Blossom => {
-                    activation_heights.blossom.map(BlockHeight::from_u32)
-                }
+                NetworkUpgrade::Sapling => activation_heights.sapling.map(BlockHeight::from_u32),
+                NetworkUpgrade::Blossom => activation_heights.blossom.map(BlockHeight::from_u32),
                 NetworkUpgrade::Heartwood => {
                     activation_heights.heartwood.map(BlockHeight::from_u32)
                 }
-                NetworkUpgrade::Canopy => {
-                    activation_heights.canopy.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Nu5 => {
-                    activation_heights.nu5.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Nu6 => {
-                    activation_heights.nu6.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Nu6_1 => {
-                    activation_heights.nu6_1.map(BlockHeight::from_u32)
-                }
+                NetworkUpgrade::Canopy => activation_heights.canopy.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu5 => activation_heights.nu5.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu6 => activation_heights.nu6.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu6_1 => activation_heights.nu6_1.map(BlockHeight::from_u32),
             },
         }
     }
