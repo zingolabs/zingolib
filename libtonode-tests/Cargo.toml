@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [features]
+proptests = []
 chain_generic_tests = []
 ci = ["zingolib/ci"]
 
