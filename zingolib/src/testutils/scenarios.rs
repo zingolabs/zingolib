@@ -25,13 +25,13 @@ use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use zebra_chain::parameters::NetworkKind;
-use zingo_full_stack_tests::indexer::{
+use zcash_local_net::indexer::{
     Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
 };
-use zingo_full_stack_tests::network::localhost_uri;
-use zingo_full_stack_tests::utils::ExecutableLocation;
-use zingo_full_stack_tests::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
-use zingo_full_stack_tests::{LocalNet, Process};
+use zcash_local_net::network::localhost_uri;
+use zcash_local_net::utils::ExecutableLocation;
+use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zcash_local_net::{LocalNet, Process};
 use zingo_test_vectors::{
     FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
     REG_Z_ADDR_FROM_ABANDONART, seeds,
@@ -54,7 +54,7 @@ use network_combo::DefaultValidator;
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Zainod, validator::Zcashd};
+    use zcash_local_net::{indexer::Zainod, validator::Zcashd};
 
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zcashd;
@@ -63,7 +63,7 @@ pub mod network_combo {
 #[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Lightwalletd, validator::Zebrad};
+    use zcash_local_net::{indexer::Lightwalletd, validator::Zebrad};
 
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zebrad;
@@ -76,7 +76,7 @@ pub mod network_combo {
 ))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Lightwalletd, validator::Zcashd};
+    use zcash_local_net::{indexer::Lightwalletd, validator::Zcashd};
 
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zcashd;
@@ -89,7 +89,7 @@ pub mod network_combo {
 )))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_full_stack_tests::{indexer::Zainod, validator::Zebrad};
+    use zcash_local_net::{indexer::Zainod, validator::Zebrad};
 
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zebrad;
@@ -667,12 +667,13 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer,
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights(),
     );
     faucet.sync_and_await().await.unwrap();
     super::lightclient::from_inputs::quick_send(
@@ -695,12 +696,13 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -752,12 +754,13 @@ pub async fn funded_transparent_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -792,12 +795,13 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights(),
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
