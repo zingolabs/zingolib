@@ -652,7 +652,9 @@ pub fn run_regtest_cli() {
         sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
-        chaintype: ChainType::Regtest(for_test::all),
+        chaintype: ChainType::Regtest(
+            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
+        ),
         tor_enabled: false,
     };
 

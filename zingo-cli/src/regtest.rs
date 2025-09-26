@@ -22,7 +22,7 @@ pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {
             zcashd_bin: ZCASHD_BIN.clone(),
             zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
-            activation_heights: for_test::all_nus_active_at_one(),
+            configured_activation_heights: for_test::all_height_one_nus(),
             miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
             chain_cache: None,
         },
