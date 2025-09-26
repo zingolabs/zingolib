@@ -28,7 +28,7 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
-zingo_common_components = { git = "https://github.com/zingolabs/infrastructure.git", rev = "000036236af0e6a6316069dc029fc7d8184f30f9", features = ["for_test"], optional = true }
+zingo_common_components = { workspace = true, features = ["for_test"], optional = true }
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }

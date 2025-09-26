@@ -13,7 +13,7 @@ ci = ["zingolib/ci"]
 zingolib = { workspace = true, features = ["testutils"] }
 zingo-status = { workspace = true }
 pepper-sync = { workspace = true }
-zingo_common_components = { git = "https://github.com/zingolabs/infrastructure.git", rev = "000036236af0e6a6316069dc029fc7d8184f30f9", features = ["for_test"] }
+zingo_common_components = { workspace = true, features = ["for_test"] }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }
