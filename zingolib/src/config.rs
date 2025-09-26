@@ -94,39 +94,32 @@ impl Parameters for ChainType {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
             #[cfg(any(test, feature = "testutils"))]
-            Regtest(activation_heights) => {
-                Some(
-                    match nu {
-                        NetworkUpgrade::Overwinter => BlockHeight::from_u32(
-                            activation_heights.overwinter.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Sapling => BlockHeight::from_u32(
-                            activation_heights.sapling.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Blossom => BlockHeight::from_u32(
-                            activation_heights.blossom.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Heartwood => BlockHeight::from_u32(
-                            activation_heights.heartwood.expect("nu active in regtest"),
-                        ),
-
-                        NetworkUpgrade::Canopy => BlockHeight::from_u32(
-                            activation_heights.canopy.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Nu5 => BlockHeight::from_u32(
-                            activation_heights.nu5.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Nu6 => BlockHeight::from_u32(
-                            activation_heights.nu6.expect("nu active in regtest"),
-                        ),
-                        NetworkUpgrade::Nu6_1 => BlockHeight::from_u32(
-                            activation_heights.nu6_1.expect("nu active in regtest"),
-                        ),
-                    }, //activation_heights
-                       //.activation_height(nu)
-                       //.unwrap_or(BlockHeight::from_u32(1)),
-                )
-            }
+            Regtest(activation_heights) => match nu {
+                NetworkUpgrade::Overwinter => {
+                    activation_heights.overwinter.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Sapling => {
+                    activation_heights.sapling.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Blossom => {
+                    activation_heights.blossom.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Heartwood => {
+                    activation_heights.heartwood.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Canopy => {
+                    activation_heights.canopy.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Nu5 => {
+                    activation_heights.nu5.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Nu6 => {
+                    activation_heights.nu6.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Nu6_1 => {
+                    activation_heights.nu6_1.map(BlockHeight::from_u32)
+                }
+            },
         }
     }
 }
