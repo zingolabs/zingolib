@@ -15,8 +15,6 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-#[cfg(feature = "regtest")]
-use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;

@@ -75,7 +75,7 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         Self::create_from_wallet(
             LightWallet::new(
-                config.chain.clone(),
+                config.chain,
                 WalletBase::FreshEntropy {
                     no_of_accounts: config.no_of_accounts,
                 },
@@ -136,11 +136,7 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet(
-            LightWallet::read(buffer, config.chain.clone())?,
-            config,
-            true,
-        )
+        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 
     /// Returns config used to create lightclient.

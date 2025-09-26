@@ -23,8 +23,7 @@ use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-#[cfg(feature = "regtest")]
-use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
+
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;

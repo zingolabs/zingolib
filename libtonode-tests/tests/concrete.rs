@@ -1320,16 +1320,6 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let activation_heights = zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(BlockHeight::from(1)),
-            sapling: Some(BlockHeight::from(3)),
-            blossom: Some(BlockHeight::from(5)),
-            heartwood: Some(BlockHeight::from(7)),
-            canopy: Some(BlockHeight::from(9)),
-            nu5: Some(BlockHeight::from(11)),
-            nu6: Some(BlockHeight::from(13)),
-            nu6_1: Some(BlockHeight::from(15)),
-        };
         let configured_activation_heights = testnet::ConfiguredActivationHeights {
             before_overwinter: Some(1u32),
             overwinter: Some(1u32),
@@ -1352,18 +1342,20 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn sync_all_epochs_from_heartwood() {
-        let activation_heights = zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(BlockHeight::from(1)),
-            sapling: Some(BlockHeight::from(1)),
-            blossom: Some(BlockHeight::from(1)),
-            heartwood: Some(BlockHeight::from(1)),
-            canopy: Some(BlockHeight::from(3)),
-            nu5: Some(BlockHeight::from(5)),
-            nu6: Some(BlockHeight::from(7)),
-            nu6_1: Some(BlockHeight::from(9)),
+        let configured_activation_heights = testnet::ConfiguredActivationHeights {
+            before_overwinter: Some(1u32),
+            overwinter: Some(1u32),
+            sapling: Some(1u32),
+            blossom: Some(1u32),
+            heartwood: Some(1u32),
+            canopy: Some(3u32),
+            nu5: Some(5u32),
+            nu6: Some(7u32),
+            nu6_1: Some(9u32),
+            nu7: None,
         };
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
+            scenarios::unfunded_client(configured_activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
             .await
             .unwrap();
@@ -2569,19 +2561,21 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let activation_heights = zcash_protocol::local_consensus::LocalNetwork {
-            overwinter: Some(BlockHeight::from(1)),
-            sapling: Some(BlockHeight::from(1)),
-            blossom: Some(BlockHeight::from(1)),
-            heartwood: Some(BlockHeight::from(1)),
-            canopy: Some(BlockHeight::from(3)),
-            nu5: Some(BlockHeight::from(5)),
-            nu6: Some(BlockHeight::from(5)),
-            nu6_1: Some(BlockHeight::from(5)),
+        let configured_activation_heights = testnet::ConfiguredActivationHeights {
+            before_overwinter: Some(1u32),
+            overwinter: Some(1u32),
+            sapling: Some(1u32),
+            blossom: Some(1u32),
+            heartwood: Some(1u32),
+            canopy: Some(3u32),
+            nu5: Some(5u32),
+            nu6: Some(5u32),
+            nu6_1: Some(5u32),
+            nu7: None,
         };
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
-            activation_heights,
+            configured_activation_heights,
             None,
         )
         .await;

@@ -379,7 +379,7 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
-            config.chain.clone(),
+            config.chain,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),
