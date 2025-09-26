@@ -48,12 +48,13 @@ async fn reorg_changes_incoming_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -212,12 +213,13 @@ async fn reorg_changes_incoming_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -376,12 +378,13 @@ async fn reorg_expires_incoming_tx() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -562,12 +565,13 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -823,12 +827,13 @@ async fn reorg_expires_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     let expected_initial_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
@@ -1029,12 +1034,13 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        for_test::all_height_one_nus(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            for_test::all_height_one_nus(),
+        );
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(

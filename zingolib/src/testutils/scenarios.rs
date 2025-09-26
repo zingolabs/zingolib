@@ -301,13 +301,13 @@ pub struct ClientBuilder {
     /// Indexer URI
     pub server_id: http::Uri,
     /// Directory for wallet files
-    pub zingo_datadir: TempDir,
+    pub zingo_datadir: PathBuf,
     client_number: u8,
 }
 
 impl ClientBuilder {
     /// TODO: Add Doc Comment Here!
-    pub fn new(server_id: http::Uri, zingo_datadir: TempDir) -> Self {
+    pub fn new(server_id: http::Uri, zingo_datadir: PathBuf) -> Self {
         let client_number = 0;
         ClientBuilder {
             server_id,
@@ -325,7 +325,7 @@ impl ClientBuilder {
         self.client_number += 1;
         let conf_path = format!(
             "{}_client_{}",
-            self.zingo_datadir.path().to_string_lossy(),
+            self.zingo_datadir.to_string_lossy(),
             self.client_number
         );
         self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
@@ -626,7 +626,7 @@ pub async fn custom_clients(
 
     let client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().listen_port()),
-        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
     );
 
     (local_net, client_builder)
@@ -660,7 +660,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer,
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
-        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
     );
     let mut faucet =
         client_builder.build_faucet(true, local_net.validator().get_activation_heights());
@@ -689,7 +689,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
-        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
     );
     let mut faucet =
         client_builder.build_faucet(true, local_net.validator().get_activation_heights());
@@ -747,7 +747,7 @@ pub async fn funded_transparent_mobileclient(
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
-        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
     );
     let mut faucet =
         client_builder.build_faucet(true, local_net.validator().get_activation_heights());
@@ -788,7 +788,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
-        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap().path().to_path_buf(),
     );
     let mut faucet =
         client_builder.build_faucet(true, local_net.validator().get_activation_heights());

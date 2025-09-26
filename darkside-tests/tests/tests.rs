@@ -43,12 +43,8 @@ async fn simple_sync() {
         .unwrap();
     let activation_heights = for_test::all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
-        DARKSIDE_SEED.to_string(),
-        0,
-        true,
-        activation_heights,
-    );
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir.path().to_path_buf())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -93,12 +89,8 @@ async fn reorg_receipt_sync_generic() {
 
     let activation_heights = for_test::all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        DARKSIDE_SEED.to_string(),
-        0,
-        true,
-        activation_heights,
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -158,8 +150,9 @@ async fn sent_transaction_reorged_into_mempool() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
+    let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir.path().to_path_buf());
     let activation_heights = for_test::all_height_one_nus();
+
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(

@@ -345,7 +345,10 @@ pub mod scenarios {
             let (lightwalletd, darkside_connector) = init_darksidewalletd(set_port).await.unwrap();
             let client_builder = ClientBuilder::new(
                 darkside_connector.0.clone(),
-                zingolib::testutils::tempfile::tempdir().unwrap(),
+                zingolib::testutils::tempfile::tempdir()
+                    .unwrap()
+                    .path()
+                    .to_path_buf(),
             );
             let configured_activation_heights = for_test::all_height_one_nus();
             DarksideEnvironment {
