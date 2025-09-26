@@ -29,6 +29,7 @@ itertools = { workspace = true }
 proptest.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
 
 http = { workspace = true }
 

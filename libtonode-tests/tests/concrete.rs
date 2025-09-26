@@ -1,4 +1,4 @@
-#![orbid(unsafe_code)]
+#![forbid(unsafe_code)]
 use zingo_common_components::protocol::activation_heights::for_test;
 
 use json::JsonValue;
@@ -7,6 +7,7 @@ use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use zcash_protocol::value::Zatoshis;
+use zebra_chain::parameters::testnet;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::zingo_test_vectors::{
     BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED,
@@ -1329,9 +1330,21 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu6: Some(BlockHeight::from(13)),
             nu6_1: Some(BlockHeight::from(15)),
         };
+        let configured_activation_heights = testnet::ConfiguredActivationHeights {
+            before_overwinter: Some(1u32),
+            overwinter: Some(1u32),
+            sapling: Some(3u32),
+            blossom: Some(5u32),
+            heartwood: Some(7u32),
+            canopy: Some(9u32),
+            nu5: Some(11u32),
+            nu6: Some(13u32),
+            nu6_1: Some(15u32),
+            nu7: None,
+        };
 
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(activation_heights, None).await;
+            scenarios::unfunded_client(configured_activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
             .await
             .unwrap();
