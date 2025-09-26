@@ -23,14 +23,12 @@ use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
-use zebra_chain::parameters::NetworkKind;
-use zcash_local_net::indexer::{
-    Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
-};
+use zcash_local_net::indexer::{Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig};
 use zcash_local_net::network::localhost_uri;
 use zcash_local_net::utils::ExecutableLocation;
 use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
 use zcash_local_net::{LocalNet, Process};
+use zebra_chain::parameters::NetworkKind;
 use zingo_test_vectors::{
     FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
     REG_Z_ADDR_FROM_ABANDONART, seeds,
