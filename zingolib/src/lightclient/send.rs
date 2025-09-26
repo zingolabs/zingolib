@@ -149,7 +149,7 @@ pub mod send_with_proposal {
                 config::ZingoConfigBuilder, lightclient::LightClient,
                 mocks::proposal::ProposalBuilder,
             };
-            use testvectors::seeds::ABANDON_ART_SEED;
+            use zingo_test_vectors::seeds::ABANDON_ART_SEED;
 
             let config = ZingoConfigBuilder::default().create();
             let mut lc = LightClient::create_from_wallet(

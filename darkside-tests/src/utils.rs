@@ -12,7 +12,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingolib::testutils::zingo_infra_services::{
+use zingolib::testutils::zingo_full_stack_tests::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
@@ -310,7 +310,8 @@ pub mod scenarios {
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingolib::testutils::{
-        LocalNetwork, LocalNetworkExt as _, zingo_infra_services::indexer::Lightwalletd,
+        LocalNetwork, LocalNetworkExt as _, zingo_full_stack_tests::indexer::Lightwalletd,
+        zingo_test_vectors,
     };
 
     use super::{
@@ -321,9 +322,9 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::scenarios::ClientBuilder;
-    use zingolib::testutils::testvectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,
@@ -379,7 +380,7 @@ pub mod scenarios {
                 panic!("Error: Faucet already exists!");
             }
             self.faucet = Some(self.client_builder.build_client(
-                zingolib::testutils::testvectors::seeds::DARKSIDE_SEED.to_string(),
+                zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
                 self.activation_heights,

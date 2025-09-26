@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
-    use zingolib::testutils::zingo_infra_services::validator::Validator;
+    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
     use zingolib::{
         get_base_address_macro,
         testutils::{lightclient::from_inputs, scenarios},

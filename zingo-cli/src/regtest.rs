@@ -3,10 +3,10 @@
 
 use std::path::PathBuf;
 use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::testutils::testvectors::REG_O_ADDR_FROM_ABANDONART;
-use zingolib::testutils::zingo_infra_services::LocalNet;
-use zingolib::testutils::zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingolib::testutils::zingo_infra_services::validator::{Zcashd, ZcashdConfig};
+use zingolib::testutils::zingo_full_stack_tests::LocalNet;
+use zingolib::testutils::zingo_full_stack_tests::indexer::{Lightwalletd, LightwalletdConfig};
+use zingolib::testutils::zingo_full_stack_tests::validator::{Zcashd, ZcashdConfig};
+use zingolib::testutils::zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART;
 use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
 
 /// Launch a local regtest network

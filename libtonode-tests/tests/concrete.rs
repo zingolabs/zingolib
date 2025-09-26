@@ -7,7 +7,9 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use zcash_protocol::value::Zatoshis;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::testvectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
+use zingolib::testutils::zingo_test_vectors::{
+    BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED,
+};
 use zingolib::testutils::{
     LocalNetwork, LocalNetworkExt, increase_height_and_wait_for_client, scenarios,
 };
@@ -145,7 +147,7 @@ mod fast {
     };
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::testutils::zingo_infra_services::validator::Validator;
+    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
@@ -1438,8 +1440,8 @@ mod slow {
     use zingolib::config::ChainType;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
-    use zingolib::testutils::testvectors::TEST_TXID;
-    use zingolib::testutils::zingo_infra_services::validator::Validator;
+    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
+    use zingolib::testutils::zingo_test_vectors::TEST_TXID;
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
         encoded_sapling_address_from_ua,
@@ -1889,7 +1891,11 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(
                     &mut watch_client,
-                    vec![(zingolib::testutils::testvectors::EXT_TADDR, 1000, None)]
+                    vec![(
+                        zingolib::testutils::zingo_test_vectors::EXT_TADDR,
+                        1000,
+                        None
+                    )]
                 )
                 .await,
                 Err(QuickSendError::SendError(SendError::CalculateSendError(
@@ -1940,7 +1946,7 @@ mod slow {
         let sent_transaction_error = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                zingolib::testutils::testvectors::EXT_TADDR,
+                zingolib::testutils::zingo_test_vectors::EXT_TADDR,
                 sent_value,
                 None,
             )],

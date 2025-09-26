@@ -4,7 +4,8 @@ use bytes::Buf;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::localhost_uri;
+use zingo_full_stack_tests::network::localhost_uri;
+use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
 use crate::config::ChainType;
@@ -305,10 +306,10 @@ impl NetworkSeedVersion {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(_) => {
-                    testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()
+                    seeds::HOSPITAL_MUSEUM_SEED.to_string()
                 },
                 RegtestSeedVersion::AbandonAbandon(_) => {
-                    testvectors::seeds::ABANDON_ART_SEED.to_string()
+                    seeds::ABANDON_ART_SEED.to_string()
                 },
                 RegtestSeedVersion::AbsurdAmount(_) => {
                     "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string()
@@ -317,7 +318,7 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(
                     _,
-                ) => testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ) => seeds::CHIMNEY_BETTER_SEED.to_string(),
                 TestnetSeedVersion::MobileShuffle(
                     _,
                 ) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),

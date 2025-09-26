@@ -5,11 +5,11 @@ use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
-use testvectors::seeds::DARKSIDE_SEED;
-use zingo_infra_services::indexer::Indexer;
-use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::indexer::LightwalletdConfig;
-use zingo_infra_services::network::localhost_uri;
+use zingo_full_stack_tests::indexer::Indexer;
+use zingo_full_stack_tests::indexer::Lightwalletd;
+use zingo_full_stack_tests::indexer::LightwalletdConfig;
+use zingo_full_stack_tests::network::localhost_uri;
+use zingo_test_vectors::seeds::DARKSIDE_SEED;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
@@ -20,8 +20,8 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::testutils::tempfile;
-use zingolib::testutils::testvectors;
-use zingolib::testutils::zingo_infra_services;
+use zingolib::testutils::zingo_full_stack_tests;
+use zingolib::testutils::zingo_test_vectors;
 use zingolib::testutils::{LocalNetwork, LocalNetworkExt};
 use zingolib::wallet::balance::AccountBalance;
 
@@ -162,7 +162,7 @@ async fn sent_transaction_reorged_into_mempool() {
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
-        zingolib::testutils::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+        zingolib::testutils::zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
         activation_heights,

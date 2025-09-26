@@ -14,7 +14,7 @@ license = "MIT"
 default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "testvectors", "tempfile", "zebra-chain"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zebra-chain"]
 zaino-test = ['testutils']
 test_zainod_zcashd = []
 test_lwd_zebrad = []
@@ -23,10 +23,13 @@ test_lwd_zcashd = []
 [dependencies]
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
+zingo_netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
-testvectors = { workspace = true, optional = true }
+
+# testutils feature
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89e0b665967a0dd1950855ad37ce18d9c5a14709", optional = true}
+
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
 tokio-rustls = { workspace = true }
@@ -36,7 +39,7 @@ tower = { workspace = true }
 zebra-chain = { workspace = true, optional = true }
 
 # TODO: separate activation heights into different crate and make this optional for testutils
-zingo-infra-services = { workspace = true }
+zingo_full_stack_tests = { workspace = true }
 
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -94,10 +97,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zingo-infra-services = { workspace = true }
+zingo_full_stack_tests = { workspace = true }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
-testvectors = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]

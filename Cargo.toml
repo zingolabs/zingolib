@@ -8,10 +8,8 @@ members = [
     "darkside-tests",
     "zingo-cli",
     "zingolib",
-    "zingo-netutils",
     "zingo-memo",
     "pepper-sync",
-    "zingo-testvectors",
     "zingo-price",
 ]
 resolver = "2"
@@ -47,6 +45,11 @@ zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
 
 zebra-chain = "2.0"
+
+zingo_netutils = { git = "https://github.com/zingolabs/infrastructure.git", rev = "cc2af1ac80cb6b7a7f0a0b8f331f7b0873d667bf" }
+
+# SHOULD BE TESTONLY
+zingo_full_stack_tests = { git = "https://github.com/zingolabs/infrastructure.git", rev = "000036236af0e6a6316069dc029fc7d8184f30f9" }
 
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
@@ -106,13 +109,9 @@ tracing-subscriber = "0.3"
 crossbeam-channel = "0.5"
 rayon = "1"
 
-# Zingolabs
-zingo-infra-services = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zingo-infra-services-0.4.0" }
 
 # Workspace
-testvectors = { package = "zingo-testvectors", path = "zingo-testvectors" }
 zingo-memo = { path = "zingo-memo" }
-zingo-netutils = { path = "zingo-netutils" }
 zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
