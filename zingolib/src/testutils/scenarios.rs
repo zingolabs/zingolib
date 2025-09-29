@@ -20,7 +20,6 @@ use std::sync::LazyLock;
 use bip0039::Mnemonic;
 
 use portpicker::Port;
-use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use zcash_local_net::LocalNet;
