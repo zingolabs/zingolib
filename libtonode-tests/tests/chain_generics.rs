@@ -1,10 +1,10 @@
-#[cfg(feature = "proptests")]
+use libtonode_tests::chain_generics::LibtonodeEnvironment;
+use tokio::runtime::Runtime;
+use zingolib::testutils::chain_generics::fixtures;
+use zingolib::testutils::int_to_pooltype;
+use zingolib::testutils::int_to_shieldedprotocol;
+
 proptest::proptest! {
-    use libtonode_tests::chain_generics::LibtonodeEnvironment;
-    use tokio::runtime::Runtime;
-    use zingolib::testutils::chain_generics::fixtures;
-    use zingolib::testutils::int_to_pooltype;
-    use zingolib::testutils::int_to_shieldedprotocol;
     #![proptest_config(proptest::test_runner::Config::with_cases(1))]
     #[test]
     fn any_source_sends_to_any_receiver_libtonode(send_value in 0..50_000u64, change_value in 0..10_000u64, sender_protocol in 1..2, receiver_pool in 0..2) {
