@@ -1,4 +1,3 @@
-#[cfg(feature = "proptests")]
 proptest::proptest! {
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
     use tokio::runtime::Runtime;
