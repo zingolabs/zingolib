@@ -27,8 +27,9 @@ zingo_netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 zingo_common_components = { workspace = true, optional = true }
+
 # testutils feature
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "89e0b665967a0dd1950855ad37ce18d9c5a14709", optional = true}
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "3d6eb8f76529c11680055d89e9edf81f38c7b905", optional = true}
 
 hyper-rustls = { workspace = true }
 hyper-util = { workspace = true }
