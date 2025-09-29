@@ -5,23 +5,12 @@ use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
-<<<<<<< HEAD
-use zcash_local_net::indexer::Indexer;
-use zcash_local_net::indexer::Lightwalletd;
-use zcash_local_net::indexer::LightwalletdConfig;
-use zcash_local_net::network::localhost_uri;
-||||||| fe5c17ffe
-use zingo_full_stack_tests::indexer::Indexer;
-use zingo_full_stack_tests::indexer::Lightwalletd;
-use zingo_full_stack_tests::indexer::LightwalletdConfig;
-use zingo_full_stack_tests::network::localhost_uri;
-=======
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::indexer::Lightwalletd;
 use zcash_local_net::indexer::LightwalletdConfig;
 use zcash_local_net::network::localhost_uri;
 use zingo_common_components::protocol::activation_heights::for_test;
->>>>>>> labs/dev
+
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
