@@ -23,8 +23,7 @@ use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
-#[cfg(feature = "regtest")]
-use zingolib::testutils::{LocalNetwork, LocalNetworkExt as _};
+
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -653,7 +652,9 @@ pub fn run_regtest_cli() {
         sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
-        chaintype: ChainType::Regtest(LocalNetwork::default_regtest_heights()),
+        chaintype: ChainType::Regtest(
+            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
+        ),
         tor_enabled: false,
     };
 
