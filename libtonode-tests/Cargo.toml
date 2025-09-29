@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [features]
-proptests = []
+default = ["chain_generic_tests", "proptests"]
+proptests = ["proptest"]
 chain_generic_tests = []
 ci = ["zingolib/ci"]
 
@@ -27,7 +28,7 @@ bip0039.workspace = true
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
 itertools = { workspace = true }
-proptest.workspace = true
+proptest = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
