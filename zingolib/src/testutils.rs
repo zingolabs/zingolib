@@ -11,13 +11,12 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
+use zcash_local_net::LocalNet;
+use zcash_local_net::indexer::Indexer;
+use zcash_local_net::validator::Validator;
 use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::consensus::BlockHeight;
-pub use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
-use zingo_full_stack_tests::LocalNet;
-use zingo_full_stack_tests::indexer::Indexer;
-use zingo_full_stack_tests::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -41,27 +40,8 @@ pub mod scenarios;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
-pub use zingo_full_stack_tests;
+pub use zcash_local_net;
 pub use zingo_test_vectors;
-
-/// Extension trait for LocalNetwork providing common test configurations
-pub trait LocalNetworkExt {
-    /// Provides a DRY and succinct instance of the most common regtest height config
-    fn default_regtest_heights() -> LocalNetwork {
-        LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        }
-    }
-}
-
-impl LocalNetworkExt for LocalNetwork {}
 
 /// TODO: Add Doc Comment Here!
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {

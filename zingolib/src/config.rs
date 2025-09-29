@@ -62,7 +62,7 @@ pub enum ChainType {
     Mainnet,
     /// Local testnet
     #[cfg(any(test, feature = "testutils"))]
-    Regtest(zcash_protocol::local_consensus::LocalNetwork),
+    Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
 }
 
 impl std::fmt::Display for ChainType {
@@ -94,11 +94,20 @@ impl Parameters for ChainType {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
             #[cfg(any(test, feature = "testutils"))]
-            Regtest(activation_heights) => Some(
-                activation_heights
-                    .activation_height(nu)
-                    .unwrap_or(BlockHeight::from_u32(1)),
-            ),
+            Regtest(activation_heights) => match nu {
+                NetworkUpgrade::Overwinter => {
+                    activation_heights.overwinter.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Sapling => activation_heights.sapling.map(BlockHeight::from_u32),
+                NetworkUpgrade::Blossom => activation_heights.blossom.map(BlockHeight::from_u32),
+                NetworkUpgrade::Heartwood => {
+                    activation_heights.heartwood.map(BlockHeight::from_u32)
+                }
+                NetworkUpgrade::Canopy => activation_heights.canopy.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu5 => activation_heights.nu5.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu6 => activation_heights.nu6.map(BlockHeight::from_u32),
+                NetworkUpgrade::Nu6_1 => activation_heights.nu6_1.map(BlockHeight::from_u32),
+            },
         }
     }
 }
@@ -116,12 +125,11 @@ impl Parameters for ChainType {
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
-    use crate::testutils::{LocalNetwork, LocalNetworkExt};
-
+    use zingo_common_components::protocol::activation_heights::for_test;
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(LocalNetwork::default_regtest_heights())),
+        "regtest" => Ok(ChainType::Regtest(for_test::all_height_one_nus())),
         _ => Err(format!(
             "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
             chain_name

@@ -1,9 +1,9 @@
 //! libtonode tests use zcashd regtest mode to mock a chain
 
-use zingolib::testutils::zingo_full_stack_tests::LocalNet;
-use zingolib::testutils::zingo_full_stack_tests::indexer::Indexer;
-use zingolib::testutils::zingo_full_stack_tests::network::localhost_uri;
-use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
+use zingolib::testutils::zcash_local_net::LocalNet;
+use zingolib::testutils::zcash_local_net::indexer::Indexer;
+use zingolib::testutils::zcash_local_net::network::localhost_uri;
+use zingolib::testutils::zcash_local_net::validator::Validator;
 
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
@@ -35,12 +35,13 @@ impl ConductChain for LibtonodeEnvironment {
 
     async fn create_faucet(&mut self) -> LightClient {
         self.client_builder
-            .build_faucet(false, self.local_net.validator().activation_heights())
+            .build_faucet(false, self.local_net.validator().get_activation_heights())
     }
 
     fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-        self.client_builder
-            .make_unique_data_dir_and_load_config(self.local_net.validator().activation_heights())
+        self.client_builder.make_unique_data_dir_and_load_config(
+            self.local_net.validator().get_activation_heights(),
+        )
     }
 
     async fn increase_chain_height(&mut self) {

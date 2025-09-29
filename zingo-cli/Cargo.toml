@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 
 [features]
-regtest = ["zingolib/testutils"]
+regtest = ["zingolib/testutils", "zingo_common_components/for_test"]
 
 [dependencies]
 zingolib = { workspace = true }
@@ -28,6 +28,7 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_address = { workspace = true }
 zcash_keys = { workspace = true }
+zingo_common_components = { workspace = true, features = ["for_test"], optional = true }
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }

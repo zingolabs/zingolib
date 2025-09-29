@@ -12,7 +12,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingolib::testutils::zingo_full_stack_tests::{
+use zingolib::testutils::zcash_local_net::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
@@ -309,10 +309,9 @@ pub mod scenarios {
 
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zingolib::testutils::{
-        LocalNetwork, LocalNetworkExt as _, zingo_full_stack_tests::indexer::Lightwalletd,
-        zingo_test_vectors,
-    };
+    use zebra_chain::parameters::testnet;
+    use zingo_common_components::protocol::activation_heights::for_test;
+    use zingolib::testutils::{zcash_local_net::indexer::Lightwalletd, zingo_test_vectors};
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -330,7 +329,7 @@ pub mod scenarios {
         lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        pub(crate) configured_activation_heights: testnet::ConfiguredActivationHeights,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -347,12 +346,12 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
             );
-            let activation_heights = LocalNetwork::default_regtest_heights();
+            let configured_activation_heights = for_test::all_height_one_nus();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
                 client_builder,
-                activation_heights,
+                configured_activation_heights,
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
@@ -383,7 +382,7 @@ pub mod scenarios {
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 0,
                 true,
-                self.activation_heights,
+                self.configured_activation_heights,
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -408,9 +407,12 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient =
-                self.client_builder
-                    .build_client(seed, birthday, true, self.activation_heights);
+            let lightclient = self.client_builder.build_client(
+                seed,
+                birthday,
+                true,
+                self.configured_activation_heights,
+            );
             self.lightclients.push(lightclient);
             self
         }
@@ -657,8 +659,8 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_activation_heights(&self) -> zcash_protocol::local_consensus::LocalNetwork {
-            self.activation_heights
+        pub fn get_activation_heights(&self) -> testnet::ConfiguredActivationHeights {
+            self.configured_activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {
             self.faucet
