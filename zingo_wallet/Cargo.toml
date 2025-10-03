@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+zingolib = { workspace = true }
+
+zcash_wallet_interface = { path = "/home/cupress/ZINGO/zcash_wallet_interface" }

@@ -9062,6 +9062,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash_wallet_interface"
+version = "0.1.0"
+
+[[package]]
 name = "zebra-chain"
 version = "2.0.0"
 source = "git+https://github.com/zingolabs/zebra.git?rev=1168a2f391a17f3ccab65a095d9219b7455d0fea#1168a2f391a17f3ccab65a095d9219b7455d0fea"
@@ -9502,6 +9506,14 @@ version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=89e0b665967a0dd1950855ad37ce18d9c5a14709#89e0b665967a0dd1950855ad37ce18d9c5a14709"
 dependencies = [
  "bip0039",
+]
+
+[[package]]
+name = "zingo_wallet"
+version = "0.1.0"
+dependencies = [
+ "zcash_wallet_interface",
+ "zingolib",
 ]
 
 [[package]]
