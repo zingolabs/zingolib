@@ -6,7 +6,7 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
-        NullifierQuery, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TargetValue,
+        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, SAPLING_SHARD_HEIGHT, TargetValue,
         TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
         Zip32Derivation,
         chain::CommitmentTreeRoot,
@@ -27,6 +27,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
+    value::Zatoshis,
 };
 use zcash_transparent::bundle::{OutPoint, TxOut};
 
@@ -252,6 +253,7 @@ impl WalletRead for LightWallet {
         account: Self::AccountId,
         // TODO: only get internal receivers if true
         _include_change: bool,
+        _include_standalone: bool,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         self.transparent_addresses
             .iter()
@@ -580,7 +582,7 @@ impl InputSource for LightWallet {
         _target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
             .get_target_and_anchor_heights(confirmations_policy.trusted())
             .expect("infallible")
@@ -597,7 +599,10 @@ impl InputSource for LightWallet {
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
 
-        let TargetValue::AtLeast(at_least_value) = target_value;
+        let at_least_value = match target_value {
+            TargetValue::AtLeast(value) => value,
+            TargetValue::AllFunds(value) => todo!(),
+        };
         let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
 
         // prioritises selecting spendable notes that are guaranteed to be unspent first
@@ -736,7 +741,7 @@ impl InputSource for LightWallet {
             })
             .collect::<Vec<_>>();
 
-        Ok(SpendableNotes::new(
+        Ok(ReceivedNotes::new(
             sapling_recieved_notes,
             orchard_recieved_notes,
         ))
@@ -789,5 +794,15 @@ impl InputSource for LightWallet {
                 )
             })
             .collect())
+    }
+
+    fn select_unspent_notes(
+        &self,
+        account: Self::AccountId,
+        sources: &[ShieldedProtocol],
+        target_height: TargetHeight,
+        exclude: &[Self::NoteRef],
+    ) -> Result<zcash_client_backend::data_api::ReceivedNotes<Self::NoteRef>, Self::Error> {
+        todo!()
     }
 }
