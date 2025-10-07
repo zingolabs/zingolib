@@ -3,13 +3,8 @@ pub struct ZingoWallet {
     lightclient: Option<zingolib::lightclient::LightClient>,
 }
 
+mod add_server;
 mod protocol_id;
-mod add_server {
-    pub enum AddServerError {
-        NeedsSingleSeed,
-    }
-}
-pub use add_server::AddServerError;
 
 impl zcash_wallet_interface::Wallet for ZingoWallet {
     fn protocol_id() -> zcash_wallet_interface::ProtocolId {
@@ -27,13 +22,10 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         }
     }
 
-    type AddServerError = AddServerError;
+    type AddServerError = add_server::AddServerError;
 
     async fn add_server(&mut self, server_address: String) -> Result<(), Self::AddServerError> {
-        if self.keys.len() == 1 {
-            if let Some(key) = self.keys.get(0) {}
-        }
-        Err(AddServerError::NeedsSingleSeed)
+        add_server::add_server(self, server_address).await
     }
 
     type AddKeyError = ();

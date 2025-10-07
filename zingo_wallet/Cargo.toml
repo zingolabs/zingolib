@@ -7,3 +7,5 @@ edition = "2024"
 zingolib = { workspace = true }
 
 zcash_wallet_interface = { path = "/home/cupress/ZINGO/zcash_wallet_interface" }
+thiserror.workspace = true
+http.workspace = true

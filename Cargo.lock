@@ -9512,6 +9512,8 @@ dependencies = [
 name = "zingo_wallet"
 version = "0.1.0"
 dependencies = [
+ "http",
+ "thiserror 2.0.16",
  "zcash_wallet_interface",
  "zingolib",
 ]
