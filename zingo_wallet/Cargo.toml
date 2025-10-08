@@ -13,3 +13,4 @@ pepper-sync.workspace = true
 bip0039.workspace = true
 zcash_client_backend.workspace = true
 zingo_netutils.workspace = true
+tonic.workspace = true

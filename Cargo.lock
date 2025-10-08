@@ -9517,6 +9517,7 @@ dependencies = [
  "http",
  "pepper-sync",
  "thiserror 2.0.16",
+ "tonic 0.13.1",
  "zcash_client_backend 0.19.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_wallet_interface",
  "zingo_netutils",
