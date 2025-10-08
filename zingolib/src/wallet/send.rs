@@ -7,6 +7,7 @@ use nonempty::NonEmpty;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::NoteInterface;
+use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -130,7 +131,7 @@ impl LightWallet {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
-        let usk = self
+        let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&sending_account)
             .ok_or(KeyError::NoAccountKeys)?
@@ -141,7 +142,7 @@ impl LightWallet {
             &network,
             &sapling_prover,
             &sapling_prover,
-            &usk,
+            &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
         )
