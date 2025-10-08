@@ -252,6 +252,7 @@ impl WalletRead for LightWallet {
         account: Self::AccountId,
         // TODO: only get internal receivers if true
         _include_change: bool,
+        _include_standalone_receivers: bool,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         self.transparent_addresses
             .iter()
