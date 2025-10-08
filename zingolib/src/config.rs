@@ -112,6 +112,24 @@ impl Parameters for ChainType {
     }
 }
 
+/// An error determining chain id and parameters 'ChainType' from string.
+#[cfg(any(test, feature = "testutils"))]
+#[derive(thiserror::Error, Debug)]
+pub enum ChainFromStringError {
+    /// of unknown chain,
+    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet, regtest")]
+    UnknownChain(String),
+}
+
+/// An error determining chain id and parameters 'ChainType' from string.
+#[cfg(not(any(test, feature = "testutils")))]
+#[derive(thiserror::Error, Debug)]
+pub enum ChainFromStringError {
+    /// of unknown chain,
+    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet")]
+    UnknownChain(String),
+}
+
 /// Converts a chain name string to a ChainType variant.
 ///
 /// When compiled with the `testutils` feature, accepts "testnet", "mainnet", or "regtest".
@@ -124,16 +142,13 @@ impl Parameters for ChainType {
 /// * `Ok(ChainType)` - The corresponding ChainType variant
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(any(test, feature = "testutils"))]
-pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
     use zingo_common_components::protocol::activation_heights::for_test;
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
         "regtest" => Ok(ChainType::Regtest(for_test::all_height_one_nus())),
-        _ => Err(format!(
-            "Invalid chain '{}'. Expected one of: testnet, mainnet, regtest",
-            chain_name
-        )),
+        _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
 
@@ -148,14 +163,11 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
 /// * `Ok(ChainType)` - The corresponding ChainType variant
 /// * `Err(String)` - An error message if the chain name is invalid
 #[cfg(not(any(test, feature = "testutils")))]
-pub fn chain_from_str(chain_name: &str) -> Result<ChainType, String> {
+pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        _ => Err(format!(
-            "Invalid chain '{}'. Expected one of: testnet, mainnet",
-            chain_name
-        )),
+        _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
 /// TODO: Add Doc Comment Here!

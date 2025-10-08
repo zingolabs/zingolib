@@ -356,7 +356,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            zingolib::config::chain_from_str(chain)?
+            zingolib::config::chain_from_str(chain).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
