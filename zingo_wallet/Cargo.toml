@@ -6,8 +6,10 @@ edition = "2024"
 [dependencies]
 zingolib = { workspace = true }
 
-zcash_wallet_interface = { git = "file:///home/cupress/ZINGO/zcash_wallet_interface", rev = "c6ed96e5b9340b87da0794a73afa6b6b9542e59d" }
+zcash_wallet_interface = { git = "file:///home/cupress/ZINGO/zcash_wallet_interface", rev = "6cb5d53bf32c3e623775316ef5571258ac89df67" }
 thiserror.workspace = true
 http.workspace = true
 pepper-sync.workspace = true
 bip0039.workspace = true
+zcash_client_backend.workspace = true
+zingo_netutils.workspace = true

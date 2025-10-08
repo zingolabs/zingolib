@@ -9064,6 +9064,7 @@ dependencies = [
 [[package]]
 name = "zcash_wallet_interface"
 version = "0.1.0"
+source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?rev=6cb5d53bf32c3e623775316ef5571258ac89df67#6cb5d53bf32c3e623775316ef5571258ac89df67"
 
 [[package]]
 name = "zebra-chain"
@@ -9512,9 +9513,13 @@ dependencies = [
 name = "zingo_wallet"
 version = "0.1.0"
 dependencies = [
+ "bip0039",
  "http",
+ "pepper-sync",
  "thiserror 2.0.16",
+ "zcash_client_backend 0.19.1 (git+https://github.com/zcash/librustzcash?rev=d387aed7e04e881dbe30c6ff8b26a96c834c094b)",
  "zcash_wallet_interface",
+ "zingo_netutils",
  "zingolib",
 ]
 
