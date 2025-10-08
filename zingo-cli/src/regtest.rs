@@ -3,7 +3,6 @@
 
 use std::path::PathBuf;
 use zingo_common_components::protocol::activation_heights::for_test;
-use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
 use zingolib::testutils::zcash_local_net::LocalNet;
 use zingolib::testutils::zcash_local_net::indexer::{Lightwalletd, LightwalletdConfig};
 use zingolib::testutils::zcash_local_net::validator::{Zcashd, ZcashdConfig};
@@ -13,14 +12,11 @@ use zingolib::testutils::zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART;
 pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {
     LocalNet::<Lightwalletd, Zcashd>::launch(
         LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
             listen_port: None,
             zcashd_conf: PathBuf::new(),
             darkside: false,
         },
         ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN.clone(),
-            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
             rpc_listen_port: None,
             configured_activation_heights: for_test::all_height_one_nus(),
             miner_address: Some(REG_O_ADDR_FROM_ABANDONART),

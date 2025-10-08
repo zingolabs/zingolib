@@ -21,8 +21,8 @@ use zingolib::testutils::zcash_local_net::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
+use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
-use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
         lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
