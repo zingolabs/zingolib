@@ -8616,7 +8616,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=51162c0c603d324a3c36f1cead17bf4680aa1dca#51162c0c603d324a3c36f1cead17bf4680aa1dca"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.0.0#51162c0c603d324a3c36f1cead17bf4680aa1dca"
 dependencies = [
  "getset",
  "hex",
@@ -9278,7 +9278,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=51162c0c603d324a3c36f1cead17bf4680aa1dca#51162c0c603d324a3c36f1cead17bf4680aa1dca"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.0.0#51162c0c603d324a3c36f1cead17bf4680aa1dca"
 dependencies = [
  "zebra-chain",
 ]
@@ -9286,7 +9286,7 @@ dependencies = [
 [[package]]
 name = "zingo_netutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=51162c0c603d324a3c36f1cead17bf4680aa1dca#51162c0c603d324a3c36f1cead17bf4680aa1dca"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.0.0#51162c0c603d324a3c36f1cead17bf4680aa1dca"
 dependencies = [
  "http",
  "http-body",
