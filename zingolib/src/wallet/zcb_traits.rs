@@ -6,7 +6,7 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
-        NullifierQuery, ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TargetValue,
+        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, SAPLING_SHARD_HEIGHT, TargetValue,
         TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
         Zip32Derivation,
         chain::CommitmentTreeRoot,
@@ -74,7 +74,7 @@ impl WalletRead for LightWallet {
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(self.unified_key_store.keys().copied().collect())
+        Ok(self.unified_key_store.keys().cloned().collect())
     }
 
     fn get_account(
@@ -425,7 +425,7 @@ impl WalletWrite for LightWallet {
                 ConfirmationStatus::Calculated(sent_transaction.target_height().into()),
                 sent_transaction.created().unix_timestamp() as u32,
             ) {
-                Ok(()) => (),
+                Ok(_) => (),
                 Err(SyncError::ScanError(e)) => return Err(e.into()),
                 Err(SyncError::WalletError(e)) => return Err(e),
                 Err(_) => {
@@ -580,7 +580,7 @@ impl InputSource for LightWallet {
         _target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
-    ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
             .get_target_and_anchor_heights(confirmations_policy.trusted())
             .expect("infallible")
@@ -597,18 +597,80 @@ impl InputSource for LightWallet {
             .map(|note_id| OutputId::new(note_id.txid(), note_id.output_index()))
             .collect::<Vec<_>>();
 
-        let TargetValue::AtLeast(at_least_value) = target_value;
-        let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
+        let (selected_sapling_notes, selected_orchard_notes) = match target_value {
+            TargetValue::AtLeast(at_least_value) => {
+                let mut remaining_value_needed = RemainingNeeded::Positive(at_least_value);
 
-        // prioritises selecting spendable notes that are guaranteed to be unspent first
-        let mut selected_sapling_notes = Vec::new();
-        let mut selected_orchard_notes = Vec::new();
-        for include_potentially_spent_notes in [false, true] {
-            // prioritise note selection for the given `sources`
-            if sources.contains(&ShieldedProtocol::Sapling) {
-                let notes = self
-                    .select_spendable_notes_by_pool::<SaplingNote>(
-                        &mut remaining_value_needed,
+                // prioritises selecting spendable notes that are guaranteed to be unspent first
+                let mut selected_sapling_notes = Vec::new();
+                let mut selected_orchard_notes = Vec::new();
+                for include_potentially_spent_notes in [false, true] {
+                    // prioritise note selection for the given `sources`
+                    if sources.contains(&ShieldedProtocol::Sapling) {
+                        let notes = self
+                            .select_spendable_notes_by_pool::<SaplingNote>(
+                                &mut remaining_value_needed,
+                                anchor_height,
+                                &exclude_sapling,
+                                account,
+                                include_potentially_spent_notes,
+                            )?
+                            .into_iter()
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+                        selected_sapling_notes.extend(notes);
+                    }
+                    if sources.contains(&ShieldedProtocol::Orchard) {
+                        let notes = self
+                            .select_spendable_notes_by_pool::<OrchardNote>(
+                                &mut remaining_value_needed,
+                                anchor_height,
+                                &exclude_orchard,
+                                account,
+                                include_potentially_spent_notes,
+                            )?
+                            .into_iter()
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+                        selected_orchard_notes.extend(notes);
+                    }
+
+                    let notes = self
+                        .select_spendable_notes_by_pool::<SaplingNote>(
+                            &mut remaining_value_needed,
+                            anchor_height,
+                            &exclude_sapling,
+                            account,
+                            include_potentially_spent_notes,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+                    selected_sapling_notes.extend(notes);
+
+                    let notes = self
+                        .select_spendable_notes_by_pool::<OrchardNote>(
+                            &mut remaining_value_needed,
+                            anchor_height,
+                            &exclude_orchard,
+                            account,
+                            include_potentially_spent_notes,
+                        )?
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+                    selected_orchard_notes.extend(notes);
+                }
+                (selected_sapling_notes, selected_orchard_notes)
+            }
+            TargetValue::AllFunds(max_spend_mode) => {
+                let include_potentially_spent_notes = false;
+                (
+                    self.spendable_notes::<SaplingNote>(
                         anchor_height,
                         &exclude_sapling,
                         account,
@@ -616,18 +678,8 @@ impl InputSource for LightWallet {
                     )?
                     .into_iter()
                     .cloned()
-                    .collect::<Vec<_>>();
-                exclude_sapling.extend(
-                    notes
-                        .iter()
-                        .map(pepper_sync::wallet::OutputInterface::output_id),
-                );
-                selected_sapling_notes.extend(notes);
-            }
-            if sources.contains(&ShieldedProtocol::Orchard) {
-                let notes = self
-                    .select_spendable_notes_by_pool::<OrchardNote>(
-                        &mut remaining_value_needed,
+                    .collect::<Vec<_>>(),
+                    self.spendable_notes::<OrchardNote>(
                         anchor_height,
                         &exclude_orchard,
                         account,
@@ -635,51 +687,10 @@ impl InputSource for LightWallet {
                     )?
                     .into_iter()
                     .cloned()
-                    .collect::<Vec<_>>();
-                exclude_orchard.extend(
-                    notes
-                        .iter()
-                        .map(pepper_sync::wallet::OutputInterface::output_id),
-                );
-                selected_orchard_notes.extend(notes);
+                    .collect::<Vec<_>>(),
+                )
             }
-
-            let notes = self
-                .select_spendable_notes_by_pool::<SaplingNote>(
-                    &mut remaining_value_needed,
-                    anchor_height,
-                    &exclude_sapling,
-                    account,
-                    include_potentially_spent_notes,
-                )?
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            exclude_sapling.extend(
-                notes
-                    .iter()
-                    .map(pepper_sync::wallet::OutputInterface::output_id),
-            );
-            selected_sapling_notes.extend(notes);
-
-            let notes = self
-                .select_spendable_notes_by_pool::<OrchardNote>(
-                    &mut remaining_value_needed,
-                    anchor_height,
-                    &exclude_orchard,
-                    account,
-                    include_potentially_spent_notes,
-                )?
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            exclude_orchard.extend(
-                notes
-                    .iter()
-                    .map(pepper_sync::wallet::OutputInterface::output_id),
-            );
-            selected_orchard_notes.extend(notes);
-        }
+        };
 
         /* TODO: Priority
         if selected
@@ -752,7 +763,7 @@ impl InputSource for LightWallet {
             })
             .collect::<Vec<_>>();
 
-        Ok(SpendableNotes::new(
+        Ok(ReceivedNotes::new(
             sapling_recieved_notes,
             orchard_recieved_notes,
         ))
@@ -789,7 +800,7 @@ impl InputSource for LightWallet {
             )
             .into_iter()
             .filter(|&output| output.address() == address)
-            .filter_map(|output| {
+            .flat_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
                     TxOut {
@@ -805,5 +816,15 @@ impl InputSource for LightWallet {
                 )
             })
             .collect())
+    }
+
+    fn select_unspent_notes(
+        &self,
+        account: Self::AccountId,
+        sources: &[ShieldedProtocol],
+        target_height: TargetHeight,
+        exclude: &[Self::NoteRef],
+    ) -> Result<zcash_client_backend::data_api::ReceivedNotes<Self::NoteRef>, Self::Error> {
+        unimplemented!()
     }
 }
