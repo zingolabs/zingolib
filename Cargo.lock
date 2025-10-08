@@ -1384,7 +1384,7 @@ dependencies = [
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
  "zebra-chain",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f)",
  "zingo_netutils",
  "zingolib",
  "zip32",
@@ -3338,7 +3338,7 @@ dependencies = [
  "zcash_protocol 0.6.1",
  "zebra-chain",
  "zingo-status",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f)",
  "zingolib",
  "zip32",
 ]
@@ -8641,7 +8641,7 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.0.0)",
 ]
 
 [[package]]
@@ -8802,6 +8802,18 @@ name = "zcash_protocol"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12cc76dd1f77be473e5829dbd34890bcd36d08b1e8dde2da0aea355c812a8f28"
+dependencies = [
+ "core2",
+ "document-features",
+ "hex",
+ "memuse",
+]
+
+[[package]]
+name = "zcash_protocol"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01fb174be84135a00fd3799161835e46f320d0028dd9446fdbd97a8d928456b6"
 dependencies = [
  "core2",
  "document-features",
@@ -9244,7 +9256,7 @@ dependencies = [
  "zcash_keys 0.10.0",
  "zcash_primitives 0.24.0",
  "zcash_protocol 0.6.1",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f)",
  "zingolib",
  "zip32",
 ]
@@ -9294,6 +9306,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo_common_components"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f#e76012c5d2228bce03003bcf164ffd8756b9473f"
+dependencies = [
+ "thiserror 1.0.69",
+ "zcash_protocol 0.7.0",
+ "zebra-chain",
+]
+
+[[package]]
 name = "zingo_netutils"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.0.0#51162c0c603d324a3c36f1cead17bf4680aa1dca"
@@ -9335,7 +9357,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_primitives 0.24.0",
  "zcash_wallet_interface",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f)",
  "zingo_netutils",
  "zingolib",
 ]
@@ -9401,7 +9423,7 @@ dependencies = [
  "zingo-memo",
  "zingo-price",
  "zingo-status",
- "zingo_common_components",
+ "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=e76012c5d2228bce03003bcf164ffd8756b9473f)",
  "zingo_netutils",
  "zingo_test_vectors",
  "zingolib",
