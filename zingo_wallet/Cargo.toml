@@ -14,3 +14,5 @@ bip0039.workspace = true
 zcash_client_backend.workspace = true
 zingo_netutils.workspace = true
 tonic.workspace = true
+zcash_primitives.workspace = true
+zingo_common_components.workspace = true

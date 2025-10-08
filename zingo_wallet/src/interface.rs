@@ -17,6 +17,8 @@ pub enum AddServerError {
     CantCreateClient(Uri, zingo_netutils::GetClientError),
     #[error("Server call returned unexpected result: >{0}<.")]
     ServerCall(#[from] tonic::Status),
+    #[error("Server reported unusable chain: >{0}<.")]
+    ServerChain(#[from] zingolib::config::ChainFromStringError),
     #[error("Wallet creation failed with >{0}<.")]
     CreateWallet(#[from] zingolib::wallet::error::WalletError),
     #[error("Seed parse from string '{0}' failed with >{1}<.")]
@@ -83,7 +85,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
             let lightwalletd_uri: Arc<RwLock<Uri>> = Arc::new(RwLock::new(server_uri.clone()));
 
-            let (network_name, birthday) = {
+            let (chain_type, birthday) = {
                 // we need to ask the indexer for this information
 
                 let mut client = zingolib::grpc_client::get_zcb_client(server_uri.clone())
@@ -94,11 +96,15 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                     .get_lightd_info(tonic::Request::new(
                         zcash_client_backend::proto::service::Empty {},
                     ))
-                    .await?;
+                    .await?
+                    .into_inner();
 
-                let network_name: ChainType = { chain_from_str(chain_name) };
-                let birthday;
-                todo!()
+                let chain_name = &lightd_info.chain_name;
+                let chain_type: ChainType = chain_from_str(chain_name)?;
+
+                let birthday =
+                    zcash_primitives::consensus::BlockHeight::from_u32(lightd_info.block_height);
+                (chain_name, birthday)
             };
 
             // this seems like a lot of set up. Do we really need all this right here??
@@ -117,7 +123,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 },
                 min_confirmations: NonZeroU32::try_from(1).expect("1 aint 0"),
             }; // maybe this could be defaulted
-            let wallet = LightWallet::new(network_name, wallet_base, birthday, wallet_settings)
+            let wallet = LightWallet::new(chain_type, wallet_base, birthday, wallet_settings)
                 .map_err(AddServerError::CreateWallet)?;
             let config = {
                 ZingoConfigBuilder::default()
