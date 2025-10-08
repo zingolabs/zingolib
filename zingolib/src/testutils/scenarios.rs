@@ -25,7 +25,6 @@ use zcash_protocol::PoolType;
 
 use zcash_local_net::indexer::{Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig};
 use zcash_local_net::network::localhost_uri;
-use zcash_local_net::utils::ExecutableLocation;
 use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
 use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::{NetworkKind, testnet};
@@ -113,14 +112,12 @@ impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
     ) -> LocalNet<Zainod, Zebrad> {
         LocalNet::<Zainod, Zebrad>::launch(
             ZainodConfig {
-                zainod_bin: ZAINOD_BIN.clone(),
                 listen_port: indexer_listen_port,
                 validator_port: 0,
                 chain_cache: None,
                 network: NetworkKind::Regtest,
             },
             ZebradConfig {
-                zebrad_bin: ZEBRAD_BIN.clone(),
                 network_listen_port: None,
                 rpc_listen_port: None,
                 indexer_listen_port: None,
@@ -149,15 +146,12 @@ impl ZingoTestLocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
 
         LocalNet::<Zainod, Zcashd>::launch(
             ZainodConfig {
-                zainod_bin: ZAINOD_BIN.clone(),
                 listen_port: indexer_listen_port,
                 validator_port: 0,
                 chain_cache: None,
                 network: NetworkKind::Regtest,
             },
             ZcashdConfig {
-                zcashd_bin: ZCASHD_BIN.clone(),
-                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                 rpc_listen_port: None,
                 configured_activation_heights,
                 miner_address: Some(miner_address),
@@ -183,14 +177,11 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
 
         LocalNet::<Lightwalletd, Zcashd>::launch(
             LightwalletdConfig {
-                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                 listen_port: indexer_listen_port,
                 zcashd_conf: PathBuf::new(),
                 darkside: false,
             },
             ZcashdConfig {
-                zcashd_bin: ZCASHD_BIN.clone(),
-                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
                 rpc_listen_port: None,
                 configured_activation_heights,
                 miner_address: Some(miner_address),
@@ -210,13 +201,11 @@ impl ZingoTestLocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
     ) -> LocalNet<Lightwalletd, Zebrad> {
         LocalNet::<Lightwalletd, Zebrad>::launch(
             LightwalletdConfig {
-                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
                 listen_port: indexer_listen_port,
                 zcashd_conf: PathBuf::new(),
                 darkside: false,
             },
             ZebradConfig {
-                zebrad_bin: ZEBRAD_BIN.clone(),
                 network_listen_port: None,
                 rpc_listen_port: None,
                 indexer_listen_port: None,
@@ -250,49 +239,6 @@ async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
         local_net.validator().generate_blocks(1).await.unwrap();
     }
 }
-
-/// Helper function to get the test binary path
-fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
-    // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
-    // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
-    let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
-        .map(PathBuf::from)
-        .or_else(|_| {
-            std::env::var("CARGO_MANIFEST_DIR")
-                .map(|manifest_dir| PathBuf::from(manifest_dir).parent().unwrap().to_path_buf())
-        })
-        .unwrap_or_else(|_| PathBuf::from("."));
-
-    let path = workspace_dir
-        .join("test_binaries")
-        .join("bins")
-        .join(binary_name);
-    if path.exists() {
-        ExecutableLocation::Specific(path.canonicalize().unwrap())
-    } else {
-        ExecutableLocation::Global(binary_name.to_string())
-    }
-}
-
-/// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASHD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zcashd"));
-
-/// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASH_CLI_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zcash-cli"));
-
-/// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZEBRAD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zebrad"));
-
-/// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static LIGHTWALLETD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("lightwalletd"));
-
-/// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZAINOD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
