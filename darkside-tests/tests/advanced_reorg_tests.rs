@@ -21,8 +21,8 @@ use zingolib::testutils::zcash_local_net::{
     indexer::{Indexer, Lightwalletd, LightwalletdConfig},
     network::localhost_uri,
 };
+use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
-use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
     testutils::{
         lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
@@ -34,7 +34,6 @@ use zingolib::{
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -198,7 +197,6 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -362,7 +360,6 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -548,7 +545,6 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -809,7 +805,6 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -1015,7 +1010,6 @@ async fn reorg_changes_outgoing_tx_index() {
     tracing_subscriber::fmt().init();
 
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
