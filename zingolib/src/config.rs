@@ -112,6 +112,7 @@ impl Parameters for ChainType {
     }
 }
 
+// sorry this is wet. i didnt create this conditional compilation condition
 /// An error determining chain id and parameters 'ChainType' from string.
 #[cfg(any(test, feature = "testutils"))]
 #[derive(thiserror::Error, Debug)]
@@ -120,7 +121,6 @@ pub enum ChainFromStringError {
     #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet, regtest")]
     UnknownChain(String),
 }
-
 /// An error determining chain id and parameters 'ChainType' from string.
 #[cfg(not(any(test, feature = "testutils")))]
 #[derive(thiserror::Error, Debug)]
