@@ -22,9 +22,9 @@ use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
-use zcash_local_net::indexer::{Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig};
+use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
-use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zcash_local_net::validator::Validator;
 use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::{NetworkKind, testnet};
 use zingo_test_vectors::{
@@ -50,8 +50,6 @@ use zingo_common_components::protocol::activation_heights::for_test;
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Zainod, validator::Zcashd};
-
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zcashd;
 }
@@ -59,8 +57,6 @@ pub mod network_combo {
 #[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Lightwalletd, validator::Zebrad};
-
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zebrad;
 }
@@ -72,8 +68,6 @@ pub mod network_combo {
 ))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Lightwalletd, validator::Zcashd};
-
     pub type DefaultIndexer = Lightwalletd;
     pub type DefaultValidator = Zcashd;
 }
@@ -85,8 +79,6 @@ pub mod network_combo {
 )))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Zainod, validator::Zebrad};
-
     pub type DefaultIndexer = Zainod;
     pub type DefaultValidator = Zebrad;
 }
