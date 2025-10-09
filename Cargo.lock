@@ -8425,7 +8425,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.2.0#38e266b52ab08ddb4404df270ebb39d94d61cdfb"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.2.1#a738c8c82b4b3a92da24c0b03f40f925cd1929ac"
 dependencies = [
  "getset",
  "hex",
