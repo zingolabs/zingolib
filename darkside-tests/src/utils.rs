@@ -344,7 +344,7 @@ pub mod scenarios {
     };
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
-    use zingolib::testutils::scenarios::ClientBuilder;
+    use zingolib_testutils::scenarios::ClientBuilder;
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,

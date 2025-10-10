@@ -35,6 +35,7 @@ proptest = { workspace = true }
 
 # Logging
 tracing-subscriber.workspace = true
+zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils" }
 
 [build-dependencies]
 tonic-build = { workspace = true }

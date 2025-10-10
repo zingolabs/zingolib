@@ -1376,6 +1376,7 @@ dependencies = [
  "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=2a2d2ec037eafe421e78994768e8a665106c3a83)",
  "zingo_netutils",
  "zingolib",
+ "zingolib_testutils",
  "zip32",
 ]
 
@@ -3287,6 +3288,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components 0.1.0 (git+https://github.com/zingolabs/zingo-common.git?rev=2a2d2ec037eafe421e78994768e8a665106c3a83)",
  "zingolib",
+ "zingolib_testutils",
  "zip32",
 ]
 
