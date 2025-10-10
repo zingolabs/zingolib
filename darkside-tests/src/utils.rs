@@ -122,7 +122,7 @@ pub async fn update_tree_states_for_transaction(
     {
         sapling_tree
             .append(sapling_crypto::Node::from_cmu(output.cmu()))
-            .unwrap()
+            .unwrap();
     }
     for action in transaction
         .orchard_bundle()
@@ -131,7 +131,7 @@ pub async fn update_tree_states_for_transaction(
     {
         orchard_tree
             .append(MerkleHashOrchard::from_cmx(action.cmx()))
-            .unwrap()
+            .unwrap();
     }
     let mut sapling_tree_bytes = vec![];
     zcash_primitives::merkle_tree::write_commitment_tree(&sapling_tree, &mut sapling_tree_bytes)
@@ -144,7 +144,7 @@ pub async fn update_tree_states_for_transaction(
         sapling_tree: hex::encode(sapling_tree_bytes),
         orchard_tree: hex::encode(orchard_tree_bytes),
         network: constants::first_tree_state().network,
-        hash: "".to_string(),
+        hash: String::new(),
         time: 0,
     };
     DarksideConnector(server_id.clone())
@@ -241,7 +241,8 @@ pub async fn init_darksidewalletd(
 
 /// Creates a file for writing transactions to store pre-built blockchains.
 /// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
-/// For writing transactions, see `send_and_write_transaction` method in DarksideScenario.
+/// For writing transactions, see `send_and_write_transaction` method in `DarksideScenario`.
+#[must_use]
 pub fn create_chainbuild_file(test_name: &str) -> File {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",
@@ -249,22 +250,23 @@ pub fn create_chainbuild_file(test_name: &str) -> File {
         test_name
     );
     match fs::create_dir(path.clone()) {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e) => match e.kind() {
             io::ErrorKind::AlreadyExists => (),
-            _ => panic!("Error creating directory: {}", e),
+            _ => panic!("Error creating directory: {e}"),
         },
     }
     let filename = "hex_transactions.txt";
     fs::OpenOptions::new()
         .create_new(true)
         .append(true)
-        .open(format!("{}/{}", path, filename))
+        .open(format!("{path}/{filename}"))
         .expect("file should not already exist")
 }
 /// Loads a vec of strings from a list of hex transactions in the chainbuild file
 /// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
-/// For staging hex transactions, see `stage_transaction` method in DarksideScenario
+/// For staging hex transactions, see `stage_transaction` method in `DarksideScenario`
+#[must_use]
 pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",
@@ -272,7 +274,7 @@ pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
         test_name
     );
     let filename = "hex_transactions.txt";
-    read_dataset(format!("{}/{}", path, filename))
+    read_dataset(format!("{path}/{filename}"))
 }
 /// Hex encodes raw transaction and writes to file.
 fn write_raw_transaction(
@@ -299,7 +301,7 @@ fn write_transaction(transaction: Transaction, mut chainbuild_file: &File) {
         .expect("transaction should be written to a buffer");
     let hex_transaction = hex::encode(buffer);
     chainbuild_file
-        .write_all(format!("{}\n", hex_transaction).as_bytes())
+        .write_all(format!("{hex_transaction}\n").as_bytes())
         .unwrap();
 }
 
@@ -375,9 +377,7 @@ pub mod scenarios {
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
         /// The staged block with the funding transaction is not applied and the faucet is not synced
         pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
-            if self.faucet.is_some() {
-                panic!("Error: Faucet already exists!");
-            }
+            assert!(self.faucet.is_none(), "Error: Faucet already exists!");
             self.faucet = Some(self.client_builder.build_client(
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 0,

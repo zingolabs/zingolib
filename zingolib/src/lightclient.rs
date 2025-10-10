@@ -62,7 +62,7 @@ pub struct LightClient {
 }
 
 impl LightClient {
-    /// Creates a LightClient with a new wallet from fresh entropy and a birthday of `chain_height`.
+    /// Creates a `LightClient` with a new wallet from fresh entropy and a birthday of `chain_height`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     ///
     /// It is worth considering setting `chain_height` to 100 blocks below current height of block chain to protect
@@ -87,7 +87,7 @@ impl LightClient {
         )
     }
 
-    /// Creates a LightClient from a `wallet` and `config`.
+    /// Creates a `LightClient` from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet(
@@ -119,7 +119,7 @@ impl LightClient {
         })
     }
 
-    /// Create a LightClient from an existing wallet file.
+    /// Create a `LightClient` from an existing wallet file.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
         let wallet_path = if config.wallet_path_exists() {
@@ -156,7 +156,7 @@ impl LightClient {
 
     /// Set the server uri.
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server
+        *self.config.lightwalletd_uri.write().unwrap() = server;
     }
 
     /// Creates a tor client for current price updates.
@@ -201,7 +201,7 @@ impl LightClient {
         }
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::generate_unified_address].
+    /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
     pub async fn generate_unified_address(
         &mut self,
         receivers: ReceiverSelection,
@@ -213,7 +213,7 @@ impl LightClient {
             .generate_unified_address(receivers, account_id)
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::generate_transparent_address].
+    /// Wrapper for [`crate::wallet::LightWallet::generate_transparent_address`].
     pub async fn generate_transparent_address(
         &mut self,
         account_id: zip32::AccountId,
@@ -225,17 +225,17 @@ impl LightClient {
             .generate_transparent_address(account_id, enforce_no_gap)
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::unified_addresses_json].
+    /// Wrapper for [`crate::wallet::LightWallet::unified_addresses_json`].
     pub async fn unified_addresses_json(&self) -> JsonValue {
         self.wallet.read().await.unified_addresses_json()
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::transparent_addresses_json].
+    /// Wrapper for [`crate::wallet::LightWallet::transparent_addresses_json`].
     pub async fn transparent_addresses_json(&self) -> JsonValue {
         self.wallet.read().await.transparent_addresses_json()
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::account_balance].
+    /// Wrapper for [`crate::wallet::LightWallet::account_balance`].
     pub async fn account_balance(
         &self,
         account_id: zip32::AccountId,
@@ -243,7 +243,7 @@ impl LightClient {
         self.wallet.read().await.account_balance(account_id)
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::transaction_summaries].
+    /// Wrapper for [`crate::wallet::LightWallet::transaction_summaries`].
     pub async fn transaction_summaries(
         &self,
         reverse_sort: bool,
@@ -255,7 +255,7 @@ impl LightClient {
             .await
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::value_transfers].
+    /// Wrapper for [`crate::wallet::LightWallet::value_transfers`].
     pub async fn value_transfers(
         &self,
         sort_highest_to_lowest: bool,
@@ -267,7 +267,7 @@ impl LightClient {
             .await
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::messages_containing].
+    /// Wrapper for [`crate::wallet::LightWallet::messages_containing`].
     pub async fn messages_containing(
         &self,
         filter: Option<&str>,
@@ -275,7 +275,7 @@ impl LightClient {
         self.wallet.read().await.messages_containing(filter).await
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::do_total_memobytes_to_address].
+    /// Wrapper for [`crate::wallet::LightWallet::do_total_memobytes_to_address`].
     pub async fn do_total_memobytes_to_address(
         &self,
     ) -> Result<TotalMemoBytesToAddress, SummaryError> {
@@ -286,12 +286,12 @@ impl LightClient {
             .await
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::do_total_spends_to_address].
+    /// Wrapper for [`crate::wallet::LightWallet::do_total_spends_to_address`].
     pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
         self.wallet.read().await.do_total_spends_to_address().await
     }
 
-    /// Wrapper for [crate::wallet::LightWallet::do_total_value_to_address].
+    /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
     pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
         self.wallet.read().await.do_total_value_to_address().await
     }

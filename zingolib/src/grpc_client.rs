@@ -1,4 +1,4 @@
-//! Module for creating GRPC clients compatible with zcash_client_backend
+//! Module for creating GRPC clients compatible with `zcash_client_backend`
 
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -9,8 +9,8 @@ use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zingo_netutils::UnderlyingService;
 
-/// Creates a zcash_client_backend compatible GRPC client from a URI
-/// This duplicates the connection logic from zingo_netutils but creates a zcash_client_backend client
+/// Creates a `zcash_client_backend` compatible GRPC client from a URI
+/// This duplicates the connection logic from `zingo_netutils` but creates a `zcash_client_backend` client
 pub async fn get_zcb_client(
     uri: Uri,
 ) -> Result<CompactTxStreamerClient<UnderlyingService>, zingo_netutils::GetClientError> {

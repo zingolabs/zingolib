@@ -9,7 +9,7 @@ use zcash_protocol::value::{BalanceError, Zatoshis};
 use crate::wallet::output::OutputRef;
 
 /// A proposed send to addresses.
-/// Identifies the notes to spend by txid, pool, and output_index.
+/// Identifies the notes to spend by txid, pool, and `output_index`.
 /// This type alias, specifies the ZIP317 "Proportional Transfer Fee Mechanism" structure
 /// <https://zips.z.cash/zip-0317>
 /// as the fee structure for a transaction series. This innovation was created in response
@@ -18,12 +18,12 @@ use crate::wallet::output::OutputRef;
 pub(crate) type ProportionalFeeProposal = Proposal<zip317::FeeRule, OutputRef>;
 
 /// A proposed shielding.
-/// The zcash_client_backend Proposal type exposes a "NoteRef" generic
+/// The `zcash_client_backend` Proposal type exposes a "`NoteRef`" generic
 /// parameter to track Shielded inputs to the proposal these are
-/// disallowed in Zingo ShieldedProposals
+/// disallowed in Zingo `ShieldedProposals`
 pub(crate) type ProportionalFeeShieldProposal = Proposal<zip317::FeeRule, Infallible>;
 
-/// The LightClient holds one proposal at a time while the user decides whether to accept the fee.
+/// The `LightClient` holds one proposal at a time while the user decides whether to accept the fee.
 #[derive(Debug, Clone)]
 pub(crate) enum ZingoProposal {
     /// Send proposal.
@@ -43,7 +43,7 @@ pub fn total_payment_amount(proposal: &ProportionalFeeProposal) -> Result<Zatosh
     proposal
         .steps()
         .iter()
-        .map(|step| step.transaction_request())
+        .map(zcash_client_backend::proposal::Step::transaction_request)
         .try_fold(Zatoshis::ZERO, |acc, request| {
             (acc + request.total()?).ok_or(BalanceError::Overflow)
         })

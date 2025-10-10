@@ -1,6 +1,6 @@
 //! TODO
 
-/// Note that do_addresses returns an array, each element is a JSON representation
+/// Note that `do_addresses` returns an array, each element is a JSON representation
 /// of a UA.  Legacy addresses can be extracted from the receivers, per:
 /// <https://zips.z.cash/zip-0316>
 // TODO: is this needed as a macro?
@@ -47,7 +47,7 @@ macro_rules! get_base_address_macro {
 
 /// First check that each pools' balance matches an expectation
 /// then check that the overall balance as calculated by
-/// summing the amounts listed in tx_summaries matches the
+/// summing the amounts listed in `tx_summaries` matches the
 /// sum of the balances.
 #[macro_export]
 macro_rules! check_client_balances {

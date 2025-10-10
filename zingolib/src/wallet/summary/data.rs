@@ -10,7 +10,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::output::SpendStatus;
 
-/// Scope enum with std::fmt::Display impl for use with summaries.
+/// Scope enum with `std::fmt::Display` impl for use with summaries.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scope {
     External,
@@ -141,17 +141,20 @@ pub struct TransactionSummary {
 }
 
 impl TransactionSummary {
+    #[must_use]
     pub fn balance_delta(&self) -> Option<i64> {
         match self.kind {
             TransactionKind::Sent(SendType::Send) => {
                 self.fee.map(|fee| -((self.value + fee) as i64))
             }
-            TransactionKind::Sent(SendType::Shield)
-            | TransactionKind::Sent(SendType::SendToSelf) => self.fee.map(|fee| -(fee as i64)),
+            TransactionKind::Sent(SendType::Shield | SendType::SendToSelf) => {
+                self.fee.map(|fee| -(fee as i64))
+            }
             TransactionKind::Received => Some(self.value as i64),
         }
     }
     /// Prepares the fields in the summary for display
+    #[must_use]
     pub fn prepare_for_display(
         &self,
     ) -> (
@@ -165,8 +168,8 @@ impl TransactionSummary {
         OutgoingNoteSummaries,
         OutgoingCoinSummaries,
     ) {
-        let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
-            format!("{}", dt)
+        let datetime = if let Some(dt) = DateTime::from_timestamp(i64::from(self.datetime), 0) {
+            format!("{dt}")
         } else {
             "not available".to_string()
         };
@@ -180,13 +183,13 @@ impl TransactionSummary {
         } else {
             "not available".to_string()
         };
-        let orchard_notes = BasicNoteSummaries(self.orchard_notes.to_vec());
-        let sapling_notes = BasicNoteSummaries(self.sapling_notes.to_vec());
-        let transparent_coins = BasicCoinSummaries(self.transparent_coins.to_vec());
-        let outgoing_orchard_notes = OutgoingNoteSummaries(self.outgoing_orchard_notes.to_vec());
-        let outgoing_sapling_notes = OutgoingNoteSummaries(self.outgoing_sapling_notes.to_vec());
+        let orchard_notes = BasicNoteSummaries(self.orchard_notes.clone());
+        let sapling_notes = BasicNoteSummaries(self.sapling_notes.clone());
+        let transparent_coins = BasicCoinSummaries(self.transparent_coins.clone());
+        let outgoing_orchard_notes = OutgoingNoteSummaries(self.outgoing_orchard_notes.clone());
+        let outgoing_sapling_notes = OutgoingNoteSummaries(self.outgoing_sapling_notes.clone());
         let outgoing_transparent_coins =
-            OutgoingCoinSummaries(self.outgoing_transparent_coins.to_vec());
+            OutgoingCoinSummaries(self.outgoing_transparent_coins.clone());
 
         (
             datetime,
@@ -272,12 +275,13 @@ impl From<TransactionSummary> for JsonValue {
     }
 }
 
-/// Wraps a vec of transaction summaries for the implementation of std::fmt::Display
+/// Wraps a vec of transaction summaries for the implementation of `std::fmt::Display`
 #[derive(PartialEq, Debug)]
 pub struct TransactionSummaries(pub Vec<TransactionSummary>);
 
 impl TransactionSummaries {
-    /// Creates a new TransactionSummaries struct
+    /// Creates a new `TransactionSummaries` struct
+    #[must_use]
     pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
         TransactionSummaries(transaction_summaries)
     }
@@ -286,6 +290,7 @@ impl TransactionSummaries {
         self.0.iter()
     }
     /// Sum total of all fees paid in sending transactions
+    #[must_use]
     pub fn paid_fees(&self) -> u64 {
         self.iter()
             .filter_map(|summary| {
@@ -299,6 +304,7 @@ impl TransactionSummaries {
             .sum()
     }
     /// A Vec of the txids
+    #[must_use]
     pub fn txids(&self) -> Vec<TxId> {
         self.iter().map(|summary| summary.txid).collect()
     }
@@ -307,7 +313,7 @@ impl TransactionSummaries {
 impl std::fmt::Display for TransactionSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for transaction_summary in &self.0 {
-            write!(f, "\n{}", transaction_summary)?;
+            write!(f, "\n{transaction_summary}")?;
         }
         Ok(())
     }
@@ -363,8 +369,8 @@ impl std::fmt::Debug for ValueTransfer {
 
 impl std::fmt::Display for ValueTransfer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let datetime = if let Some(dt) = DateTime::from_timestamp(self.datetime as i64, 0) {
-            format!("{}", dt)
+        let datetime = if let Some(dt) = DateTime::from_timestamp(i64::from(self.datetime), 0) {
+            format!("{dt}")
         } else {
             "not available".to_string()
         };
@@ -473,7 +479,8 @@ impl std::ops::Index<usize> for ValueTransfers {
 }
 
 impl ValueTransfers {
-    /// Creates a new ValueTransfer
+    /// Creates a new `ValueTransfer`
+    #[must_use]
     pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
         ValueTransfers(value_transfers)
     }
@@ -482,7 +489,7 @@ impl ValueTransfers {
 impl std::fmt::Display for ValueTransfers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for value_transfer in &self.0 {
-            write!(f, "\n{}", value_transfer)?;
+            write!(f, "\n{value_transfer}")?;
         }
         Ok(())
     }
@@ -519,8 +526,8 @@ pub struct NoteSummary {
 impl std::fmt::Display for NoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let memo = self.memo.clone().unwrap_or_default();
-        let time = if let Some(dt) = chrono::DateTime::from_timestamp(self.time as i64, 0) {
-            format!("{}", dt)
+        let time = if let Some(dt) = chrono::DateTime::from_timestamp(i64::from(self.time), 0) {
+            format!("{dt}")
         } else {
             "not available".to_string()
         };
@@ -573,7 +580,8 @@ impl From<NoteSummary> for json::JsonValue {
 pub struct NoteSummaries(Vec<NoteSummary>);
 
 impl NoteSummaries {
-    /// Creates a new NoteSummaries
+    /// Creates a new `NoteSummaries`
+    #[must_use]
     pub fn new(note_summaries: Vec<NoteSummary>) -> Self {
         NoteSummaries(note_summaries)
     }
@@ -613,7 +621,7 @@ impl std::ops::Index<usize> for NoteSummaries {
 impl std::fmt::Display for NoteSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for value_transfer in &self.0 {
-            write!(f, "\n{}", value_transfer)?;
+            write!(f, "\n{value_transfer}")?;
         }
         Ok(())
     }
@@ -636,7 +644,7 @@ impl From<NoteSummaries> for json::JsonValue {
 /// Basic note summary.
 ///
 /// Intended in the context of a transaction summary to provide the most useful data to user without cluttering up
-/// the interface. See [crate::wallet::summary::`NoteSummary`] for a note summary that is intended for use independently.
+/// the interface. See [`crate::wallet::summary::``NoteSummary`] for a note summary that is intended for use independently.
 #[derive(Clone, PartialEq, Debug)]
 pub struct BasicNoteSummary {
     pub value: u64,
@@ -647,7 +655,8 @@ pub struct BasicNoteSummary {
 }
 
 impl BasicNoteSummary {
-    /// Creates a BasicNoteSummary from parts
+    /// Creates a `BasicNoteSummary` from parts
+    #[must_use]
     pub fn from_parts(
         value: u64,
         spend_status: SpendStatus,
@@ -665,11 +674,7 @@ impl BasicNoteSummary {
 
 impl std::fmt::Display for BasicNoteSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let memo = if let Some(m) = self.memo.clone() {
-            m
-        } else {
-            "".to_string()
-        };
+        let memo = self.memo.clone().unwrap_or_default();
         write!(
             f,
             "\t{{
@@ -694,13 +699,13 @@ impl From<BasicNoteSummary> for JsonValue {
     }
 }
 
-/// Wraps a vec of note summaries for the implementation of std::fmt::Display
+/// Wraps a vec of note summaries for the implementation of `std::fmt::Display`
 pub struct BasicNoteSummaries(Vec<BasicNoteSummary>);
 
 impl std::fmt::Display for BasicNoteSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for note in &self.0 {
-            write!(f, "\n{}", note)?;
+            write!(f, "\n{note}")?;
         }
         Ok(())
     }
@@ -726,8 +731,8 @@ pub struct CoinSummary {
 
 impl std::fmt::Display for CoinSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let time = if let Some(dt) = chrono::DateTime::from_timestamp(self.time as i64, 0) {
-            format!("{}", dt)
+        let time = if let Some(dt) = chrono::DateTime::from_timestamp(i64::from(self.time), 0) {
+            format!("{dt}")
         } else {
             "not available".to_string()
         };
@@ -785,7 +790,8 @@ pub struct BasicCoinSummary {
 }
 
 impl BasicCoinSummary {
-    /// Creates a BasicCoinSummary from parts
+    /// Creates a `BasicCoinSummary` from parts
+    #[must_use]
     pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u32) -> Self {
         BasicCoinSummary {
             value,
@@ -818,13 +824,13 @@ impl From<BasicCoinSummary> for JsonValue {
     }
 }
 
-/// Wraps a vec of transparent coin summaries for the implementation of std::fmt::Display
+/// Wraps a vec of transparent coin summaries for the implementation of `std::fmt::Display`
 pub struct BasicCoinSummaries(Vec<BasicCoinSummary>);
 
 impl std::fmt::Display for BasicCoinSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for coin in &self.0 {
-            write!(f, "\n{}", coin)?;
+            write!(f, "\n{coin}")?;
         }
         Ok(())
     }
@@ -886,13 +892,13 @@ impl From<OutgoingNoteSummary> for JsonValue {
     }
 }
 
-/// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
+/// Wraps a vec of orchard note summaries for the implementation of `std::fmt::Display`
 pub struct OutgoingNoteSummaries(Vec<OutgoingNoteSummary>);
 
 impl std::fmt::Display for OutgoingNoteSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for note in &self.0 {
-            write!(f, "\n{}", note)?;
+            write!(f, "\n{note}")?;
         }
         Ok(())
     }
@@ -930,13 +936,13 @@ impl From<OutgoingCoinSummary> for JsonValue {
     }
 }
 
-/// Wraps a vec of orchard note summaries for the implementation of std::fmt::Display
+/// Wraps a vec of orchard note summaries for the implementation of `std::fmt::Display`
 pub struct OutgoingCoinSummaries(Vec<OutgoingCoinSummary>);
 
 impl std::fmt::Display for OutgoingCoinSummaries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for coin in &self.0 {
-            write!(f, "\n{}", coin)?;
+            write!(f, "\n{coin}")?;
         }
         Ok(())
     }
@@ -958,7 +964,7 @@ pub mod finsight {
         fn from(value: TotalMemoBytesToAddress) -> Self {
             let mut jsonified = json::object!();
             let hm = value.0;
-            for (key, val) in hm.iter() {
+            for (key, val) in &hm {
                 jsonified[key] = json::JsonValue::from(*val);
             }
             jsonified
@@ -969,7 +975,7 @@ pub mod finsight {
         fn from(value: TotalValueToAddress) -> Self {
             let mut jsonified = json::object!();
             let hm = value.0;
-            for (key, val) in hm.iter() {
+            for (key, val) in &hm {
                 jsonified[key] = json::JsonValue::from(*val);
             }
             jsonified
@@ -980,7 +986,7 @@ pub mod finsight {
         fn from(value: TotalSendsToAddress) -> Self {
             let mut jsonified = json::object!();
             let hm = value.0;
-            for (key, val) in hm.iter() {
+            for (key, val) in &hm {
                 jsonified[key] = json::JsonValue::from(*val);
             }
             jsonified

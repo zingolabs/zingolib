@@ -488,7 +488,7 @@ pub async fn any_source_sends_to_any_receiver<CC>(
 ) where
     CC: ConductChain,
 {
-    timestamped_test_log(format!("starting a {:?} to {} test", shpool, pool).as_str());
+    timestamped_test_log(format!("starting a {shpool:?} to {pool} test").as_str());
 
     let mut environment = CC::setup().await;
 

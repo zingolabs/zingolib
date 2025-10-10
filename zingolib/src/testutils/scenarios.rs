@@ -263,8 +263,8 @@ impl ClientBuilder {
         &mut self,
         configured_activation_heights: testnet::ConfiguredActivationHeights,
     ) -> ZingoConfig {
-        //! Each client requires a unique data_dir, we use the
-        //! client_number counter for this.
+        //! Each client requires a unique `data_dir`, we use the
+        //! `client_number` counter for this.
         self.client_number += 1;
         let conf_path = format!(
             "{}_client_{}",

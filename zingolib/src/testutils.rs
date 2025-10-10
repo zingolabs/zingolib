@@ -43,6 +43,7 @@ pub use zcash_local_net;
 pub use zingo_test_vectors;
 
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
@@ -61,6 +62,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
 }
 
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
@@ -124,9 +126,7 @@ pub fn assert_transaction_summary_equality(
 ) {
     assert!(
         check_transaction_summary_equality(observed, expected),
-        "observed: {}\n\n\nexpected: {}\n\n\n",
-        observed,
-        expected,
+        "observed: {observed}\n\n\nexpected: {expected}\n\n\n",
     );
 }
 
@@ -134,6 +134,7 @@ pub fn assert_transaction_summary_equality(
 /// Datetime is also based on time of run.
 /// Check all the other fields
 ///   TODO:  seed random numbers in tests deterministically
+#[must_use]
 pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
@@ -163,7 +164,7 @@ pub fn check_transaction_summary_equality(
 fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && check_spend_status_equality(first[i].spend_status, second[i].spend_status)
@@ -181,7 +182,7 @@ fn check_outgoing_note_summary_equality(
 ) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && first[i].memo == second[i].memo
@@ -203,7 +204,7 @@ fn check_transparent_coin_summary_equality(
 ) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && check_spend_status_equality(first[i].spend_summary, second[i].spend_summary))
@@ -252,7 +253,7 @@ pub async fn send_value_between_clients_and_sync<I: Indexer, V: Validator>(
 
 /// This function increases the chain height reliably (with polling) but
 /// it _also_ ensures that the client state is synced.
-/// Unsynced clients are very interesting to us.  See increase_server_height
+/// Unsynced clients are very interesting to us.  See `increase_server_height`
 /// to reliably increase the server without syncing the client
 pub async fn increase_height_and_wait_for_client<I: Indexer, V: Validator>(
     local_net: &LocalNet<I, V>,
@@ -313,7 +314,7 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let for_info = self.from.read(buf)?;
-        log::info!("{:?}", for_info);
+        log::info!("{for_info:?}");
         self.read_lengths.push(for_info);
         Ok(for_info)
     }
@@ -600,6 +601,7 @@ pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
 }
 
 /// a quick and dirty way to proptest across protocols.
+#[must_use]
 pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
     match int {
         1 => ShieldedProtocol::Sapling,
@@ -609,6 +611,7 @@ pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
 }
 
 /// a quick and dirty way to proptest across pools.
+#[must_use]
 pub fn int_to_pooltype(int: i32) -> PoolType {
     match int {
         0 => PoolType::Transparent,
@@ -703,7 +706,7 @@ pub fn encoded_orchard_only_from_ua(
         Some(
             unified_address
                 .orchard()
-                .cloned()
+                .copied()
                 .expect("no orchard receiver"),
         ),
         None,

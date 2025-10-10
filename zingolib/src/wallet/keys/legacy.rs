@@ -40,12 +40,12 @@ pub struct WalletCapability {
     /// Cache of transparent addresses that the user has created.
     /// Receipts to a single address are correlated on chain.
     /// TODO:  Is there any reason to have this field, apart from the
-    /// unified_addresses field?
+    /// `unified_addresses` field?
     transparent_child_addresses: Arc<append_only_vec::AppendOnlyVec<(usize, TransparentAddress)>>,
     // TODO: read/write for ephmereral addresses
     // TODO: Remove this field and exclusively use the TxMap field instead
     rejection_addresses: Arc<AppendOnlyVec<(TransparentAddress, TransparentAddressMetadata)>>,
-    /// Cache of unified_addresses
+    /// Cache of `unified_addresses`
     unified_addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     addresses_write_lock: AtomicBool,
 }
@@ -262,7 +262,7 @@ where
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Unknown wallet Capability type: {}", x),
+                    format!("Unknown wallet Capability type: {x}"),
                 ));
             }
         })
