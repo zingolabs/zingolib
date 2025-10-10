@@ -26,7 +26,7 @@ pub enum ConfirmationStatus {
 
 impl ConfirmationStatus {
     /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
-    #[must_use] 
+    #[must_use]
     pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
         if pending {
             Self::Transmitted(blockheight)
@@ -47,7 +47,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed());
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed());
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
     }
@@ -72,7 +72,7 @@ impl ConfirmationStatus {
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height >= comparison_height)
     }
@@ -97,7 +97,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&11.into()));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed_after(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height > comparison_height)
     }
@@ -123,7 +123,7 @@ impl ConfirmationStatus {
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
     /// ```
     // TODO: blockheight impls copy so remove ref
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
@@ -148,7 +148,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&10.into()));
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&11.into()));
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
     }
@@ -174,7 +174,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
     /// ```
     // TODO remove 'pending' and fix spend status.
-    #[must_use] 
+    #[must_use]
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Calculated(self_height)
@@ -197,7 +197,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Mempool(15.into());
     /// assert_eq!(status.get_confirmed_height(), None);
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
         match self {
             Self::Confirmed(self_height) => Some(*self_height),
@@ -214,7 +214,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(15.into());
     /// assert_eq!(status.get_height(), 15.into());
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn get_height(&self) -> BlockHeight {
         match self {
             Self::Calculated(self_height) => *self_height,

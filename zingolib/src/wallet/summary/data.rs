@@ -141,18 +141,20 @@ pub struct TransactionSummary {
 }
 
 impl TransactionSummary {
-    #[must_use] 
+    #[must_use]
     pub fn balance_delta(&self) -> Option<i64> {
         match self.kind {
             TransactionKind::Sent(SendType::Send) => {
                 self.fee.map(|fee| -((self.value + fee) as i64))
             }
-            TransactionKind::Sent(SendType::Shield | SendType::SendToSelf) => self.fee.map(|fee| -(fee as i64)),
+            TransactionKind::Sent(SendType::Shield | SendType::SendToSelf) => {
+                self.fee.map(|fee| -(fee as i64))
+            }
             TransactionKind::Received => Some(self.value as i64),
         }
     }
     /// Prepares the fields in the summary for display
-    #[must_use] 
+    #[must_use]
     pub fn prepare_for_display(
         &self,
     ) -> (
@@ -279,7 +281,7 @@ pub struct TransactionSummaries(pub Vec<TransactionSummary>);
 
 impl TransactionSummaries {
     /// Creates a new `TransactionSummaries` struct
-    #[must_use] 
+    #[must_use]
     pub fn new(transaction_summaries: Vec<TransactionSummary>) -> Self {
         TransactionSummaries(transaction_summaries)
     }
@@ -288,7 +290,7 @@ impl TransactionSummaries {
         self.0.iter()
     }
     /// Sum total of all fees paid in sending transactions
-    #[must_use] 
+    #[must_use]
     pub fn paid_fees(&self) -> u64 {
         self.iter()
             .filter_map(|summary| {
@@ -302,7 +304,7 @@ impl TransactionSummaries {
             .sum()
     }
     /// A Vec of the txids
-    #[must_use] 
+    #[must_use]
     pub fn txids(&self) -> Vec<TxId> {
         self.iter().map(|summary| summary.txid).collect()
     }
@@ -478,7 +480,7 @@ impl std::ops::Index<usize> for ValueTransfers {
 
 impl ValueTransfers {
     /// Creates a new `ValueTransfer`
-    #[must_use] 
+    #[must_use]
     pub fn new(value_transfers: Vec<ValueTransfer>) -> Self {
         ValueTransfers(value_transfers)
     }
@@ -579,7 +581,7 @@ pub struct NoteSummaries(Vec<NoteSummary>);
 
 impl NoteSummaries {
     /// Creates a new `NoteSummaries`
-    #[must_use] 
+    #[must_use]
     pub fn new(note_summaries: Vec<NoteSummary>) -> Self {
         NoteSummaries(note_summaries)
     }
@@ -654,7 +656,7 @@ pub struct BasicNoteSummary {
 
 impl BasicNoteSummary {
     /// Creates a `BasicNoteSummary` from parts
-    #[must_use] 
+    #[must_use]
     pub fn from_parts(
         value: u64,
         spend_status: SpendStatus,
@@ -789,7 +791,7 @@ pub struct BasicCoinSummary {
 
 impl BasicCoinSummary {
     /// Creates a `BasicCoinSummary` from parts
-    #[must_use] 
+    #[must_use]
     pub fn from_parts(value: u64, spend_status: SpendStatus, output_index: u32) -> Self {
         BasicCoinSummary {
             value,

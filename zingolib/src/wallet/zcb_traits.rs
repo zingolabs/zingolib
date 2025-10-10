@@ -617,7 +617,11 @@ impl InputSource for LightWallet {
                     .into_iter()
                     .cloned()
                     .collect::<Vec<_>>();
-                exclude_sapling.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
+                exclude_sapling.extend(
+                    notes
+                        .iter()
+                        .map(pepper_sync::wallet::OutputInterface::output_id),
+                );
                 selected_sapling_notes.extend(notes);
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
@@ -632,7 +636,11 @@ impl InputSource for LightWallet {
                     .into_iter()
                     .cloned()
                     .collect::<Vec<_>>();
-                exclude_orchard.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
+                exclude_orchard.extend(
+                    notes
+                        .iter()
+                        .map(pepper_sync::wallet::OutputInterface::output_id),
+                );
                 selected_orchard_notes.extend(notes);
             }
 
@@ -647,7 +655,11 @@ impl InputSource for LightWallet {
                 .into_iter()
                 .cloned()
                 .collect::<Vec<_>>();
-            exclude_sapling.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
+            exclude_sapling.extend(
+                notes
+                    .iter()
+                    .map(pepper_sync::wallet::OutputInterface::output_id),
+            );
             selected_sapling_notes.extend(notes);
 
             let notes = self
@@ -661,7 +673,11 @@ impl InputSource for LightWallet {
                 .into_iter()
                 .cloned()
                 .collect::<Vec<_>>();
-            exclude_orchard.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
+            exclude_orchard.extend(
+                notes
+                    .iter()
+                    .map(pepper_sync::wallet::OutputInterface::output_id),
+            );
             selected_orchard_notes.extend(notes);
         }
 

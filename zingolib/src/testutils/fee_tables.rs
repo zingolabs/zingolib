@@ -7,7 +7,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 
 /// estimates a fee based on the zip317 protocol rules
 /// <https://zips.z.cash/zip-0317>
-#[must_use] 
+#[must_use]
 pub fn one_to_one(
     source_protocol: Option<ShieldedProtocol>,
     target_pool: PoolType,

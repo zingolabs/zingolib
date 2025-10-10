@@ -20,10 +20,7 @@ impl fmt::Display for ConversionError {
         match self {
             ConversionError::DecodeHexFailed(e) => write!(f, "failed to decode hex. {e}"),
             ConversionError::InvalidTxidLength(len) => {
-                write!(
-                    f,
-                    "invalid txid length. should be 32 bytes. length: {len}"
-                )
+                write!(f, "invalid txid length. should be 32 bytes. length: {len}")
             }
             ConversionError::InvalidAddress(e) => {
                 write!(f, "invalid recipient address. {e}")

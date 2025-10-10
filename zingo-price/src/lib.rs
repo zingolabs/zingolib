@@ -79,7 +79,7 @@ impl Default for PriceList {
 
 impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         PriceList {
             current_price: None,
@@ -89,19 +89,19 @@ impl PriceList {
     }
 
     /// Returns current price.
-    #[must_use] 
+    #[must_use]
     pub fn current_price(&self) -> Option<Price> {
         self.current_price
     }
 
     /// Returns historical price data by day.
-    #[must_use] 
+    #[must_use]
     pub fn daily_prices(&self) -> &[Price] {
         &self.daily_prices
     }
 
     /// Returns time historical prices were last updated.
-    #[must_use] 
+    #[must_use]
     pub fn time_historical_prices_last_updated(&self) -> Option<u32> {
         self.time_historical_prices_last_updated
     }
@@ -187,7 +187,10 @@ impl PriceList {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
-        let time_last_updated = Optional::read(&mut reader, byteorder::ReadBytesExt::read_u32::<LittleEndian>)?;
+        let time_last_updated = Optional::read(
+            &mut reader,
+            byteorder::ReadBytesExt::read_u32::<LittleEndian>,
+        )?;
         let current_price = Optional::read(&mut reader, |r| {
             Ok(Price {
                 time: r.read_u32::<LittleEndian>()?,

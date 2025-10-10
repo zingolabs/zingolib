@@ -43,7 +43,7 @@ pub struct SendProgress {
 
 impl SendProgress {
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn new(id: u32) -> Self {
         SendProgress {
             id,

@@ -53,7 +53,12 @@ impl ZingoLibError {
 
 impl std::fmt::Display for ZingoLibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use ZingoLibError::{UnknownError, Error, NoWalletLocation, MetadataUnderflow, InternalWriteBufferError, WriteFileError, EmptySaveBuffer, CantReadWallet, NoSuchTxId, NoSuchSaplingOutputInTx, NoSuchOrchardOutputInTx, NoSuchNullifierInTx, CouldNotDecodeMemo, MissingOutputIndex, Lightwalletd};
+        use ZingoLibError::{
+            CantReadWallet, CouldNotDecodeMemo, EmptySaveBuffer, Error, InternalWriteBufferError,
+            Lightwalletd, MetadataUnderflow, MissingOutputIndex, NoSuchNullifierInTx,
+            NoSuchOrchardOutputInTx, NoSuchSaplingOutputInTx, NoSuchTxId, NoWalletLocation,
+            UnknownError, WriteFileError,
+        };
         match self {
             UnknownError => write!(f, "UnknownError",),
             Error(string) => write!(f, "Error: {string}",),

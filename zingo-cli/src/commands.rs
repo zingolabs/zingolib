@@ -1091,18 +1091,14 @@ impl Command for SendCommand {
         let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
-                return format!(
-                    "Error: {e}\nTry 'help send' for correct usage and examples."
-                );
+                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
             }
         };
         let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
         {
             Ok(request) => request,
             Err(e) => {
-                return format!(
-                    "Error: {e}\nTry 'help send' for correct usage and examples."
-                );
+                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
@@ -1157,9 +1153,7 @@ impl Command for SendAllCommand {
         let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
             Ok(parse_results) => parse_results,
             Err(e) => {
-                return format!(
-                    "Error: {e}\nTry 'help sendall' for correct usage and examples."
-                );
+                return format!("Error: {e}\nTry 'help sendall' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
@@ -1216,18 +1210,14 @@ impl Command for QuickSendCommand {
         let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
-                return format!(
-                    "Error: {e}\nTry 'help quicksend' for correct usage and examples."
-                );
+                return format!("Error: {e}\nTry 'help quicksend' for correct usage and examples.");
             }
         };
         let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
         {
             Ok(request) => request,
             Err(e) => {
-                return format!(
-                    "Error: {e}\nTry 'help quicksend' for correct usage and examples."
-                );
+                return format!("Error: {e}\nTry 'help quicksend' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
@@ -2076,8 +2066,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
-        None => format!(
-            "Unknown command : {cmd}. Type 'help' for a list of commands"
-        ),
+        None => format!("Unknown command : {cmd}. Type 'help' for a list of commands"),
     }
 }

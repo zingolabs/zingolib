@@ -31,9 +31,7 @@ pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
             );
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!(
-                    "Struct version \"{external_version}\" is from future version of zingo",
-                ),
+                format!("Struct version \"{external_version}\" is from future version of zingo",),
             ))
         } else {
             Ok(external_version)

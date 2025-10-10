@@ -160,7 +160,7 @@ impl Default for TransparentAddressDiscovery {
 
 impl TransparentAddressDiscovery {
     /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
-    #[must_use] 
+    #[must_use]
     pub fn minimal() -> Self {
         Self {
             gap_limit: 1,
@@ -169,7 +169,7 @@ impl TransparentAddressDiscovery {
     }
 
     /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
-    #[must_use] 
+    #[must_use]
     pub fn recovery() -> Self {
         Self {
             gap_limit: 20,
@@ -179,7 +179,7 @@ impl TransparentAddressDiscovery {
 
     /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
     /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
-    #[must_use] 
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             gap_limit: 0,
@@ -215,7 +215,7 @@ impl Default for TransparentAddressDiscoveryScopes {
 
 impl TransparentAddressDiscoveryScopes {
     /// Constructor with all all scopes active.
-    #[must_use] 
+    #[must_use]
     pub fn recovery() -> Self {
         Self {
             external: true,

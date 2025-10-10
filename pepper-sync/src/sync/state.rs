@@ -478,9 +478,10 @@ fn determine_block_range(
 
             let range = Range { start, end };
 
-            assert!(range.contains(&block_height), 
-                    "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
-                );
+            assert!(
+                range.contains(&block_height),
+                "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
+            );
 
             range
         } else {

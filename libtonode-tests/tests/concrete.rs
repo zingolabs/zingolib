@@ -1063,7 +1063,7 @@ mod fast {
         recipient.sync_and_await().await.unwrap();
 
         let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
-        for tx in transactions.iter() {
+        for tx in transactions {
             dbg!(tx);
         }
         assert_eq!(
@@ -3599,13 +3599,18 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
-                ProposeSendError::Proposal(insufficient) => if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                ProposeSendError::Proposal(insufficient) => {
+                    if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
                         required,
-                    } = insufficient {
-                    assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                    assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
-                } else { panic!() },
+                    } = insufficient
+                    {
+                        assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                        assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
+                    } else {
+                        panic!()
+                    }
+                }
                 ProposeSendError::TransactionRequestFailed(_) => panic!(),
                 ProposeSendError::ZeroValueSendAll => panic!(),
                 ProposeSendError::BalanceError(_) => panic!(),
@@ -3622,18 +3627,24 @@ TransactionSummary {
         //  t -> z
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => if let ProposeSendError::Proposal(insufficient) = proposesenderror { match insufficient {
-                zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                    available,
-                    required,
-                } => {
-                    assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                    assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
-                }
-                _ => {
+            Err(QuickSendError::ProposalError(proposesenderror)) => {
+                if let ProposeSendError::Proposal(insufficient) = proposesenderror {
+                    match insufficient {
+                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                            available,
+                            required,
+                        } => {
+                            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    }
+                } else {
                     panic!()
                 }
-            } } else { panic!() },
+            }
             _ => panic!(),
         }
         bump_and_check!(o: 0 s: 0 t: 470_000);

@@ -24,12 +24,12 @@ fn zaddr_from_seed(
 }
 
 /// This is the "all-0" base case!
-#[must_use] 
+#[must_use]
 pub fn default_txid() -> zcash_primitives::transaction::TxId {
     zcash_primitives::transaction::TxId::from_bytes([0u8; 32])
 }
 /// This is the "all-0" base case!
-#[must_use] 
+#[must_use]
 pub fn default_zaddr() -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
@@ -44,7 +44,7 @@ use sapling_crypto::{
 };
 
 /// Any old OS randomness
-#[must_use] 
+#[must_use]
 pub fn random_txid() -> zcash_primitives::transaction::TxId {
     let mut rng = OsRng;
     let mut seed = [0u8; 32];
@@ -52,7 +52,7 @@ pub fn random_txid() -> zcash_primitives::transaction::TxId {
     zcash_primitives::transaction::TxId::from_bytes(seed)
 }
 /// Any old OS randomness
-#[must_use] 
+#[must_use]
 pub fn random_zaddr() -> (
     ExtendedSpendingKey,
     PreparedIncomingViewingKey,
@@ -176,7 +176,7 @@ mod sapling_crypto_note {
 
     impl SaplingCryptoNoteBuilder {
         /// Instantiate an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             SaplingCryptoNoteBuilder {
                 recipient: None,
@@ -197,7 +197,7 @@ mod sapling_crypto_note {
         }
 
         /// Build the note.
-        #[must_use] 
+        #[must_use]
         pub fn build(self) -> Note {
             Note::from_parts(
                 self.recipient.unwrap(),
@@ -244,7 +244,7 @@ pub mod orchard_note {
 
     impl OrchardCryptoNoteBuilder {
         /// Instantiate an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             OrchardCryptoNoteBuilder {
                 recipient: None,
@@ -320,7 +320,7 @@ pub mod orchard_note {
         }
 
         /// Build the note.
-        #[must_use] 
+        #[must_use]
         pub fn build(&self) -> Note {
             Note::from_parts(
                 self.recipient.unwrap(),
@@ -333,7 +333,7 @@ pub mod orchard_note {
         /// generates a note from a provided
         /// 'random' value, to allow for
         // deterministic generation of notes
-        #[must_use] 
+        #[must_use]
         pub fn non_random(nonce: [u8; 32]) -> Self {
             fn next_valid_thing<T>(mut nonce: [u8; 32], f: impl Fn([u8; 32]) -> Option<T>) -> T {
                 let mut i = 0;
@@ -415,7 +415,7 @@ pub mod proposal {
     #[allow(dead_code)]
     impl ProposalBuilder {
         /// Constructs an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             ProposalBuilder {
                 fee_rule: None,
@@ -429,7 +429,7 @@ pub mod proposal {
         build_method!(steps, NonEmpty<Step<OutputRef>>);
 
         /// Builds after all fields have been set.
-        #[must_use] 
+        #[must_use]
         pub fn build(self) -> Proposal<FeeRule, OutputRef> {
             let step = self.steps.unwrap().first().clone();
             Proposal::single_step(
@@ -479,7 +479,7 @@ pub mod proposal {
 
     impl StepBuilder {
         /// Constructs an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             StepBuilder {
                 transaction_request: None,
@@ -502,7 +502,7 @@ pub mod proposal {
         build_method!(is_shielding, bool);
 
         /// Builds after all fields have been set.
-        #[must_use] 
+        #[must_use]
         pub fn build(self) -> Step<OutputRef> {
             Step::from_parts(
                 &[],
@@ -572,7 +572,7 @@ pub mod proposal {
 
     impl TransactionRequestBuilder {
         /// Constructs an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             TransactionRequestBuilder { payments: vec![] }
         }
@@ -580,7 +580,7 @@ pub mod proposal {
         build_method_push!(payments, Payment);
 
         /// Builds after all fields have been set.
-        #[must_use] 
+        #[must_use]
         pub fn build(self) -> TransactionRequest {
             TransactionRequest::new(self.payments).unwrap()
         }
@@ -611,7 +611,7 @@ pub mod proposal {
 
     impl PaymentBuilder {
         /// Constructs an empty builder.
-        #[must_use] 
+        #[must_use]
         pub fn new() -> Self {
             PaymentBuilder {
                 recipient_address: None,
@@ -623,7 +623,7 @@ pub mod proposal {
         build_method!(amount, Zatoshis);
 
         /// Builds after all fields have been set.
-        #[must_use] 
+        #[must_use]
         pub fn build(&self) -> Payment {
             Payment::without_memo(
                 self.recipient_address.clone().unwrap(),

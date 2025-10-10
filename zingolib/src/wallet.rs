@@ -258,38 +258,38 @@ impl LightWallet {
     }
 
     /// Returns current wallet version.
-    #[must_use] 
+    #[must_use]
     pub fn current_version(&self) -> u64 {
         self.current_version
     }
 
     /// Returns wallet version that was read from on wallet load.
-    #[must_use] 
+    #[must_use]
     pub fn read_version(&self) -> u64 {
         self.read_version
     }
 
     /// Returns the wallet's mnemonic (seed and phrase).
-    #[must_use] 
+    #[must_use]
     pub fn mnemonic(&self) -> Option<&Mnemonic> {
         self.mnemonic.as_ref()
     }
 
     /// Returns the wallet's mnemonic phrase.
-    #[must_use] 
+    #[must_use]
     pub fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic()
             .map(|mnemonic| mnemonic.phrase().to_string())
     }
 
     /// Returns unified addresses.
-    #[must_use] 
+    #[must_use]
     pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
         &self.unified_addresses
     }
 
     /// Returns unified addresses in a JSON array.
-    #[must_use] 
+    #[must_use]
     pub fn unified_addresses_json(&self) -> json::JsonValue {
         json::JsonValue::Array(
             self.unified_addresses
@@ -309,13 +309,13 @@ impl LightWallet {
     }
 
     /// Returns transparent addresses.
-    #[must_use] 
+    #[must_use]
     pub fn transparent_addresses(&self) -> &BTreeMap<TransparentAddressId, String> {
         &self.transparent_addresses
     }
 
     /// Returns transparent addresses in a JSON array.
-    #[must_use] 
+    #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {
         json::JsonValue::Array(
             self.transparent_addresses
@@ -332,7 +332,7 @@ impl LightWallet {
         )
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
             seed_phrase: self.mnemonic_phrase()?,

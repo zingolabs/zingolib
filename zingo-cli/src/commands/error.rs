@@ -23,7 +23,12 @@ pub(crate) enum CommandError {
 
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use CommandError::{ArgsNotJson, ArgNotJsonOrValidAddress, SingleArgNotJsonArray, JsonArrayNotObj, ZenniesFlagNonBool, EmptyJsonArray, ParseIntFromString, UnexpectedType, MissingKey, InvalidArguments, IncompatibleMemo, InvalidMemo, NonJsonNumberForAmount, ConversionFailed, MissingZenniesForZingoFlag};
+        use CommandError::{
+            ArgNotJsonOrValidAddress, ArgsNotJson, ConversionFailed, EmptyJsonArray,
+            IncompatibleMemo, InvalidArguments, InvalidMemo, JsonArrayNotObj, MissingKey,
+            MissingZenniesForZingoFlag, NonJsonNumberForAmount, ParseIntFromString,
+            SingleArgNotJsonArray, UnexpectedType, ZenniesFlagNonBool,
+        };
 
         match self {
             ArgsNotJson(e) => write!(f, "failed to parse argument. {e}"),
