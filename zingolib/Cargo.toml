@@ -99,7 +99,6 @@ tracing.workspace = true
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
 portpicker = { workspace = true }
-concat-idents = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
