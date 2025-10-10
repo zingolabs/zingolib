@@ -27,3 +27,4 @@ portpicker.workspace = true
 tempfile.workspace = true
 http.workspace = true
 zingo_common_components.workspace = true
+zip32.workspace = true
