@@ -79,6 +79,7 @@ impl Default for PriceList {
 
 impl PriceList {
     /// Constructs a new price list from the time of wallet creation.
+    #[must_use] 
     pub fn new() -> Self {
         PriceList {
             current_price: None,
@@ -88,16 +89,19 @@ impl PriceList {
     }
 
     /// Returns current price.
+    #[must_use] 
     pub fn current_price(&self) -> Option<Price> {
         self.current_price
     }
 
     /// Returns historical price data by day.
+    #[must_use] 
     pub fn daily_prices(&self) -> &[Price] {
         &self.daily_prices
     }
 
     /// Returns time historical prices were last updated.
+    #[must_use] 
     pub fn time_historical_prices_last_updated(&self) -> Option<u32> {
         self.time_historical_prices_last_updated
     }
@@ -140,8 +144,8 @@ impl PriceList {
         if let Some(time_last_updated) = self.time_historical_prices_last_updated {
             self.daily_prices.append(
                 &mut get_daily_prices(
-                    time_last_updated as u128 * 1000,
-                    current_time as u128 * 1000,
+                    u128::from(time_last_updated) * 1000,
+                    u128::from(current_time) * 1000,
                 )
                 .await?,
             );
@@ -161,7 +165,7 @@ impl PriceList {
     pub fn prune(&mut self, transaction_times: Vec<u32>, prune_below: u32) {
         let mut relevant_days = HashSet::new();
 
-        for transaction_time in transaction_times.into_iter() {
+        for transaction_time in transaction_times {
             for daily_price in self.daily_prices() {
                 if daily_price.time > transaction_time {
                     assert!(daily_price.time - transaction_time < 60 * 60 * 24);
@@ -172,7 +176,7 @@ impl PriceList {
         }
 
         self.daily_prices
-            .retain(|price| relevant_days.contains(&price.time) || price.time >= prune_below)
+            .retain(|price| relevant_days.contains(&price.time) || price.time >= prune_below);
     }
 
     fn serialized_version() -> u8 {
@@ -183,7 +187,7 @@ impl PriceList {
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
         let _version = reader.read_u8()?;
 
-        let time_last_updated = Optional::read(&mut reader, |r| r.read_u32::<LittleEndian>())?;
+        let time_last_updated = Optional::read(&mut reader, byteorder::ReadBytesExt::read_u32::<LittleEndian>)?;
         let current_price = Optional::read(&mut reader, |r| {
             Ok(Price {
                 time: r.read_u32::<LittleEndian>()?,
@@ -211,7 +215,7 @@ impl PriceList {
         Optional::write(
             &mut writer,
             self.time_historical_prices_last_updated(),
-            |w, time| w.write_u32::<LittleEndian>(time),
+            byteorder::WriteBytesExt::write_u32::<LittleEndian>,
         )?;
         Optional::write(&mut writer, self.current_price(), |w, price| {
             w.write_u32::<LittleEndian>(price.time)?;

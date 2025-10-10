@@ -1,4 +1,4 @@
-//! functionality for testing the save and load functions of LightWallet.
+//! functionality for testing the save and load functions of `LightWallet`.
 //! do not compile testutils feature for production.
 
 use bip0039::Mnemonic;

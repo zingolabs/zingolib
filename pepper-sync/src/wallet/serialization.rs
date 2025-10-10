@@ -83,7 +83,7 @@ impl ScanTarget {
         writer.write_u8(Self::serialized_version())?;
         writer.write_u32::<LittleEndian>(self.block_height.into())?;
         self.txid.write(&mut *writer)?;
-        writer.write_u8(self.narrow_scan_area as u8)
+        writer.write_u8(u8::from(self.narrow_scan_area))
     }
 }
 
@@ -964,8 +964,7 @@ impl ShardTrees {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
-                        "parent node in root has level 0 relative to root address: {:?}",
-                        addr
+                        "parent node in root has level 0 relative to root address: {addr:?}"
                     ),
                 )
             })

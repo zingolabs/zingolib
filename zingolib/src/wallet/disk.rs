@@ -1,4 +1,4 @@
-//! This mod contains write and read functionality of impl LightWallet
+//! This mod contains write and read functionality of impl `LightWallet`
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -42,6 +42,7 @@ use pepper_sync::{
 impl LightWallet {
     /// Changes in version 39:
     /// - sync state updated serialized version
+    #[must_use] 
     pub const fn serialized_version() -> u64 {
         39
     }
@@ -122,7 +123,7 @@ impl LightWallet {
     // TODO: update to return WalletError
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
-        info!("Reading wallet version {}", version);
+        info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, network, version),
             32..=39 => Self::read_v32(reader, network, version),
@@ -150,8 +151,7 @@ impl LightWallet {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "Wallet chain name {} doesn't match expected {}",
-                    chain_name, network
+                    "Wallet chain name {chain_name} doesn't match expected {network}"
                 ),
             ));
         }
@@ -181,7 +181,7 @@ impl LightWallet {
             Optional::read(&mut reader, |r| {
                 use prost::Message;
 
-                let buf = Vector::read(r, |r| r.read_u8())?;
+                let buf = Vector::read(r, byteorder::ReadBytesExt::read_u8)?;
                 TreeState::decode(&buf[..])
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
             })?
@@ -208,8 +208,10 @@ impl LightWallet {
             Vec::new()
         };
 
-        let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
-        let mnemonic = if !seed_bytes.is_empty() {
+        let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
+        let mnemonic = if seed_bytes.is_empty() {
+            None
+        } else {
             let _account_index = if version >= 28 {
                 reader.read_u32::<LittleEndian>()?
             } else {
@@ -219,8 +221,6 @@ impl LightWallet {
                 Mnemonic::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
             )
-        } else {
-            None
         };
 
         // Derive unified spending key from seed and override temporary USK if wallet is pre v29.
@@ -240,8 +240,7 @@ impl LightWallet {
                         Error::new(
                             ErrorKind::InvalidData,
                             format!(
-                                "failed to derive unified spending key from stored seed bytes. {}",
-                                e
+                                "failed to derive unified spending key from stored seed bytes. {e}"
                             ),
                         )
                     })?,
@@ -290,10 +289,10 @@ impl LightWallet {
             Err(e) => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
-                    format!("failed to create transparent address. {}", e),
+                    format!("failed to create transparent address. {e}"),
                 ));
             }
-        };
+        }
 
         // setup targetted scanning from zingo 1.x transaction data
         let mut sync_state = SyncState::new();
@@ -352,14 +351,15 @@ impl LightWallet {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
-                    "wallet chain name {} doesn't match expected {}",
-                    saved_network, network
+                    "wallet chain name {saved_network} doesn't match expected {network}"
                 ),
             ));
         }
 
-        let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
-        let mnemonic = if !seed_bytes.is_empty() {
+        let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
+        let mnemonic = if seed_bytes.is_empty() {
+            None
+        } else {
             if version < 35 {
                 let _account_index = reader.read_u32::<LittleEndian>()?;
             }
@@ -367,8 +367,6 @@ impl LightWallet {
                 <Mnemonic>::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
             )
-        } else {
-            None
         };
         let birthday = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
 
@@ -482,10 +480,10 @@ impl LightWallet {
                 Err(e) => {
                     return Err(Error::new(
                         ErrorKind::InvalidData,
-                        format!("failed to create transparent address. {}", e),
+                        format!("failed to create transparent address. {e}"),
                     ));
                 }
-            };
+            }
         }
 
         let wallet_blocks = Vector::read(&mut reader, |r| WalletBlock::read(r))?

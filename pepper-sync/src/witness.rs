@@ -25,7 +25,7 @@ pub(crate) struct WitnessData {
 }
 
 impl WitnessData {
-    /// Creates new ShardTreeData
+    /// Creates new `ShardTreeData`
     pub(crate) fn new(
         sapling_initial_position: Position,
         orchard_initial_position: Position,
@@ -68,7 +68,7 @@ where
                     chunk.iter().copied(),
                 );
                 let _ignore_error = sender.send(tree);
-            })
+            });
         }
     });
     drop(sender);

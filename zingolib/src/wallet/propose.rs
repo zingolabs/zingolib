@@ -149,7 +149,7 @@ impl LightWallet {
             {
                 match address {
                     zcash_keys::address::Address::Unified(unified_address) => {
-                        recipient_uas.push(unified_address)
+                        recipient_uas.push(unified_address);
                     }
                     zcash_keys::address::Address::Tex(_) => {
                         // TODO: rework: only need to encode highest used refund address index, not all of them

@@ -1,4 +1,4 @@
-//! This mod contains pieces of the impl LightWallet that are invoked during a send.
+//! This mod contains pieces of the impl `LightWallet` that are invoked during a send.
 
 use std::ops::Range;
 
@@ -43,6 +43,7 @@ pub struct SendProgress {
 
 impl SendProgress {
     /// TODO: Add Doc Comment Here!
+    #[must_use] 
     pub fn new(id: u32) -> Self {
         SendProgress {
             id,
@@ -333,7 +334,7 @@ fn check_note_shards_are_scanned(
                     scan_range.priority() == ScanPriority::Scanned
                         || scan_range.priority() == ScanPriority::ScannedWithoutMapping
                 })
-                .map(|scan_range| scan_range.block_range())
+                .map(pepper_sync::sync::ScanRange::block_range)
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)

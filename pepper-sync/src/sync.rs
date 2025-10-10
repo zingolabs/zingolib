@@ -207,12 +207,11 @@ impl std::fmt::Display for ScanRange {
 
 impl ScanRange {
     /// Constructs a scan range from its constituent parts.
+    #[must_use] 
     pub fn from_parts(block_range: Range<BlockHeight>, priority: ScanPriority) -> Self {
         assert!(
             block_range.end >= block_range.start,
-            "{:?} is invalid for ScanRange({:?})",
-            block_range,
-            priority,
+            "{block_range:?} is invalid for ScanRange({priority:?})",
         );
         ScanRange {
             block_range,
@@ -221,21 +220,25 @@ impl ScanRange {
     }
 
     /// Returns the range of block heights to be scanned.
+    #[must_use] 
     pub fn block_range(&self) -> &Range<BlockHeight> {
         &self.block_range
     }
 
     /// Returns the priority with which the scan range should be scanned.
+    #[must_use] 
     pub fn priority(&self) -> ScanPriority {
         self.priority
     }
 
     /// Returns whether or not the scan range is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.block_range.is_empty()
     }
 
     /// Returns the number of blocks in the scan range.
+    #[must_use] 
     pub fn len(&self) -> usize {
         usize::try_from(u32::from(self.block_range.end) - u32::from(self.block_range.start))
             .expect("due to number of max blocks should always be valid usize")
@@ -244,6 +247,7 @@ impl ScanRange {
     /// Shifts the start of the block range to the right if `block_height >
     /// self.block_range().start`. Returns `None` if the resulting range would
     /// be empty (or the range was already empty).
+    #[must_use] 
     pub fn truncate_start(&self, block_height: BlockHeight) -> Option<Self> {
         if block_height >= self.block_range.end || self.is_empty() {
             None
@@ -258,6 +262,7 @@ impl ScanRange {
     /// Shifts the end of the block range to the left if `block_height <
     /// self.block_range().end`. Returns `None` if the resulting range would
     /// be empty (or the range was already empty).
+    #[must_use] 
     pub fn truncate_end(&self, block_height: BlockHeight) -> Option<Self> {
         if block_height <= self.block_range.start || self.is_empty() {
             None
@@ -272,6 +277,7 @@ impl ScanRange {
     /// Splits this scan range at the specified height, such that the provided height becomes the
     /// end of the first range returned and the start of the second. Returns `None` if
     /// `p <= self.block_range().start || p >= self.block_range().end`.
+    #[must_use] 
     pub fn split_at(&self, p: BlockHeight) -> Option<(Self, Self)> {
         (p > self.block_range.start && p < self.block_range.end).then_some((
             ScanRange {
@@ -552,7 +558,7 @@ where
     drop(fetch_request_sender);
 
     match mempool_handle.await.expect("task panicked") {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
         Err(e) => return Err(e.into()),
     }
@@ -576,7 +582,7 @@ where
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
-/// Intended to be called while [self::sync] is running in a separate task.
+/// Intended to be called while [`self::sync`] is running in a separate task.
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
@@ -1207,7 +1213,7 @@ where
             note.note().recipient(),
             ivk.diversifier_index(&note.note().recipient())
                 .expect("must be key used to create this address"),
-        )?
+        )?;
     }
     for note in transaction
         .sapling_notes()
@@ -1226,7 +1232,7 @@ where
             note.note().recipient(),
             ivk.decrypt_diversifier(&note.note().recipient())
                 .expect("must be key used to create this address"),
-        )?
+        )?;
     }
 
     Ok(())
@@ -1535,7 +1541,7 @@ where
                 && transaction.status().get_height()
                     <= wallet_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
         })
-        .map(|transaction| transaction.txid())
+        .map(super::wallet::WalletTransaction::txid)
         .chain(
             wallet_transactions
                 .values()
@@ -1544,7 +1550,7 @@ where
                         || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
                         && wallet_height >= transaction.transaction().expiry_height()
                 })
-                .map(|transaction| transaction.txid()),
+                .map(super::wallet::WalletTransaction::txid),
         )
         .collect::<Vec<_>>();
     reset_spends(wallet_transactions, invalid_txids);

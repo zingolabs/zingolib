@@ -74,7 +74,7 @@ impl WalletRead for LightWallet {
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(self.unified_key_store.keys().cloned().collect())
+        Ok(self.unified_key_store.keys().copied().collect())
     }
 
     fn get_account(
@@ -425,7 +425,7 @@ impl WalletWrite for LightWallet {
                 ConfirmationStatus::Calculated(sent_transaction.target_height().into()),
                 sent_transaction.created().unix_timestamp() as u32,
             ) {
-                Ok(_) => (),
+                Ok(()) => (),
                 Err(SyncError::ScanError(e)) => return Err(e.into()),
                 Err(SyncError::WalletError(e)) => return Err(e),
                 Err(_) => {
@@ -617,7 +617,7 @@ impl InputSource for LightWallet {
                     .into_iter()
                     .cloned()
                     .collect::<Vec<_>>();
-                exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+                exclude_sapling.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
                 selected_sapling_notes.extend(notes);
             }
             if sources.contains(&ShieldedProtocol::Orchard) {
@@ -632,7 +632,7 @@ impl InputSource for LightWallet {
                     .into_iter()
                     .cloned()
                     .collect::<Vec<_>>();
-                exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+                exclude_orchard.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
                 selected_orchard_notes.extend(notes);
             }
 
@@ -647,7 +647,7 @@ impl InputSource for LightWallet {
                 .into_iter()
                 .cloned()
                 .collect::<Vec<_>>();
-            exclude_sapling.extend(notes.iter().map(|note| note.output_id()));
+            exclude_sapling.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
             selected_sapling_notes.extend(notes);
 
             let notes = self
@@ -661,7 +661,7 @@ impl InputSource for LightWallet {
                 .into_iter()
                 .cloned()
                 .collect::<Vec<_>>();
-            exclude_orchard.extend(notes.iter().map(|note| note.output_id()));
+            exclude_orchard.extend(notes.iter().map(pepper_sync::wallet::OutputInterface::output_id));
             selected_orchard_notes.extend(notes);
         }
 
@@ -773,7 +773,7 @@ impl InputSource for LightWallet {
             )
             .into_iter()
             .filter(|&output| output.address() == address)
-            .flat_map(|output| {
+            .filter_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
                     TxOut {

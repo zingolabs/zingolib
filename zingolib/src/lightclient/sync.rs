@@ -1,4 +1,4 @@
-//! Sync implementations for [crate::lightclient::LightClient] and related types.
+//! Sync implementations for [`crate::lightclient::LightClient`] and related types.
 
 use std::borrow::BorrowMut;
 use std::sync::atomic;
