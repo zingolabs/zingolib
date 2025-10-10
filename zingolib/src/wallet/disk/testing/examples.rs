@@ -128,7 +128,7 @@ pub enum AbsurdAmountVersion {
 impl NetworkSeedVersion {
     /// Loads wallet from test wallet files.
     // TODO: improve with macro
-    #[must_use] 
+    #[must_use]
     pub fn load_example_wallet(&self, network: ChainType) -> LightWallet {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
@@ -303,7 +303,7 @@ impl NetworkSeedVersion {
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
-    #[must_use] 
+    #[must_use]
     pub fn example_wallet_base(&self) -> String {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
@@ -337,7 +337,7 @@ impl NetworkSeedVersion {
         }
     }
     /// picks the first receiver associated with an example wallet
-    #[must_use] 
+    #[must_use]
     pub fn example_wallet_address(&self, pool: PoolType) -> String {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {

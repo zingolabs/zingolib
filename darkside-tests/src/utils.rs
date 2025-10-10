@@ -259,7 +259,7 @@ pub async fn init_darksidewalletd(
 /// Creates a file for writing transactions to store pre-built blockchains.
 /// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
 /// For writing transactions, see `send_and_write_transaction` method in `DarksideScenario`.
-#[must_use] 
+#[must_use]
 pub fn create_chainbuild_file(test_name: &str) -> File {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",
@@ -283,7 +283,7 @@ pub fn create_chainbuild_file(test_name: &str) -> File {
 /// Loads a vec of strings from a list of hex transactions in the chainbuild file
 /// Path: `darkside-tests/tests/data/chainbuilds/{test_name}`
 /// For staging hex transactions, see `stage_transaction` method in `DarksideScenario`
-#[must_use] 
+#[must_use]
 pub fn load_chainbuild_file(test_name: &str) -> Vec<String> {
     let path = format!(
         "{}/tests/data/chainbuilds/{}",

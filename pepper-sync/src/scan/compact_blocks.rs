@@ -328,16 +328,15 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     K: ScanningKeyOps<D, Nf>,
 {
     for (output_id, incoming_output) in incoming_decrypted_outputs {
-            let position =
-                Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
-            let key = keys
-                .get(&incoming_output.ivk_tag)
-                .expect("key should be available as it was used to decrypt output");
-            let nullifier = key
-                .nf(&incoming_output.note, position)
-                .expect("only fvks currently supported");
-            nullifiers_and_positions.insert(*output_id, (nullifier, position));
-        }
+        let position = Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
+        let key = keys
+            .get(&incoming_output.ivk_tag)
+            .expect("key should be available as it was used to decrypt output");
+        let nullifier = key
+            .nf(&incoming_output.note, position)
+            .expect("only fvks currently supported");
+        nullifiers_and_positions.insert(*output_id, (nullifier, position));
+    }
 }
 
 // TODO: unify sapling and orchard leaf and retention fns

@@ -34,7 +34,7 @@ pub struct OutputRef {
 
 impl OutputRef {
     /// Creates new `OutputRef` from parts.
-    #[must_use] 
+    #[must_use]
     pub fn new(output_id: OutputId, pool_type: PoolType) -> Self {
         OutputRef {
             output_id,
@@ -43,25 +43,25 @@ impl OutputRef {
     }
 
     /// Output identifier.
-    #[must_use] 
+    #[must_use]
     pub fn output_id(&self) -> OutputId {
         self.output_id
     }
 
     /// Output identifier.
-    #[must_use] 
+    #[must_use]
     pub fn txid(&self) -> TxId {
         self.output_id.txid()
     }
 
     /// Output identifier.
-    #[must_use] 
+    #[must_use]
     pub fn output_index(&self) -> u16 {
         self.output_id.output_index()
     }
 
     /// Pool type.
-    #[must_use] 
+    #[must_use]
     pub fn pool_type(&self) -> PoolType {
         self.pool_type
     }
@@ -100,18 +100,18 @@ pub enum SpendStatus {
 }
 
 impl SpendStatus {
-    #[must_use] 
+    #[must_use]
     pub fn is_unspent(&self) -> bool {
         matches!(self, Self::Unspent)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_pending_spent(&self) -> bool {
         matches!(self, Self::CalculatedSpent(_))
             || matches!(self, Self::TransmittedSpent(_))
             || matches!(self, Self::MempoolSpent(_))
     }
-    #[must_use] 
+    #[must_use]
     pub fn is_confirmed_spent(&self) -> bool {
         matches!(self, Self::Spent(_))
     }
@@ -157,7 +157,7 @@ impl LightWallet {
     }
 
     /// Gets all outputs of a given type in the wallet.
-    #[must_use] 
+    #[must_use]
     pub fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
         self.wallet_transactions
             .values()
@@ -166,7 +166,7 @@ impl LightWallet {
     }
 
     /// Sum the values of all outputs in the wallet which match the given `query`.
-    #[must_use] 
+    #[must_use]
     pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
         self.wallet_transactions
             .values()
@@ -176,7 +176,7 @@ impl LightWallet {
     }
 
     /// Sum the values of all outputs in the `transaction` which match the given `query`.
-    #[must_use] 
+    #[must_use]
     pub fn sum_queried_transaction_output_values(
         &self,
         transaction: &WalletTransaction,
@@ -316,7 +316,10 @@ impl LightWallet {
         allow_zero_conf_shielding: bool,
     ) -> Vec<&TransparentCoin> {
         // TODO: add support for zero conf shielding
-        assert!(!allow_zero_conf_shielding, "zero conf shielding not currently supported!");
+        assert!(
+            !allow_zero_conf_shielding,
+            "zero conf shielding not currently supported!"
+        );
 
         self.wallet_transactions
             .values()
@@ -405,8 +408,7 @@ impl LightWallet {
 
             if let Some(&smallest_unselected) = unselected_notes.get(unselected_note_index) {
                 // select a note to test if it has enough value to complete the transaction without creating dust as change
-                if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64()
-                {
+                if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64() {
                     selected_notes.push(smallest_unselected);
                     unselected_notes.remove(unselected_note_index);
                 } else {

@@ -28,7 +28,7 @@ pub enum KeyIndex {
 
 impl KeyIndex {
     /// Check index range.
-    #[must_use] 
+    #[must_use]
     pub fn is_valid(self) -> bool {
         match self {
             KeyIndex::Normal(i) => i < HARDENED_KEY_START_INDEX,
@@ -46,7 +46,7 @@ impl KeyIndex {
     }
 
     /// Generate `KeyIndex` from raw index value.
-    #[must_use] 
+    #[must_use]
     pub fn from_index(i: u32) -> Self {
         if i < HARDENED_KEY_START_INDEX {
             KeyIndex::Normal(i)
@@ -91,7 +91,7 @@ impl ExtendedPrivKey {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_ext_taddr_from_bip39seed(
         config: &ZingoConfig,
         bip39_seed: &[u8],

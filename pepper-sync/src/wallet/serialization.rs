@@ -963,9 +963,7 @@ impl ShardTrees {
             LocatedPrunableTree::from_parts(root_addr, shard).map_err(|addr| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "parent node in root has level 0 relative to root address: {addr:?}"
-                    ),
+                    format!("parent node in root has level 0 relative to root address: {addr:?}"),
                 )
             })
         })?;

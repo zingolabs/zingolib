@@ -370,7 +370,7 @@ impl LightWallet {
     }
 
     /// Returns the address identifier if the given `address` is one of the wallet's derived addresses.
-    #[must_use] 
+    #[must_use]
     pub fn is_transparent_wallet_address(
         &self,
         address: &TransparentAddress,
@@ -386,7 +386,7 @@ impl LightWallet {
     /// Returns the account id and diversifier index if the given `address` is derived from the wallet's sapling FVKs. External scope only.
     ///
     /// This method is computationally expensive.
-    #[must_use] 
+    #[must_use]
     pub fn is_sapling_address_derived_from_fvks(
         &self,
         address: &sapling_crypto::PaymentAddress,
@@ -407,7 +407,7 @@ impl LightWallet {
     /// Returns the account id, scope and diversifier index if the given `address` is derived from the wallet's orchard FVKs.
     ///
     /// This method is computationally expensive.
-    #[must_use] 
+    #[must_use]
     pub fn is_orchard_address_derived_from_fvks(
         &self,
         address: &orchard::Address,
@@ -427,7 +427,7 @@ impl LightWallet {
     }
 
     /// Returns the unified address and id if `address` matches an sapling receiver in the wallet's unified address list.
-    #[must_use] 
+    #[must_use]
     pub fn is_sapling_address_in_unified_addresses(
         &self,
         address: &sapling_crypto::PaymentAddress,
@@ -439,7 +439,7 @@ impl LightWallet {
     }
 
     /// Returns the unified address and id if `address` matches an orchard receiver in the wallet's unified address list.
-    #[must_use] 
+    #[must_use]
     pub fn is_orchard_address_in_unified_addresses(
         &self,
         address: &orchard::Address,
@@ -464,7 +464,7 @@ mod test {
         ///
         /// Zingolib test framework generates a second UA with a sapling only receiver for use when `pool` is set to sapling.
         // TODO: add asserts to verify UA receivers
-        #[must_use] 
+        #[must_use]
         pub fn get_address(&self, pool: PoolType) -> String {
             match pool {
                 PoolType::ORCHARD => self

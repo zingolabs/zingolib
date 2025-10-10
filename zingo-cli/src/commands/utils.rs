@@ -208,7 +208,10 @@ fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> 
 }
 
 fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandError> {
-    if let Some(m) = json_array["memo"].as_str().map(std::string::ToString::to_string) {
+    if let Some(m) = json_array["memo"]
+        .as_str()
+        .map(std::string::ToString::to_string)
+    {
         let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
         Ok(Some(memo))
     } else {

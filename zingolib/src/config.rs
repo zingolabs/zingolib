@@ -37,7 +37,7 @@ pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d
 
 /// Gets the appropriate donation address for the given chain type
 #[cfg(any(test, feature = "testutils"))]
-#[must_use] 
+#[must_use]
 pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     match chain {
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
@@ -68,7 +68,7 @@ pub enum ChainType {
 
 impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ChainType::{Testnet, Mainnet, Regtest};
+        use ChainType::{Mainnet, Regtest, Testnet};
         let name = match self {
             Testnet => "test",
             Mainnet => "main",
@@ -90,7 +90,7 @@ impl Parameters for ChainType {
     }
 
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        use ChainType::{Testnet, Mainnet, Regtest};
+        use ChainType::{Mainnet, Regtest, Testnet};
         match self {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
@@ -224,23 +224,25 @@ pub fn load_clientconfig(
 }
 
 /// TODO: Add Doc Comment Here!
-#[must_use] 
+#[must_use]
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
-        Some(s) => if s.is_empty() {
-            return http::Uri::default();
-        } else {
-            let mut s = if s.starts_with("http") {
-                s
+        Some(s) => {
+            if s.is_empty() {
+                return http::Uri::default();
             } else {
-                "http://".to_string() + &s
-            };
-            let uri: http::Uri = s.parse().unwrap();
-            if uri.port().is_none() {
-                s += ":9067";
+                let mut s = if s.starts_with("http") {
+                    s
+                } else {
+                    "http://".to_string() + &s
+                };
+                let uri: http::Uri = s.parse().unwrap();
+                if uri.port().is_none() {
+                    s += ":9067";
+                }
+                s
             }
-            s
-        },
+        }
         None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
     }
     .parse()
@@ -385,7 +387,7 @@ impl Default for ZingoConfigBuilder {
 
 impl ZingoConfig {
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn build(chain: ChainType) -> ZingoConfigBuilder {
         ZingoConfigBuilder {
             chain,
@@ -395,7 +397,7 @@ impl ZingoConfig {
 
     #[cfg(any(test, feature = "testutils"))]
     /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
-    #[must_use] 
+    #[must_use]
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
@@ -408,7 +410,7 @@ impl ZingoConfig {
 
     #[cfg(any(test, feature = "testutils"))]
     /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
-    #[must_use] 
+    #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
             .set_lightwalletd_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
@@ -417,7 +419,7 @@ impl ZingoConfig {
 
     #[cfg(feature = "testutils")]
     /// create a `ZingoConfig` that signals a `LightClient` not to connect to a server.
-    #[must_use] 
+    #[must_use]
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         if let Some(dir) = dir {
             ZingoConfig::build(chain).set_wallet_dir(dir).create()
@@ -427,7 +429,7 @@ impl ZingoConfig {
     }
 
     /// Convenience wrapper
-    #[must_use] 
+    #[must_use]
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Sapling)
@@ -436,7 +438,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn orchard_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Nu5)
@@ -482,7 +484,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
@@ -558,7 +560,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_lightwalletd_uri(&self) -> http::Uri {
         self.lightwalletd_uri
             .read()
@@ -567,7 +569,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
@@ -575,20 +577,20 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
         self.get_wallet_pathbuf().into_boxed_path()
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn wallet_path_exists(&self) -> bool {
         self.get_wallet_path().exists()
     }
 
     /// TODO: Add Doc Comment Here!
     #[deprecated(note = "this method was renamed 'wallet_path_exists' for clarity")]
-    #[must_use] 
+    #[must_use]
     pub fn wallet_exists(&self) -> bool {
         self.wallet_path_exists()
     }
@@ -618,7 +620,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    #[must_use] 
+    #[must_use]
     pub fn get_log_path(&self) -> Box<Path> {
         let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
         log_path.push(&self.logfile_name);

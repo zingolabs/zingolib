@@ -45,7 +45,7 @@ pub use zcash_local_net;
 pub use zingo_test_vectors;
 
 /// TODO: Add Doc Comment Here!
-#[must_use] 
+#[must_use]
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
@@ -64,7 +64,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
 }
 
 /// TODO: Add Doc Comment Here!
-#[must_use] 
+#[must_use]
 pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
@@ -136,7 +136,7 @@ pub fn assert_transaction_summary_equality(
 /// Datetime is also based on time of run.
 /// Check all the other fields
 ///   TODO:  seed random numbers in tests deterministically
-#[must_use] 
+#[must_use]
 pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
@@ -618,7 +618,7 @@ pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
 }
 
 /// a quick and dirty way to proptest across protocols.
-#[must_use] 
+#[must_use]
 pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
     match int {
         1 => ShieldedProtocol::Sapling,
@@ -628,7 +628,7 @@ pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
 }
 
 /// a quick and dirty way to proptest across pools.
-#[must_use] 
+#[must_use]
 pub fn int_to_pooltype(int: i32) -> PoolType {
     match int {
         0 => PoolType::Transparent,

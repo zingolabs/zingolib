@@ -44,7 +44,9 @@ impl LightWallet {
                     TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
                         transaction.total_value_received()
                     }
-                    TransactionKind::Sent(SendType::Send | SendType::SendToSelf) => transaction.total_value_sent(),
+                    TransactionKind::Sent(SendType::Send | SendType::SendToSelf) => {
+                        transaction.total_value_sent()
+                    }
                 };
                 let fee: Option<u64> = self
                     .calculate_transaction_fee(transaction)
@@ -487,7 +489,7 @@ impl LightWallet {
         Ok(ValueTransfers::new(value_transfers))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn note_summaries<N>(&self, include_spent_notes: bool) -> NoteSummaries
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
@@ -528,7 +530,7 @@ impl LightWallet {
         NoteSummaries::new(note_summaries)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn coin_summaries(&self, include_spent_coins: bool) -> Vec<CoinSummary> {
         self.wallet_outputs::<TransparentCoin>()
             .into_iter()

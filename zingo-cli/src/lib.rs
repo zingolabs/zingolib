@@ -140,13 +140,9 @@ fn report_permission_error() {
     eprintln!("HOME: {home}");
     eprintln!("Executable: {}", current_executable.display());
     if home == "/" {
-        eprintln!(
-            "User {user} must have permission to write to '{home}.zcash/' ."
-        );
+        eprintln!("User {user} must have permission to write to '{home}.zcash/' .");
     } else {
-        eprintln!(
-            "User {user} must have permission to write to '{home}/.zcash/' ."
-        );
+        eprintln!("User {user} must have permission to write to '{home}/.zcash/' .");
     }
 }
 
@@ -208,15 +204,15 @@ fn start_interactive(
             _ => (),
         }
 
-        let readline = rl.readline(&format!(
-            "({chain_name}) Block:{height} (type 'help') >> "
-        ));
+        let readline = rl.readline(&format!("({chain_name}) Block:{height} (type 'help') >> "));
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
                     .expect("Ability to add history entry");
                 // Parse command line arguments
-                let mut cmd_args = if let Ok(args) = shellwords::split(&line) { args } else {
+                let mut cmd_args = if let Ok(args) = shellwords::split(&line) {
+                    args
+                } else {
                     println!("Mismatched Quotes");
                     continue;
                 };

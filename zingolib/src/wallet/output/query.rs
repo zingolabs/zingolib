@@ -14,7 +14,7 @@ pub struct OutputSpendStatusQuery {
 }
 impl OutputSpendStatusQuery {
     /// a query that accepts notes of any spent status
-    #[must_use] 
+    #[must_use]
     pub fn any() -> Self {
         Self {
             unspent: true,
@@ -23,7 +23,7 @@ impl OutputSpendStatusQuery {
         }
     }
     /// a query that only accepts unspent notes
-    #[must_use] 
+    #[must_use]
     pub fn only_unspent() -> Self {
         Self {
             unspent: true,
@@ -32,7 +32,7 @@ impl OutputSpendStatusQuery {
         }
     }
     /// a query that only accepts `pending_spent` notes
-    #[must_use] 
+    #[must_use]
     pub fn only_pending_spent() -> Self {
         Self {
             unspent: false,
@@ -41,7 +41,7 @@ impl OutputSpendStatusQuery {
         }
     }
     /// a query that only accepts spent notes
-    #[must_use] 
+    #[must_use]
     pub fn only_spent() -> Self {
         Self {
             unspent: false,
@@ -50,7 +50,7 @@ impl OutputSpendStatusQuery {
         }
     }
     /// a query that accepts `pending_spent` or spent notes
-    #[must_use] 
+    #[must_use]
     pub fn spentish() -> Self {
         Self {
             unspent: false,
@@ -72,7 +72,7 @@ pub struct OutputPoolQuery {
 }
 impl OutputPoolQuery {
     /// a query that accepts outputs from any pool.
-    #[must_use] 
+    #[must_use]
     pub fn any() -> Self {
         Self {
             transparent: true,
@@ -81,7 +81,7 @@ impl OutputPoolQuery {
         }
     }
     /// a query that accepts notes from a shielded pool.
-    #[must_use] 
+    #[must_use]
     pub fn shielded() -> Self {
         Self {
             transparent: false,
@@ -90,7 +90,7 @@ impl OutputPoolQuery {
         }
     }
     /// a query that will match only a specific pool.
-    #[must_use] 
+    #[must_use]
     pub fn one_pool(pool_type: PoolType) -> Self {
         match pool_type {
             PoolType::Transparent => Self {
@@ -124,7 +124,7 @@ pub struct OutputQuery {
 
 impl OutputQuery {
     /// a query that accepts all notes.
-    #[must_use] 
+    #[must_use]
     pub fn any() -> Self {
         Self {
             spend_status: OutputSpendStatusQuery::any(),
@@ -132,7 +132,7 @@ impl OutputQuery {
         }
     }
     /// a query that accepts all notes.
-    #[must_use] 
+    #[must_use]
     pub fn only_unspent() -> Self {
         Self {
             spend_status: OutputSpendStatusQuery {
@@ -145,7 +145,7 @@ impl OutputQuery {
     }
 
     /// build a query, specifying each stipulation
-    #[must_use] 
+    #[must_use]
     pub fn stipulations(
         unspent: bool,
         pending_spent: bool,
@@ -168,32 +168,32 @@ impl OutputQuery {
         }
     }
     /// will the query include unspent notes?
-    #[must_use] 
+    #[must_use]
     pub fn unspent(&self) -> bool {
         self.spend_status.unspent
     }
     /// will the query include `pending_spent` notes?
-    #[must_use] 
+    #[must_use]
     pub fn pending_spent(&self) -> bool {
         self.spend_status.pending_spent
     }
     /// will the query include spent notes?
-    #[must_use] 
+    #[must_use]
     pub fn spent(&self) -> bool {
         self.spend_status.spent
     }
     /// will the query include transparent notes? (coins)
-    #[must_use] 
+    #[must_use]
     pub fn transparent(&self) -> bool {
         self.pools.transparent
     }
     /// will the query include sapling notes?
-    #[must_use] 
+    #[must_use]
     pub fn sapling(&self) -> bool {
         self.pools.sapling
     }
     /// will the query include orchard notes?
-    #[must_use] 
+    #[must_use]
     pub fn orchard(&self) -> bool {
         self.pools.orchard
     }

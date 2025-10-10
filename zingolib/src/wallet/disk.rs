@@ -42,7 +42,7 @@ use pepper_sync::{
 impl LightWallet {
     /// Changes in version 39:
     /// - sync state updated serialized version
-    #[must_use] 
+    #[must_use]
     pub const fn serialized_version() -> u64 {
         39
     }
@@ -150,9 +150,7 @@ impl LightWallet {
         if chain_name != network.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!(
-                    "Wallet chain name {chain_name} doesn't match expected {network}"
-                ),
+                format!("Wallet chain name {chain_name} doesn't match expected {network}"),
             ));
         }
 
@@ -350,9 +348,7 @@ impl LightWallet {
         if saved_network != network.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!(
-                    "wallet chain name {saved_network} doesn't match expected {network}"
-                ),
+                format!("wallet chain name {saved_network} doesn't match expected {network}"),
             ));
         }
 
