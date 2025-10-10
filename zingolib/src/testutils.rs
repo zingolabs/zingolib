@@ -11,11 +11,6 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_local_net::LocalNet;
-use zcash_local_net::indexer::Indexer;
-use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::process::IsAProcess;
-use zcash_local_net::validator::Validator;
 use zcash_primitives::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
@@ -40,8 +35,6 @@ pub mod paths;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
-pub use zcash_local_net;
-pub use zingo_test_vectors;
 
 /// TODO: Add Doc Comment Here!
 #[must_use]
@@ -227,73 +220,6 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
             )
             | (SpendStatus::MempoolSpent(_), SpendStatus::MempoolSpent(_))
     )
-}
-
-/// Send from sender to recipient and then bump chain and sync both lightclients
-pub async fn send_value_between_clients_and_sync<V, I>(
-    local_net: &LocalNet<V, I>,
-    sender: &mut LightClient,
-    recipient: &mut LightClient,
-    value: u64,
-    address_pool: PoolType,
-) -> Result<String, LightClientError>
-where
-    V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
-    I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
-{
-    let txid = lightclient::from_inputs::quick_send(
-        sender,
-        vec![(
-            &get_base_address(recipient, address_pool).await,
-            value,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(local_net, sender, 1).await?;
-    recipient.sync_and_await().await?;
-    Ok(txid.first().to_string())
-}
-
-/// This function increases the chain height reliably (with polling) but
-/// it _also_ ensures that the client state is synced.
-/// Unsynced clients are very interesting to us.  See `increase_server_height`
-/// to reliably increase the server without syncing the client
-pub async fn increase_height_and_wait_for_client<V, I>(
-    local_net: &LocalNet<V, I>,
-    client: &mut LightClient,
-    n: u32,
-) -> Result<(), LightClientError>
-where
-    V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
-    I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
-{
-    sync_to_target_height(
-        client,
-        generate_n_blocks_return_new_height(local_net, n).await,
-    )
-    .await
-}
-
-/// TODO: Add Doc Comment Here!
-pub async fn generate_n_blocks_return_new_height<V, I>(local_net: &LocalNet<V, I>, n: u32) -> u32
-where
-    V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
-    I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
-{
-    let start_height = local_net.validator().get_chain_height().await;
-    let target = start_height + n;
-    local_net.validator().generate_blocks(n).await.unwrap();
-    assert_eq!(local_net.validator().get_chain_height().await, target);
-
-    target
 }
 
 /// Will hang if chain does not reach `target_block_height`

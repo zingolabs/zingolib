@@ -37,13 +37,15 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
-use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
-use zingolib::testutils::increase_height_and_wait_for_client;
-use zingolib::testutils::lightclient::from_inputs::quick_send;
+use zingolib::lightclient::error::LightClientError;
+use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
+use zingolib::testutils::lightclient::get_base_address;
+use zingolib::testutils::{increase_height_and_wait_for_client, sync_to_target_height};
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
+use zingolib::{get_base_address_macro, lightclient};
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -749,4 +751,71 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     local_net.validator().generate_blocks(1).await.unwrap();
 
     local_net
+}
+
+/// Send from sender to recipient and then bump chain and sync both lightclients
+pub async fn send_value_between_clients_and_sync<V, I>(
+    local_net: &LocalNet<V, I>,
+    sender: &mut LightClient,
+    recipient: &mut LightClient,
+    value: u64,
+    address_pool: PoolType,
+) -> Result<String, LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    let txid = from_inputs::quick_send(
+        sender,
+        vec![(
+            &get_base_address(recipient, address_pool).await,
+            value,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(local_net, sender, 1).await?;
+    recipient.sync_and_await().await?;
+    Ok(txid.first().to_string())
+}
+
+/// This function increases the chain height reliably (with polling) but
+/// it _also_ ensures that the client state is synced.
+/// Unsynced clients are very interesting to us.  See `increase_server_height`
+/// to reliably increase the server without syncing the client
+pub async fn increase_height_and_wait_for_client<V, I>(
+    local_net: &LocalNet<V, I>,
+    client: &mut LightClient,
+    n: u32,
+) -> Result<(), LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    sync_to_target_height(
+        client,
+        generate_n_blocks_return_new_height(local_net, n).await,
+    )
+    .await
+}
+
+/// TODO: Add Doc Comment Here!
+pub async fn generate_n_blocks_return_new_height<V, I>(local_net: &LocalNet<V, I>, n: u32) -> u32
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    let start_height = local_net.validator().get_chain_height().await;
+    let target = start_height + n;
+    local_net.validator().generate_blocks(n).await.unwrap();
+    assert_eq!(local_net.validator().get_chain_height().await, target);
+
+    target
 }

@@ -31,7 +31,6 @@ zingo_netutils = { workspace = true }
 
 # testutils feature
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca", optional = true}
-zcash_local_net = { workspace = true }
 
 # blockchain
 zebra-chain = { workspace = true, optional = true }
