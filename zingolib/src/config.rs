@@ -105,7 +105,7 @@ pub enum ChainFromStringError {
     /// of unknown chain,
     #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet.")]
     UnknownChain(String),
-    /// of regtest
+    /// of regtest without specific activation heights,
     #[error(
         "Invalid chain name 'regtest'. Cant create a regtest chain from a string without assuming activation heights."
     )]

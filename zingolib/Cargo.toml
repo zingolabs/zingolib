@@ -14,7 +14,7 @@ license = "MIT"
 default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zebra-chain", "zingo_common_components/for_test"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
 zaino-test = ['testutils']
 test_zainod_zcashd = []
 test_lwd_zebrad = []
@@ -38,7 +38,7 @@ tokio-rustls = { workspace = true }
 webpki-roots = { workspace = true }
 tower = { workspace = true }
 
-zebra-chain = { workspace = true, optional = true }
+zebra-chain = { workspace = true }
 
 # TODO: separate activation heights into different crate and make this optional for testutils
 zcash_local_net = { workspace = true }
