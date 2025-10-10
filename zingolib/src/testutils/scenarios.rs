@@ -20,17 +20,16 @@ use bip0039::Mnemonic;
 
 use portpicker::Port;
 use tempfile::TempDir;
+use zcash_local_net::logs::LogsToStdoutAndStderr;
+use zcash_local_net::process::IsAProcess;
 use zcash_protocol::PoolType;
 
-use zcash_local_net::indexer::{Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig};
+use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::network::localhost_uri;
-use zcash_local_net::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
+use zcash_local_net::validator::{Validator, ValidatorConfig};
 use zcash_local_net::{LocalNet, Process};
-use zebra_chain::parameters::{NetworkKind, testnet};
-use zingo_test_vectors::{
-    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
-    REG_Z_ADDR_FROM_ABANDONART, seeds,
-};
+use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
@@ -50,19 +49,15 @@ use zingo_common_components::protocol::activation_heights::for_test;
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Zainod, validator::Zcashd};
-
-    pub type DefaultIndexer = Zainod;
-    pub type DefaultValidator = Zcashd;
+    pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
+    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Lightwalletd, validator::Zebrad};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zebrad;
+    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(all(
@@ -72,10 +67,8 @@ pub mod network_combo {
 ))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Lightwalletd, validator::Zcashd};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zcashd;
+    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(not(any(
@@ -85,147 +78,45 @@ pub mod network_combo {
 )))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zcash_local_net::{indexer::Zainod, validator::Zebrad};
-
-    pub type DefaultIndexer = Zainod;
-    pub type DefaultValidator = Zebrad;
+    pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
+    pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
-/// Trait for generalising local network functionality across any combination of zcash processes.
-pub trait ZingoTestLocalNetwork<I: Indexer, V: Validator> {
-    /// Launch local network.
-    fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        activation_heights: testnet::ConfiguredActivationHeights,
-        chain_cache: Option<PathBuf>,
-    ) -> impl Future<Output = LocalNet<I, V>>;
-}
-
-impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        _mine_to_pool: PoolType,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Zainod, Zebrad> {
-        LocalNet::<Zainod, Zebrad>::launch(
-            ZainodConfig {
-                listen_port: indexer_listen_port,
-                validator_port: 0,
-                chain_cache: None,
-                network: NetworkKind::Regtest,
-            },
-            ZebradConfig {
-                network_listen_port: None,
-                rpc_listen_port: None,
-                indexer_listen_port: None,
-                configured_activation_heights,
-                miner_address: REG_T_ADDR_FROM_ABANDONART,
-                chain_cache,
-                network: NetworkKind::Regtest,
-            },
-        )
+/// To launch a `LocalNet` with darkside settings.
+pub async fn launch_test<V, I>(
+    indexer_listen_port: Option<Port>,
+    mine_to_pool: PoolType,
+    configured_activation_heights: ConfiguredActivationHeights,
+    chain_cache: Option<PathBuf>,
+) -> LocalNet<V, I>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send + ValidatorConfig + Default,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send + IndexerConfig + Default,
+{
+    let mut validator_config = <V as IsAProcess>::Config::default();
+    validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
+    let mut indexer_config = <I as IsAProcess>::Config::default();
+    indexer_config.set_listen_port(indexer_listen_port);
+    LocalNet::<V, I>::launch_from_two_configs(validator_config, indexer_config)
         .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Zainod, Zcashd> {
-        let miner_address = match mine_to_pool {
-            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
-            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
-            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
-        };
-
-        LocalNet::<Zainod, Zcashd>::launch(
-            ZainodConfig {
-                listen_port: indexer_listen_port,
-                validator_port: 0,
-                chain_cache: None,
-                network: NetworkKind::Regtest,
-            },
-            ZcashdConfig {
-                rpc_listen_port: None,
-                configured_activation_heights,
-                miner_address: Some(miner_address),
-                chain_cache,
-            },
-        )
-        .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Lightwalletd, Zcashd> {
-        let miner_address = match mine_to_pool {
-            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
-            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
-            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
-        };
-
-        LocalNet::<Lightwalletd, Zcashd>::launch(
-            LightwalletdConfig {
-                listen_port: indexer_listen_port,
-                zcashd_conf: PathBuf::new(),
-                darkside: false,
-            },
-            ZcashdConfig {
-                rpc_listen_port: None,
-                configured_activation_heights,
-                miner_address: Some(miner_address),
-                chain_cache,
-            },
-        )
-        .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        _mine_to_pool: PoolType,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Lightwalletd, Zebrad> {
-        LocalNet::<Lightwalletd, Zebrad>::launch(
-            LightwalletdConfig {
-                listen_port: indexer_listen_port,
-                zcashd_conf: PathBuf::new(),
-                darkside: false,
-            },
-            ZebradConfig {
-                network_listen_port: None,
-                rpc_listen_port: None,
-                indexer_listen_port: None,
-                configured_activation_heights,
-                miner_address: REG_T_ADDR_FROM_ABANDONART,
-                chain_cache,
-                network: NetworkKind::Regtest,
-            },
-        )
-        .await
-    }
+        .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
 
 /// Generate 100 blocks and shield the faucet if attempting to mine to a shielded pool as Zebrad does not currently
 /// support this. Also generates an additional block to confirm the shield, dumps the excess funds and generates a
 /// final block to confirm the send.
-async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
-    local_net: &LocalNet<I, V>,
+async fn zebrad_shielded_funds<V, I>(
+    local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
     faucet: &mut LightClient,
-) {
+) where
+    I: Indexer + LogsToStdoutAndStderr,
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <I as IsAProcess>::Config: Send,
+    <V as IsAProcess>::Config: Send,
+{
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -261,7 +152,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
         //! Each client requires a unique `data_dir`, we use the
         //! `client_number` counter for this.
@@ -278,7 +169,7 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
@@ -301,7 +192,7 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
@@ -318,7 +209,7 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        configured_activation_heights: testnet::ConfiguredActivationHeights,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
@@ -341,9 +232,9 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    configured_activation_heights: testnet::ConfiguredActivationHeights,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) = custom_clients(
         PoolType::ORCHARD,
         configured_activation_heights,
@@ -363,7 +254,7 @@ pub async fn unfunded_client(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient)
+pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
     unfunded_client(for_test::all_height_one_nus(), None).await
 }
@@ -380,9 +271,9 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValid
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    configured_activation_heights: testnet::ConfiguredActivationHeights,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
@@ -398,17 +289,17 @@ pub async fn faucet(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
+pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     faucet(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    configured_activation_heights: testnet::ConfiguredActivationHeights,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
 ) {
@@ -435,7 +326,7 @@ pub async fn faucet_recipient(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
 ) {
@@ -448,10 +339,10 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    configured_activation_heights: testnet::ConfiguredActivationHeights,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
     Option<String>,
@@ -529,7 +420,7 @@ pub async fn faucet_funded_recipient(
 pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
     String,
@@ -551,13 +442,10 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    configured_activation_heights: testnet::ConfiguredActivationHeights,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder) {
-    let local_net = <(DefaultIndexer, DefaultValidator) as ZingoTestLocalNetwork<
-        DefaultIndexer,
-        DefaultValidator,
-    >>::launch(
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder) {
+    let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
         None,
         mine_to_pool,
         configured_activation_heights,
@@ -576,7 +464,7 @@ pub async fn custom_clients(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder)
+pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
         custom_clients(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await;
@@ -585,11 +473,8 @@ pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValida
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidator> {
-    <(DefaultIndexer, DefaultValidator) as ZingoTestLocalNetwork<
-        DefaultIndexer,
-        DefaultValidator,
-    >>::launch(
+pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
+    launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
         for_test::all_height_one_nus(),
@@ -599,7 +484,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidato
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer, DefaultValidator> {
+pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
@@ -628,7 +513,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer,
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_with_3_txs_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
@@ -686,7 +571,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 /// This scenario funds a client with transparent funds.
 pub async fn funded_transparent_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
@@ -727,7 +612,7 @@ pub async fn funded_transparent_mobileclient(
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),

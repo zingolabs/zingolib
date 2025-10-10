@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use darkside_tests::{
     constants::{
         ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
@@ -10,17 +8,15 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{read_dataset, read_lines},
+    utils::{lightwalletd, read_dataset, read_lines},
 };
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::zcash_local_net::{
-    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
-    network::localhost_uri,
-};
+use zingolib::testutils::zcash_local_net::indexer::Indexer;
+use zingolib::testutils::zcash_local_net::network::localhost_uri;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
@@ -33,12 +29,7 @@ use zingolib::{
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -196,12 +187,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -359,12 +345,7 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 #[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -544,12 +525,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -804,12 +780,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -992,7 +963,7 @@ async fn reorg_expires_outgoing_tx_height() {
 ///
 /// 1. Setup w/ default dataset
 /// 2. `applyStaged(received_Tx_height)`
-/// 3. sync up to received_Tx_height
+/// 3. sync up to `received_Tx_height`
 /// 4. create transaction
 /// 5. stage 10 empty blocks
 /// 6. submit tx at sentTxHeight
@@ -1009,12 +980,7 @@ async fn reorg_expires_outgoing_tx_height() {
 async fn reorg_changes_outgoing_tx_index() {
     tracing_subscriber::fmt().init();
 
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
