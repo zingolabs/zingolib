@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
@@ -19,9 +18,6 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::tempfile;
 use zingolib::testutils::zcash_local_net;
-use zingolib::testutils::zcash_local_net::indexer::lightwalletd::Lightwalletd;
-use zingolib::testutils::zcash_local_net::indexer::lightwalletd::LightwalletdConfig;
-use zingolib::testutils::zcash_local_net::process::IsAProcess as _;
 use zingolib::testutils::zingo_test_vectors;
 use zingolib::wallet::balance::AccountBalance;
 

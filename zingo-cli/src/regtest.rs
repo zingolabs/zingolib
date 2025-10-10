@@ -2,14 +2,10 @@
 //! This module contains all regtest-specific functionality
 
 use std::path::PathBuf;
-use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::zcash_local_net::LocalNet;
-use zingolib::testutils::zcash_local_net::indexer::lightwalletd::{
-    Lightwalletd, LightwalletdConfig,
-};
+use zingolib::testutils::zcash_local_net::indexer::lightwalletd::Lightwalletd;
 use zingolib::testutils::zcash_local_net::process::IsAProcess;
-use zingolib::testutils::zcash_local_net::validator::zcashd::{Zcashd, ZcashdConfig};
-use zingolib::testutils::zingo_test_vectors::REG_O_ADDR_FROM_ABANDONART;
+use zingolib::testutils::zcash_local_net::validator::zcashd::Zcashd;
 
 /// Launch a local regtest network
 pub(crate) async fn launch_local_net() -> LocalNet<Zcashd, Lightwalletd> {

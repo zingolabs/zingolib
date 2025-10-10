@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use darkside_tests::{
     constants::{
