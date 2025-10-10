@@ -67,7 +67,7 @@ pub async fn get_fees_paid_by_client(client: &LightClient) -> u64 {
         .unwrap()
         .paid_fees()
 }
-/// Helpers to provide raw_receivers to lightclients for send and shield, etc.
+/// Helpers to provide `raw_receivers` to lightclients for send and shield, etc.
 pub mod from_inputs {
 
     use nonempty::NonEmpty;
@@ -144,6 +144,6 @@ pub async fn lookup_statuses(
         wallet
             .wallet_transactions
             .get(&txid)
-            .map(|transaction_record| transaction_record.status())
+            .map(pepper_sync::wallet::WalletTransaction::status)
     })
 }

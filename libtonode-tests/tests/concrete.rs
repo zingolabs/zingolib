@@ -80,13 +80,7 @@ fn check_view_capability_bounds(
         panic!("should be viewing key!")
     };
     //Orchard
-    if !fvks.contains(&orchard_fvk) {
-        assert!(ufvk.orchard().is_none());
-        assert_eq!(balance.total_orchard_balance, None);
-        assert_eq!(balance.confirmed_orchard_balance, None);
-        assert_eq!(balance.unconfirmed_orchard_balance, None);
-        assert_eq!(orchard_notes.len(), 0);
-    } else {
+    if fvks.contains(&orchard_fvk) {
         assert!(ufvk.orchard().is_some());
         assert_eq!(balance.total_orchard_balance, sent_o_value);
         assert_eq!(balance.confirmed_orchard_balance, sent_o_value);
@@ -97,15 +91,15 @@ fn check_view_capability_bounds(
             .filter(|note| note.spend_status.is_unspent())
             .count();
         assert!((1..=2).contains(&orchard_notes_count));
+    } else {
+        assert!(ufvk.orchard().is_none());
+        assert_eq!(balance.total_orchard_balance, None);
+        assert_eq!(balance.confirmed_orchard_balance, None);
+        assert_eq!(balance.unconfirmed_orchard_balance, None);
+        assert_eq!(orchard_notes.len(), 0);
     }
     //Sapling
-    if !fvks.contains(&sapling_fvk) {
-        assert!(ufvk.sapling().is_none());
-        assert_eq!(balance.total_sapling_balance, None);
-        assert_eq!(balance.confirmed_sapling_balance, None);
-        assert_eq!(balance.unconfirmed_sapling_balance, None);
-        assert_eq!(sapling_notes.len(), 0);
-    } else {
+    if fvks.contains(&sapling_fvk) {
         assert!(ufvk.sapling().is_some());
         assert_eq!(balance.total_sapling_balance, sent_s_value);
         assert_eq!(balance.confirmed_sapling_balance, sent_s_value);
@@ -117,15 +111,21 @@ fn check_view_capability_bounds(
                 .count(),
             1
         );
-    }
-    if !fvks.contains(&transparent_fvk) {
-        assert!(ufvk.transparent().is_none());
-        assert_eq!(balance.confirmed_transparent_balance, None);
-        assert_eq!(transparent_coins.len(), 0);
     } else {
+        assert!(ufvk.sapling().is_none());
+        assert_eq!(balance.total_sapling_balance, None);
+        assert_eq!(balance.confirmed_sapling_balance, None);
+        assert_eq!(balance.unconfirmed_sapling_balance, None);
+        assert_eq!(sapling_notes.len(), 0);
+    }
+    if fvks.contains(&transparent_fvk) {
         assert!(ufvk.transparent().is_some());
         assert_eq!(balance.confirmed_transparent_balance, sent_t_value);
         assert_eq!(transparent_coins.len(), 1);
+    } else {
+        assert!(ufvk.transparent().is_none());
+        assert_eq!(balance.confirmed_transparent_balance, None);
+        assert_eq!(transparent_coins.len(), 0);
     }
 }
 
@@ -683,7 +683,7 @@ mod fast {
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
-    /// This tests checks that messages_containing returns an empty vector when empty memos are included.
+    /// This tests checks that `messages_containing` returns an empty vector when empty memos are included.
     #[tokio::test]
     async fn filter_empty_messages() {
         let mut environment = LibtonodeEnvironment::setup().await;
@@ -1025,7 +1025,7 @@ mod fast {
                 .await
                 .wallet_transactions
                 .keys()
-                .cloned()
+                .copied()
                 .collect::<Vec<TxId>>();
             increase_height_and_wait_for_client(local_net, &mut sender, 1)
                 .await
@@ -1063,9 +1063,9 @@ mod fast {
         recipient.sync_and_await().await.unwrap();
 
         let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
-        transactions.iter().for_each(|tx| {
+        for tx in transactions {
             dbg!(tx);
-        });
+        }
         assert_eq!(
             transactions
                 .iter()
@@ -1416,7 +1416,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .unwrap()
                 .value(),
             Zatoshis::const_from_u64((block_rewards::CANOPY * 4) - expected_fee)
-        )
+        );
     }
 }
 mod slow {
@@ -1840,7 +1840,7 @@ mod slow {
             vec![&s_fvk, &t_fvk],
             vec![&o_fvk, &s_fvk, &t_fvk],
         ];
-        for fvks in fvks_sets.iter() {
+        for fvks in &fvks_sets {
             tracing::info!("testing UFVK containing:");
             tracing::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
             tracing::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
@@ -2456,7 +2456,7 @@ TransactionSummary {
             .unwrap();
         assert_eq!(wallet_fully_scanned_height, BASE_HEIGHT.into());
         let three_blocks_reward = block_rewards::CANOPY
-            .checked_mul(BASE_HEIGHT as u64)
+            .checked_mul(u64::from(BASE_HEIGHT))
             .unwrap();
         check_client_balances!(faucet, o: three_blocks_reward s: 0 t: 0);
 
@@ -3100,7 +3100,7 @@ TransactionSummary {
     //             .max_leaf_position(None)
     //     );
     // }
-    /// This mod collects tests of outgoing_metadata (a TransactionRecordField) across rescans
+    /// This mod collects tests of `outgoing_metadata` (a `TransactionRecordField`) across rescans
     mod rescan_still_have_outgoing_notes {
         use super::*;
 
@@ -3322,7 +3322,7 @@ TransactionSummary {
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
-        println!("{}", bal);
+        println!("{bal}");
         assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
         assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
         assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
@@ -3599,16 +3599,18 @@ TransactionSummary {
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
             Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
-                ProposeSendError::Proposal(insufficient) => match insufficient {
-                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                ProposeSendError::Proposal(insufficient) => {
+                    if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
                         required,
-                    } => {
+                    } = insufficient
+                    {
                         assert_eq!(available, Zatoshis::from_u64(0).unwrap());
                         assert_eq!(required, Zatoshis::from_u64(20_000).unwrap());
+                    } else {
+                        panic!()
                     }
-                    _ => panic!(),
-                },
+                }
                 ProposeSendError::TransactionRequestFailed(_) => panic!(),
                 ProposeSendError::ZeroValueSendAll => panic!(),
                 ProposeSendError::BalanceError(_) => panic!(),
@@ -3625,21 +3627,24 @@ TransactionSummary {
         //  t -> z
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
-                ProposeSendError::Proposal(insufficient) => match insufficient {
-                    zcash_client_backend::data_api::error::Error::InsufficientFunds {
-                        available,
-                        required,
-                    } => {
-                        assert_eq!(available, Zatoshis::from_u64(0).unwrap());
-                        assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
+            Err(QuickSendError::ProposalError(proposesenderror)) => {
+                if let ProposeSendError::Proposal(insufficient) = proposesenderror {
+                    match insufficient {
+                        zcash_client_backend::data_api::error::Error::InsufficientFunds {
+                            available,
+                            required,
+                        } => {
+                            assert_eq!(available, Zatoshis::from_u64(0).unwrap());
+                            assert_eq!(required, Zatoshis::from_u64(60_000).unwrap());
+                        }
+                        _ => {
+                            panic!()
+                        }
                     }
-                    _ => {
-                        panic!()
-                    }
-                },
-                _ => panic!(),
-            },
+                } else {
+                    panic!()
+                }
+            }
             _ => panic!(),
         }
         bump_and_check!(o: 0 s: 0 t: 470_000);
@@ -4516,6 +4521,6 @@ mod send_all {
         assert!(matches!(
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
-        ))
+        ));
     }
 }

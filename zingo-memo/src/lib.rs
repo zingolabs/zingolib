@@ -62,7 +62,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-/// Ephemeral address indexes are CompactSize encoded, so for most use cases will only be
+/// Ephemeral address indexes are `CompactSize` encoded, so for most use cases will only be
 /// one byte.
 pub fn create_wallet_internal_memo_version_1(
     uas: &[UnifiedAddress],
@@ -109,7 +109,7 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     }
 }
 
-/// A helper function to encode a UA as a CompactSize specifying the number
+/// A helper function to encode a UA as a `CompactSize` specifying the number
 /// of receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn write_unified_address_to_raw_encoding<W: Write>(
@@ -134,7 +134,7 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
     })
 }
 
-/// A helper function to decode a UA from a CompactSize specifying the number of
+/// A helper function to decode a UA from a `CompactSize` specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
@@ -234,7 +234,7 @@ mod tests {
             let success_parse = parse_zingo_memo(version0_bytes).expect("To succeed in parse.");
             if let ParsedMemo::Version0 { uas } = success_parse {
                 assert_eq!(uas[0], ua);
-            };
+            }
             // version1
             let random_rejection_indexes = get_some_number_of_ephemeral_indexes();
             let version1_bytes = create_wallet_internal_memo_version_1(
@@ -250,7 +250,7 @@ mod tests {
             {
                 assert_eq!(uas[0], ua);
                 assert_eq!(rejection_address_indexes, random_rejection_indexes);
-            };
+            }
         }
     }
     #[test]

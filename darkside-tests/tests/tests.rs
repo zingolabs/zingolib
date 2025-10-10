@@ -19,7 +19,6 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
-use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::testutils::tempfile;
 use zingolib::testutils::zcash_local_net;
 use zingolib::testutils::zingo_test_vectors;
@@ -29,7 +28,6 @@ use zingolib::wallet::balance::AccountBalance;
 #[tokio::test]
 async fn simple_sync() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -51,7 +49,7 @@ async fn simple_sync() {
 
     let result = light_client.sync_and_await().await.unwrap();
 
-    println!("{}", result);
+    println!("{result}");
 
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);
@@ -78,7 +76,6 @@ async fn simple_sync() {
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,
@@ -144,7 +141,6 @@ async fn reorg_receipt_sync_generic() {
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
     let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
         listen_port: None,
         zcashd_conf: PathBuf::new(),
         darkside: true,

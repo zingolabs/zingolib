@@ -137,7 +137,7 @@ pub(crate) async fn scan_transactions(
     Ok(wallet_transactions)
 }
 
-/// Scans `transaction` with the given `status` and returns [crate::wallet::WalletTransaction], decrypting all
+/// Scans `transaction` with the given `status` and returns [`crate::wallet::WalletTransaction`], decrypting all
 /// incoming and outgoing notes with `ufvks` and adding any transparent coins matching `transparent_addresses`.
 ///
 /// `decrypted_note_data` will be `None` for pending transactions. For confirmed transactions, it must contain the
@@ -146,7 +146,7 @@ pub(crate) async fn scan_transactions(
 /// All inputs in `transaction` are inserted into the `nullifier_map` and `outpoint_map` to be used for spend detection.
 /// For pending transactions, new maps are used instead of the wallet's maps as to keep confirmed spends isolated.
 ///
-/// `txid` is used instead of transaction.txid() due to darkside testing bug.
+/// `txid` is used instead of `transaction.txid()` due to darkside testing bug.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scan_transaction(
     consensus_parameters: &impl consensus::Parameters,
@@ -317,8 +317,8 @@ pub(crate) fn scan_transaction(
 
     Ok(WalletTransaction {
         txid,
-        transaction,
         status,
+        transaction,
         datetime,
         transparent_coins,
         sapling_notes,
@@ -454,7 +454,7 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D, ENC_CIPHER
 fn parse_encoded_memos<N, Nf: Copy>(wallet_notes: &[WalletNote<N, Nf>]) -> Vec<ParsedMemo> {
     wallet_notes
         .iter()
-        .flat_map(|note| {
+        .filter_map(|note| {
             if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo {
                 match zingo_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()) {
                     Ok(encoded_memo) => Some(encoded_memo),
@@ -511,7 +511,7 @@ where
 
 /// Converts and adds the nullifiers from a transaction to the nullifier map.
 ///
-/// `txid` is used instead of transaction.txid() due to darkside testing bug.
+/// `txid` is used instead of `transaction.txid()` due to darkside testing bug.
 fn collect_nullifiers(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
@@ -522,7 +522,7 @@ fn collect_nullifiers(
         bundle
             .shielded_spends()
             .iter()
-            .map(|spend| spend.nullifier())
+            .map(sapling_crypto::bundle::SpendDescription::nullifier)
             .for_each(|nullifier| {
                 nullifier_map.sapling.insert(
                     *nullifier,
@@ -538,7 +538,7 @@ fn collect_nullifiers(
         bundle
             .actions()
             .iter()
-            .map(|action| action.nullifier())
+            .map(orchard::Action::nullifier)
             .for_each(|nullifier| {
                 nullifier_map.orchard.insert(
                     *nullifier,

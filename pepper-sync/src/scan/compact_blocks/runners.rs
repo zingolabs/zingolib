@@ -93,7 +93,7 @@ where
         let block_height = block.height();
         let zip212_enforcement = zip212_enforcement(params, block_height);
 
-        for tx in block.vtx.into_iter() {
+        for tx in block.vtx {
             let txid = tx.txid();
 
             self.sapling.add_outputs(
@@ -104,7 +104,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, output)| {
-                        CompactOutputDescription::try_from(output).map_err(|_| {
+                        CompactOutputDescription::try_from(output).map_err(|()| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
@@ -124,7 +124,7 @@ where
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        CompactAction::try_from(action).map_err(|_| {
+                        CompactAction::try_from(action).map_err(|()| {
                             zcash_client_backend::scanning::ScanError::EncodingInvalid {
                                 at_height: block_height,
                                 txid,
