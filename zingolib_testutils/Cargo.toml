@@ -11,7 +11,7 @@ test_lwd_zcashd = []
 [dependencies]
 
 # zingolib
-zingolib.workspace = true
+zingolib = { workspace = true, features = ["testutils"] }
 pepper-sync.workspace = true
 zingo_common_components.workspace = true
 
