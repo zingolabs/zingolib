@@ -36,15 +36,13 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
-use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::increase_height_and_wait_for_client;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
-
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingolib::{get_base_address_macro, lightclient};
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -357,7 +355,7 @@ pub async fn faucet_funded_recipient(
 
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
             )
@@ -371,7 +369,7 @@ pub async fn faucet_funded_recipient(
     };
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
             )
@@ -385,7 +383,7 @@ pub async fn faucet_funded_recipient(
     };
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(
                     &get_base_address_macro!(recipient, "transparent"),
@@ -499,7 +497,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         local_net.validator().get_activation_heights(),
     );
     faucet.sync_and_await().await.unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -530,7 +528,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -539,7 +537,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -553,7 +551,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -590,7 +588,7 @@ pub async fn funded_transparent_mobileclient(
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -631,7 +629,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to orchard
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
@@ -646,7 +644,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to sapling
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -661,7 +659,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -676,7 +674,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to a faucet
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -692,7 +690,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self orchard
     let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_unified_address,
@@ -708,7 +706,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self sapling
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -724,7 +722,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self transparent
     let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_transparent_address,
