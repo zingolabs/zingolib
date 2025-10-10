@@ -139,24 +139,6 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
     }
 }
 
-/// Converts a chain name string to a ChainType variant.
-///
-/// When compiled without the `testutils` feature, only accepts "testnet" or "mainnet".
-///
-/// # Arguments
-/// * `chain_name` - The chain name as a string
-///
-/// # Returns
-/// * `Ok(ChainType)` - The corresponding ChainType variant
-/// * `Err(String)` - An error message if the chain name is invalid
-#[cfg(not(any(test, feature = "testutils")))]
-pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
-    match chain_name {
-        "testnet" => Ok(ChainType::Testnet),
-        "mainnet" => Ok(ChainType::Mainnet),
-        _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
-    }
-}
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww";
 /// TODO: Add Doc Comment Here!
