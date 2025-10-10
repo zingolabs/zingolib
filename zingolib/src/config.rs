@@ -103,8 +103,13 @@ impl Parameters for ChainType {
 #[derive(thiserror::Error, Debug)]
 pub enum ChainFromStringError {
     /// of unknown chain,
-    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet, regtest")]
+    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet.")]
     UnknownChain(String),
+    /// of regtest
+    #[error(
+        "Invalid chain name 'regtest'. Cant create a regtest chain from a string without assuming activation heights."
+    )]
+    UnknownRegtestChain,
 }
 
 /// Converts a chain name string to a `ChainType` variant.
@@ -116,11 +121,10 @@ pub enum ChainFromStringError {
 /// * `Ok(ChainType)` - The corresponding `ChainType` variant
 /// * `Err(String)` - An error message if the chain name is invalid
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
-    use zingo_common_components::protocol::activation_heights::for_test;
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(for_test::all_height_one_nus())),
+        "regtest" => Err(ChainFromStringError::UnknownRegtestChain),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
