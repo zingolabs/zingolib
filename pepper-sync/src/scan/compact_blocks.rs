@@ -86,14 +86,14 @@ where
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
-            for (output_id, _) in incoming_sapling_outputs.iter() {
+            for output_id in incoming_sapling_outputs.keys() {
                 decrypted_scan_targets.insert(ScanTarget {
                     block_height,
                     txid: output_id.txid(),
                     narrow_scan_area: false,
                 });
             }
-            for (output_id, _) in incoming_orchard_outputs.iter() {
+            for output_id in incoming_orchard_outputs.keys() {
                 decrypted_scan_targets.insert(ScanTarget {
                     block_height,
                     txid: output_id.txid(),
@@ -327,8 +327,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     D: Domain,
     K: ScanningKeyOps<D, Nf>,
 {
-    for (output_id, incoming_output) in incoming_decrypted_outputs
-        .iter() {
+    for (output_id, incoming_output) in incoming_decrypted_outputs {
             let position =
                 Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
             let key = keys

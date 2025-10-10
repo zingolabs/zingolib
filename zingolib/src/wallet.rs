@@ -539,7 +539,7 @@ mod tests {
         for commitment in commitments {
             orchard_tree
                 .append(MerkleHashOrchard::from_bytes(&commitment).unwrap())
-                .unwrap()
+                .unwrap();
         }
         // This value was produced by the Python test vector generation code implemented here:
         // https://github.com/zcash-hackworks/zcash-test-vectors/blob/f4d756410c8f2456f5d84cedf6dac6eb8c068eed/orchard_merkle_tree.py

@@ -540,7 +540,7 @@ impl Command for HelpCommand {
         match args.len() {
             0 => {
                 responses.push("Available commands:".to_string());
-                for (cmd, obj) in get_commands().iter() {
+                for (cmd, obj) in &get_commands() {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 }
 
@@ -564,7 +564,7 @@ impl ShortCircuitedCommand for HelpCommand {
         match args.len() {
             0 => {
                 responses.push("Available commands:".to_string());
-                for (cmd, obj) in get_commands().iter() {
+                for (cmd, obj) in &get_commands() {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 }
 

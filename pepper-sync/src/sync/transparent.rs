@@ -79,7 +79,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         // To summarise, keeping transaction scanning within the scanner is much better co-ordinated and allows us to leverage
         // any new developments to sync state management and scanning. It also separates concerns, with tasks happening in one
         // place and performed once, wherever possible.
-        for (height, tx) in transactions.iter() {
+        for (height, tx) in &transactions {
             scan_targets.insert(ScanTarget {
                 block_height: *height,
                 txid: tx.txid(),
@@ -142,7 +142,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                     if transactions.is_empty() {
                         unused_address_count += 1;
                     } else {
-                        for (height, tx) in transactions.iter() {
+                        for (height, tx) in &transactions {
                             scan_targets.insert(ScanTarget {
                                 block_height: *height,
                                 txid: tx.txid(),
@@ -156,7 +156,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 }
 
                 addresses.truncate(addresses.len() - config.gap_limit as usize);
-                for (id, address) in addresses.into_iter() {
+                for (id, address) in addresses {
                     wallet_addresses.insert(id, address);
                 }
             }

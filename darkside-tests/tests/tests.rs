@@ -49,7 +49,7 @@ async fn simple_sync() {
 
     let result = light_client.sync_and_await().await.unwrap();
 
-    println!("{}", result);
+    println!("{result}");
 
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);

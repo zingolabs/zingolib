@@ -93,7 +93,7 @@ mod chain_generics {
             PoolType::ORCHARD,
             1,
         )
-        .await
+        .await;
     }
     #[tokio::test]
     async fn simpool_insufficient_10_000_sapling_to_transparent() {
