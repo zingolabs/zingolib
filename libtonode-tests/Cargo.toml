@@ -18,7 +18,7 @@ zingo_common_components = { workspace = true, features = ["for_test"] }
 pepper-sync = { workspace = true }
 zingo-status = { workspace = true }
 
-zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils" }
+zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca" }
 
