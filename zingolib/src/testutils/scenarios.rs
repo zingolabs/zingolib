@@ -29,9 +29,7 @@ use zcash_local_net::network::localhost_uri;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
 use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
-use zingo_test_vectors::{
-    FUND_OFFLOAD_ORCHARD_ONLY, seeds,
-};
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
