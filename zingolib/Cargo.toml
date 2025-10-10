@@ -11,36 +11,30 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
+default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
 testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zebra-chain", "zingo_common_components/for_test"]
 zaino-test = ['testutils']
-test_zainod_zcashd = []
-test_lwd_zebrad = []
-test_lwd_zcashd = []
 
 [dependencies]
+
+# zingolib
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo_netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
+
+# zingo
 zingo_common_components = { workspace = true, optional = true }
+zingo_netutils = { workspace = true }
+
 # testutils feature
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca", optional = true}
-
-hyper-rustls = { workspace = true }
-hyper-util = { workspace = true }
-tokio-rustls = { workspace = true }
-webpki-roots = { workspace = true }
-tower = { workspace = true }
-
-zebra-chain = { workspace = true, optional = true }
-
-# TODO: separate activation heights into different crate and make this optional for testutils
 zcash_local_net = { workspace = true }
 
+# blockchain
+zebra-chain = { workspace = true, optional = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true }
@@ -58,10 +52,18 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zip32.workspace = true
-
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 bs58 = { workspace = true, features = ["check"] }
+
+# network
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+tower = { workspace = true }
+
+# other
 
 append-only-vec = { workspace = true }
 byteorder = { workspace = true }
