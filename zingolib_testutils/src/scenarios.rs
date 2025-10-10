@@ -41,7 +41,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
-use zingolib::testutils::{increase_height_and_wait_for_client, sync_to_target_height};
+use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};

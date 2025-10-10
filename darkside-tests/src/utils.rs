@@ -10,9 +10,7 @@ use tokio::time::sleep;
 
 use incrementalmerkletree::frontier::CommitmentTree;
 use orchard::tree::MerkleHashOrchard;
-use zcash_primitives::consensus::BranchId;
-use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
-use zingolib::testutils::zcash_local_net::{
+use zcash_local_net::{
     error::LaunchError,
     indexer::{
         Indexer as _,
@@ -21,6 +19,8 @@ use zingolib::testutils::zcash_local_net::{
     network::localhost_uri,
     process::IsAProcess,
 };
+use zcash_primitives::consensus::BranchId;
+use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 
 use super::{
     constants,
@@ -326,13 +326,11 @@ pub mod scenarios {
     use std::fs::File;
     use std::ops::Add;
 
+    use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zebra_chain::parameters::testnet;
     use zingo_common_components::protocol::activation_heights::for_test;
-    use zingolib::testutils::{
-        zcash_local_net::indexer::lightwalletd::Lightwalletd, zingo_test_vectors,
-    };
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,

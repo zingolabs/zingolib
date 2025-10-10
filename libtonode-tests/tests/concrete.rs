@@ -8,17 +8,14 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use zcash_protocol::value::Zatoshis;
 use zebra_chain::parameters::testnet;
-use zingolib::testutils::increase_height_and_wait_for_client;
+use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::zingo_test_vectors::{
-    BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED,
-};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
-use zingolib_testutils::scenarios;
+use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
@@ -143,12 +140,12 @@ mod fast {
         encoding::encode_payment_address_p,
         zip321::{Payment, TransactionRequest},
     };
+    use zcash_local_net::validator::Validator;
     use zcash_primitives::{
         consensus::BlockHeight, legacy::keys::NonHardenedChildIndex, memo::Memo,
     };
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zingo_status::confirmation_status::ConfirmationStatus;
-    use zingolib::testutils::zcash_local_net::validator::Validator;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
@@ -160,6 +157,7 @@ mod fast {
             summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
+    use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
 
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
@@ -191,7 +189,7 @@ mod fast {
     //     );
     //     // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
     //     for _ in 0..5 {
-    //         zingolib::testutils::send_value_between_clients_and_sync(
+    //         send_value_between_clients_and_sync(
     //             &local_net,
     //             &faucet,
     //             &faucet,
@@ -204,7 +202,7 @@ mod fast {
 
     //     let sent_to_self = 10;
     //     // Send recipient->recipient, to make tree equality check at the end simpler
-    //     zingolib::testutils::send_value_between_clients_and_sync(
+    //     send_value_between_clients_and_sync(
     //         &local_net,
     //         &recipient,
     //         &recipient,
@@ -213,7 +211,7 @@ mod fast {
     //     )
     //     .await
     //     .unwrap();
-    //     let fees = zingolib::testutils::lightclient::get_fees_paid_by_client(&recipient).await;
+    //     let fees = lightclient::get_fees_paid_by_client(&recipient).await;
     //     assert_eq!(value - fees, 90_000);
     //     let balance_minus_step_one_fees = value - fees;
 
@@ -362,7 +360,7 @@ mod fast {
     //     assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
     //     // 6. Mine 10 blocks, the pending transaction should still be there.
-    //     zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 1)
+    //     increase_height_and_wait_for_client(&local_net, &recipient, 1)
     //         .await
     //         .unwrap();
     //     assert_eq!(recipient.wallet.last_synced_height().await, 12);
@@ -387,7 +385,7 @@ mod fast {
     //     assert_eq!(transactions.len(), 3);
 
     //     // 7. Mine 3 blocks, so the 2 block pending_window is passed
-    //     zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 3)
+    //     increase_height_and_wait_for_client(&local_net, &recipient, 3)
     //         .await
     //         .unwrap();
     //     assert_eq!(recipient.wallet.last_synced_height().await, 15);
@@ -439,7 +437,7 @@ mod fast {
     //     server_orchard_shardtree
     //         .insert_frontier_nodes(
     //             server_orchard_front.unwrap(),
-    //             zingolib::testutils::incrementalmerkletree::Retention::Marked,
+    //             incrementalmerkletree::Retention::Marked,
     //         )
     //         .unwrap();
     //     // This height doesn't matter, all we need is any arbitrary checkpoint ID
@@ -1162,7 +1160,7 @@ mod fast {
         from_inputs::quick_send(&mut faucet, address_5000_nonememo_tuples)
             .await
             .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         let balance_b = recipient
@@ -1428,20 +1426,20 @@ mod slow {
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
     };
+    use zcash_local_net::validator::Validator;
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::memo::Memo;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::TEST_TXID;
     use zingolib::config::ChainType;
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
-    use zingolib::testutils::zcash_local_net::validator::Validator;
-    use zingolib::testutils::zingo_test_vectors::TEST_TXID;
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
-        encoded_sapling_address_from_ua,
+        build_fvks_from_unified_keystore, encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -1452,6 +1450,7 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
     };
     use zingolib::wallet::{WalletSettings, summary};
+    use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
     use zip32::AccountId;
 
     use super::*;
@@ -1473,7 +1472,7 @@ mod slow {
         .await
         .unwrap();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
             .await
             .unwrap();
         let _sent_transaction_id = from_inputs::quick_send(
@@ -1482,7 +1481,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
             .await
             .unwrap();
 
@@ -1518,7 +1517,7 @@ mod slow {
         .first()
         .to_string();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
             .await
             .unwrap();
 
@@ -1626,7 +1625,7 @@ mod slow {
     //         .contains(&position));
 
     //     // 4. Mine the sent transaction
-    //     zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 1)
+    //     increase_height_and_wait_for_client(&local_net, &recipient, 1)
     //         .await
     //         .unwrap();
 
@@ -1669,7 +1668,7 @@ mod slow {
     //     );
 
     //     // 5. Mine 50 blocks, witness should still be there
-    //     zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 50)
+    //     increase_height_and_wait_for_client(&local_net, &recipient, 50)
     //         .await
     //         .unwrap();
     //     let position = recipient
@@ -1699,7 +1698,7 @@ mod slow {
     //         .contains(&position));
 
     //     // 5. Mine 100 blocks, witness should now disappear
-    //     zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 50)
+    //     increase_height_and_wait_for_client(&local_net, &recipient, 50)
     //         .await
     //         .unwrap();
     //     let position = recipient
@@ -1787,20 +1786,16 @@ mod slow {
             (recipient_unified.as_str(), 30_000u64, None),
         ];
         // 1. fill wallet with a coinbase transaction by syncing faucet with 1-block increase
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         // 2. send a transaction containing all types of outputs
         from_inputs::quick_send(&mut faucet, addr_amount_memos)
             .await
             .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(
-            &local_net,
-            &mut original_recipient,
-            1,
-        )
-        .await
-        .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut original_recipient, 1)
+            .await
+            .unwrap();
         let original_recipient_balance = original_recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
@@ -1827,7 +1822,7 @@ mod slow {
 
         // Extract viewing keys
         let original_wallet = original_recipient.wallet.read().await;
-        let [o_fvk, s_fvk, t_fvk] = zingolib::testutils::build_fvks_from_unified_keystore(
+        let [o_fvk, s_fvk, t_fvk] = build_fvks_from_unified_keystore(
             original_wallet
                 .unified_key_store
                 .get(&zip32::AccountId::ZERO)
@@ -1888,11 +1883,7 @@ mod slow {
             assert!(matches!(
                 from_inputs::quick_send(
                     &mut watch_client,
-                    vec![(
-                        zingolib::testutils::zingo_test_vectors::EXT_TADDR,
-                        1000,
-                        None
-                    )]
+                    vec![(zingo_test_vectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
                 Err(QuickSendError::SendError(SendError::CalculateSendError(
@@ -1913,7 +1904,7 @@ mod slow {
             .await
             .unwrap();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         recipient.sync_and_await().await.unwrap();
@@ -1942,11 +1933,7 @@ mod slow {
         let sent_value = 20_000;
         let sent_transaction_error = from_inputs::quick_send(
             &mut recipient,
-            vec![(
-                zingolib::testutils::zingo_test_vectors::EXT_TADDR,
-                sent_value,
-                None,
-            )],
+            vec![(zingo_test_vectors::EXT_TADDR, sent_value, None)],
         )
         .await
         .unwrap_err();
@@ -1976,14 +1963,14 @@ mod slow {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
         recipient
             .quick_shield(zip32::AccountId::ZERO)
             .await
             .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
         println!(
@@ -2025,7 +2012,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         let transactions = faucet.transaction_summaries(false).await.unwrap().0;
@@ -2100,7 +2087,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
         let summary_external_sapling = TransactionSummary {
@@ -2225,7 +2212,7 @@ mod slow {
             );
         }
 
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(local_net, &mut faucet, 1)
             .await
             .unwrap();
 
@@ -2263,7 +2250,7 @@ mod slow {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -2362,7 +2349,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -2409,7 +2396,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -2474,7 +2461,7 @@ TransactionSummary {
         .unwrap();
         let orch_change =
             block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -2506,7 +2493,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         recipient.sync_and_await().await.unwrap();
@@ -2541,7 +2528,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
         let balance = faucet
@@ -2625,7 +2612,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         let recipient_taddr = get_base_address_macro!(recipient, "transparent");
@@ -2639,7 +2626,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         from_inputs::quick_send(
@@ -2671,7 +2658,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         println!(
@@ -2713,7 +2700,7 @@ TransactionSummary {
         .first()
         .to_string();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -2772,7 +2759,7 @@ TransactionSummary {
         .unwrap()
         .first()
         .to_string();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -2937,7 +2924,7 @@ TransactionSummary {
         }
 
         // 6. Mine the sent transaction
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -3016,7 +3003,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         check_client_balances!(recipient, o: for_orchard s: 0 t: 0 );
@@ -3031,7 +3018,7 @@ TransactionSummary {
         )
         .await
         .unwrap();
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
         let remaining_orchard = for_orchard - (6 * fee);
@@ -3065,7 +3052,7 @@ TransactionSummary {
     //     )
     //     .await
     //     .unwrap();
-    //     zingolib::testutils::increase_height_and_wait_for_client(local_net, recipient, 10)
+    //     increase_height_and_wait_for_client(local_net, recipient, 10)
     //         .await
     //         .unwrap();
     //     from_inputs::quick_send(
@@ -3074,7 +3061,7 @@ TransactionSummary {
     //     )
     //     .await
     //     .unwrap();
-    //     zingolib::testutils::increase_height_and_wait_for_client(local_net, recipient, 10)
+    //     increase_height_and_wait_for_client(local_net, recipient, 10)
     //         .await
     //         .unwrap();
     //     faucet.do_sync(false).await.unwrap();
@@ -3120,13 +3107,9 @@ TransactionSummary {
                     .unwrap()
                     .first(),
                 );
-                zingolib::testutils::increase_height_and_wait_for_client(
-                    &local_net,
-                    &mut faucet,
-                    1,
-                )
-                .await
-                .unwrap();
+                increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+                    .await
+                    .unwrap();
             }
 
             let pre_rescan_summaries = faucet.transaction_summaries(false).await.unwrap();
@@ -3161,7 +3144,7 @@ TransactionSummary {
             .first();
             // TODO:  This chain height bump should be unnecessary. I think removing
             // this increase_height call reveals a bug!
-            zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
                 .await
                 .unwrap();
 
@@ -3181,7 +3164,7 @@ TransactionSummary {
             )
             .await
             .unwrap();
-            zingolib::testutils::increase_height_and_wait_for_client(local_net, &mut recipient, 1)
+            increase_height_and_wait_for_client(local_net, &mut recipient, 1)
                 .await
                 .unwrap();
             let pre_rescan_transactions = recipient.transaction_summaries(false).await.unwrap();
@@ -3201,7 +3184,7 @@ TransactionSummary {
         //   * sends to a sapling address
         //   * sends back to the original sender's UA
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
             .await
             .unwrap();
 
@@ -3225,7 +3208,7 @@ TransactionSummary {
         .await
         .unwrap();
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 5)
             .await
             .unwrap();
         // We know that the largest single note that 2 received from 1 was 30_000, for 2 to send
@@ -3283,7 +3266,7 @@ TransactionSummary {
         /*
         assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &recipient, 5)
+        increase_height_and_wait_for_client(&local_net, &recipient, 5)
             .await
             .unwrap();
         let client_2_post_transaction_notes = recipient.do_list_notes(false).await;
@@ -3329,7 +3312,7 @@ TransactionSummary {
         assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
 
         // 3. Mine 10 blocks
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
             .await
             .unwrap();
         let bal = recipient
@@ -3367,7 +3350,7 @@ TransactionSummary {
         assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), new_bal);
 
         // 5. Mine the pending block, making the funds verified and spendable.
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 10)
             .await
             .unwrap();
 
@@ -3399,12 +3382,12 @@ TransactionSummary {
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
             .await
             .unwrap();
         macro_rules! bump_and_check_pmc {
             (o: $o:tt s: $s:tt t: $t:tt) => {
-                zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
+                increase_height_and_wait_for_client(&local_net, &mut pool_migration_client, 1).await.unwrap();
                 check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
             };
         }
@@ -3445,13 +3428,13 @@ TransactionSummary {
         let pmc_unified = get_base_address_macro!(client, "unified");
 
         // Ensure that the faucet has confirmed spendable funds
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
 
         macro_rules! bump_and_check {
             (o: $o:tt s: $s:tt t: $t:tt) => {
-                zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut client, 1).await.unwrap();
+                increase_height_and_wait_for_client(&local_net, &mut client, 1).await.unwrap();
                 check_client_balances!(client, o:$o s:$s t:$t);
             };
         }
@@ -3732,7 +3715,7 @@ TransactionSummary {
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
             .await
             .unwrap();
         from_inputs::quick_send(
@@ -3770,7 +3753,7 @@ TransactionSummary {
     async fn by_address_finsight() {
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
         let base_uaddress = get_base_address_macro!(recipient, "unified");
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
             .await
             .unwrap();
         from_inputs::quick_send(&mut faucet, vec![(&base_uaddress, 1_000u64, Some("1"))])
@@ -3809,7 +3792,7 @@ TransactionSummary {
         let (local_net, faucet, mut recipient, _txid) =
             scenarios::faucet_funded_recipient_default(100_000).await;
 
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -3830,7 +3813,7 @@ TransactionSummary {
         .to_string();
 
         // Validate transaction
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+        increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
 
@@ -3948,9 +3931,8 @@ TransactionSummary {
 }
 
 mod basic_transactions {
-    use zingolib::get_base_address_macro;
-    use zingolib::testutils::lightclient::from_inputs;
-    use zingolib_testutils::scenarios;
+    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zingolib_testutils::scenarios::{self, generate_n_blocks_return_new_height};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
@@ -3959,7 +3941,7 @@ mod basic_transactions {
         let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
         let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
 
-        zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 2).await;
+        generate_n_blocks_return_new_height(&local_net, 2).await;
 
         recipient.sync_and_await().await.unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -3973,7 +3955,7 @@ mod basic_transactions {
             .unwrap();
         }
 
-        zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1).await;
+        generate_n_blocks_return_new_height(&local_net, 1).await;
 
         recipient.sync_and_await().await.unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -3985,7 +3967,7 @@ mod basic_transactions {
         .await
         .unwrap();
 
-        zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1).await;
+        generate_n_blocks_return_new_height(&local_net, 1).await;
 
         recipient.sync_and_await().await.unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -4036,7 +4018,7 @@ mod basic_transactions {
     //     .first()
     //     .to_string();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4045,23 +4027,23 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&faucet, txid1.as_str()).await
+    //         tx_inputs(&faucet, txid1.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
+    //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
     //     println!(
     //         "Transaction Change:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&faucet, txid1.as_str()).await
+    //         tx_outputs(&faucet, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
-    //         zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+    //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
-    //         zingolib::testutils::total_tx_value(&faucet, txid1.as_str()).await - 40_000;
+    //         total_tx_value(&faucet, txid1.as_str()).await - 40_000;
     //     println!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
@@ -4077,23 +4059,23 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&faucet, txid2.as_str()).await
+    //         tx_inputs(&faucet, txid2.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid2.as_str()).await
+    //         tx_outputs(&recipient, txid2.as_str()).await
     //     );
     //     println!(
     //         "Transaction Change:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&faucet, txid2.as_str()).await
+    //         tx_outputs(&faucet, txid2.as_str()).await
     //     );
 
     //     let tx_actions_txid2 =
-    //         zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
+    //         tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid2);
 
     //     let calculated_fee_txid2 =
-    //         zingolib::testutils::total_tx_value(&faucet, txid2.as_str()).await - 40_000;
+    //         total_tx_value(&faucet, txid2.as_str()).await - 40_000;
     //     println!("Fee Paid: {}", calculated_fee_txid2);
 
     //     let expected_fee_txid2 = 5000
@@ -4109,23 +4091,23 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&faucet, txid3.as_str()).await
+    //         tx_inputs(&faucet, txid3.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid3.as_str()).await
+    //         tx_outputs(&recipient, txid3.as_str()).await
     //     );
     //     println!(
     //         "Transaction Change:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&faucet, txid3.as_str()).await
+    //         tx_outputs(&faucet, txid3.as_str()).await
     //     );
 
     //     let tx_actions_txid3 =
-    //         zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
+    //         tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid3);
 
     //     let calculated_fee_txid3 =
-    //         zingolib::testutils::total_tx_value(&faucet, txid3.as_str()).await - 40_000;
+    //         total_tx_value(&faucet, txid3.as_str()).await - 40_000;
     //     println!("Fee Paid: {}", calculated_fee_txid3);
 
     //     let expected_fee_txid3 = 5000
@@ -4139,7 +4121,7 @@ mod basic_transactions {
 
     //     assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
 
-    //     let txid4 = zingolib::testutils::lightclient::from_inputs::quick_send(
+    //     let txid4 = lightclient::from_inputs::quick_send(
     //         &recipient,
     //         vec![(
     //             get_base_address_macro!(faucet, "transparent").as_str(),
@@ -4152,7 +4134,7 @@ mod basic_transactions {
     //     .first()
     //     .to_string();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4161,23 +4143,23 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&recipient, txid4.as_str()).await
+    //         tx_inputs(&recipient, txid4.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&faucet, txid4.as_str()).await
+    //         tx_outputs(&faucet, txid4.as_str()).await
     //     );
     //     println!(
     //         "Transaction Change:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid4.as_str()).await
+    //         tx_outputs(&recipient, txid4.as_str()).await
     //     );
 
     //     let tx_actions_txid4 =
-    //         zingolib::testutils::tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
+    //         tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid4);
 
     //     let calculated_fee_txid4 =
-    //         zingolib::testutils::total_tx_value(&recipient, txid4.as_str()).await - 55_000;
+    //         total_tx_value(&recipient, txid4.as_str()).await - 55_000;
     //     println!("Fee Paid: {}", calculated_fee_txid4);
 
     //     let expected_fee_txid4 = 5000
@@ -4197,7 +4179,7 @@ mod basic_transactions {
     //     let (local_net, faucet, recipient) =
     //         scenarios::faucet_recipient_default().await;
 
-    //     let txid1 = zingolib::testutils::lightclient::from_inputs::quick_send(
+    //     let txid1 = lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
     //             get_base_address_macro!(recipient, "unified").as_str(),
@@ -4210,7 +4192,7 @@ mod basic_transactions {
     //     .first()
     //     .to_string();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4219,23 +4201,23 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&faucet, txid1.as_str()).await
+    //         tx_inputs(&faucet, txid1.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
+    //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
     //     println!(
     //         "Transaction Change:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&faucet, txid1.as_str()).await
+    //         tx_outputs(&faucet, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
-    //         zingolib::testutils::tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
+    //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
-    //         zingolib::testutils::total_tx_value(&faucet, txid1.as_str()).await;
+    //         total_tx_value(&faucet, txid1.as_str()).await;
     //     println!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
@@ -4255,7 +4237,7 @@ mod basic_transactions {
     //     let (local_net, faucet, recipient) =
     //         scenarios::faucet_recipient_default().await;
 
-    //     zingolib::testutils::lightclient::from_inputs::quick_send(
+    //     lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
     //             get_base_address_macro!(recipient, "transparent").as_str(),
@@ -4266,7 +4248,7 @@ mod basic_transactions {
     //     .await
     //     .unwrap();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4275,7 +4257,7 @@ mod basic_transactions {
 
     //     let txid1 = recipient.quick_shield().await.unwrap().first().to_string();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4284,19 +4266,19 @@ mod basic_transactions {
 
     //     println!(
     //         "Transaction Inputs:\n{:?}",
-    //         zingolib::testutils::tx_inputs(&recipient, txid1.as_str()).await
+    //         tx_inputs(&recipient, txid1.as_str()).await
     //     );
     //     println!(
     //         "Transaction Outputs:\n{:?}",
-    //         zingolib::testutils::tx_outputs(&recipient, txid1.as_str()).await
+    //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
-    //         zingolib::testutils::tx_actions(&recipient, None, txid1.as_str()).await;
+    //         tx_actions(&recipient, None, txid1.as_str()).await;
     //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
-    //         zingolib::testutils::total_tx_value(&recipient, txid1.as_str()).await;
+    //         total_tx_value(&recipient, txid1.as_str()).await;
     //     println!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
@@ -4310,7 +4292,7 @@ mod basic_transactions {
 
     //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 
-    //     zingolib::testutils::lightclient::from_inputs::quick_send(
+    //     lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
     //             get_base_address_macro!(recipient, "transparent").as_str(),
@@ -4321,7 +4303,7 @@ mod basic_transactions {
     //     .await
     //     .unwrap();
 
-    //     zingolib::testutils::generate_n_blocks_return_new_height(&local_net, 1)
+    //     generate_n_blocks_return_new_height(&local_net, 1)
     //         .await
     //         .unwrap();
 
@@ -4358,7 +4340,7 @@ mod send_all {
 
     use pepper_sync::wallet::{OrchardNote, SaplingNote};
     use zcash_protocol::value::Zatoshis;
-    use zingolib::wallet::error::ProposeSendError;
+    use zingolib::{testutils::lightclient::from_inputs, wallet::error::ProposeSendError};
 
     use super::*;
     #[tokio::test]

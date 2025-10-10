@@ -15,8 +15,6 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::tempfile;
-use zingolib::testutils::zcash_local_net;
-use zingolib::testutils::zingo_test_vectors;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib_testutils::scenarios::ClientBuilder;
 
@@ -141,7 +139,7 @@ async fn sent_transaction_reorged_into_mempool() {
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
-        zingolib::testutils::zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+        zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
         activation_heights,
