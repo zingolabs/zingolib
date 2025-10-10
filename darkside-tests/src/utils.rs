@@ -226,9 +226,10 @@ impl TreeState {
 pub async fn init_darksidewalletd(
     set_port: Option<zingolib::testutils::portpicker::Port>,
 ) -> Result<(Lightwalletd, DarksideConnector), String> {
-    let mut lightwalletd_config = LightwalletdConfig::default();
-    lightwalletd_config.listen_port = set_port;
-    lightwalletd_config.darkside = true;
+    let lightwalletd_config = LightwalletdConfig {
+        listen_port: set_port,
+        ..lightwalletd_config()
+    };
     let lightwalletd = Lightwalletd::launch(lightwalletd_config).await.unwrap();
     let server_id = localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);

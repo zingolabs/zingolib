@@ -82,6 +82,7 @@ pub mod network_combo {
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
+/// To launch a LocalNet with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
     mine_to_pool: PoolType,
