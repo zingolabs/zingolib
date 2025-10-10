@@ -37,6 +37,7 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
 use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
@@ -45,7 +46,6 @@ use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
-use zingolib::get_base_address_macro;
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
