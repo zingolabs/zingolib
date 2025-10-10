@@ -62,7 +62,6 @@ pub enum ChainType {
     /// Mainnet
     Mainnet,
     /// Local testnet
-    #[cfg(any(test, feature = "testutils"))]
     Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
 }
 
