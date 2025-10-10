@@ -11,8 +11,8 @@ fn git_description() {
         .output()
         .expect("Failed to execute git command");
 
-    eprintln!("Git command output: {:?}", output);
-    println!("Git command output: {:?}", output);
+    eprintln!("Git command output: {output:?}");
+    println!("Git command output: {output:?}");
 
     let git_description = String::from_utf8(output.stdout)
         .unwrap()
@@ -29,8 +29,7 @@ fn git_description() {
         /// The most recent tag name, the number\n\
         /// of commits above it, and the hash of\n\
         /// the most recent commit\n\
-        pub fn git_description() -> &'static str {{\"{}\"}}",
-        git_description
+        pub fn git_description() -> &'static str {{\"{git_description}\"}}"
     )
     .unwrap();
 }
@@ -48,7 +47,7 @@ fn get_zcash_params() {
             p
         }
         Err(e) => {
-            println!("Error downloading params: {}", e);
+            println!("Error downloading params: {e}");
             panic!();
         }
     };

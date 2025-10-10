@@ -114,7 +114,7 @@ impl std::fmt::Display for FeeError {
                     "Transparent spend not found for transaction id {txid}. Is the wallet fully synced? \nMissing spend: {spend}"
                 )
             }
-            Self::BalanceError(e) => write!(f, "{}", e),
+            Self::BalanceError(e) => write!(f, "{e}"),
         }
     }
 }
@@ -263,7 +263,7 @@ pub enum CalculateTransactionError<NoteRef> {
     NonTexMultiStep,
 }
 
-/// Errors that can result from do_propose
+/// Errors that can result from `do_propose`
 #[derive(Debug, thiserror::Error)]
 pub enum ProposeSendError {
     /// error in using trait to create spend proposal
@@ -289,7 +289,7 @@ pub enum ProposeSendError {
     BalanceError(#[from] crate::wallet::error::BalanceError),
 }
 
-/// Errors that can result from do_propose
+/// Errors that can result from `do_propose`
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum ProposeShieldError {

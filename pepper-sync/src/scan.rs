@@ -148,8 +148,8 @@ where
 
     if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
         let mut nullifiers = NullifierMap::new();
-        for block in compact_blocks.iter() {
-            for transaction in block.vtx.iter() {
+        for block in &compact_blocks {
+            for transaction in &block.vtx {
                 collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
             }
         }
