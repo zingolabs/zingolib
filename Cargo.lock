@@ -9201,6 +9201,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingolib_testutils"
+version = "0.1.0"
+dependencies = [
+ "bip0039",
+ "portpicker",
+ "tempfile",
+ "zcash_local_net",
+]
+
+[[package]]
 name = "zip32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
