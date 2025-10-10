@@ -3,6 +3,11 @@ name = "zingolib_testutils"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test_zainod_zcashd = []
+test_lwd_zebrad = []
+test_lwd_zcashd = []
+
 [dependencies]
 
 # zingolib
