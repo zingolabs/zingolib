@@ -3,7 +3,6 @@ use std::io;
 use zcash_primitives::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
-use byteorder::ReadBytesExt;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use std::sync::LazyLock;
@@ -18,7 +17,7 @@ type ChainCode = Vec<u8>;
 
 const HARDENED_KEY_START_INDEX: u32 = 2_147_483_648; // 2 ** 31
 
-/// KeyIndex indicates the key type and index of a child key.
+/// `KeyIndex` indicates the key type and index of a child key.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum KeyIndex {
     /// Normal key, index range is from 0 to 2 ** 31 - 1
@@ -29,6 +28,7 @@ pub enum KeyIndex {
 
 impl KeyIndex {
     /// Check index range.
+    #[must_use] 
     pub fn is_valid(self) -> bool {
         match self {
             KeyIndex::Normal(i) => i < HARDENED_KEY_START_INDEX,
@@ -36,7 +36,7 @@ impl KeyIndex {
         }
     }
 
-    /// Generate Hardened KeyIndex from normalize index value.
+    /// Generate Hardened `KeyIndex` from normalize index value.
     pub fn hardened_from_normalize_index(i: u32) -> Result<KeyIndex, Error> {
         if i < HARDENED_KEY_START_INDEX {
             Ok(KeyIndex::Hardened(HARDENED_KEY_START_INDEX + i))
@@ -45,7 +45,8 @@ impl KeyIndex {
         }
     }
 
-    /// Generate KeyIndex from raw index value.
+    /// Generate `KeyIndex` from raw index value.
+    #[must_use] 
     pub fn from_index(i: u32) -> Self {
         if i < HARDENED_KEY_START_INDEX {
             KeyIndex::Normal(i)
@@ -61,8 +62,8 @@ impl From<u32> for KeyIndex {
     }
 }
 
-/// ExtendedPrivKey is used for child key derivation.
-/// See [secp256k1 crate documentation](https://docs.rs/secp256k1) for SecretKey signatures usage.
+/// `ExtendedPrivKey` is used for child key derivation.
+/// See [secp256k1 crate documentation](https://docs.rs/secp256k1) for `SecretKey` signatures usage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedPrivKey {
     /// TODO: Add Doc Comment Here!
@@ -72,7 +73,7 @@ pub struct ExtendedPrivKey {
 }
 
 impl ExtendedPrivKey {
-    /// Generate an ExtendedPrivKey from seed
+    /// Generate an `ExtendedPrivKey` from seed
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
         let signature = {
             let signing_key = Key::new(hmac::HMAC_SHA512, b"Bitcoin seed");
@@ -90,6 +91,7 @@ impl ExtendedPrivKey {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use] 
     pub fn get_ext_taddr_from_bip39seed(
         config: &ZingoConfig,
         bip39_seed: &[u8],
@@ -129,7 +131,7 @@ impl ExtendedPrivKey {
         h.sign()
     }
 
-    /// Derive a child key from ExtendedPrivKey.
+    /// Derive a child key from `ExtendedPrivKey`.
     pub fn derive_private_key(&self, key_index: KeyIndex) -> Result<ExtendedPrivKey, Error> {
         if !key_index.is_valid() {
             return Err(Error::InvalidTweak);
@@ -152,7 +154,7 @@ impl ExtendedPrivKey {
 
 impl ReadableWriteable for SecretKey {
     const VERSION: u8 = 0; // not applicable
-    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
         reader.read_exact(&mut secret_key_bytes)?;
         SecretKey::from_slice(&secret_key_bytes)
@@ -167,10 +169,10 @@ impl ReadableWriteable for SecretKey {
 impl ReadableWriteable for ExtendedPrivKey {
     const VERSION: u8 = 1;
 
-    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
         let private_key = SecretKey::read(&mut reader, ())?;
-        let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
+        let chain_code = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
         Ok(Self {
             private_key,
             chain_code,
@@ -182,7 +184,7 @@ impl ReadableWriteable for ExtendedPrivKey {
     }
 }
 
-/// ExtendedPubKey is used for child pub key derivation in watch-only mode
+/// `ExtendedPubKey` is used for child pub key derivation in watch-only mode
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedPubKey {
     /// TODO: Add Doc Comment Here!
@@ -200,7 +202,7 @@ impl ExtendedPubKey {
         h.sign()
     }
 
-    /// Derive a child key from ExtendedPubKey.
+    /// Derive a child key from `ExtendedPubKey`.
     pub fn derive_public_key(&self, key_index: KeyIndex) -> Result<ExtendedPubKey, Error> {
         if !key_index.is_valid() {
             return Err(Error::InvalidTweak);
@@ -222,7 +224,7 @@ impl ExtendedPubKey {
 
 impl ReadableWriteable for PublicKey {
     const VERSION: u8 = 0; // not applicable
-    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+    fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         let mut public_key_bytes = [0; 33];
         reader.read_exact(&mut public_key_bytes)?;
         PublicKey::from_slice(&public_key_bytes)
@@ -240,7 +242,7 @@ impl ReadableWriteable for ExtendedPubKey {
     fn read<R: std::io::Read>(mut reader: R, _input: ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
         let public_key = PublicKey::read(&mut reader, ())?;
-        let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
+        let chain_code = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
         Ok(Self {
             public_key,
             chain_code,

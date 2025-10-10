@@ -55,7 +55,7 @@ impl memuse::DynamicUsage for KeyId {
 }
 
 /// A key that can be used to perform trial decryption and nullifier
-/// computation for a CompactSaplingOutput or CompactOrchardAction.
+/// computation for a `CompactSaplingOutput` or `CompactOrchardAction`.
 pub trait ScanningKeyOps<D: Domain, Nf> {
     /// Prepare the key for use in batch trial decryption.
     fn prepare(&self) -> D::IncomingViewingKey;

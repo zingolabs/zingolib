@@ -140,7 +140,7 @@ pub trait SyncTransactions: SyncWallet {
     }
 
     /// Removes all confirmed wallet transactions above the given `block_height`.
-    /// Also sets any output's spending_transaction field to `None` if it's spending transaction was removed.
+    /// Also sets any output's `spending_transaction` field to `None` if it's spending transaction was removed.
     fn truncate_wallet_transactions(
         &mut self,
         truncate_height: BlockHeight,
@@ -154,9 +154,9 @@ pub trait SyncTransactions: SyncWallet {
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;
         reset_spends(wallet_transactions, invalid_txids.clone());
-        invalid_txids.iter().for_each(|invalid_txid| {
+        for invalid_txid in invalid_txids.iter() {
             wallet_transactions.remove(invalid_txid);
-        });
+        }
 
         Ok(())
     }
@@ -296,12 +296,12 @@ pub trait SyncShardTrees: SyncWallet {
                 .await?;
             }
 
-            for tree in sapling_located_trees.into_iter() {
+            for tree in sapling_located_trees {
                 shard_trees
                     .sapling
                     .insert_tree(tree.subtree, tree.checkpoints)?;
             }
-            for tree in orchard_located_trees.into_iter() {
+            for tree in orchard_located_trees {
                 shard_trees
                     .orchard
                     .insert_tree(tree.subtree, tree.checkpoints)?;

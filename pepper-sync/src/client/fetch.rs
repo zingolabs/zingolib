@@ -72,9 +72,8 @@ async fn receive_fetch_requests(
             Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                 if fetch_request_queue.is_empty() {
                     return true;
-                } else {
-                    break;
                 }
+                break;
             }
         }
     }
@@ -86,10 +85,10 @@ async fn receive_fetch_requests(
 // return `None` if a fetch request could not be selected
 fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<FetchRequest> {
     // TODO: improve priority logic
-    if !fetch_request_queue.is_empty() {
-        Some(fetch_request_queue.remove(0))
-    } else {
+    if fetch_request_queue.is_empty() {
         None
+    } else {
+        Some(fetch_request_queue.remove(0))
     }
 }
 

@@ -82,7 +82,7 @@ pub mod network_combo {
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
-/// To launch a LocalNet with darkside settings.
+/// To launch a `LocalNet` with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
     mine_to_pool: PoolType,
@@ -154,8 +154,8 @@ impl ClientBuilder {
         &mut self,
         configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
-        //! Each client requires a unique data_dir, we use the
-        //! client_number counter for this.
+        //! Each client requires a unique `data_dir`, we use the
+        //! `client_number` counter for this.
         self.client_number += 1;
         let conf_path = format!(
             "{}_client_{}",

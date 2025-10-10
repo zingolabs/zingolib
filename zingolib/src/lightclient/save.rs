@@ -1,4 +1,4 @@
-//! LightClient saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
+//! `LightClient` saves internally when it gets to a checkpoint. If has filesystem access, it saves to file at those points. otherwise, it passes the save buffer to the FFI.
 
 use futures::FutureExt as _;
 use log::error;
@@ -25,7 +25,7 @@ impl LightClient {
             loop {
                 interval.tick().await;
                 if let Some(wallet_bytes) = wallet.write().await.save()? {
-                    utils::write_to_path(&wallet_path, wallet_bytes).await?
+                    utils::write_to_path(&wallet_path, wallet_bytes).await?;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());
@@ -90,20 +90,20 @@ impl LightClient {
         // Check if the file exists before attempting to delete
         if self.config.wallet_path_exists() {
             match remove_file(self.config.get_wallet_path()) {
-                Ok(_) => {
+                Ok(()) => {
                     log::debug!("File deleted successfully!");
                     Ok(())
                 }
                 Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
+                    let err = format!("ERR: {e}");
+                    error!("{err}");
                     log::debug!("DELETE FAIL ON FILE!");
                     Err(e.to_string())
                 }
             }
         } else {
             let err = "Error: File does not exist, nothing to delete.".to_string();
-            error!("{}", err);
+            error!("{err}");
             log::debug!("File does not exist, nothing to delete.");
             Err(err)
         }

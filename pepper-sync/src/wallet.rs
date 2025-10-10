@@ -89,7 +89,8 @@ pub struct InitialSyncState {
 }
 
 impl InitialSyncState {
-    /// Create new InitialSyncState
+    /// Create new `InitialSyncState`
+    #[must_use] 
     pub fn new() -> Self {
         InitialSyncState {
             sync_start_height: 0.into(),
@@ -135,7 +136,8 @@ pub struct SyncState {
 }
 
 impl SyncState {
-    /// Create new SyncState
+    /// Create new `SyncState`
+    #[must_use] 
     pub fn new() -> Self {
         SyncState {
             scan_ranges: Vec::new(),
@@ -147,16 +149,19 @@ impl SyncState {
     }
 
     /// Scan ranges
+    #[must_use] 
     pub fn scan_ranges(&self) -> &[ScanRange] {
         &self.scan_ranges
     }
 
     /// Sapling shard ranges
+    #[must_use] 
     pub fn sapling_shard_ranges(&self) -> &[Range<BlockHeight>] {
         &self.sapling_shard_ranges
     }
 
     /// Orchard shard ranges
+    #[must_use] 
     pub fn orchard_shard_ranges(&self) -> &[Range<BlockHeight>] {
         &self.orchard_shard_ranges
     }
@@ -170,6 +175,7 @@ impl SyncState {
 
     /// Returns the block height at which all blocks equal to and below this height are scanned.
     /// Returns `None` if `self.scan_ranges` is empty.
+    #[must_use] 
     pub fn fully_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .scan_ranges
@@ -187,6 +193,7 @@ impl SyncState {
     /// Returns the highest block height that has been scanned.
     /// If no scan ranges have been scanned, returns the block below the wallet birthday.
     /// Returns `None` if `self.scan_ranges` is empty.
+    #[must_use] 
     pub fn highest_scanned_height(&self) -> Option<BlockHeight> {
         if let Some(last_scanned_range) = self
             .scan_ranges
@@ -206,6 +213,7 @@ impl SyncState {
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
     /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
+    #[must_use] 
     pub fn wallet_birthday(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
@@ -213,6 +221,7 @@ impl SyncState {
     }
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
+    #[must_use] 
     pub fn wallet_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .last()
@@ -285,17 +294,20 @@ pub struct OutputId {
 }
 
 impl OutputId {
-    /// Creates new OutputId from parts.
+    /// Creates new `OutputId` from parts.
+    #[must_use] 
     pub fn new(txid: TxId, output_index: u16) -> Self {
         OutputId { txid, output_index }
     }
 
     /// Transaction ID of output's associated transaction.
+    #[must_use] 
     pub fn txid(&self) -> TxId {
         self.txid
     }
 
     /// Index of output within the transactions bundle of the given pool type.
+    #[must_use] 
     pub fn output_index(&self) -> u16 {
         self.output_index
     }
@@ -322,7 +334,7 @@ impl From<&OutPoint> for OutputId {
 
 impl From<OutputId> for OutPoint {
     fn from(value: OutputId) -> Self {
-        OutPoint::new(value.txid.into(), value.output_index as u32)
+        OutPoint::new(value.txid.into(), u32::from(value.output_index))
     }
 }
 
@@ -337,6 +349,7 @@ pub struct NullifierMap {
 
 impl NullifierMap {
     /// Construct new nullifier map.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             sapling: BTreeMap::new(),
@@ -385,38 +398,44 @@ impl WalletBlock {
             txids: block
                 .vtx
                 .iter()
-                .map(|transaction| transaction.txid())
+                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
                 .collect(),
             tree_bounds,
         })
     }
 
     /// Block height.
+    #[must_use] 
     pub fn block_height(&self) -> BlockHeight {
         self.block_height
     }
 
     /// Block hash.
+    #[must_use] 
     pub fn block_hash(&self) -> BlockHash {
         self.block_hash
     }
 
     /// Previous block hash.
+    #[must_use] 
     pub fn prev_hash(&self) -> BlockHash {
         self.prev_hash
     }
 
     /// Time block was mined.
+    #[must_use] 
     pub fn time(&self) -> u32 {
         self.time
     }
 
     /// Transaction IDs of transactions in the block.
+    #[must_use] 
     pub fn txids(&self) -> &[TxId] {
         &self.txids
     }
 
     /// Tree size bounds
+    #[must_use] 
     pub fn tree_bounds(&self) -> TreeBounds {
         self.tree_bounds
     }
@@ -437,26 +456,31 @@ pub struct WalletTransaction {
 
 impl WalletTransaction {
     /// Transaction ID
+    #[must_use] 
     pub fn txid(&self) -> TxId {
         self.txid
     }
 
     /// Confirmation status
+    #[must_use] 
     pub fn status(&self) -> ConfirmationStatus {
         self.status
     }
 
     /// [`zcash_primitives::transaction::Transaction`]
+    #[must_use] 
     pub fn transaction(&self) -> &zcash_primitives::transaction::Transaction {
         &self.transaction
     }
 
     /// Datetime. In form of seconds since unix epoch.
+    #[must_use] 
     pub fn datetime(&self) -> u32 {
         self.datetime
     }
 
     /// Transparent coins
+    #[must_use] 
     pub fn transparent_coins(&self) -> &[TransparentCoin] {
         &self.transparent_coins
     }
@@ -467,6 +491,7 @@ impl WalletTransaction {
     }
 
     /// Sapling notes
+    #[must_use] 
     pub fn sapling_notes(&self) -> &[SaplingNote] {
         &self.sapling_notes
     }
@@ -477,6 +502,7 @@ impl WalletTransaction {
     }
 
     /// Orchard notes
+    #[must_use] 
     pub fn orchard_notes(&self) -> &[OrchardNote] {
         &self.orchard_notes
     }
@@ -487,11 +513,13 @@ impl WalletTransaction {
     }
 
     /// Outgoing sapling notes
+    #[must_use] 
     pub fn outgoing_sapling_notes(&self) -> &[OutgoingSaplingNote] {
         &self.outgoing_sapling_notes
     }
 
     /// Outgoing orchard notes
+    #[must_use] 
     pub fn outgoing_orchard_notes(&self) -> &[OutgoingOrchardNote] {
         &self.outgoing_orchard_notes
     }
@@ -505,7 +533,7 @@ impl WalletTransaction {
                 bundle
                     .shielded_spends()
                     .iter()
-                    .map(|spend| spend.nullifier())
+                    .map(sapling_crypto::bundle::SpendDescription::nullifier)
                     .collect::<Vec<_>>()
             })
     }
@@ -519,7 +547,7 @@ impl WalletTransaction {
                 bundle
                     .actions()
                     .iter()
-                    .map(|action| action.nullifier())
+                    .map(orchard::Action::nullifier)
                     .collect::<Vec<_>>()
             })
     }
@@ -542,6 +570,7 @@ impl WalletTransaction {
 #[cfg(feature = "wallet_essentials")]
 impl WalletTransaction {
     /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
+    #[must_use] 
     pub fn total_value_sent(&self) -> u64 {
         let transparent_value_sent = self
             .transaction
@@ -568,6 +597,7 @@ impl WalletTransaction {
     }
 
     /// Returns total sum of all output values.
+    #[must_use] 
     pub fn total_value_received(&self) -> u64 {
         self.total_output_value::<TransparentCoin>()
             + self.total_output_value::<SaplingNote>()
@@ -575,18 +605,20 @@ impl WalletTransaction {
     }
 
     /// Returns total sum of output values for a given pool.
+    #[must_use] 
     pub fn total_output_value<Op: OutputInterface>(&self) -> u64 {
         Op::transaction_outputs(self)
             .iter()
-            .map(|output| output.value())
+            .map(OutputInterface::value)
             .sum()
     }
 
     /// Returns total sum of outgoing note values for a given shielded pool.
+    #[must_use] 
     pub fn total_outgoing_note_value<Op: OutgoingNoteInterface>(&self) -> u64 {
         Op::transaction_outgoing_notes(self)
             .iter()
-            .map(|note| note.value())
+            .map(OutgoingNoteInterface::value)
             .sum()
     }
 }
@@ -699,11 +731,13 @@ pub struct TransparentCoin {
 
 impl TransparentCoin {
     /// Address received to.
+    #[must_use] 
     pub fn address(&self) -> &str {
         &self.address
     }
 
     /// Script.
+    #[must_use] 
     pub fn script(&self) -> &Script {
         &self.script
     }
@@ -1107,7 +1141,8 @@ pub struct ShardTrees {
 }
 
 impl ShardTrees {
-    /// Create new ShardTrees
+    /// Create new `ShardTrees`
+    #[must_use] 
     pub fn new() -> Self {
         let mut sapling =
             ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);

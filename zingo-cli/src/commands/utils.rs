@@ -192,23 +192,23 @@ fn zatoshis_from_json(json_array: &JsonValue) -> Result<Zatoshis, CommandError> 
     if !json_array.has_key("amount") {
         return Err(CommandError::MissingKey("amount".to_string()));
     }
-    let amount_u64 = if !json_array["amount"].is_number() {
-        return Err(CommandError::NonJsonNumberForAmount(format!(
-            "\"amount\": {}\nis not a json::number::Number",
-            json_array["amount"]
-        )));
-    } else {
+    let amount_u64 = if json_array["amount"].is_number() {
         json_array["amount"]
             .as_u64()
             .ok_or(CommandError::UnexpectedType(
                 "amount not a u64!".to_string(),
             ))?
+    } else {
+        return Err(CommandError::NonJsonNumberForAmount(format!(
+            "\"amount\": {}\nis not a json::number::Number",
+            json_array["amount"]
+        )));
     };
     zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)
 }
 
 fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandError> {
-    if let Some(m) = json_array["memo"].as_str().map(|s| s.to_string()) {
+    if let Some(m) = json_array["memo"].as_str().map(std::string::ToString::to_string) {
         let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
         Ok(Some(memo))
     } else {

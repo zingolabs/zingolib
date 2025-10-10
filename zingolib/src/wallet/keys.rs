@@ -1,4 +1,4 @@
-//! [crate::wallet::LightWallet] methods associated with keys and address derivation.
+//! [`crate::wallet::LightWallet`] methods associated with keys and address derivation.
 
 use pepper_sync::{
     keys::{
@@ -370,6 +370,7 @@ impl LightWallet {
     }
 
     /// Returns the address identifier if the given `address` is one of the wallet's derived addresses.
+    #[must_use] 
     pub fn is_transparent_wallet_address(
         &self,
         address: &TransparentAddress,
@@ -385,11 +386,12 @@ impl LightWallet {
     /// Returns the account id and diversifier index if the given `address` is derived from the wallet's sapling FVKs. External scope only.
     ///
     /// This method is computationally expensive.
+    #[must_use] 
     pub fn is_sapling_address_derived_from_fvks(
         &self,
         address: &sapling_crypto::PaymentAddress,
     ) -> Option<(zip32::AccountId, DiversifierIndex)> {
-        for (account_id, unified_key) in self.unified_key_store.iter() {
+        for (account_id, unified_key) in &self.unified_key_store {
             if let Some((diversifier_index, _)) =
                 sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(unified_key)
                     .ok()
@@ -405,11 +407,12 @@ impl LightWallet {
     /// Returns the account id, scope and diversifier index if the given `address` is derived from the wallet's orchard FVKs.
     ///
     /// This method is computationally expensive.
+    #[must_use] 
     pub fn is_orchard_address_derived_from_fvks(
         &self,
         address: &orchard::Address,
     ) -> Option<(zip32::AccountId, zip32::Scope, DiversifierIndex)> {
-        for (account_id, unified_key) in self.unified_key_store.iter() {
+        for (account_id, unified_key) in &self.unified_key_store {
             let Ok(fvk) = orchard::keys::FullViewingKey::try_from(unified_key) else {
                 continue;
             };
@@ -424,6 +427,7 @@ impl LightWallet {
     }
 
     /// Returns the unified address and id if `address` matches an sapling receiver in the wallet's unified address list.
+    #[must_use] 
     pub fn is_sapling_address_in_unified_addresses(
         &self,
         address: &sapling_crypto::PaymentAddress,
@@ -435,6 +439,7 @@ impl LightWallet {
     }
 
     /// Returns the unified address and id if `address` matches an orchard receiver in the wallet's unified address list.
+    #[must_use] 
     pub fn is_orchard_address_in_unified_addresses(
         &self,
         address: &orchard::Address,
@@ -459,6 +464,7 @@ mod test {
         ///
         /// Zingolib test framework generates a second UA with a sapling only receiver for use when `pool` is set to sapling.
         // TODO: add asserts to verify UA receivers
+        #[must_use] 
         pub fn get_address(&self, pool: PoolType) -> String {
             match pool {
                 PoolType::ORCHARD => self

@@ -68,7 +68,7 @@ impl BlockData {
         let ecb = if version <= 11 {
             vec![]
         } else {
-            Vector::read(&mut reader, |r| r.read_u8())?
+            Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?
         };
 
         if ecb.is_empty() {
@@ -79,8 +79,8 @@ impl BlockData {
     }
 }
 
-/// HashMap of all transactions in a wallet, keyed by txid.
-/// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
+/// `HashMap` of all transactions in a wallet, keyed by txid.
+/// Note that the parent is expected to hold a `RwLock`, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TxMap {
     /// TODO: Doc-comment!
@@ -203,7 +203,7 @@ impl TxMap {
                     .expect("infallible");
                 orch_tree.checkpoint(height).expect("infallible");
             }
-        };
+        }
 
         Ok(Self {
             transaction_records_by_id: TransactionRecordsById::from_map(map),
@@ -215,7 +215,7 @@ impl TxMap {
 pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
 
 impl TransactionRecordsById {
-    /// Constructs a TransactionRecordsById from a HashMap
+    /// Constructs a `TransactionRecordsById` from a `HashMap`
     pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
@@ -228,8 +228,8 @@ pub struct TransactionRecord {
     pub status: zingo_status::confirmation_status::ConfirmationStatus,
     /// Timestamp of Tx. Added in v4
     pub datetime: u64,
-    /// Txid of this transaction. It's duplicated here (It is also the Key in the HashMap that points to this
-    /// WalletTx in LightWallet::txs)
+    /// Txid of this transaction. It's duplicated here (It is also the Key in the `HashMap` that points to this
+    /// `WalletTx` in `LightWallet::txs`)
     pub txid: TxId,
     /// List of all nullifiers spent by this wallet in this Tx.
     pub spent_sapling_nullifiers: Vec<sapling_crypto::Nullifier>,
@@ -323,7 +323,7 @@ impl TransactionRecord {
         let zec_price = if version <= 4 {
             None
         } else {
-            zcash_encoding::Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
+            zcash_encoding::Optional::read(&mut reader, byteorder::ReadBytesExt::read_f64::<LittleEndian>)?
         };
 
         let spent_sapling_nullifiers = if version <= 5 {
@@ -625,7 +625,7 @@ impl
                 let witnesses =
                     WitnessCache::<sapling_crypto::Node>::new(witnesses_vec, top_height);
 
-                let pos = witnesses.last().map(|w| w.witnessed_position());
+                let pos = witnesses.last().map(incrementalmerkletree::witness::IncrementalWitness::witnessed_position);
                 for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
                     let height = BlockHeight::from(top_height as u32 - i as u32);
                     if let Some(&mut ref mut wits) = inc_wit_vec {
@@ -650,12 +650,9 @@ impl
         let spend = Optional::read(&mut reader, |r| {
             let mut transaction_id_bytes = [0u8; 32];
             r.read_exact(&mut transaction_id_bytes)?;
-            let status = match external_version {
-                5.. => ReadableWriteable::read(r, ()),
-                ..5 => {
-                    let height = r.read_u32::<LittleEndian>()?;
-                    Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
-                }
+            let status = if let 5.. = external_version { ReadableWriteable::read(r, ()) } else {
+                let height = r.read_u32::<LittleEndian>()?;
+                Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
             }?;
             Ok((TxId::from_bytes(transaction_id_bytes), status))
         })?;
@@ -687,7 +684,7 @@ impl
                 },
                 Err(e) => Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Couldn't create memo: {}", e),
+                    format!("Couldn't create memo: {e}"),
                 )),
             }
         })?;
@@ -795,7 +792,7 @@ impl
                 let top_height = reader.read_u64::<LittleEndian>()?;
                 let witnesses = WitnessCache::<MerkleHashOrchard>::new(witnesses_vec, top_height);
 
-                let pos = witnesses.last().map(|w| w.witnessed_position());
+                let pos = witnesses.last().map(incrementalmerkletree::witness::IncrementalWitness::witnessed_position);
                 for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
                     let height = BlockHeight::from(top_height as u32 - i as u32);
                     if let Some(&mut ref mut wits) = inc_wit_vec {
@@ -820,12 +817,9 @@ impl
         let spend = Optional::read(&mut reader, |r| {
             let mut transaction_id_bytes = [0u8; 32];
             r.read_exact(&mut transaction_id_bytes)?;
-            let status = match external_version {
-                5.. => ReadableWriteable::read(r, ()),
-                ..5 => {
-                    let height = r.read_u32::<LittleEndian>()?;
-                    Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
-                }
+            let status = if let 5.. = external_version { ReadableWriteable::read(r, ()) } else {
+                let height = r.read_u32::<LittleEndian>()?;
+                Ok(ConfirmationStatus::Confirmed(BlockHeight::from_u32(height)))
             }?;
             Ok((TxId::from_bytes(transaction_id_bytes), status))
         })?;
@@ -857,7 +851,7 @@ impl
                 },
                 Err(e) => Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Couldn't create memo: {}", e),
+                    format!("Couldn't create memo: {e}"),
                 )),
             }
         })?;
@@ -893,7 +887,7 @@ impl
     }
 }
 
-/// Only for TransactionRecords *from* "this" capability
+/// Only for `TransactionRecords` *from* "this" capability
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct OutgoingTxData {
@@ -904,14 +898,14 @@ pub struct OutgoingTxData {
     /// Note to the receiver, why not an option?
     pub memo: Memo,
     /// What if it wasn't provided?  How does this relate to
-    /// recipient_address?
+    /// `recipient_address`?
     pub recipient_ua: Option<String>,
     /// This output's index in its containing transaction
     pub output_index: Option<u64>,
 }
 
 impl OutgoingTxData {
-    /// Before version 0, OutgoingTxData didn't have a version field
+    /// Before version 0, `OutgoingTxData` didn't have a version field
     pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
@@ -929,7 +923,7 @@ impl OutgoingTxData {
             },
             Err(e) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Couldn't create memo: {}", e),
+                format!("Couldn't create memo: {e}"),
             )),
         }?;
 
@@ -942,7 +936,7 @@ impl OutgoingTxData {
         })
     }
 
-    /// Read an OutgoingTxData from its serialized
+    /// Read an `OutgoingTxData` from its serialized
     /// representation
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _external_version = CompactSize::read(&mut reader)?;
@@ -962,7 +956,7 @@ impl OutgoingTxData {
             },
             Err(e) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Couldn't create memo: {}", e),
+                format!("Couldn't create memo: {e}"),
             )),
         }?;
         let output_index = Optional::read(&mut reader, CompactSize::read)?;
@@ -1033,8 +1027,7 @@ fn read_shardtree<
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "parent node in root has level 0 relative to root address: {:?}",
-                    addr
+                    "parent node in root has level 0 relative to root address: {addr:?}"
                 ),
             )
         })
@@ -1169,7 +1162,7 @@ impl WalletOptions {
             v => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Bad download option {}", v),
+                    format!("Bad download option {v}"),
                 ));
             }
         };
@@ -1238,7 +1231,7 @@ impl WalletZecPriceInfo {
         let currency = "USD".to_string();
 
         let last_historical_prices_fetched_at =
-            Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+            Optional::read(&mut reader, byteorder::ReadBytesExt::read_u64::<LittleEndian>)?;
         let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
 
         Ok(Self {

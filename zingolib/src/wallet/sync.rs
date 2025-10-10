@@ -65,7 +65,7 @@ impl SyncWallet for LightWallet {
                 return Ok(());
             }
 
-            UnifiedAddress::from_receivers(Some(address), wallet_address.sapling().cloned(), None)
+            UnifiedAddress::from_receivers(Some(address), wallet_address.sapling().copied(), None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         } else {
             UnifiedAddress::from_receivers(Some(address), None, None)
@@ -108,7 +108,7 @@ impl SyncWallet for LightWallet {
                 return Ok(());
             }
 
-            UnifiedAddress::from_receivers(wallet_address.orchard().cloned(), Some(address), None)
+            UnifiedAddress::from_receivers(wallet_address.orchard().copied(), Some(address), None)
                 .expect("guaranteed to have at least 1 shielded receiver")
         } else {
             UnifiedAddress::from_receivers(None, Some(address), None)
