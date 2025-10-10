@@ -6,10 +6,8 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::indexer::Lightwalletd;
-use zcash_local_net::indexer::LightwalletdConfig;
 use zcash_local_net::network::localhost_uri;
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
@@ -21,24 +19,24 @@ use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::tempfile;
 use zingolib::testutils::zcash_local_net;
+use zingolib::testutils::zcash_local_net::indexer::lightwalletd::Lightwalletd;
+use zingolib::testutils::zcash_local_net::indexer::lightwalletd::LightwalletdConfig;
+use zingolib::testutils::zcash_local_net::process::IsAProcess as _;
 use zingolib::testutils::zingo_test_vectors;
 use zingolib::wallet::balance::AccountBalance;
+
+use darkside_tests::utils::lightwalletd;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let activation_heights = for_test::all_height_one_nus();
+    let activation_heights = all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -75,19 +73,14 @@ async fn simple_sync() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let activation_heights = for_test::all_height_one_nus();
+    let activation_heights = all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -140,12 +133,7 @@ async fn reorg_receipt_sync_generic() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
@@ -154,7 +142,7 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
-    let activation_heights = for_test::all_height_one_nus();
+    let activation_heights = all_height_one_nus();
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(

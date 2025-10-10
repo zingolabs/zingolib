@@ -13,12 +13,13 @@ use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingolib::testutils::zcash_local_net::{
+    error::LaunchError,
     indexer::{
         Indexer as _,
         lightwalletd::{Lightwalletd, LightwalletdConfig},
     },
     network::localhost_uri,
-    process::IsAProcess as _,
+    process::IsAProcess,
 };
 
 use super::{
@@ -31,6 +32,17 @@ use crate::{
     darkside_types::{self, Empty},
 };
 use zingolib::testutils::paths::get_cargo_manifest_dir;
+
+fn lightwalletd_config() -> LightwalletdConfig {
+    LightwalletdConfig {
+        darkside: true,
+        ..Default::default()
+    }
+}
+
+pub async fn lightwalletd() -> Result<Lightwalletd, LaunchError> {
+    Lightwalletd::launch(lightwalletd_config()).await
+}
 
 pub async fn prepare_darksidewalletd(
     uri: http::Uri,
