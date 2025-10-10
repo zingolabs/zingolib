@@ -306,7 +306,7 @@ mod tests {
             }
             #[test]
             fn failed_json_parsing() {
-                let args = [r#"testaddress{{"#];
+                let args = [r"testaddress{{"];
                 assert!(matches!(
                     parse_send_args(&args),
                     Err(CommandError::ArgsNotJson(_))
@@ -325,7 +325,7 @@ mod tests {
                 let arg_contents = "[{\"address\": \"zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p\", \"amount\": 123, \"memo\": \"testmemo\"}]";
                 let long_513_byte_memo = &"a".repeat(513);
                 let long_memo_args =
-                    arg_contents.replace("\"testmemo\"", &format!("\"{}\"", long_513_byte_memo));
+                    arg_contents.replace("\"testmemo\"", &format!("\"{long_513_byte_memo}\""));
                 let args = [long_memo_args.as_str()];
 
                 assert!(matches!(

@@ -634,7 +634,7 @@ mod tests {
 
     use crate::wallet::WalletSettings;
 
-    /// Validate that the load_clientconfig function creates a valid config from an empty uri
+    /// Validate that the `load_clientconfig` function creates a valid config from an empty uri
     #[tokio::test]
     async fn test_load_clientconfig() {
         rustls::crypto::ring::default_provider()
@@ -642,7 +642,7 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some("".to_string()));
+        let valid_uri = crate::config::construct_lightwalletd_uri(Some(String::new()));
 
         let temp_dir = tempfile::TempDir::new().unwrap();
 

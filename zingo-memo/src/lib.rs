@@ -234,7 +234,7 @@ mod tests {
             let success_parse = parse_zingo_memo(version0_bytes).expect("To succeed in parse.");
             if let ParsedMemo::Version0 { uas } = success_parse {
                 assert_eq!(uas[0], ua);
-            };
+            }
             // version1
             let random_rejection_indexes = get_some_number_of_ephemeral_indexes();
             let version1_bytes = create_wallet_internal_memo_version_1(
@@ -250,7 +250,7 @@ mod tests {
             {
                 assert_eq!(uas[0], ua);
                 assert_eq!(rejection_address_indexes, random_rejection_indexes);
-            };
+            }
         }
     }
     #[test]

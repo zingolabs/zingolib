@@ -184,7 +184,7 @@ fn start_interactive(
                 .map(|mut json_info| json_info.remove("chain_name"))
                 .ok()
                 .and_then(|name| name.as_str().map(ToString::to_string))
-                .unwrap_or(String::new());
+                .unwrap_or_default();
         }
         // Read the height first
         let height = json::parse(&send_command(

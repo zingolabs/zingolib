@@ -396,7 +396,7 @@ pub mod scenarios {
         /// Builds a lightclient with spending capability to the initial source of funds to the darkside blockchain
         /// The staged block with the funding transaction is not applied and the faucet is not synced
         pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
-            assert!(!self.faucet.is_some(), "Error: Faucet already exists!");
+            assert!(self.faucet.is_none(), "Error: Faucet already exists!");
             self.faucet = Some(self.client_builder.build_client(
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 0,

@@ -154,7 +154,7 @@ pub trait SyncTransactions: SyncWallet {
 
         let wallet_transactions = self.get_wallet_transactions_mut()?;
         reset_spends(wallet_transactions, invalid_txids.clone());
-        for invalid_txid in invalid_txids.iter() {
+        for invalid_txid in &invalid_txids {
             wallet_transactions.remove(invalid_txid);
         }
 
