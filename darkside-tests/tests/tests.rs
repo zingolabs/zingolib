@@ -14,11 +14,11 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::scenarios::ClientBuilder;
 use zingolib::testutils::tempfile;
 use zingolib::testutils::zcash_local_net;
 use zingolib::testutils::zingo_test_vectors;
 use zingolib::wallet::balance::AccountBalance;
+use zingolib_testutils::scenarios::ClientBuilder;
 
 use darkside_tests::utils::lightwalletd;
 

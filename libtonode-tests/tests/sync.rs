@@ -8,12 +8,10 @@ use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
     get_base_address_macro,
     lightclient::LightClient,
-    testutils::{
-        lightclient::from_inputs::{self},
-        scenarios,
-    },
+    testutils::lightclient::from_inputs::{self},
     wallet::{LightWallet, WalletBase, WalletSettings},
 };
+use zingolib_testutils::scenarios;
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]

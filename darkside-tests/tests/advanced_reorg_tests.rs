@@ -20,11 +20,10 @@ use zingolib::testutils::zcash_local_net::network::localhost_uri;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
-    testutils::{
-        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
-    },
+    testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
 };
+use zingolib_testutils::scenarios::ClientBuilder;
 
 #[ignore]
 #[tokio::test]

@@ -1,10 +1,8 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
     use zingolib::testutils::zcash_local_net::validator::Validator;
-    use zingolib::{
-        get_base_address_macro,
-        testutils::{lightclient::from_inputs, scenarios},
-    };
+    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zingolib_testutils::scenarios;
 
     // FIXME: sync integration semi-complete, need to transribe all the old do_list_transactions printouts to new types
     // #[tokio::test]

@@ -8,16 +8,17 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 use zcash_protocol::value::Zatoshis;
 use zebra_chain::parameters::testnet;
+use zingolib::testutils::increase_height_and_wait_for_client;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::zingo_test_vectors::{
     BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED,
 };
-use zingolib::testutils::{increase_height_and_wait_for_client, scenarios};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
 use zingolib::{check_client_balances, get_base_address_macro};
+use zingolib_testutils::scenarios;
 
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
@@ -3948,7 +3949,8 @@ TransactionSummary {
 
 mod basic_transactions {
     use zingolib::get_base_address_macro;
-    use zingolib::testutils::{lightclient::from_inputs, scenarios};
+    use zingolib::testutils::lightclient::from_inputs;
+    use zingolib_testutils::scenarios;
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
