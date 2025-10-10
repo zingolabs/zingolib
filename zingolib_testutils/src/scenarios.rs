@@ -29,6 +29,7 @@ use zcash_local_net::network::localhost_uri;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
 use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -254,7 +255,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(for_test::all_height_one_nus(), None).await
+    unfunded_client(all_height_one_nus(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -288,7 +289,7 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
+    faucet(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -328,7 +329,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
+    faucet_recipient(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -429,7 +430,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            for_test::all_height_one_nus(),
+            all_height_one_nus(),
             None,
         )
         .await;
@@ -465,7 +466,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await;
+        custom_clients(PoolType::ORCHARD, all_height_one_nus(), None).await;
 
     (local_net, client_builder)
 }
@@ -475,7 +476,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
-        for_test::all_height_one_nus(),
+        all_height_one_nus(),
         None,
     )
     .await
