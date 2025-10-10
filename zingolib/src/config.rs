@@ -71,7 +71,6 @@ impl std::fmt::Display for ChainType {
         let name = match self {
             Testnet => "test",
             Mainnet => "main",
-            #[cfg(any(test, feature = "testutils"))]
             Regtest(_) => "regtest",
         };
         write!(f, "{name}")
