@@ -44,11 +44,11 @@ zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387
 
 zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
 
-zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git" }
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git" }
+zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
+zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
 
 # SHOULD BE TESTONLY
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.2.1" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c" }
 
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"

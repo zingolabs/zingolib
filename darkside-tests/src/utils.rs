@@ -13,8 +13,13 @@ use orchard::tree::MerkleHashOrchard;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zingolib::testutils::zcash_local_net::{
-    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
+    error::LaunchError,
+    indexer::{
+        Indexer as _,
+        lightwalletd::{Lightwalletd, LightwalletdConfig},
+    },
     network::localhost_uri,
+    process::IsAProcess,
 };
 
 use super::{
@@ -27,6 +32,17 @@ use crate::{
     darkside_types::{self, Empty},
 };
 use zingolib::testutils::paths::get_cargo_manifest_dir;
+
+fn lightwalletd_config() -> LightwalletdConfig {
+    LightwalletdConfig {
+        darkside: true,
+        ..Default::default()
+    }
+}
+
+pub async fn lightwalletd() -> Result<Lightwalletd, LaunchError> {
+    Lightwalletd::launch(lightwalletd_config()).await
+}
 
 pub async fn prepare_darksidewalletd(
     uri: http::Uri,
@@ -210,10 +226,11 @@ impl TreeState {
 pub async fn init_darksidewalletd(
     set_port: Option<zingolib::testutils::portpicker::Port>,
 ) -> Result<(Lightwalletd, DarksideConnector), String> {
-    let mut lightwalletd_config = LightwalletdConfig::default_test();
-    lightwalletd_config.listen_port = set_port;
-    lightwalletd_config.darkside = true;
-    let lightwalletd = Lightwalletd::launch(lightwalletd_config).unwrap();
+    let lightwalletd_config = LightwalletdConfig {
+        listen_port: set_port,
+        ..lightwalletd_config()
+    };
+    let lightwalletd = Lightwalletd::launch(lightwalletd_config).await.unwrap();
     let server_id = localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);
 
@@ -313,7 +330,9 @@ pub mod scenarios {
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zebra_chain::parameters::testnet;
     use zingo_common_components::protocol::activation_heights::for_test;
-    use zingolib::testutils::{zcash_local_net::indexer::Lightwalletd, zingo_test_vectors};
+    use zingolib::testutils::{
+        zcash_local_net::indexer::lightwalletd::Lightwalletd, zingo_test_vectors,
+    };
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
