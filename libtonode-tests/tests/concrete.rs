@@ -1063,7 +1063,7 @@ mod fast {
         recipient.sync_and_await().await.unwrap();
 
         let transactions = &recipient.transaction_summaries(false).await.unwrap().0;
-        for tx in transactions.iter() {
+        for tx in transactions {
             dbg!(tx);
         }
         assert_eq!(

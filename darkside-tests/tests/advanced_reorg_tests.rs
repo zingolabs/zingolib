@@ -963,7 +963,7 @@ async fn reorg_expires_outgoing_tx_height() {
 ///
 /// 1. Setup w/ default dataset
 /// 2. `applyStaged(received_Tx_height)`
-/// 3. sync up to received_Tx_height
+/// 3. sync up to `received_Tx_height`
 /// 4. create transaction
 /// 5. stage 10 empty blocks
 /// 6. submit tx at sentTxHeight
