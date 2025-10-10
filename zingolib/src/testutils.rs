@@ -15,7 +15,6 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 use zcash_primitives::consensus::NetworkConstants;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
@@ -271,7 +270,7 @@ pub async fn increase_height_and_wait_for_client<I: Indexer, V: Validator>(
 pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
     local_net: &LocalNet<I, V>,
     n: u32,
-) -> BlockHeight {
+) -> u32 {
     let start_height = local_net.validator().get_chain_height().await;
     let target = start_height + n;
     local_net.validator().generate_blocks(n).await.unwrap();
@@ -283,18 +282,19 @@ pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
 /// Will hang if chain does not reach `target_block_height`
 pub async fn sync_to_target_height(
     client: &mut LightClient,
-    target_block_height: BlockHeight,
+    target_block_height: u32,
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
     client.sync_and_await().await?;
-    while client
-        .wallet
-        .read()
-        .await
-        .sync_state
-        .fully_scanned_height()
-        .unwrap()
-        < target_block_height
+    while u32::from(
+        client
+            .wallet
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap(),
+    ) < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
         client.sync_and_await().await?;
