@@ -54,6 +54,7 @@ zip32.workspace = true
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 bs58 = { workspace = true, features = ["check"] }
+sapling-crypto.workspace = true
 
 # network
 hyper-rustls = { workspace = true }
@@ -82,7 +83,6 @@ prost = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 rustls.workspace = true
-sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
