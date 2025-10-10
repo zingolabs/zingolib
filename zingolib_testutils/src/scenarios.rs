@@ -43,7 +43,7 @@ use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
-use zingolib::{get_base_address_macro, lightclient};
+use zingolib::get_base_address_macro;
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
