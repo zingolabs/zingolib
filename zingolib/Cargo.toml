@@ -14,7 +14,7 @@ license = "MIT"
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zebra-chain", "zingo_common_components/for_test"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
 zaino-test = ['testutils']
 
 [dependencies]
@@ -26,14 +26,14 @@ pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 
 # zingo
-zingo_common_components = { workspace = true, optional = true }
+zingo_common_components = { workspace = true }
 zingo_netutils = { workspace = true }
 
 # testutils feature
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca", optional = true}
 
 # blockchain
-zebra-chain = { workspace = true, optional = true }
+zebra-chain = { workspace = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true }
