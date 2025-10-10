@@ -23,7 +23,6 @@ use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
 use crate::wallet::{LightWallet, WalletBase, WalletSettings};
-use lightclient::get_base_address;
 
 pub mod assertions;
 pub mod chain_generics;
