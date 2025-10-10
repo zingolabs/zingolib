@@ -15,7 +15,7 @@ use zingolib::testutils::timestamped_test_log;
 /// includes utilities for connecting to zcashd regtest
 pub struct LibtonodeEnvironment {
     /// Local network
-    pub local_net: LocalNet<DefaultIndexer, DefaultValidator>,
+    pub local_net: LocalNet<DefaultValidator, DefaultIndexer>,
     /// Client builder
     pub client_builder: ClientBuilder,
 }

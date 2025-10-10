@@ -50,7 +50,7 @@ zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", rev = 
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
 
 # SHOULD BE TESTONLY
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "8167773266fd57c3634df876027707658ecbf4f6" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c" }
 
 append-only-vec = "0.1.7"
 bech32 = "0.11.0"
