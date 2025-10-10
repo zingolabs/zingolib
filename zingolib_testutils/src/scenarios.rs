@@ -33,16 +33,16 @@ use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
-use crate::config::{ChainType, ZingoConfig, load_clientconfig};
-use crate::get_base_address_macro;
-use crate::lightclient::LightClient;
-use crate::testutils::increase_height_and_wait_for_client;
-use crate::testutils::lightclient::from_inputs::quick_send;
-use crate::wallet::WalletBase;
-use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::{LightWallet, WalletSettings};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
+use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use zingolib::get_base_address_macro;
+use zingolib::lightclient::LightClient;
+use zingolib::testutils::increase_height_and_wait_for_client;
+use zingolib::testutils::lightclient::from_inputs::quick_send;
+use zingolib::wallet::WalletBase;
+use zingolib::wallet::keys::unified::ReceiverSelection;
+use zingolib::wallet::{LightWallet, WalletSettings};
 
 use zingo_common_components::protocol::activation_heights::for_test;
 /// Default regtest network processes for testing and zingo-cli regtest mode

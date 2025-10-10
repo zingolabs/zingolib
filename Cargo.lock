@@ -9212,6 +9212,7 @@ dependencies = [
  "zcash_protocol 0.6.1",
  "zebra-chain",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=51162c0c603d324a3c36f1cead17bf4680aa1dca)",
+ "zingolib",
 ]
 
 [[package]]
