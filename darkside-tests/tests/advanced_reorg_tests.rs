@@ -12,19 +12,18 @@ use darkside_tests::{
 };
 
 use tokio::time::sleep;
+use zcash_local_net::indexer::Indexer;
+use zcash_local_net::network::localhost_uri;
 use zcash_primitives::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::zcash_local_net::indexer::Indexer;
-use zingolib::testutils::zcash_local_net::network::localhost_uri;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
-    testutils::{
-        lightclient::from_inputs, paths::get_cargo_manifest_dir, scenarios::ClientBuilder,
-    },
+    testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
 };
+use zingolib_testutils::scenarios::ClientBuilder;
 
 #[ignore]
 #[tokio::test]

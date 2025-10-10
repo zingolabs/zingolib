@@ -1,4 +1,4 @@
-//! ZingConfig
+//! `ZingConfig`
 //! TODO: Add Crate Description Here!
 
 #![forbid(unsafe_code)]
@@ -32,11 +32,10 @@ use crate::wallet::WalletSettings;
 /// TODO: Add Doc Comment Here!
 pub const DEVELOPER_DONATION_ADDRESS: &str = "u1w47nzy4z5g9zvm4h2s4ztpl8vrdmlclqz5sz02742zs5j3tz232u4safvv9kplg7g06wpk5fx0k0rx3r9gg4qk6nkg4c0ey57l0dyxtatqf8403xat7vyge7mmen7zwjcgvryg22khtg3327s6mqqkxnpwlnrt27kxhwg37qys2kpn2d2jl2zkk44l7j7hq9az82594u3qaescr3c9v";
 /// Regtest address for donation in test environments
-#[cfg(any(test, feature = "testutils"))]
 pub const ZENNIES_FOR_ZINGO_REGTEST_ADDRESS: &str = "uregtest14emvr2anyul683p43d0ck55c04r65ld6f0shetcn77z8j7m64hm4ku3wguf60s75f0g3s7r7g89z22f3ff5tsfgr45efj4pe2gyg5krqp5vvl3afu0280zp9ru2379zat5y6nkqkwjxsvpq5900kchcgzaw8v8z3ggt5yymnuj9hymtv3p533fcrk2wnj48g5vg42vle08c2xtanq0e";
 
 /// Gets the appropriate donation address for the given chain type
-#[cfg(any(test, feature = "testutils"))]
+#[must_use]
 pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     match chain {
         ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
@@ -45,14 +44,6 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
     }
 }
 
-/// Gets the appropriate donation address for the given chain type (non-test version)
-#[cfg(not(any(test, feature = "testutils")))]
-pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
-    match chain {
-        ChainType::Testnet => ZENNIES_FOR_ZINGO_TESTNET_ADDRESS,
-        ChainType::Mainnet => ZENNIES_FOR_ZINGO_DONATION_ADDRESS,
-    }
-}
 /// The networks a zingolib client can run against
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
@@ -61,17 +52,15 @@ pub enum ChainType {
     /// Mainnet
     Mainnet,
     /// Local testnet
-    #[cfg(any(test, feature = "testutils"))]
     Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
 }
 
 impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ChainType::*;
+        use ChainType::{Mainnet, Regtest, Testnet};
         let name = match self {
             Testnet => "test",
             Mainnet => "main",
-            #[cfg(any(test, feature = "testutils"))]
             Regtest(_) => "regtest",
         };
         write!(f, "{name}")
@@ -83,17 +72,15 @@ impl Parameters for ChainType {
         match self {
             ChainType::Testnet => NetworkType::Test,
             ChainType::Mainnet => NetworkType::Main,
-            #[cfg(any(test, feature = "testutils"))]
             ChainType::Regtest(_) => NetworkType::Regtest,
         }
     }
 
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        use ChainType::*;
+        use ChainType::{Mainnet, Regtest, Testnet};
         match self {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
-            #[cfg(any(test, feature = "testutils"))]
             Regtest(activation_heights) => match nu {
                 NetworkUpgrade::Overwinter => {
                     activation_heights.overwinter.map(BlockHeight::from_u32)
@@ -112,64 +99,36 @@ impl Parameters for ChainType {
     }
 }
 
-/// An error determining chain id and parameters 'ChainType' from string.
-#[cfg(any(test, feature = "testutils"))]
+/// An error determining chain id and parameters '`ChainType`' from string.
 #[derive(thiserror::Error, Debug)]
 pub enum ChainFromStringError {
     /// of unknown chain,
-    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet, regtest")]
+    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet.")]
     UnknownChain(String),
+    /// of regtest without specific activation heights,
+    #[error(
+        "Invalid chain name 'regtest'. Cant create a regtest chain from a string without assuming activation heights."
+    )]
+    UnknownRegtestChain,
 }
 
-/// An error determining chain id and parameters 'ChainType' from string.
-#[cfg(not(any(test, feature = "testutils")))]
-#[derive(thiserror::Error, Debug)]
-pub enum ChainFromStringError {
-    /// of unknown chain,
-    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet")]
-    UnknownChain(String),
-}
-
-/// Converts a chain name string to a ChainType variant.
-///
-/// When compiled with the `testutils` feature, accepts "testnet", "mainnet", or "regtest".
-/// Without the feature, only accepts "testnet" or "mainnet".
+/// Converts a chain name string to a `ChainType` variant.
 ///
 /// # Arguments
 /// * `chain_name` - The chain name as a string
 ///
 /// # Returns
-/// * `Ok(ChainType)` - The corresponding ChainType variant
+/// * `Ok(ChainType)` - The corresponding `ChainType` variant
 /// * `Err(String)` - An error message if the chain name is invalid
-#[cfg(any(test, feature = "testutils"))]
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
-    use zingo_common_components::protocol::activation_heights::for_test;
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(for_test::all_height_one_nus())),
+        "regtest" => Err(ChainFromStringError::UnknownRegtestChain),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
 
-/// Converts a chain name string to a ChainType variant.
-///
-/// When compiled without the `testutils` feature, only accepts "testnet" or "mainnet".
-///
-/// # Arguments
-/// * `chain_name` - The chain name as a string
-///
-/// # Returns
-/// * `Ok(ChainType)` - The corresponding ChainType variant
-/// * `Err(String)` - An error message if the chain name is invalid
-#[cfg(not(any(test, feature = "testutils")))]
-pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
-    match chain_name {
-        "testnet" => Ok(ChainType::Testnet),
-        "mainnet" => Ok(ChainType::Mainnet),
-        _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
-    }
-}
 /// TODO: Add Doc Comment Here!
 pub const ZENNIES_FOR_ZINGO_TESTNET_ADDRESS: &str = "utest19zd9laj93deq4lkay48xcfyh0tjec786x6yrng38fp6zusgm0c84h3el99fngh8eks4kxv020r2h2njku6pf69anpqmjq5c3suzcjtlyhvpse0aqje09la48xk6a2cnm822s2yhuzfr47pp4dla9rakdk90g0cee070z57d3trqk87wwj4swz6uf6ts6p5z6lep3xyvueuvt7392tww";
 /// TODO: Add Doc Comment Here!
@@ -185,7 +144,7 @@ pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
-/// Re-export pepper-sync SyncConfig for use with load_clientconfig
+/// Re-export pepper-sync `SyncConfig` for use with `load_clientconfig`
 ///
 pub use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 
@@ -213,10 +172,10 @@ pub fn load_clientconfig(
         .to_socket_addrs()
         {
             Ok(_) => {
-                info!("Connected to {}", lightwallet_uri);
+                info!("Connected to {lightwallet_uri}");
             }
             Err(e) => {
-                info!("Couldn't resolve server: {}", e);
+                info!("Couldn't resolve server: {e}");
             }
         }
     }
@@ -236,13 +195,13 @@ pub fn load_clientconfig(
 }
 
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
-        Some(s) => match s.is_empty() {
-            true => {
+        Some(s) => {
+            if s.is_empty() {
                 return http::Uri::default();
-            }
-            false => {
+            } else {
                 let mut s = if s.starts_with("http") {
                     s
                 } else {
@@ -254,7 +213,7 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
                 }
                 s
             }
-        },
+        }
         None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
     }
     .parse()
@@ -284,7 +243,7 @@ pub struct ZingoConfigBuilder {
     pub no_of_accounts: NonZeroU32,
 }
 
-/// Configuration data for the creation of a LightClient.
+/// Configuration data for the creation of a `LightClient`.
 // TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
 // lightclient or lightwallet if it needs to retained in memory.
 #[derive(Clone, Debug)]
@@ -399,6 +358,7 @@ impl Default for ZingoConfigBuilder {
 
 impl ZingoConfig {
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn build(chain: ChainType) -> ZingoConfigBuilder {
         ZingoConfigBuilder {
             chain,
@@ -407,7 +367,8 @@ impl ZingoConfig {
     }
 
     #[cfg(any(test, feature = "testutils"))]
-    /// create a ZingoConfig that helps a LightClient connect to a server.
+    /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
+    #[must_use]
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
             .set_lightwalletd_uri(
@@ -419,7 +380,8 @@ impl ZingoConfig {
     }
 
     #[cfg(any(test, feature = "testutils"))]
-    /// create a ZingoConfig that helps a LightClient connect to a server.
+    /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
+    #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
             .set_lightwalletd_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
@@ -427,7 +389,8 @@ impl ZingoConfig {
     }
 
     #[cfg(feature = "testutils")]
-    /// create a ZingoConfig that signals a LightClient not to connect to a server.
+    /// create a `ZingoConfig` that signals a `LightClient` not to connect to a server.
+    #[must_use]
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         if let Some(dir) = dir {
             ZingoConfig::build(chain).set_wallet_dir(dir).create()
@@ -437,6 +400,7 @@ impl ZingoConfig {
     }
 
     /// Convenience wrapper
+    #[must_use]
     pub fn sapling_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Sapling)
@@ -445,6 +409,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn orchard_activation_height(&self) -> u64 {
         self.chain
             .activation_height(NetworkUpgrade::Nu5)
@@ -486,10 +451,11 @@ impl ZingoConfig {
                     .appender("logfile")
                     .build(LevelFilter::Debug),
             )
-            .map_err(|e| Error::other(format!("{}", e)))
+            .map_err(|e| Error::other(format!("{e}")))
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
@@ -523,19 +489,18 @@ impl ZingoConfig {
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
                     ChainType::Mainnet => {}
-                    #[cfg(any(test, feature = "testutils"))]
                     ChainType::Regtest(_) => zcash_data_location.push("regtest"),
-                };
+                }
             }
 
             // Create directory if it doesn't exist on non-mobile platforms
             match std::fs::create_dir_all(zcash_data_location.clone()) {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(e) => {
-                    eprintln!("Couldn't create zcash directory!\n{}", e);
+                    eprintln!("Couldn't create zcash directory!\n{e}");
                     panic!("Couldn't create zcash directory!");
                 }
-            };
+            }
 
             zcash_data_location.into_boxed_path()
         }
@@ -565,6 +530,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_lightwalletd_uri(&self) -> http::Uri {
         self.lightwalletd_uri
             .read()
@@ -573,6 +539,7 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
@@ -580,17 +547,20 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
         self.get_wallet_pathbuf().into_boxed_path()
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn wallet_path_exists(&self) -> bool {
         self.get_wallet_path().exists()
     }
 
     /// TODO: Add Doc Comment Here!
     #[deprecated(note = "this method was renamed 'wallet_path_exists' for clarity")]
+    #[must_use]
     pub fn wallet_exists(&self) -> bool {
         self.wallet_path_exists()
     }
@@ -614,12 +584,13 @@ impl ZingoConfig {
         ));
 
         let backup_file_str = backup_file_path.to_string_lossy().to_string();
-        std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{}", e))?;
+        std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{e}"))?;
 
         Ok(backup_file_str)
     }
 
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_log_path(&self) -> Box<Path> {
         let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
         log_path.push(&self.logfile_name);
@@ -635,7 +606,7 @@ mod tests {
 
     use crate::wallet::WalletSettings;
 
-    /// Validate that the load_clientconfig function creates a valid config from an empty uri
+    /// Validate that the `load_clientconfig` function creates a valid config from an empty uri
     #[tokio::test]
     async fn test_load_clientconfig() {
         rustls::crypto::ring::default_provider()
@@ -643,7 +614,7 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some("".to_string()));
+        let valid_uri = crate::config::construct_lightwalletd_uri(Some(String::new()));
 
         let temp_dir = tempfile::TempDir::new().unwrap();
 
