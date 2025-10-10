@@ -36,7 +36,6 @@ pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
 pub mod paths;
-pub mod scenarios;
 
 // Re-export test dependencies for convenience
 pub use portpicker;
