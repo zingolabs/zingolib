@@ -37,10 +37,11 @@ pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     };
 
     MemoBytes::from_bytes(&s_bytes)
-        .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
+        .map_err(|_| format!("Error creating output. Memo '{memo_str:?}' is too long"))
 }
 
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn txid_from_slice(txid: &[u8]) -> TxId {
     let mut txid_bytes = [0u8; 32];
     txid_bytes.copy_from_slice(txid);

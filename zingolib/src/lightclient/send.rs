@@ -183,7 +183,7 @@ pub mod send_with_proposal {
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
-        /// waits up to five blocks for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// waits up to five blocks for confirmation per transaction. see [`zingolib/src/testutils/chain_generics/live_chain.rs`]
         /// as of now, average block time is supposedly about 75 seconds
         mod testnet {
             use zcash_protocol::{PoolType, ShieldedProtocol};

@@ -41,8 +41,8 @@ pub async fn to_clients_proposal(
 /// sends to any combo of recipient clients checks that each recipient also received the expected balances
 /// test-only generic
 /// NOTICE this function bumps the chain and syncs the client
-/// test_mempool can be enabled when the test harness supports it
-/// returns Ok(total_fee, total_received, total_change)
+/// `test_mempool` can be enabled when the test harness supports it
+/// returns `Ok(total_fee`, `total_received`, `total_change`)
 /// transparent address discovery is disabled due to generic test framework needing to be darkside compatible
 pub async fn assure_propose_send_bump_sync_all_recipients<CC>(
     environment: &mut CC,
@@ -78,7 +78,7 @@ where
 /// a test-only generic version of shield that includes assertions that the proposal was fulfilled
 /// NOTICE this function bumps the chain and syncs the client
 /// only compatible with zip317
-/// returns Ok(total_fee, total_shielded)
+/// returns `Ok(total_fee`, `total_shielded`)
 pub async fn assure_propose_shield_bump_sync<ChainConductor>(
     environment: &mut ChainConductor,
     client: &mut LightClient,
@@ -105,7 +105,7 @@ where
 }
 
 /// given a just-broadcast proposal, confirms that it achieves all expected checkpoints.
-/// returns Ok(total_fee, total_received, total_change)
+/// returns `Ok(total_fee`, `total_received`, `total_change`)
 pub async fn follow_proposal<ChainConductor, NoteRef>(
     environment: &mut ChainConductor,
     sender: &mut LightClient,
@@ -217,7 +217,7 @@ where
         }
 
         let mut recipients_mempool_outputs: Vec<Vec<Zatoshis>> = vec![];
-        for recipient in recipients.iter_mut() {
+        for recipient in &mut recipients {
             recipient.sync_and_await().await.unwrap();
 
             // check that each record has the status, returning the output value
@@ -318,16 +318,14 @@ where
         }
         if any_transaction_not_yet_confirmed {
             attempts += 1;
-            if attempts > patience {
-                panic!("ran out of patience");
-            }
+            assert!((attempts <= patience), "ran out of patience");
         } else {
             break;
         }
     }
 
     let mut recipients_confirmed_outputs = vec![];
-    for recipient in recipients.iter_mut() {
+    for recipient in &mut recipients {
         recipient.sync_and_await().await.unwrap();
 
         // check that each record has the status, returning the output value

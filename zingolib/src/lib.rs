@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 #![forbid(unsafe_code)]
-//! ZingoLib
+//! `ZingoLib`
 //! Zingo backend library
 
 pub mod config;
