@@ -11,7 +11,7 @@ use zingolib::testutils::zcash_local_net::validator::zcashd::Zcashd;
 pub(crate) async fn launch_local_net() -> LocalNet<Zcashd, Lightwalletd> {
     LocalNet::launch_default()
         .await
-        .expect("ing to launch a Regtest LocalNet")
+        .expect("A Regtest LocalNet should've launched.")
 }
 /// Get the default regtest data directory
 pub(crate) fn get_regtest_dir() -> PathBuf {
