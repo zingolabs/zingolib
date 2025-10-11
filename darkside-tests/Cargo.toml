@@ -11,6 +11,11 @@ chain_generic_tests = []
 zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
 zingo_netutils = { workspace = true }
 zingo_common_components = { workspace = true, features = ["for_test"] }
+
+zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca" }
+
 zebra-chain = { workspace = true }
 
 orchard = { workspace = true }
@@ -18,9 +23,9 @@ sapling-crypto = { workspace = true }
 incrementalmerkletree = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
-
 bip0039.workspace = true
 zip32.workspace = true
+
 tokio = { workspace = true, features = ["full"] }
 http = { workspace = true }
 hyper = { workspace = true }

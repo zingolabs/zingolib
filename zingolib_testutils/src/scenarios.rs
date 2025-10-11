@@ -29,22 +29,23 @@ use zcash_local_net::network::localhost_uri;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
 use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
-use crate::config::{ChainType, ZingoConfig, load_clientconfig};
-use crate::get_base_address_macro;
-use crate::lightclient::LightClient;
-use crate::testutils::increase_height_and_wait_for_client;
-use crate::testutils::lightclient::from_inputs::quick_send;
-use crate::wallet::WalletBase;
-use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::{LightWallet, WalletSettings};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use zingolib::get_base_address_macro;
+use zingolib::lightclient::LightClient;
+use zingolib::lightclient::error::LightClientError;
+use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
+use zingolib::testutils::lightclient::get_base_address;
+use zingolib::testutils::sync_to_target_height;
+use zingolib::wallet::WalletBase;
+use zingolib::wallet::keys::unified::ReceiverSelection;
+use zingolib::wallet::{LightWallet, WalletSettings};
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -99,7 +100,7 @@ where
     validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
     let mut indexer_config = <I as IsAProcess>::Config::default();
     indexer_config.set_listen_port(indexer_listen_port);
-    LocalNet::<V, I>::launch_from_two_configs(validator_config, indexer_config)
+    LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await
         .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
@@ -256,7 +257,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(for_test::all_height_one_nus(), None).await
+    unfunded_client(all_height_one_nus(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -290,7 +291,7 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
+    faucet(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -330,7 +331,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await
+    faucet_recipient(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -357,7 +358,7 @@ pub async fn faucet_funded_recipient(
 
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
             )
@@ -371,7 +372,7 @@ pub async fn faucet_funded_recipient(
     };
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
             )
@@ -385,7 +386,7 @@ pub async fn faucet_funded_recipient(
     };
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(
                     &get_base_address_macro!(recipient, "transparent"),
@@ -431,7 +432,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            for_test::all_height_one_nus(),
+            all_height_one_nus(),
             None,
         )
         .await;
@@ -467,7 +468,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await;
+        custom_clients(PoolType::ORCHARD, all_height_one_nus(), None).await;
 
     (local_net, client_builder)
 }
@@ -477,7 +478,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
-        for_test::all_height_one_nus(),
+        all_height_one_nus(),
         None,
     )
     .await
@@ -499,7 +500,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         local_net.validator().get_activation_heights(),
     );
     faucet.sync_and_await().await.unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -530,7 +531,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -539,7 +540,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -553,7 +554,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -590,7 +591,7 @@ pub async fn funded_transparent_mobileclient(
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -631,7 +632,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to orchard
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
@@ -646,7 +647,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to sapling
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -661,7 +662,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -676,7 +677,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to a faucet
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -692,7 +693,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self orchard
     let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_unified_address,
@@ -708,7 +709,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self sapling
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -724,7 +725,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self transparent
     let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_transparent_address,
@@ -750,4 +751,71 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     local_net.validator().generate_blocks(1).await.unwrap();
 
     local_net
+}
+
+/// Send from sender to recipient and then bump chain and sync both lightclients
+pub async fn send_value_between_clients_and_sync<V, I>(
+    local_net: &LocalNet<V, I>,
+    sender: &mut LightClient,
+    recipient: &mut LightClient,
+    value: u64,
+    address_pool: PoolType,
+) -> Result<String, LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    let txid = from_inputs::quick_send(
+        sender,
+        vec![(
+            &get_base_address(recipient, address_pool).await,
+            value,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(local_net, sender, 1).await?;
+    recipient.sync_and_await().await?;
+    Ok(txid.first().to_string())
+}
+
+/// This function increases the chain height reliably (with polling) but
+/// it _also_ ensures that the client state is synced.
+/// Unsynced clients are very interesting to us.  See `increase_server_height`
+/// to reliably increase the server without syncing the client
+pub async fn increase_height_and_wait_for_client<V, I>(
+    local_net: &LocalNet<V, I>,
+    client: &mut LightClient,
+    n: u32,
+) -> Result<(), LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    sync_to_target_height(
+        client,
+        generate_n_blocks_return_new_height(local_net, n).await,
+    )
+    .await
+}
+
+/// TODO: Add Doc Comment Here!
+pub async fn generate_n_blocks_return_new_height<V, I>(local_net: &LocalNet<V, I>, n: u32) -> u32
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as IsAProcess>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as IsAProcess>::Config: Send,
+{
+    let start_height = local_net.validator().get_chain_height().await;
+    let target = start_height + n;
+    local_net.validator().generate_blocks(n).await.unwrap();
+    assert_eq!(local_net.validator().get_chain_height().await, target);
+
+    target
 }

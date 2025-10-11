@@ -2,14 +2,14 @@ use std::num::NonZeroU32;
 
 use bytes::Buf;
 
+use http::Uri;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zcash_local_net::network::localhost_uri;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::ChainType;
+use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
@@ -277,7 +277,8 @@ impl NetworkSeedVersion {
     pub async fn load_example_wallet_with_client(&self) -> LightClient {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
-                let lightwalletd_uri = localhost_uri(0);
+                // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
+                let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
 
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
