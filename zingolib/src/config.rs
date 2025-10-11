@@ -99,7 +99,7 @@ impl Parameters for ChainType {
     }
 }
 
-/// An error determining chain id and parameters 'ChainType' from string.
+/// An error determining chain id and parameters '`ChainType`' from string.
 #[derive(thiserror::Error, Debug)]
 pub enum ChainFromStringError {
     /// of unknown chain,
