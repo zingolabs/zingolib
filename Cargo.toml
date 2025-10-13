@@ -119,5 +119,8 @@ pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 webpki-roots = "0.25"
 
+# Documentation
+simple-mermaid = "0.2.0"
+
 [profile.test]
 opt-level = 3

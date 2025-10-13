@@ -22,6 +22,7 @@ zingo-status = { workspace = true }
 zingo-netutils = { workspace = true }
 
 # Zcash
+zcash_address.workspace = true
 zcash_encoding = { workspace = true, optional = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable-serialization",
@@ -70,5 +71,5 @@ json.workspace = true
 # Serialization
 byteorder = { workspace = true, optional = true }
 
-# temp
-zcash_address.workspace = true
+# Documentation
+simple-mermaid.workspace = true
