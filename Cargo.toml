@@ -42,7 +42,7 @@ zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e
 zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
 
-zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
+zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , tag = "2.5.0-zl.1" }
 
 zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
@@ -115,7 +115,7 @@ pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
 [patch.crates-io]
-zebra-chain = { git = "https://github.com/zingolabs/zebra.git", rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
+zebra-chain = { git = "https://github.com/zingolabs/zebra.git", tag = "2.5.0-zl.1" }
 
 [profile.test]
 opt-level = 3

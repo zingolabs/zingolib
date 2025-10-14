@@ -8695,7 +8695,7 @@ dependencies = [
 [[package]]
 name = "zebra-chain"
 version = "2.0.0"
-source = "git+https://github.com/zingolabs/zebra.git?rev=1168a2f391a17f3ccab65a095d9219b7455d0fea#1168a2f391a17f3ccab65a095d9219b7455d0fea"
+source = "git+https://github.com/zingolabs/zebra.git?tag=2.5.0-zl.1#b7b56b24166f2a4f97b450356cf9e9733b899425"
 dependencies = [
  "bech32",
  "bitflags 2.9.4",
