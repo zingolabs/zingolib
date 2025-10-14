@@ -100,7 +100,7 @@ where
     validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
     let mut indexer_config = <I as IsAProcess>::Config::default();
     indexer_config.set_listen_port(indexer_listen_port);
-    LocalNet::<V, I>::launch_from_two_configs(validator_config, indexer_config)
+    LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await
         .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
