@@ -8,6 +8,9 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[badges]
+maintenance = { status = "actively-developed" }
+
 [features]
 default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
