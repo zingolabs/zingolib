@@ -1,3 +1,12 @@
+[Error]
+enum ZingolibError {
+    "NotInitialized",
+    "LockPoisoned",
+    "ResumeFailed",
+    "SyncFailed",
+    "Panic"
+};
+
 namespace zingo {
   string init_logging();
   string init_new(
@@ -43,7 +52,10 @@ namespace zingo {
   string get_value_transfers();
   string set_crypto_default_provider_to_ring();
   string poll_sync();
+
+  [Throws=ZingolibError]
   string run_sync();
+  
   string pause_sync();
   string stop_sync();
   string status_sync();

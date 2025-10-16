@@ -353,21 +353,45 @@ pub fn poll_sync() -> String {
     }
 }
 
-pub fn run_sync() -> String {
-    if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+#[derive(Debug, thiserror::Error)]
+pub enum ZingolibError {
+    #[error("Error: Lightclient is not initialized")]
+    NotInitialized,
+    #[error("Error: Lightclient lock poisoned")]
+    LockPoisoned,
+    #[error("Error: resume_sync failed: {0}")]
+    ResumeFailed(String),
+    #[error("Error: sync failed: {0}")]
+    SyncFailed(String),
+    #[error("Error: panic in run_sync")]
+    Panic,
+}
+
+pub fn run_sync() -> Result<String, ZingolibError> {
+    use std::panic;
+
+    let caught = panic::catch_unwind(|| run_sync_inner());
+    match caught {
+        Ok(res) => res,
+        Err(_)  => Err(ZingolibError::Panic),
+    }
+}
+
+fn run_sync_inner() -> Result<String, ZingolibError> {
+    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LockPoisoned)?;
+    if let Some(lightclient) = &mut *guard {
         if lightclient.sync_mode() == SyncMode::Paused {
-            lightclient.resume_sync().expect("sync should be paused");
-            "Resuming sync task...".to_string()
+            lightclient.resume_sync().map_err(|e| ZingolibError::ResumeFailed(e.to_string()))?;
+            Ok("Resuming sync task...".to_string())
         } else {
-            RT.block_on(async move {
-                match lightclient.sync().await {
-                    Ok(_) => "Launching sync task...".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
+            RT.block_on(async {
+                lightclient.sync().await
+                    .map(|_| "Launching sync task...".to_string())
+                    .map_err(|e| ZingolibError::SyncFailed(e.to_string()))
             })
         }
     } else {
-        "Error: Lightclient is not initialized".to_string()
+        Err(ZingolibError::NotInitialized)
     }
 }
 
