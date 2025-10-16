@@ -363,6 +363,10 @@ pub enum ZingolibError {
     ResumeFailed(String),
     #[error("Error: sync failed: {0}")]
     SyncFailed(String),
+    #[error("Error: sync status failed: {0}")]
+    SyncStatusFailed(String),
+    #[error("Error: status serialize failed: {0}")]
+    StatusSerialize(String),
     #[error("Error: panic in run_sync")]
     Panic,
 }
@@ -417,17 +421,30 @@ pub fn stop_sync() -> String {
     }
 }
 
-pub fn status_sync() -> String {
-    if let Some(lightclient) = &*LIGHTCLIENT.read().unwrap() {
-        RT.block_on(async move {
+pub fn status_sync() -> Result<String, ZingolibError> {
+    use std::panic;
+
+    let caught = panic::catch_unwind(|| status_sync_inner());
+    match caught {
+        Ok(res) => res,
+        Err(_)  => Err(ZingolibError::Panic),
+    }
+}
+
+fn status_sync_inner() -> Result<String, ZingolibError> {
+    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LockPoisoned)?;
+    if let Some(lightclient) = &mut *guard {
+        RT.block_on(async {
             let wallet = lightclient.wallet.read().await;
-            match pepper_sync::sync_status(&*wallet).await {
-                Ok(status) => json::JsonValue::from(status).pretty(2),
-                Err(e) => format!("Error: {e}"),
-            }
+            pepper_sync::sync_status(&*wallet)
+                .await
+                .map_err(|e| ZingolibError::SyncStatusFailed(e.to_string()))
+                .map(|status| {
+                    json::JsonValue::from(status).pretty(2)
+                })
         })
     } else {
-        "Error: Lightclient is not initialized".to_string()
+        Err(ZingolibError::NotInitialized)
     }
 }
 

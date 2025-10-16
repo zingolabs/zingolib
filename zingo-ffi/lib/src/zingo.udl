@@ -4,6 +4,8 @@ enum ZingolibError {
     "LockPoisoned",
     "ResumeFailed",
     "SyncFailed",
+    "SyncStatusFailed",
+    "StatusSerialize",
     "Panic"
 };
 
@@ -58,7 +60,10 @@ namespace zingo {
   
   string pause_sync();
   string stop_sync();
+
+  [Throws=ZingolibError]
   string status_sync();
+
   string run_rescan();
   string info_server();
   string get_seed();
