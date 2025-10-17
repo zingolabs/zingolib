@@ -367,7 +367,7 @@ pub enum ZingolibError {
     SyncStatusFailed(String),
     #[error("Error: status serialize failed: {0}")]
     StatusSerialize(String),
-    #[error("Error: panic in run_sync")]
+    #[error("Error: panic in rust")]
     Panic,
 }
 
