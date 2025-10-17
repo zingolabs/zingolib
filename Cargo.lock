@@ -4010,6 +4010,7 @@ dependencies = [
  "rayon",
  "sapling-crypto",
  "shardtree",
+ "simple-mermaid",
  "subtle",
  "thiserror 2.0.17",
  "tokio",
@@ -5665,6 +5666,12 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "simple-mermaid"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "589144a964b4b30fe3a83b4bb1a09e2475aac194ec832a046a23e75bddf9eb29"
 
 [[package]]
 name = "sinsemilla"

@@ -1,6 +1,7 @@
-#![warn(missing_docs)]
-#![allow(clippy::result_large_err)]
-#![doc = r#"
+![Maintenance](https://img.shields.io/badge/maintenance-activly--developed-brightgreen.svg)
+
+<!-- cargo-rdme start -->
+
 # Pepper Sync
 
 ## Overview
@@ -82,57 +83,13 @@ After the sync process is initialized, it will be in a state of verification, on
 -- Number of outputs per batch is quadrupled
 -- Nullifier map has no maximum size
 
-"#]
-#![doc = r#"
 ## Sync Diagram
-"#]
-#![doc = simple_mermaid::mermaid!("../diagrams/sync.mmd")]
-#![doc = r#"
 ## Initialization Diagram
-"#]
-#![doc = simple_mermaid::mermaid!("../diagrams/initialization.mmd")]
-#![doc = r#"
 ## Verification Diagram
-"#]
-#![doc = simple_mermaid::mermaid!("../diagrams/verification.mmd")]
-#![doc = r#"
 ## Scan Worker Diagram
-"#]
-#![doc = simple_mermaid::mermaid!("../diagrams/scan_worker.mmd")]
-#![doc = r#"
 ## Process Scan Results Diagram
-"#]
-#![doc = simple_mermaid::mermaid!("../diagrams/process_scan_results.mmd")]
 
-pub(crate) mod client;
-pub mod config;
-pub mod error;
-pub mod keys;
-pub(crate) mod scan;
-pub mod sync;
-pub mod wallet;
-pub(crate) mod witness;
+<!-- cargo-rdme end -->
 
-pub use sync::add_scan_targets;
-pub use sync::reset_spends;
-pub use sync::scan_pending_transaction;
-pub use sync::sync;
-pub use sync::sync_status;
-
-use zcash_protocol::ShieldedProtocol;
-
-pub(crate) trait SyncDomain {
-    const SHIELDED_PROTOCOL: ShieldedProtocol;
-}
-
-pub(crate) struct Sapling;
-
-impl SyncDomain for Sapling {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Sapling;
-}
-
-pub(crate) struct Orchard;
-
-impl SyncDomain for Orchard {
-    const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
-}
+## Diagrams
+See `diagrams` directory for mermaid diagrams. These diagrams are also embedded into cargo doc (run `cargo doc --open`).

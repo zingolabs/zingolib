@@ -106,6 +106,8 @@ webpki-roots = "0.25"
 crossbeam-channel = "0.5"
 rayon = "1"
 
+# Documentation
+simple-mermaid = "0.2.0"
 
 # Workspace
 zingo-memo = { path = "zingo-memo" }
