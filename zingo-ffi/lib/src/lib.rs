@@ -12,6 +12,7 @@ use log::Level;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::RwLock;
+use std::any::Any;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -367,8 +368,18 @@ pub enum ZingolibError {
     SyncStatusFailed(String),
     #[error("Error: status serialize failed: {0}")]
     StatusSerialize(String),
-    #[error("Error: panic in rust")]
-    Panic,
+    #[error("Error: panic: {0}")]
+    Panic(String),
+}
+
+fn panic_payload_to_string(payload: Box<dyn Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 
 pub fn run_sync() -> Result<String, ZingolibError> {
@@ -377,11 +388,18 @@ pub fn run_sync() -> Result<String, ZingolibError> {
     let caught = panic::catch_unwind(|| run_sync_inner());
     match caught {
         Ok(res) => res,
-        Err(_)  => Err(ZingolibError::Panic),
+        Err(payload)  => {
+            let msg = panic_payload_to_string(payload);
+            Err(ZingolibError::Panic(msg))
+        },
     }
 }
 
 fn run_sync_inner() -> Result<String, ZingolibError> {
+    // fake panic
+    let e: Option<String> = None;
+    e.unwrap();
+
     let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LockPoisoned)?;
     if let Some(lightclient) = &mut *guard {
         if lightclient.sync_mode() == SyncMode::Paused {
@@ -427,7 +445,10 @@ pub fn status_sync() -> Result<String, ZingolibError> {
     let caught = panic::catch_unwind(|| status_sync_inner());
     match caught {
         Ok(res) => res,
-        Err(_)  => Err(ZingolibError::Panic),
+        Err(payload)  => {
+            let msg = panic_payload_to_string(payload);
+            Err(ZingolibError::Panic(msg))
+        },
     }
 }
 
