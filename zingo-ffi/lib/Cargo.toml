@@ -21,6 +21,7 @@ rustls = { workspace = true }
 serde_json = { workspace = true }
 bip0039 = { workspace = true }
 thiserror = { workspace = true }
+once_cell = { workspace = true }
 
 zcash_primitives = { workspace = true }
 zcash_keys = { workspace = true }

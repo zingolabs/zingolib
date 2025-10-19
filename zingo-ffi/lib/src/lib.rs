@@ -372,6 +372,64 @@ pub enum ZingolibError {
     Panic(String),
 }
 
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+#[derive(Clone, Default)]
+struct PanicReport {
+    msg: String,
+    file: Option<String>,
+    line: Option<u32>,
+    col:  Option<u32>,
+    backtrace: Option<String>,
+}
+
+static LAST_PANIC: Lazy<Mutex<PanicReport>> =
+    Lazy::new(|| Mutex::new(PanicReport::default()));
+
+fn set_last_panic(report: PanicReport) {
+    if let Ok(mut r) = LAST_PANIC.lock() {
+        *r = report;
+    }
+}
+
+fn take_last_panic() -> PanicReport {
+    if let Ok(mut r) = LAST_PANIC.lock() {
+        let out = r.clone();
+        *r = PanicReport::default();
+        out
+    } else {
+        PanicReport::default()
+    }
+}
+
+use std::panic::{self, PanicHookInfo};
+use std::backtrace::Backtrace;
+
+static INIT_HOOK: std::sync::Once = std::sync::Once::new();
+
+pub fn install_panic_hook_once() {
+    INIT_HOOK.call_once(|| {
+        panic::set_hook(Box::new(|info: &PanicHookInfo| {
+            let mut report = PanicReport {
+                msg: info.to_string(),
+                ..Default::default()
+            };
+            if let Some(loc) = info.location() {
+                report.file = Some(loc.file().to_string());
+                report.line = Some(loc.line());
+                report.col  = Some(loc.column());
+            }
+            // Captura backtrace SIEMPRE (no dependas de RUST_BACKTRACE en móvil)
+            let bt = Backtrace::force_capture().to_string();
+            report.backtrace = Some(bt);
+
+            eprintln!("Rust panic hook: {}", report.msg); // útil para logcat/console
+            set_last_panic(report);
+        }));
+    });
+}
+
 fn panic_payload_to_string(payload: Box<dyn Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_string()
@@ -383,15 +441,34 @@ fn panic_payload_to_string(payload: Box<dyn Any + Send>) -> String {
 }
 
 pub fn run_sync() -> Result<String, ZingolibError> {
+    install_panic_hook_once();
     use std::panic;
 
     let caught = panic::catch_unwind(|| run_sync_inner());
     match caught {
         Ok(res) => res,
-        Err(payload)  => {
-            let msg = panic_payload_to_string(payload);
-            Err(ZingolibError::Panic(msg))
-        },
+        Err(payload) => {
+            let payload_msg = panic_payload_to_string(payload);
+            let rpt = take_last_panic(); // obtenido del hook
+
+            // Construye un mensaje rico con archivo:línea:columna + payload + backtrace
+            let mut full = String::new();
+            if let (Some(f), Some(l), Some(c)) = (rpt.file.as_ref(), rpt.line, rpt.col) {
+                full.push_str(&format!("{f}:{l}:{c}: "));
+            }
+            if !payload_msg.is_empty() {
+                full.push_str(&payload_msg);
+            } else if !rpt.msg.is_empty() {
+                if !full.is_empty() { full.push_str(" - "); }
+                full.push_str(&rpt.msg);
+            }
+            if let Some(bt) = rpt.backtrace {
+                full.push_str("\nBacktrace:\n");
+                full.push_str(&bt);
+            }
+
+            Err(ZingolibError::Panic(full))
+        }
     }
 }
 
