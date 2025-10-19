@@ -405,39 +405,70 @@ fn take_last_panic() -> PanicReport {
 
 use std::panic::{self, PanicHookInfo};
 use std::backtrace::Backtrace;
+use std::sync::Once;
 
-static INIT_HOOK: std::sync::Once = std::sync::Once::new();
+static PANIC_HOOK_ONCE: Once = Once::new();
 
-pub fn install_panic_hook_once() {
-    INIT_HOOK.call_once(|| {
-        panic::set_hook(Box::new(|info: &PanicHookInfo| {
-            let mut report = PanicReport {
-                msg: info.to_string(),
-                ..Default::default()
+fn install_panic_hook_once() {
+    PANIC_HOOK_ONCE.call_once(|| {
+        panic::set_hook(Box::new(|info: &PanicHookInfo<'_>| {
+            // payload legible
+            let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                s.clone()
+            } else {
+                info.to_string() // ya incluye "called unwrap on None" etc.
             };
-            if let Some(loc) = info.location() {
-                report.file = Some(loc.file().to_string());
-                report.line = Some(loc.line());
-                report.col  = Some(loc.column());
-            }
-            // Captura backtrace SIEMPRE (no dependas de RUST_BACKTRACE en móvil)
-            let bt = Backtrace::force_capture().to_string();
-            report.backtrace = Some(bt);
 
-            eprintln!("Rust panic hook: {}", report.msg); // útil para logcat/console
-            set_last_panic(report);
+            let (file, line, col) = info.location()
+                .map(|l| (Some(l.file().to_string()), Some(l.line()), Some(l.column())))
+                .unwrap_or((None, None, None));
+
+            // forzamos backtrace (no dependas de RUST_BACKTRACE en móvil)
+            let bt = Backtrace::force_capture().to_string();
+
+            set_last_panic(PanicReport {
+                msg: payload,
+                file, line, col,
+                backtrace: Some(bt),
+            });
         }));
     });
 }
 
-fn panic_payload_to_string(payload: Box<dyn Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
+fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
+    // recupera lo que almacenó el hook
+    let rpt = take_last_panic();
+
+    // payload “de reserva” por si el hook no corrió
+    let fallback = if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_string()
     } else if let Some(s) = payload.downcast_ref::<String>() {
         s.clone()
     } else {
         "unknown panic payload".to_string()
+    };
+
+    let mut out = String::new();
+
+    // línea principal
+    if let (Some(f), Some(l), Some(c)) = (rpt.file.as_ref(), rpt.line, rpt.col) {
+        out.push_str(&format!("{f}:{l}:{c}: "));
     }
+    if !rpt.msg.is_empty() {
+        out.push_str(&rpt.msg);
+    } else {
+        out.push_str(&fallback);
+    }
+
+    // backtrace
+    if let Some(bt) = rpt.backtrace {
+        out.push_str("\nBacktrace:\n");
+        out.push_str(&bt);
+    }
+
+    out
 }
 
 pub fn run_sync() -> Result<String, ZingolibError> {
@@ -447,28 +478,7 @@ pub fn run_sync() -> Result<String, ZingolibError> {
     let caught = panic::catch_unwind(|| run_sync_inner());
     match caught {
         Ok(res) => res,
-        Err(payload) => {
-            let payload_msg = panic_payload_to_string(payload);
-            let rpt = take_last_panic(); // obtenido del hook
-
-            // Construye un mensaje rico con archivo:línea:columna + payload + backtrace
-            let mut full = String::new();
-            if let (Some(f), Some(l), Some(c)) = (rpt.file.as_ref(), rpt.line, rpt.col) {
-                full.push_str(&format!("{f}:{l}:{c}: "));
-            }
-            if !payload_msg.is_empty() {
-                full.push_str(&payload_msg);
-            } else if !rpt.msg.is_empty() {
-                if !full.is_empty() { full.push_str(" - "); }
-                full.push_str(&rpt.msg);
-            }
-            if let Some(bt) = rpt.backtrace {
-                full.push_str("\nBacktrace:\n");
-                full.push_str(&bt);
-            }
-
-            Err(ZingolibError::Panic(full))
-        }
+        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
     }
 }
 
@@ -522,10 +532,7 @@ pub fn status_sync() -> Result<String, ZingolibError> {
     let caught = panic::catch_unwind(|| status_sync_inner());
     match caught {
         Ok(res) => res,
-        Err(payload)  => {
-            let msg = panic_payload_to_string(payload);
-            Err(ZingolibError::Panic(msg))
-        },
+        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
     }
 }
 
