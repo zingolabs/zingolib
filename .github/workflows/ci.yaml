@@ -13,7 +13,7 @@ jobs:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+    uses: ./.github/workflows/cargo-checkmate.yaml
 
   cargo-hack-check:
     name: Cargo Hack Check

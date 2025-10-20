@@ -8,7 +8,7 @@ on:
 
 jobs:
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+    uses: ./.github/workflows/cargo-checkmate.yaml
 
   reject-trailing-whitespace:
     name: Reject trailing whitespace
