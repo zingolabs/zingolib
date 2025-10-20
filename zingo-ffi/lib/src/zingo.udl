@@ -1,11 +1,10 @@
 [Error]
 enum ZingolibError {
-    "NotInitialized",
-    "LockPoisoned",
-    "ResumeFailed",
+    "LightclientNotInitialized",
+    "LightclientLockPoisoned",
+    "SyncResumeFailed",
     "SyncFailed",
     "SyncStatusFailed",
-    "StatusSerialize",
     "Panic"
 };
 

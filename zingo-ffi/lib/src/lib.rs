@@ -357,17 +357,15 @@ pub fn poll_sync() -> String {
 #[derive(Debug, thiserror::Error)]
 pub enum ZingolibError {
     #[error("Error: Lightclient is not initialized")]
-    NotInitialized,
+    LightclientNotInitialized,
     #[error("Error: Lightclient lock poisoned")]
-    LockPoisoned,
+    LightclientLockPoisoned,
     #[error("Error: resume_sync failed: {0}")]
-    ResumeFailed(String),
+    SyncResumeFailed(String),
     #[error("Error: sync failed: {0}")]
     SyncFailed(String),
     #[error("Error: sync status failed: {0}")]
     SyncStatusFailed(String),
-    #[error("Error: status serialize failed: {0}")]
-    StatusSerialize(String),
     #[error("Error: panic: {0}")]
     Panic(String),
 }
@@ -505,14 +503,10 @@ pub fn run_sync() -> Result<String, ZingolibError> {
 }
 
 fn run_sync_inner() -> Result<String, ZingolibError> {
-    // fake panic
-    let e: Option<String> = None;
-    e.unwrap();
-
-    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LockPoisoned)?;
+    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
     if let Some(lightclient) = &mut *guard {
         if lightclient.sync_mode() == SyncMode::Paused {
-            lightclient.resume_sync().map_err(|e| ZingolibError::ResumeFailed(e.to_string()))?;
+            lightclient.resume_sync().map_err(|e| ZingolibError::SyncResumeFailed(e.to_string()))?;
             Ok("Resuming sync task...".to_string())
         } else {
             RT.block_on(async {
@@ -522,7 +516,7 @@ fn run_sync_inner() -> Result<String, ZingolibError> {
             })
         }
     } else {
-        Err(ZingolibError::NotInitialized)
+        Err(ZingolibError::LightclientNotInitialized)
     }
 }
 
@@ -559,7 +553,7 @@ pub fn status_sync() -> Result<String, ZingolibError> {
 }
 
 fn status_sync_inner() -> Result<String, ZingolibError> {
-    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LockPoisoned)?;
+    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
     if let Some(lightclient) = &mut *guard {
         RT.block_on(async {
             let wallet = lightclient.wallet.read().await;
@@ -571,7 +565,7 @@ fn status_sync_inner() -> Result<String, ZingolibError> {
                 })
         })
     } else {
-        Err(ZingolibError::NotInitialized)
+        Err(ZingolibError::LightclientNotInitialized)
     }
 }
 
