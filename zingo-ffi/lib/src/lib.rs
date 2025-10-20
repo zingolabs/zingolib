@@ -437,6 +437,25 @@ fn install_panic_hook_once() {
     });
 }
 
+fn clean_backtrace(bt_raw: &str) -> String {
+    const DROP: &[&str] = &[
+        "<unknown>"
+    ];
+
+    let mut out = String::new();
+
+    for line in bt_raw.lines() {
+        let l = line.trim();
+        if l.is_empty() { continue; }
+        if DROP.iter().any(|d| l.contains(d)) { continue; }
+
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    out
+}
+
 fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
     // recupera lo que almacenó el hook
     let rpt = take_last_panic();
@@ -464,8 +483,11 @@ fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
 
     // backtrace
     if let Some(bt) = rpt.backtrace {
-        out.push_str("\nBacktrace:\n");
-        out.push_str(&bt);
+        let cleaned = clean_backtrace(&bt);
+        if !cleaned.is_empty() {
+            out.push_str("\nBacktrace:\n");
+            out.push_str(&cleaned);
+        }
     }
 
     out
