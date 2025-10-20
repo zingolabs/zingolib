@@ -14,6 +14,9 @@ jobs:
 
   cargo-checkmate:
     name: Cargo checkmate
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - name: Install protoc
         run: |
@@ -25,6 +28,9 @@ jobs:
 
   cargo-hack-check:
     name: Cargo hack check
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - name: Install protoc
         run: |
