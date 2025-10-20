@@ -7,10 +7,38 @@ on:
     - cron: '30 3 * * *'
 
 jobs:
+  cargo-checkmate:
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+
+  reject-trailing-whitespace:
+    name: Reject trailing whitespace
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
 
   cargo-hack-build:
-    uses: ./.github/workflows/cargo-hack.yaml
+    name: Cargo Hack Build
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Run cargo-hack
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+        with:
+          hack-subcommand: build
 
   test:
     uses: ./.github/workflows/test.yaml
@@ -67,4 +95,3 @@ jobs:
   pr-checks:
     needs: [ create-cache-key ]
     uses: ./.github/workflows/ci.yaml
-

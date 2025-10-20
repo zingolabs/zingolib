@@ -10,15 +10,29 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-hack-check:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
-    with:
-      hack-subcommand: check
+    name: Cargo Hack Check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Run cargo-hack
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+        with:
+          hack-subcommand: check
 
   run-doc-tests:
     name: Run doc tests
