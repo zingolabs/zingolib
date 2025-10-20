@@ -13,28 +13,28 @@ jobs:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
   cargo-checkmate:
-  name: Cargo checkmate
-  steps:
-    - name: Install protoc
-      run: |
-        if ! command -v protoc; then
-           sudo apt-get install -y protobuf-compiler
-        fi
-    - name: Cargo checkmate
-      uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    name: Cargo checkmate
+    steps:
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+             sudo apt-get install -y protobuf-compiler
+          fi
+      - name: Cargo checkmate
+        uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
   cargo-hack-check:
-  name: Cargo hack check
-  steps:
-    - name: Install protoc
-      run: |
-        if ! command -v protoc; then
-           sudo apt-get install -y protobuf-compiler
-        fi
-    - name: Cargo hack check
-      uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
-      with:
-        hack-subcommand: check
+    name: Cargo hack check
+    steps:
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+             sudo apt-get install -y protobuf-compiler
+          fi
+      - name: Cargo hack check
+        uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+        with:
+          hack-subcommand: check
 
   run-doc-tests:
     name: Run doc tests
