@@ -1,26 +1,24 @@
 name: CI
 
 on:
+  workflow_call:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [stable, dev]
-  workflow_dispatch:
 
 jobs:
-  cargo-checkmate:
-    uses: ./.github/workflows/cargo-checkmate.yaml
-
   reject-trailing-whitespace:
-    name: Reject trailing whitespace
-    runs-on: ubuntu-24.04
-    if: github.event.pull_request.draft == false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
-      - name: Reject trailing whitespace
-        run: ./utils/trailing-whitespace.sh reject
+  cargo-checkmate:
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+
+  cargo-hack-check:
+    uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    with:
+      hack-subcommand: check
 
   run-doc-tests:
     name: Run doc tests
