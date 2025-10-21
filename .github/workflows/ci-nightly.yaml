@@ -7,6 +7,11 @@ on:
     - cron: '30 3 * * *'
 
 jobs:
+
+  pr-checks:
+    needs: [ create-cache-key ]
+    uses: ./.github/workflows/ci.yaml
+     
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
@@ -91,7 +96,3 @@ jobs:
     needs: [ create-cache-key, ios-build ]
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-
-  pr-checks:
-    needs: [ create-cache-key ]
-    uses: ./.github/workflows/ci.yaml
