@@ -13,7 +13,12 @@ use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::any::Any;
+use std::panic::{self, PanicHookInfo, UnwindSafe};
+use std::backtrace::Backtrace;
+use std::sync::Once;
+use std::sync::Mutex;
 
+use once_cell::sync::Lazy;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use bip0039::Mnemonic;
@@ -47,6 +52,135 @@ use zcash_primitives::memo::MemoBytes;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::data::proposal::total_fee;
 use zingolib::testutils;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ZingolibError {
+    #[error("Error: Lightclient is not initialized")]
+    LightclientNotInitialized,
+    #[error("Error: Lightclient lock poisoned")]
+    LightclientLockPoisoned,
+    #[error("Error: panic: {0}")]
+    Panic(String),
+}
+
+pub fn with_panic_guard<T, F>(f: F) -> Result<T, ZingolibError>
+where
+    F: FnOnce() -> Result<T, ZingolibError> + UnwindSafe,
+{
+    install_panic_hook_once();
+    match panic::catch_unwind(f) {
+        Ok(res) => res,
+        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
+    }
+}
+
+#[derive(Clone, Default)]
+struct PanicReport {
+    msg: String,
+    file: Option<String>,
+    line: Option<u32>,
+    col:  Option<u32>,
+    backtrace: Option<String>,
+}
+
+static LAST_PANIC: Lazy<Mutex<PanicReport>> =
+    Lazy::new(|| Mutex::new(PanicReport::default()));
+
+fn set_last_panic(report: PanicReport) {
+    if let Ok(mut r) = LAST_PANIC.lock() {
+        *r = report;
+    }
+}
+
+fn take_last_panic() -> PanicReport {
+    if let Ok(mut r) = LAST_PANIC.lock() {
+        let out = r.clone();
+        *r = PanicReport::default();
+        out
+    } else {
+        PanicReport::default()
+    }
+}
+
+static PANIC_HOOK_ONCE: Once = Once::new();
+
+fn install_panic_hook_once() {
+    PANIC_HOOK_ONCE.call_once(|| {
+        panic::set_hook(Box::new(|info: &PanicHookInfo<'_>| {
+            let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                s.clone()
+            } else {
+                info.to_string()
+            };
+
+            let (file, line, col) = info.location()
+                .map(|l| (Some(l.file().to_string()), Some(l.line()), Some(l.column())))
+                .unwrap_or((None, None, None));
+
+            let bt = Backtrace::force_capture().to_string();
+
+            set_last_panic(PanicReport {
+                msg: payload,
+                file, line, col,
+                backtrace: Some(bt),
+            });
+        }));
+    });
+}
+
+fn clean_backtrace(bt_raw: &str) -> String {
+    const DROP: &[&str] = &[
+        "<unknown>"
+    ];
+
+    let mut out = String::new();
+
+    for line in bt_raw.lines() {
+        let l = line.trim();
+        if l.is_empty() { continue; }
+        if DROP.iter().any(|d| l.contains(d)) { continue; }
+
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    out
+}
+
+fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
+    let rpt = take_last_panic();
+
+    let fallback = if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    };
+
+    let mut out = String::new();
+
+    if let (Some(f), Some(l), Some(c)) = (rpt.file.as_ref(), rpt.line, rpt.col) {
+        out.push_str(&format!("{f}:{l}:{c}: "));
+    }
+    if !rpt.msg.is_empty() {
+        out.push_str(&rpt.msg);
+    } else {
+        out.push_str(&fallback);
+    }
+
+    if let Some(bt) = rpt.backtrace {
+        let cleaned = clean_backtrace(&bt);
+        if !cleaned.is_empty() {
+            out.push_str("\nBacktrace:\n");
+            out.push_str(&cleaned);
+        }
+    }
+
+    out
+}
 
 // We'll use a RwLock to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -354,170 +488,25 @@ pub fn poll_sync() -> String {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ZingolibError {
-    #[error("Error: Lightclient is not initialized")]
-    LightclientNotInitialized,
-    #[error("Error: Lightclient lock poisoned")]
-    LightclientLockPoisoned,
-    #[error("Error: resume_sync failed: {0}")]
-    SyncResumeFailed(String),
-    #[error("Error: sync failed: {0}")]
-    SyncFailed(String),
-    #[error("Error: sync status failed: {0}")]
-    SyncStatusFailed(String),
-    #[error("Error: panic: {0}")]
-    Panic(String),
-}
-
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
-
-#[derive(Clone, Default)]
-struct PanicReport {
-    msg: String,
-    file: Option<String>,
-    line: Option<u32>,
-    col:  Option<u32>,
-    backtrace: Option<String>,
-}
-
-static LAST_PANIC: Lazy<Mutex<PanicReport>> =
-    Lazy::new(|| Mutex::new(PanicReport::default()));
-
-fn set_last_panic(report: PanicReport) {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        *r = report;
-    }
-}
-
-fn take_last_panic() -> PanicReport {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        let out = r.clone();
-        *r = PanicReport::default();
-        out
-    } else {
-        PanicReport::default()
-    }
-}
-
-use std::panic::{self, PanicHookInfo};
-use std::backtrace::Backtrace;
-use std::sync::Once;
-
-static PANIC_HOOK_ONCE: Once = Once::new();
-
-fn install_panic_hook_once() {
-    PANIC_HOOK_ONCE.call_once(|| {
-        panic::set_hook(Box::new(|info: &PanicHookInfo<'_>| {
-            // payload legible
-            let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-                (*s).to_string()
-            } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                s.clone()
+fn run_sync() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            if lightclient.sync_mode() == SyncMode::Paused {
+                lightclient.resume_sync().expect("sync should be paused");
+                Ok("Resuming sync task...".to_string())
             } else {
-                info.to_string() // ya incluye "called unwrap on None" etc.
-            };
-
-            let (file, line, col) = info.location()
-                .map(|l| (Some(l.file().to_string()), Some(l.line()), Some(l.column())))
-                .unwrap_or((None, None, None));
-
-            // forzamos backtrace (no dependas de RUST_BACKTRACE en móvil)
-            let bt = Backtrace::force_capture().to_string();
-
-            set_last_panic(PanicReport {
-                msg: payload,
-                file, line, col,
-                backtrace: Some(bt),
-            });
-        }));
-    });
-}
-
-fn clean_backtrace(bt_raw: &str) -> String {
-    const DROP: &[&str] = &[
-        "<unknown>"
-    ];
-
-    let mut out = String::new();
-
-    for line in bt_raw.lines() {
-        let l = line.trim();
-        if l.is_empty() { continue; }
-        if DROP.iter().any(|d| l.contains(d)) { continue; }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    out
-}
-
-fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
-    // recupera lo que almacenó el hook
-    let rpt = take_last_panic();
-
-    // payload “de reserva” por si el hook no corrió
-    let fallback = if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic payload".to_string()
-    };
-
-    let mut out = String::new();
-
-    // línea principal
-    if let (Some(f), Some(l), Some(c)) = (rpt.file.as_ref(), rpt.line, rpt.col) {
-        out.push_str(&format!("{f}:{l}:{c}: "));
-    }
-    if !rpt.msg.is_empty() {
-        out.push_str(&rpt.msg);
-    } else {
-        out.push_str(&fallback);
-    }
-
-    // backtrace
-    if let Some(bt) = rpt.backtrace {
-        let cleaned = clean_backtrace(&bt);
-        if !cleaned.is_empty() {
-            out.push_str("\nBacktrace:\n");
-            out.push_str(&cleaned);
-        }
-    }
-
-    out
-}
-
-pub fn run_sync() -> Result<String, ZingolibError> {
-    install_panic_hook_once();
-    use std::panic;
-
-    let caught = panic::catch_unwind(|| run_sync_inner());
-    match caught {
-        Ok(res) => res,
-        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
-    }
-}
-
-fn run_sync_inner() -> Result<String, ZingolibError> {
-    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-    if let Some(lightclient) = &mut *guard {
-        if lightclient.sync_mode() == SyncMode::Paused {
-            lightclient.resume_sync().map_err(|e| ZingolibError::SyncResumeFailed(e.to_string()))?;
-            Ok("Resuming sync task...".to_string())
+                Ok(RT.block_on(async {
+                    match lightclient.sync().await {
+                        Ok(_) => "Launching sync task...".to_string(),
+                        Err(e) => format!("Error: {e}"),
+                    }
+                }))
+            }
         } else {
-            RT.block_on(async {
-                lightclient.sync().await
-                    .map(|_| "Launching sync task...".to_string())
-                    .map_err(|e| ZingolibError::SyncFailed(e.to_string()))
-            })
+            Err(ZingolibError::LightclientNotInitialized)
         }
-    } else {
-        Err(ZingolibError::LightclientNotInitialized)
-    }
+    })
 }
 
 pub fn pause_sync() -> String {
@@ -542,31 +531,21 @@ pub fn stop_sync() -> String {
     }
 }
 
-pub fn status_sync() -> Result<String, ZingolibError> {
-    use std::panic;
-
-    let caught = panic::catch_unwind(|| status_sync_inner());
-    match caught {
-        Ok(res) => res,
-        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
-    }
-}
-
-fn status_sync_inner() -> Result<String, ZingolibError> {
-    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-    if let Some(lightclient) = &mut *guard {
-        RT.block_on(async {
-            let wallet = lightclient.wallet.read().await;
-            pepper_sync::sync_status(&*wallet)
-                .await
-                .map_err(|e| ZingolibError::SyncStatusFailed(e.to_string()))
-                .map(|status| {
-                    json::JsonValue::from(status).pretty(2)
-                })
-        })
-    } else {
-        Err(ZingolibError::LightclientNotInitialized)
-    }
+fn status_sync() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
+            Ok(RT.block_on(async {
+                let wallet = lightclient.wallet.read().await;
+                match pepper_sync::sync_status(&*wallet).await {
+                    Ok(status) => json::JsonValue::from(status).pretty(2),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }))
+        } else {
+            Err(ZingolibError::LightclientNotInitialized)
+        }
+    })
 }
 
 pub fn run_rescan() -> String {

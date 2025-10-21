@@ -2,9 +2,6 @@
 enum ZingolibError {
     "LightclientNotInitialized",
     "LightclientLockPoisoned",
-    "SyncResumeFailed",
-    "SyncFailed",
-    "SyncStatusFailed",
     "Panic"
 };
 
