@@ -11,7 +11,7 @@ jobs:
   pr-checks:
     needs: [ create-cache-key ]
     uses: ./.github/workflows/ci.yaml
-     
+
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
