@@ -41,27 +41,41 @@ namespace zingo {
   );
 
   string save_to_b64();
+
+  [Throws=ZingolibError]
   string get_latest_block_server(
     string serveruri
   );
+
+  [Throws=ZingolibError]
   string get_latest_block_wallet();
+
   string get_developer_donation_address();
   string get_zennies_for_zingo_donation_address();
+
+  [Throws=ZingolibError]
   string get_value_transfers();
+
   string set_crypto_default_provider_to_ring();
+
+  [Throws=ZingolibError]
   string poll_sync();
 
   [Throws=ZingolibError]
   string run_sync();
   
+  [Throws=ZingolibError]
   string pause_sync();
-  string stop_sync();
 
   [Throws=ZingolibError]
   string status_sync();
 
+  [Throws=ZingolibError]
   string run_rescan();
+
+  [Throws=ZingolibError]
   string info_server();
+
   string get_seed();
   string get_ufvk();
   string change_server(
@@ -74,11 +88,18 @@ namespace zingo {
   string parse_ufvk(
     string ufvk
   );
+
+  [Throws=ZingolibError]
   string get_version();
+
+  [Throws=ZingolibError]
   string get_messages(
     string address
   );
+
+  [Throws=ZingolibError]
   string get_balance();
+
   string get_total_memobytes_to_address();
   string get_total_value_to_address();
   string get_total_spends_to_address();
@@ -95,15 +116,23 @@ namespace zingo {
     string address, 
     string zennies
   );
+
+  [Throws=ZingolibError]
   string get_spendable_balance_total();
+
   string set_option_wallet();
   string get_option_wallet();
   string create_tor_client(
     string datadir
   );
   string remove_tor_client();
+
+  [Throws=ZingolibError]
   string get_unified_addresses();
+
+  [Throws=ZingolibError]
   string get_transparent_addresses();
+
   string create_new_unified_address(
     string receivers
   );
@@ -111,14 +140,22 @@ namespace zingo {
   string check_my_address(
     string address
   );
+
+  [Throws=ZingolibError]
   string get_wallet_save_required();
+
   string set_config_wallet_to_test();
   string set_config_wallet_to_prod(
       string performancelevel,
       u32 minconfirmations
   );
+
+  [Throws=ZingolibError]
   string get_config_wallet_performance();
+
+  [Throws=ZingolibError]
   string get_wallet_version();
+
   string send(
     string send_json
   );
