@@ -10,7 +10,7 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
 
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
@@ -22,6 +22,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
       - name: Install protoc
         run: |
           if ! command -v protoc; then
@@ -30,7 +38,7 @@ jobs:
           fi
 
       - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: check
 
