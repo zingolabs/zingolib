@@ -441,7 +441,7 @@ pub fn save_to_b64() -> Result<String, ZingolibError> {
                 match wallet.save() {
                     Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                     // TODO: check this is better than a custom error when save is not required (empty buffer)
-                    Ok(None) => "No need to save the wallet file".to_string(),
+                    Ok(None) => "".to_string(),
                     Err(e) => format!("Error: {e}"),
                 }
             }))
