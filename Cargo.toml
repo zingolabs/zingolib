@@ -42,7 +42,7 @@ zcash_proofs = { git = "https://github.com/zcash/librustzcash", tag = "zcash_pro
 zcash_protocol = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
 
-zebra-chain = { git = "https://github.com/ZcashFoundation/zebra.git" , tag = "v3.0.0-rc.0" }
+zebra-chain = { version = "3.0" }
 
 zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
