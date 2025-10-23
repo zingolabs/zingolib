@@ -412,7 +412,7 @@ pub fn save_to_b64() -> Result<String, ZingolibError> {
                 match wallet.save() {
                     Ok(Some(wallet_bytes)) => STANDARD.encode(wallet_bytes),
                     // TODO: check this is better than a custom error when save is not required (empty buffer)
-                    Ok(None) => "Error: No need to save the wallet file".to_string(),
+                    Ok(None) => "No need to save the wallet file".to_string(),
                     Err(e) => format!("Error: {e}"),
                 }
             }))
@@ -1079,13 +1079,13 @@ pub fn create_tor_client(data_dir: String) -> Result<String, ZingolibError> {
         let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             if lightclient.tor_client().is_some() {
-                return Ok("Error: Tor client already exists.".to_string());
+                return Ok("Tor client already exists.".to_string());
             }
             Ok(match RT.block_on(async move {
                 lightclient.create_tor_client(Some(data_dir.into())).await
             }) {
                 Ok(_) => "Successfully created tor client.".to_string(),
-                Err(e) => format!("Error creating tor client: {e}"),
+                Err(e) => format!("Error: creating tor client: {e}"),
             })
         } else {
             Err(ZingolibError::LightclientNotInitialized)
@@ -1098,7 +1098,7 @@ pub fn remove_tor_client() -> Result<String, ZingolibError> {
         let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             if lightclient.tor_client().is_none() {
-                return Ok("Error: Tor client is not active.".to_string());
+                return Ok("Tor client is not active.".to_string());
             }
             RT.block_on(async move {
                 lightclient.remove_tor_client().await;
@@ -1372,7 +1372,7 @@ fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
     };
 
     MemoBytes::from_bytes(&s_bytes)
-        .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
+        .map_err(|_| format!("Error: creating output. Memo '{:?}' is too long", memo_str))
 }
 
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
