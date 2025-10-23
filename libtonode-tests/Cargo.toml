@@ -28,7 +28,7 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 bip0039.workspace = true
-zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
+zebra-chain = { workspace = true}
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
