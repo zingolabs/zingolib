@@ -19,8 +19,8 @@ pepper-sync = { workspace = true }
 zingo-status = { workspace = true }
 
 zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "1fddecb72dd6d2f7aafd80ddbac02bb525420740" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }
