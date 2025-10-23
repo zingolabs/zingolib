@@ -23,26 +23,26 @@ orchard = "0.11.0"
 sapling-crypto = "0.5.0"
 incrementalmerkletree = "0.8.2"
 shardtree = "0.6.1"
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b", features = [
+zcash_address = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
     "tor",
 ] }
-zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b", features = [
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
 zcash_note_encryption = "0.4.1"
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
-zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "d387aed7e04e881dbe30c6ff8b26a96c834c094b" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", tag = "zcash_protocol-0.7.1" }
 
-zebra-chain = { git = "https://github.com/zingolabs/zebra.git" , rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
+zebra-chain = { git = "https://github.com/ZcashFoundation/zebra.git" , tag = "v3.0.0-rc.0" }
 
 zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "2a2d2ec037eafe421e78994768e8a665106c3a83" }
@@ -115,9 +115,6 @@ zingo-price = { path = "zingo-price" }
 zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
-
-[patch.crates-io]
-zebra-chain = { git = "https://github.com/zingolabs/zebra.git", rev = "1168a2f391a17f3ccab65a095d9219b7455d0fea" }
 
 [profile.test]
 opt-level = 3
