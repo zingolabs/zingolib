@@ -193,15 +193,33 @@ lazy_static! {
     pub static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
-fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
-    let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-    guard.replace(lightclient);
-    Ok(())
+fn with_lightclient_write<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Option<LightClient>) -> R,
+{
+    let mut guard = match LIGHTCLIENT.write() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            log::warn!("LIGHTCLIENT RwLock poisoned; recovering and clearing poison");
+            let g = poisoned.into_inner();
+            LIGHTCLIENT.clear_poison();
+            g
+        }
+    };
+    f(&mut *guard)
 }
 
 fn reset_lightclient() {
-    let mut g = LIGHTCLIENT.write().unwrap_or_else(|p| p.into_inner());
-    *g = None;
+    with_lightclient_write(|slot| {
+        *slot = None;
+    });
+}
+
+fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
+    with_lightclient_write(|slot| {
+        *slot = Some(lightclient);
+    });
+    Ok(())
 }
 
 fn construct_uri_load_config(
