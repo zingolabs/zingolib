@@ -807,10 +807,10 @@ impl InputSource for LightWallet {
             .flat_map(|output| {
                 WalletTransparentOutput::from_parts(
                     output.output_id().into(),
-                    TxOut {
-                        value: output.value().try_into().expect("value from checked type"),
-                        script_pubkey: output.script().clone(),
-                    },
+                    TxOut::new(
+                        output.value().try_into().expect("value from checked type"),
+                        output.script().clone(),
+                    ),
                     Some(
                         self.output_transaction(output)
                             .status()
