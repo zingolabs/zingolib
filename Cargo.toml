@@ -117,12 +117,12 @@ pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
 [patch.crates-io]
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", branch = "main" }
-zcash_address = { git = "https://github.com/zcash/librustzcash", branch = "main" }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", branch = "main" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", branch = "main" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", branch = "main" }
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", branch = "main" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "998dab5eef"}
 
 [profile.test]
 opt-level = 3
