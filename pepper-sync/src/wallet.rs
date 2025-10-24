@@ -561,7 +561,7 @@ impl WalletTransaction {
                 bundle
                     .vin
                     .iter()
-                    .map(|txin| txin.prevout())
+                    .map(zcash_transparent::bundle::TxIn::prevout)
                     .collect::<Vec<_>>()
             })
     }

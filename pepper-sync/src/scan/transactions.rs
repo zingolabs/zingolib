@@ -562,7 +562,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
     transparent_bundle
         .vin
         .iter()
-        .map(|txin| txin.prevout())
+        .map(zcash_transparent::bundle::TxIn::prevout)
         .for_each(|outpoint| {
             outpoint_map.insert(
                 OutputId::from(outpoint),
