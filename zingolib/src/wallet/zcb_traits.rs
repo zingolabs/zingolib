@@ -619,11 +619,7 @@ impl InputSource for LightWallet {
                             .into_iter()
                             .cloned()
                             .collect::<Vec<_>>();
-                        exclude_sapling.extend(
-                            notes
-                                .iter()
-                                .map(pepper_sync::wallet::OutputInterface::output_id),
-                        );
+                        exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
                         selected_sapling_notes.extend(notes);
                     }
                     if sources.contains(&ShieldedProtocol::Orchard) {
@@ -638,11 +634,7 @@ impl InputSource for LightWallet {
                             .into_iter()
                             .cloned()
                             .collect::<Vec<_>>();
-                        exclude_orchard.extend(
-                            notes
-                                .iter()
-                                .map(pepper_sync::wallet::OutputInterface::output_id),
-                        );
+                        exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
                         selected_orchard_notes.extend(notes);
                     }
 
@@ -657,11 +649,7 @@ impl InputSource for LightWallet {
                         .into_iter()
                         .cloned()
                         .collect::<Vec<_>>();
-                    exclude_sapling.extend(
-                        notes
-                            .iter()
-                            .map(pepper_sync::wallet::OutputInterface::output_id),
-                    );
+                    exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
                     selected_sapling_notes.extend(notes);
 
                     let notes = self
@@ -675,11 +663,7 @@ impl InputSource for LightWallet {
                         .into_iter()
                         .cloned()
                         .collect::<Vec<_>>();
-                    exclude_orchard.extend(
-                        notes
-                            .iter()
-                            .map(pepper_sync::wallet::OutputInterface::output_id),
-                    );
+                    exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
                     selected_orchard_notes.extend(notes);
                 }
                 (selected_sapling_notes, selected_orchard_notes)
@@ -844,7 +828,7 @@ impl InputSource for LightWallet {
         _sources: &[ShieldedProtocol],
         _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
-    ) -> Result<zcash_client_backend::data_api::ReceivedNotes<Self::NoteRef>, Self::Error> {
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         unimplemented!()
     }
 }
