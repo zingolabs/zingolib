@@ -451,6 +451,13 @@ pub fn save_to_b64() -> Result<String, ZingolibError> {
     })
 }
 
+pub fn check_b64(base64_data: String,) -> String {
+    match STANDARD.decode(&base64_data) {
+        Ok(_) => "true".to_string(),
+        Err(_) => "false".to_string(),
+    }
+}
+
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         Ok(zingolib::config::DEVELOPER_DONATION_ADDRESS.to_string())

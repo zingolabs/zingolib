@@ -50,6 +50,10 @@ namespace zingo {
   [Throws=ZingolibError]
   string save_to_b64();
 
+  string check_b64(
+    string datab64
+  );
+
   [Throws=ZingolibError]
   string get_latest_block_server(
     string serveruri
