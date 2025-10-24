@@ -669,7 +669,10 @@ impl InputSource for LightWallet {
                 (selected_sapling_notes, selected_orchard_notes)
             }
             TargetValue::AllFunds(max_spend_mode) => {
-                let include_potentially_spent_notes = false;
+                let include_potentially_spent_notes = matches!(
+                    max_spend_mode,
+                    zcash_client_backend::data_api::MaxSpendMode::Everything
+                );
                 (
                     self.spendable_notes::<SaplingNote>(
                         anchor_height,
@@ -821,10 +824,10 @@ impl InputSource for LightWallet {
 
     fn select_unspent_notes(
         &self,
-        account: Self::AccountId,
-        sources: &[ShieldedProtocol],
-        target_height: TargetHeight,
-        exclude: &[Self::NoteRef],
+        _account: Self::AccountId,
+        _sources: &[ShieldedProtocol],
+        _target_height: TargetHeight,
+        _exclude: &[Self::NoteRef],
     ) -> Result<zcash_client_backend::data_api::ReceivedNotes<Self::NoteRef>, Self::Error> {
         unimplemented!()
     }
