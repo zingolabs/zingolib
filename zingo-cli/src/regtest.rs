@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::lightwalletd::Lightwalletd;
-use zcash_local_net::process::IsAProcess;
+use zcash_local_net::process::Process as _;
 use zcash_local_net::validator::zcashd::Zcashd;
 
 /// Launch a local regtest network
