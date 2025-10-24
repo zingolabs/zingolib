@@ -20,14 +20,15 @@ use bip0039::Mnemonic;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::process::IsAProcess;
 use zcash_protocol::PoolType;
 
+use zcash_local_net::LocalNet;
+use zcash_local_net::ProcessId as Process;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
+use zcash_local_net::logs::LogsToStdoutAndStderr;
 use zcash_local_net::network::localhost_uri;
+use zcash_local_net::process::Process as IsAProcess;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
-use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
