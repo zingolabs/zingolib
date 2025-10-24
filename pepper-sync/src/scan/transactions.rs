@@ -345,8 +345,8 @@ fn scan_incoming_coins<P: consensus::Parameters>(
                     output_id,
                     key_id: *key_id,
                     address: address.clone(),
-                    script: output.script_pubkey.clone(),
-                    value: output.value,
+                    script: output.script_pubkey().clone(),
+                    value: output.value(),
                     spending_transaction: None,
                 });
             }
@@ -562,7 +562,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
     transparent_bundle
         .vin
         .iter()
-        .map(|txin| &txin.prevout)
+        .map(|txin| txin.prevout())
         .for_each(|outpoint| {
             outpoint_map.insert(
                 OutputId::from(outpoint),
