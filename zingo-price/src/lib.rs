@@ -135,7 +135,7 @@ impl PriceList {
     ///
     /// Currently only USD is supported.
     // TODO: under development
-    pub async fn update_historical_price_list(&mut self) -> Result<(), PriceError> {
+    async fn update_historical_price_list(&mut self) -> Result<(), PriceError> {
         let current_time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("should never fail when comparing with an instant so far in the past")

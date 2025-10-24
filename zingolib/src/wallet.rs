@@ -409,7 +409,7 @@ impl LightWallet {
     ///
     /// Currently only USD is supported.
     // TODO: under development
-    pub async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
+    async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
         if self
             .price_list
             .time_historical_prices_last_updated()
