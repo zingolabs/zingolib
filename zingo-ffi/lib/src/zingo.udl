@@ -1,5 +1,16 @@
+[Error]
+enum ZingolibError {
+    "LightclientNotInitialized",
+    "LightclientLockPoisoned",
+    "Panic"
+};
+
 namespace zingo {
+
+  [Throws=ZingolibError]
   string init_logging();
+
+  [Throws=ZingolibError]
   string init_new(
       string serveruri,
       string chainhint,
@@ -7,6 +18,7 @@ namespace zingo {
       u32 minconfirmations
   );
 
+  [Throws=ZingolibError]
   string init_from_seed(
       string seed,
       u32 birthday,
@@ -16,6 +28,7 @@ namespace zingo {
       u32 minconfirmations
   );
 
+  [Throws=ZingolibError]
   string init_from_ufvk(
       string ufvk,
       u32 birthday,
@@ -25,6 +38,7 @@ namespace zingo {
       u32 minconfirmations
   );
 
+  [Throws=ZingolibError]
   string init_from_b64(
       string datab64,
       string serveruri,
@@ -33,82 +47,178 @@ namespace zingo {
       u32 minconfirmations
   );
 
+  [Throws=ZingolibError]
   string save_to_b64();
+
+  string check_b64(
+    string datab64
+  );
+
+  [Throws=ZingolibError]
   string get_latest_block_server(
     string serveruri
   );
+
+  [Throws=ZingolibError]
   string get_latest_block_wallet();
+
+  [Throws=ZingolibError]
   string get_developer_donation_address();
+
+  [Throws=ZingolibError]
   string get_zennies_for_zingo_donation_address();
+
+  [Throws=ZingolibError]
   string get_value_transfers();
+
+  [Throws=ZingolibError]
   string set_crypto_default_provider_to_ring();
+
+  [Throws=ZingolibError]
   string poll_sync();
+
+  [Throws=ZingolibError]
   string run_sync();
+  
+  [Throws=ZingolibError]
   string pause_sync();
-  string stop_sync();
+
+  [Throws=ZingolibError]
   string status_sync();
+
+  [Throws=ZingolibError]
   string run_rescan();
+
+  [Throws=ZingolibError]
   string info_server();
+
+  [Throws=ZingolibError]
   string get_seed();
+
+  [Throws=ZingolibError]
   string get_ufvk();
+
+  [Throws=ZingolibError]
   string change_server(
     string serveruri
   );
+
+  [Throws=ZingolibError]
   string wallet_kind();
+
+  [Throws=ZingolibError]
   string parse_address(
     string address
   );
+
+  [Throws=ZingolibError]
   string parse_ufvk(
     string ufvk
   );
+
+  [Throws=ZingolibError]
   string get_version();
+
+  [Throws=ZingolibError]
   string get_messages(
     string address
   );
+
+  [Throws=ZingolibError]
   string get_balance();
+
+  [Throws=ZingolibError]
   string get_total_memobytes_to_address();
+
+  [Throws=ZingolibError]
   string get_total_value_to_address();
+
+  [Throws=ZingolibError]
   string get_total_spends_to_address();
+
+  [Throws=ZingolibError]
   string zec_price(
     string tor
   );
+
+  [Throws=ZingolibError]
   string resend_transaction(
     string txid
   );
+
+  [Throws=ZingolibError]
   string remove_transaction(
     string txid
   );
+
+  [Throws=ZingolibError]
   string get_spendable_balance_with_address(
     string address, 
     string zennies
   );
+
+  [Throws=ZingolibError]
   string get_spendable_balance_total();
+
+  [Throws=ZingolibError]
   string set_option_wallet();
+
+  [Throws=ZingolibError]
   string get_option_wallet();
+
+  [Throws=ZingolibError]
   string create_tor_client(
     string datadir
   );
+
+  [Throws=ZingolibError]
   string remove_tor_client();
+
+  [Throws=ZingolibError]
   string get_unified_addresses();
+
+  [Throws=ZingolibError]
   string get_transparent_addresses();
+
+  [Throws=ZingolibError]
   string create_new_unified_address(
     string receivers
   );
+
+  [Throws=ZingolibError]
   string create_new_transparent_address();
+
+  [Throws=ZingolibError]
   string check_my_address(
     string address
   );
+
+  [Throws=ZingolibError]
   string get_wallet_save_required();
+
+  [Throws=ZingolibError]
   string set_config_wallet_to_test();
+
+  [Throws=ZingolibError]
   string set_config_wallet_to_prod(
       string performancelevel,
       u32 minconfirmations
   );
+
+  [Throws=ZingolibError]
   string get_config_wallet_performance();
+
+  [Throws=ZingolibError]
   string get_wallet_version();
+
+  [Throws=ZingolibError]
   string send(
     string send_json
   );
+
+  [Throws=ZingolibError]
   string shield();
+
+  [Throws=ZingolibError]
   string confirm();
 };
