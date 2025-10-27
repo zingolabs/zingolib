@@ -28,7 +28,7 @@ zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 bip0039.workspace = true
-zebra-chain = { workspace = true}
+zebra-chain = { workspace = true }
 
 tokio = { workspace = true, features = ["full"] }
 json = { workspace = true }
