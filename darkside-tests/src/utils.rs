@@ -17,7 +17,7 @@ use zcash_local_net::{
         lightwalletd::{Lightwalletd, LightwalletdConfig},
     },
     network::localhost_uri,
-    process::IsAProcess,
+    process::Process as _,
 };
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
