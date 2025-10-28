@@ -83,25 +83,25 @@ After the sync process is initialized, it will be in a state of verification, on
 -- Nullifier map has no maximum size
 
 "#]
-#![doc = r#"
+#![doc = r"
 ## Sync Diagram
-"#]
+"]
 #![doc = simple_mermaid::mermaid!("../diagrams/sync.mmd")]
-#![doc = r#"
+#![doc = r"
 ## Initialization Diagram
-"#]
+"]
 #![doc = simple_mermaid::mermaid!("../diagrams/initialization.mmd")]
-#![doc = r#"
+#![doc = r"
 ## Verification Diagram
-"#]
+"]
 #![doc = simple_mermaid::mermaid!("../diagrams/verification.mmd")]
-#![doc = r#"
+#![doc = r"
 ## Scan Worker Diagram
-"#]
+"]
 #![doc = simple_mermaid::mermaid!("../diagrams/scan_worker.mmd")]
-#![doc = r#"
+#![doc = r"
 ## Process Scan Results Diagram
-"#]
+"]
 #![doc = simple_mermaid::mermaid!("../diagrams/process_scan_results.mmd")]
 
 pub(crate) mod client;

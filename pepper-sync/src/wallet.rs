@@ -561,7 +561,7 @@ impl WalletTransaction {
                 bundle
                     .vin
                     .iter()
-                    .map(|txin| &txin.prevout)
+                    .map(zcash_transparent::bundle::TxIn::prevout)
                     .collect::<Vec<_>>()
             })
     }
@@ -579,7 +579,7 @@ impl WalletTransaction {
                 bundle
                     .vout
                     .iter()
-                    .map(|output| output.value.into_u64())
+                    .map(|output| output.value().into_u64())
                     .sum()
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());

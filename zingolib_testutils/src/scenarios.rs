@@ -20,14 +20,15 @@ use bip0039::Mnemonic;
 
 use portpicker::Port;
 use tempfile::TempDir;
-use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::process::IsAProcess;
 use zcash_protocol::PoolType;
 
+use zcash_local_net::LocalNet;
+use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
+use zcash_local_net::logs::LogsToStdoutAndStderr;
 use zcash_local_net::network::localhost_uri;
+use zcash_local_net::process::Process;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
-use zcash_local_net::{LocalNet, Process};
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
@@ -92,13 +93,13 @@ pub async fn launch_test<V, I>(
 ) -> LocalNet<V, I>
 where
     V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send + ValidatorConfig + Default,
+    <V as Process>::Config: Send + ValidatorConfig + Default,
     I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send + IndexerConfig + Default,
+    <I as Process>::Config: Send + IndexerConfig + Default,
 {
-    let mut validator_config = <V as IsAProcess>::Config::default();
+    let mut validator_config = <V as Process>::Config::default();
     validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
-    let mut indexer_config = <I as IsAProcess>::Config::default();
+    let mut indexer_config = <I as Process>::Config::default();
     indexer_config.set_listen_port(indexer_listen_port);
     LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await
@@ -115,8 +116,8 @@ async fn zebrad_shielded_funds<V, I>(
 ) where
     I: Indexer + LogsToStdoutAndStderr,
     V: Validator + LogsToStdoutAndStderr + Send,
-    <I as IsAProcess>::Config: Send,
-    <V as IsAProcess>::Config: Send,
+    <I as Process>::Config: Send,
+    <V as Process>::Config: Send,
 {
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
@@ -280,7 +281,7 @@ pub async fn faucet(
 
     let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
 
-    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -315,7 +316,7 @@ pub async fn faucet_recipient(
         configured_activation_heights,
     );
 
-    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -763,9 +764,9 @@ pub async fn send_value_between_clients_and_sync<V, I>(
 ) -> Result<String, LightClientError>
 where
     V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
+    <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
+    <I as Process>::Config: Send,
 {
     let txid = from_inputs::quick_send(
         sender,
@@ -793,9 +794,9 @@ pub async fn increase_height_and_wait_for_client<V, I>(
 ) -> Result<(), LightClientError>
 where
     V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
+    <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
+    <I as Process>::Config: Send,
 {
     sync_to_target_height(
         client,
@@ -808,9 +809,9 @@ where
 pub async fn generate_n_blocks_return_new_height<V, I>(local_net: &LocalNet<V, I>, n: u32) -> u32
 where
     V: Validator + LogsToStdoutAndStderr + Send,
-    <V as IsAProcess>::Config: Send,
+    <V as Process>::Config: Send,
     I: Indexer + LogsToStdoutAndStderr,
-    <I as IsAProcess>::Config: Send,
+    <I as Process>::Config: Send,
 {
     let start_height = local_net.validator().get_chain_height().await;
     let target = start_height + n;
