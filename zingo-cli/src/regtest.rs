@@ -4,14 +4,14 @@
 use std::path::PathBuf;
 use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::lightwalletd::Lightwalletd;
-use zcash_local_net::process::IsAProcess;
+use zcash_local_net::process::Process as _;
 use zcash_local_net::validator::zcashd::Zcashd;
 
 /// Launch a local regtest network
 pub(crate) async fn launch_local_net() -> LocalNet<Zcashd, Lightwalletd> {
     LocalNet::launch_default()
         .await
-        .expect("ing to launch a Regtest LocalNet")
+        .expect("A Regtest LocalNet should've launched.")
 }
 /// Get the default regtest data directory
 pub(crate) fn get_regtest_dir() -> PathBuf {

@@ -25,6 +25,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkConstants},
 };
 
+use zcash_transparent::bundle::TxIn;
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -345,8 +346,8 @@ fn scan_incoming_coins<P: consensus::Parameters>(
                     output_id,
                     key_id: *key_id,
                     address: address.clone(),
-                    script: output.script_pubkey.clone(),
-                    value: output.value,
+                    script: output.script_pubkey().clone(),
+                    value: output.value(),
                     spending_transaction: None,
                 });
             }
@@ -562,7 +563,7 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
     transparent_bundle
         .vin
         .iter()
-        .map(|txin| &txin.prevout)
+        .map(TxIn::prevout)
         .for_each(|outpoint| {
             outpoint_map.insert(
                 OutputId::from(outpoint),

@@ -166,7 +166,7 @@ impl LightWallet {
                                 .filter_map(|(output_index, transparent_output)| {
                                     transparent_output.recipient_address().map(|address| {
                                         OutgoingCoinSummary {
-                                            value: transparent_output.value.into_u64(),
+                                            value: transparent_output.value().into_u64(),
                                             recipient: transparent::encode_address(
                                                 &self.network,
                                                 address,

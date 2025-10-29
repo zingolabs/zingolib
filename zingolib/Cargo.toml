@@ -30,7 +30,7 @@ zingo_common_components = { workspace = true }
 zingo_netutils = { workspace = true }
 
 # testutils feature
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "51162c0c603d324a3c36f1cead17bf4680aa1dca", optional = true}
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}
 
 # blockchain
 zebra-chain = { workspace = true }
@@ -98,7 +98,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
 tempfile = { workspace = true }
