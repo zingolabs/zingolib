@@ -41,6 +41,7 @@ jobs:
         with:
           name: nextest-archive
           path: nextest-archive.tar.zst
+          overwrite: true
 
   run-tests:
     name: Run tests
