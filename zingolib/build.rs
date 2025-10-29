@@ -39,7 +39,7 @@ fn git_description() {
 fn get_zcash_params() {
     println!("Checking if params are available...");
 
-    let params_path = match zcash_proofs::download_sapling_parameters(Some(100)) {
+    let params_path = match zcash_proofs::download_sapling_parameters(Some(400)) {
         Ok(p) => {
             println!("Params downloaded!");
             println!("Spend path: {}", p.spend.to_str().unwrap());
