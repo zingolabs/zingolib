@@ -106,7 +106,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
                 let birthday: zcash_primitives::consensus::BlockHeight =
                     lightd_info.block_height.try_into()?;
-                (chain_name, birthday)
+                (chain_type, birthday)
             };
 
             // this seems like a lot of set up. Do we really need all this right here??
@@ -125,8 +125,9 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 },
                 min_confirmations: NonZeroU32::try_from(1).expect("1 aint 0"),
             }; // maybe this could be defaulted
-            let wallet = LightWallet::new(chain_type, wallet_base, birthday, wallet_settings)
-                .map_err(AddServerError::CreateWallet)?;
+            let wallet =
+                LightWallet::new(chain_type, wallet_base, birthday, wallet_settings.clone())
+                    .map_err(AddServerError::CreateWallet)?;
             let config = {
                 ZingoConfigBuilder::default()
                     .set_lightwalletd_uri(server_uri)
