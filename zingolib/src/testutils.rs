@@ -563,7 +563,7 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// helperized test print.
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub fn timestamped_test_log(text: &str) {
-    println!("{}: {}", crate::utils::now(), text);
+    tracing::info!("{}: {}", crate::utils::now(), text);
 }
 
 #[allow(unused_macros)]

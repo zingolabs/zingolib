@@ -39,6 +39,7 @@ serde_json = { workspace = true }
 proptest = { workspace = true }
 
 # Logging
+tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [build-dependencies]

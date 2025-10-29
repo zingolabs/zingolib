@@ -14,7 +14,7 @@ mod load_wallet {
     //         false,
     //     )
     //     .await;
-    //     println!("Shutting down initial zcd/lwd unneeded processes");
+    //     tracing::info!("Shutting down initial zcd/lwd unneeded processes");
     //     drop(cph);
 
     //     let zcd_datadir = &regtest_manager.zcashd_data_dir;
@@ -58,7 +58,7 @@ mod load_wallet {
     //         .output()
     //         .expect("wallet copy failed");
     //     let _cph = regtest_manager.launch(false).unwrap();
-    //     println!("loading wallet");
+    //     tracing::info!("loading wallet");
 
     //     let recipient = examples::NetworkSeedVersion::Regtest(
     //         examples::RegtestSeedVersion::HospitalMuseum(examples::HospitalMuseumVersion::V27),

@@ -34,7 +34,7 @@ where
     let send_value_for_recipient = 23_000;
     let send_value_self = 17_000;
 
-    println!("client is ready to send");
+    tracing::info!("client is ready to send");
 
     let mut recipient = environment.create_client().await;
     tracing::debug!("TEST 1");
