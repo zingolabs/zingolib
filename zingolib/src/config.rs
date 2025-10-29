@@ -497,7 +497,7 @@ impl ZingoConfig {
             match std::fs::create_dir_all(zcash_data_location.clone()) {
                 Ok(()) => {}
                 Err(e) => {
-                    eprintln!("Couldn't create zcash directory!\n{e}");
+                    tracing::error!("Couldn't create zcash directory!\n{e}");
                     panic!("Couldn't create zcash directory!");
                 }
             }
