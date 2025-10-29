@@ -1,9 +1,6 @@
 use http::Uri;
 
-pub struct ZingoWallet {
-    keys: Vec<String>, //todo parsing and keyring
-    lightclient: Option<zingolib::lightclient::LightClient>,
-}
+use crate::ZingoWallet;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AddServerError {
@@ -22,7 +19,9 @@ pub enum AddServerError {
     #[error("Server reported overflow block height: >{0}<.")]
     BlockHeight(#[from] std::num::TryFromIntError),
     #[error("Wallet creation failed with >{0}<.")]
-    CreateWallet(#[from] zingolib::wallet::error::WalletError),
+    CreateLightWallet(#[from] zingolib::wallet::error::WalletError),
+    #[error("Wallet creation failed with >{0}<.")]
+    CreateLightClient(#[from] zingolib::lightclient::error::LightClientError),
     #[error("Seed parse from string '{0}' failed with >{1}<.")]
     ParseSeed(String, bip0039::Error),
 }
@@ -127,7 +126,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             }; // maybe this could be defaulted
             let wallet =
                 LightWallet::new(chain_type, wallet_base, birthday, wallet_settings.clone())
-                    .map_err(AddServerError::CreateWallet)?;
+                    .map_err(AddServerError::CreateLightWallet)?;
             let config = {
                 ZingoConfigBuilder::default()
                     .set_lightwalletd_uri(server_uri)
@@ -136,7 +135,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                     .create()
             };
             let overwrite = false;
-            let lightclient = LightClient::create_from_wallet(wallet, config, overwrite);
+            let lightclient = LightClient::create_from_wallet(wallet, config, overwrite)?;
         }
         Err(AddServerError::NeedsSingleSeed)
     }

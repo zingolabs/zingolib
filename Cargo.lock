@@ -9007,12 +9007,14 @@ dependencies = [
  "http",
  "pepper-sync",
  "thiserror 2.0.17",
+ "tokio",
  "tonic 0.13.1",
  "zcash_client_backend",
  "zcash_primitives",
  "zcash_wallet_interface",
  "zingo_common_components",
  "zingo_netutils",
+ "zingo_test_vectors",
  "zingolib",
 ]
 
