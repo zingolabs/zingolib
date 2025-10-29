@@ -1,5 +1,4 @@
 use http::Uri;
-use zingo_common_components::protocol::block_height::block_height_from_u64;
 
 pub struct ZingoWallet {
     keys: Vec<String>, //todo parsing and keyring
@@ -21,7 +20,7 @@ pub enum AddServerError {
     #[error("Server reported unusable chain: >{0}<.")]
     Chain(#[from] zingolib::config::ChainFromStringError),
     #[error("Server reported overflow block height: >{0}<.")]
-    BlockHeight(#[from] zingo_common_components::protocol::block_height::BlockHeightFromU64Error),
+    BlockHeight(#[from] std::num::TryFromIntError),
     #[error("Wallet creation failed with >{0}<.")]
     CreateWallet(#[from] zingolib::wallet::error::WalletError),
     #[error("Seed parse from string '{0}' failed with >{1}<.")]
@@ -105,7 +104,8 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 let chain_name = &lightd_info.chain_name;
                 let chain_type: ChainType = chain_from_str(chain_name)?;
 
-                let birthday = block_height_from_u64(lightd_info.block_height)?;
+                let birthday: zcash_primitives::consensus::BlockHeight =
+                    lightd_info.block_height.try_into()?;
                 (chain_name, birthday)
             };
 
