@@ -7447,9 +7447,9 @@ checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.21"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "602b1a9e6e672f7f8b95088d21f23f8349277e834a3a1570285e9e137e576834"
+checksum = "462eeb75aeb73aea900253ce739c8e18a67423fadf006037cd3ff27e82748a06"
 
 [[package]]
 name = "unicode-normalization"
@@ -8535,7 +8535,7 @@ dependencies = [
 [[package]]
 name = "zcash_wallet_interface"
 version = "0.1.0"
-source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?rev=6cb5d53bf32c3e623775316ef5571258ac89df67#6cb5d53bf32c3e623775316ef5571258ac89df67"
+source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?branch=dev#02d99e830e9e1b43c365bd0d2eaf836e8e384f8f"
 
 [[package]]
 name = "zebra-chain"

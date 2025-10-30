@@ -44,17 +44,17 @@ pub enum AddKeyError {
 
 impl zcash_wallet_interface::Wallet for ZingoWallet {
     fn user_agent_id() -> zcash_wallet_interface::UserAgentId {
-        const AGENT_NAME: &str = "zingo_wallet";
+        const PARADIGM: &str = "zingo_wallet";
         const VERSION: &str = "0.0.1";
 
         zcash_wallet_interface::UserAgentId {
-            name: AGENT_NAME.to_string(),
+            paradigm: PARADIGM.to_string(),
             version: VERSION.to_string(),
         }
     }
 
     async fn new_wallet() -> Self {
-        // we cannot instantiate the current version of the lightclient yet
+        // we cannot instantiate the current version of the `LightClient` yet
         // without assumptions about keys and servers
         // which would violate principles of the interface
         // so we dont
