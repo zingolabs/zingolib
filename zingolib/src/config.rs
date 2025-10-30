@@ -122,7 +122,7 @@ pub enum ChainFromStringError {
 /// * `Err(String)` - An error message if the chain name is invalid
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
     match chain_name {
-        "testnet" => Ok(ChainType::Testnet),
+        "testnet" | "test" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
         "regtest" => Err(ChainFromStringError::UnknownRegtestChain),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
