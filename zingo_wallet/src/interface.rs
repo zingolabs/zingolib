@@ -70,7 +70,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
     async fn add_server(&mut self, server_address: String) -> Result<(), Self::AddServerError> {
         use std::num::NonZeroU32;
-        use std::path::PathBuf;
+        
         use std::str::FromStr as _;
         use std::sync::Arc;
         use std::sync::RwLock;
@@ -78,7 +78,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         use zingolib::config::ChainType;
         use zingolib::config::SyncConfig;
         use zingolib::config::TransparentAddressDiscovery;
-        use zingolib::config::ZingoConfig;
+        
         use zingolib::config::ZingoConfigBuilder;
         use zingolib::config::chain_from_str;
         use zingolib::lightclient::LightClient;
