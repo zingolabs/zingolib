@@ -70,7 +70,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
     async fn add_server(&mut self, server_address: String) -> Result<(), Self::AddServerError> {
         use std::num::NonZeroU32;
-        
+
         use std::str::FromStr as _;
         use std::sync::Arc;
         use std::sync::RwLock;
@@ -78,7 +78,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         use zingolib::config::ChainType;
         use zingolib::config::SyncConfig;
         use zingolib::config::TransparentAddressDiscovery;
-        
+
         use zingolib::config::ZingoConfigBuilder;
         use zingolib::config::chain_from_str;
         use zingolib::lightclient::LightClient;
@@ -95,9 +95,13 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             let (chain_type, birthday) = {
                 // we need to ask the indexer for this information
 
-                let mut client = zingolib::grpc_client::get_zcb_client(server_uri.clone())
-                    .await
-                    .map_err(|e| AddServerError::CantCreateClient(server_uri.clone(), e))?;
+                let mut client = {
+                    // global configuration must be manually set *somewhere*
+                    rustls::crypto::ring::default_provider().install_default();
+                    zingolib::grpc_client::get_zcb_client(server_uri.clone())
+                        .await
+                        .map_err(|e| AddServerError::CantCreateClient(server_uri.clone(), e))?
+                };
 
                 let lightd_info = client
                     .get_lightd_info(tonic::Request::new(
@@ -161,7 +165,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
     async fn get_max_scanned_height_for_server(
         &mut self,
-        server: String,
+        _server: String,
     ) -> Result<zcash_wallet_interface::BlockHeight, Self::GetMaxScannedHeightError> {
         use zcash_client_backend::data_api::WalletRead;
 
