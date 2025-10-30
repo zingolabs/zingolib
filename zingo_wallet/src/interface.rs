@@ -44,14 +44,12 @@ pub enum AddKeyError {
 
 impl zcash_wallet_interface::Wallet for ZingoWallet {
     fn user_agent_id() -> zcash_wallet_interface::UserAgentId {
-        struct Version(&'static str);
-
-        const VERSION_STR: &str = "0.0.1";
-        const VERSION: Version = Version(VERSION_STR);
+        const AGENT_NAME: &str = "zingo_wallet";
+        const VERSION: &str = "0.0.1";
 
         zcash_wallet_interface::UserAgentId {
-            name: "zingo_wallet".to_string(),
-            version: VERSION.0.to_string(),
+            name: AGENT_NAME.to_string(),
+            version: VERSION.to_string(),
         }
     }
 
