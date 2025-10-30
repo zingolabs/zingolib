@@ -36,6 +36,12 @@ pub enum GetMaxScannedHeightError {
     WalletError(zingolib::wallet::error::WalletError),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum AddKeyError {
+    #[error("Todo")]
+    AlreadyHasKey, //TODO
+}
+
 impl zcash_wallet_interface::Wallet for ZingoWallet {
     fn user_agent_id() -> zcash_wallet_interface::UserAgentId {
         struct Version(&'static str);
@@ -140,10 +146,15 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         Err(AddServerError::NeedsSingleSeed)
     }
 
-    type AddKeyError = ();
+    type AddKeyError = AddKeyError;
 
     async fn add_key(&mut self, key_string: String) -> Result<(), Self::AddKeyError> {
-        todo!()
+        if self.keys.is_empty() {
+            self.keys.push(key_string);
+            Ok(())
+        } else {
+            Err(AddKeyError::AlreadyHasKey)
+        }
     }
 
     type GetMaxScannedHeightError = GetMaxScannedHeightError;
