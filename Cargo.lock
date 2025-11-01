@@ -1308,6 +1308,7 @@ dependencies = [
  "tonic 0.13.1",
  "tonic-build 0.13.1",
  "tower 0.5.2",
+ "tracing",
  "tracing-subscriber",
  "zcash_local_net",
  "zcash_primitives",

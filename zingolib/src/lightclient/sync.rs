@@ -168,8 +168,8 @@ pub mod test {
         let mut lc = wallet_case.load_example_wallet_with_client().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
-        println!("{sync_result}");
-        println!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
+        tracing::info!("{sync_result}");
+        tracing::info!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }
 

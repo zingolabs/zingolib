@@ -40,7 +40,7 @@ async fn simple_sync() {
 
     let result = light_client.sync_and_await().await.unwrap();
 
-    println!("{result}");
+    tracing::info!("{result}");
 
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);
@@ -169,7 +169,7 @@ async fn sent_transaction_reorged_into_mempool() {
     )
     .await
     .unwrap();
-    println!("{}", one_txid.first());
+    tracing::info!("{}", one_txid.first());
     recipient.sync_and_await().await.unwrap();
 
     let connector = DarksideConnector(server_id.clone());
@@ -188,14 +188,14 @@ async fn sent_transaction_reorged_into_mempool() {
 
     recipient.sync_and_await().await.unwrap();
     //  light_client.do_sync(false).await.unwrap();
-    println!(
+    tracing::info!(
         "Recipient pre-reorg: {}",
         &recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "Sender pre-reorg (unsynced): {}",
         &light_client
             .account_balance(zip32::AccountId::ZERO)
@@ -213,14 +213,14 @@ async fn sent_transaction_reorged_into_mempool() {
 
     recipient.sync_and_await().await.unwrap();
     light_client.sync_and_await().await.unwrap();
-    println!(
+    tracing::info!(
         "Recipient post-reorg: {}",
         &recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "Sender post-reorg: {}",
         &light_client
             .account_balance(zip32::AccountId::ZERO)
