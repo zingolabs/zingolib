@@ -553,6 +553,30 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
+    pub fn get_wallet_id_pathbuf(&self, id: String) -> PathBuf {
+        let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
+        // if id is empty, the name is the default name
+        if id.is_empty() {
+            wallet_location.push(&self.wallet_name);
+        } else {
+            let base_name = &self.wallet_name;
+            let wallet_id_name = format!("{}-{}", id, base_name.to_string_lossy());
+            wallet_location.push(wallet_id_name);
+        }
+        wallet_location
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn get_wallet_id_path(&self, id: String) -> Box<Path> {
+        self.get_wallet_id_pathbuf(id).into_boxed_path()
+    }
+
+    /// TODO: Add Doc Comment Here!
+    pub fn wallet_id_path_exists(&self, id: String) -> bool {
+        self.get_wallet_id_path(id).exists()
+    }
+
+    /// TODO: Add Doc Comment Here!
     pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
