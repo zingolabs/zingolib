@@ -176,7 +176,7 @@ pub fn load_clientconfig(
     chain: ChainType,
     wallet_settings: WalletSettings,
     no_of_accounts: NonZeroU32,
-    id: String,
+    wallet_name: String,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -203,11 +203,10 @@ pub fn load_clientconfig(
     }
 
     // if id is empty, the name is the default name
-    let wallet_name = if id.is_empty() {
+    let wallet_name_config = if wallet_name.is_empty() {
         DEFAULT_WALLET_NAME
     } else {
-        let wallet_id_name = format!("{}-{}", id, DEFAULT_WALLET_NAME);
-        &wallet_id_name.clone()
+        &wallet_name
     };
 
     // Create a Light Client Config
@@ -215,7 +214,7 @@ pub fn load_clientconfig(
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
         wallet_dir: data_dir,
-        wallet_name: wallet_name.into(),
+        wallet_name: wallet_name_config.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
         no_of_accounts,
@@ -562,27 +561,25 @@ impl ZingoConfig {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn get_wallet_id_pathbuf(&self, id: String) -> PathBuf {
+    pub fn get_wallet_id_pathbuf(&self, wallet_name: String) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         // if id is empty, the name is the default name
-        if id.is_empty() {
+        if wallet_name.is_empty() {
             wallet_location.push(&self.wallet_name);
         } else {
-            let base_name = &self.wallet_name;
-            let wallet_id_name = format!("{}-{}", id, base_name.to_string_lossy());
-            wallet_location.push(wallet_id_name);
+            wallet_location.push(wallet_name);
         }
         wallet_location
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn get_wallet_id_path(&self, id: String) -> Box<Path> {
-        self.get_wallet_id_pathbuf(id).into_boxed_path()
+    pub fn get_wallet_id_path(&self, wallet_name: String) -> Box<Path> {
+        self.get_wallet_id_pathbuf(wallet_name).into_boxed_path()
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn wallet_id_path_exists(&self, id: String) -> bool {
-        self.get_wallet_id_path(id).exists()
+    pub fn wallet_id_path_exists(&self, wallet_name: String) -> bool {
+        self.get_wallet_id_path(wallet_name).exists()
     }
 
     /// TODO: Add Doc Comment Here!
