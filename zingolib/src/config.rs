@@ -562,7 +562,8 @@ impl ZingoConfig {
     /// TODO: Add Doc Comment Here!
     #[must_use]
     pub fn get_wallet_with_name_path(&self, wallet_name: String) -> Box<Path> {
-        self.get_wallet_with_name_pathbuf(wallet_name).into_boxed_path()
+        self.get_wallet_with_name_pathbuf(wallet_name)
+            .into_boxed_path()
     }
 
     /// TODO: Add Doc Comment Here!
