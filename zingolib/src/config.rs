@@ -176,6 +176,7 @@ pub fn load_clientconfig(
     chain: ChainType,
     wallet_settings: WalletSettings,
     no_of_accounts: NonZeroU32,
+    id: String,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -201,12 +202,20 @@ pub fn load_clientconfig(
         }
     }
 
+    // if id is empty, the name is the default name
+    let wallet_name = if id.is_empty() {
+        DEFAULT_WALLET_NAME
+    } else {
+        let wallet_id_name = format!("{}-{}", id, DEFAULT_WALLET_NAME);
+        &wallet_id_name.clone()
+    };
+
     // Create a Light Client Config
     let config = ZingoConfig {
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
         wallet_dir: data_dir,
-        wallet_name: DEFAULT_WALLET_NAME.into(),
+        wallet_name: wallet_name.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
         no_of_accounts,
@@ -666,6 +675,7 @@ mod tests {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         );
 
         assert!(valid_config.is_ok());
@@ -700,6 +710,7 @@ mod tests {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         )
         .unwrap();
 

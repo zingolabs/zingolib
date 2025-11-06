@@ -38,6 +38,7 @@ async fn sync_mainnet_test() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -107,6 +108,7 @@ async fn sync_status() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(

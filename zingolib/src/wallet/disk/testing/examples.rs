@@ -288,6 +288,7 @@ impl NetworkSeedVersion {
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     },
                     1.try_into().unwrap(),
+                    "".to_string(),
                 )
                 .unwrap()
             }
