@@ -101,15 +101,15 @@ impl std::fmt::Display for AccountBalance {
 impl From<AccountBalance> for json::JsonValue {
     fn from(value: AccountBalance) -> Self {
         json::object! {
-            "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(|bal| bal.into_u64()),
-            "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(|bal| bal.into_u64()),
-            "total_orchard_balance" => value.total_orchard_balance.map(|bal| bal.into_u64()),
-            "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(|bal| bal.into_u64()),
-            "unconfirmed_sapling_balance" => value.unconfirmed_sapling_balance.map(|bal| bal.into_u64()),
-            "total_sapling_balance" => value.total_sapling_balance.map(|bal| bal.into_u64()),
-            "confirmed_transparent_balance" => value.confirmed_transparent_balance.map(|bal| bal.into_u64()),
-            "unconfirmed_transparent_balance" => value.unconfirmed_transparent_balance.map(|bal| bal.into_u64()),
-            "total_transparent_balance" => value.total_transparent_balance.map(|bal| bal.into_u64()),
+            "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "total_orchard_balance" => value.total_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "unconfirmed_sapling_balance" => value.unconfirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "total_sapling_balance" => value.total_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "confirmed_transparent_balance" => value.confirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "unconfirmed_transparent_balance" => value.unconfirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+            "total_transparent_balance" => value.total_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
         }
     }
 }
@@ -221,17 +221,17 @@ impl LightWallet {
                 PoolType::Transparent => {
                     if ufvk.transparent().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
                 PoolType::SAPLING => {
                     if ufvk.sapling().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
                 PoolType::ORCHARD => {
                     if ufvk.orchard().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
@@ -248,7 +248,7 @@ impl LightWallet {
                                 && output.spending_transaction().is_none()
                                 && output.key_id().account_id() == account_id
                         })
-                        .map(|output| output.value())
+                        .map(pepper_sync::wallet::OutputInterface::value)
                         .sum::<u64>()
                 }),
         )?)
@@ -282,17 +282,17 @@ impl LightWallet {
                 PoolType::Transparent => {
                     if ufvk.transparent().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
                 PoolType::SAPLING => {
                     if ufvk.sapling().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
                 PoolType::ORCHARD => {
                     if ufvk.orchard().is_none() {
                         return Err(KeyError::NoViewCapability.into());
-                    };
+                    }
                 }
             },
             UnifiedKeyStore::Empty => return Err(KeyError::NoViewCapability.into()),
@@ -309,7 +309,7 @@ impl LightWallet {
                                 && output.spending_transaction().is_none()
                                 && output.key_id().account_id() == account_id
                         })
-                        .map(|output| output.value())
+                        .map(pepper_sync::wallet::OutputInterface::value)
                         .sum::<u64>()
                 }),
         )?)
@@ -337,7 +337,7 @@ impl LightWallet {
     }
 
     /// Returns total balance of unspent notes in confirmed blocks for a given shielded pool and `account_id`,
-    /// excluding any notes with value less than marginal fee (5_000).
+    /// excluding any notes with value less than marginal fee (`5_000`).
     ///
     /// # Error
     ///
@@ -383,7 +383,7 @@ impl LightWallet {
     }
 
     /// Returns total balance of unspent notes not yet confirmed on the block chain for a given shielded pool and
-    /// `account_id`, excluding any notes with value less than marginal fee (5_000).
+    /// `account_id`, excluding any notes with value less than marginal fee (`5_000`).
     ///
     /// # Error
     ///
@@ -410,7 +410,7 @@ impl LightWallet {
     ///
     /// Spendable notes are:
     /// - confirmed
-    /// - not dust (note value larger than 5_000 zats)
+    /// - not dust (note value larger than `5_000` zats)
     /// - the wallet can build a witness for the note's commitment
     /// - satisfy the number of minimum confirmations set by the wallet
     /// - the nullifier derived from the note has not yet been found in a transaction input on chain

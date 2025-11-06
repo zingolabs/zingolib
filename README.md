@@ -55,6 +55,7 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Running in non-interactive mode:
 You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit.
+If you need to sync the wallet first before running the command, use --waitsync argument. This is useful for example for `zingo-cli balance`.
 Run `zingo-cli help` to see a list of all commands.
 
 ## Options
@@ -62,6 +63,8 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 
 * `--data-dir`: uses the specified path as data directory. This is required when not using the `--regtest` option.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
+* `--waitsync`: Wait for sync before running a command in non-interactive mode
+    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --waitsync balance`
 * `--server`: Connect to a custom zcash lightwalletd server.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase

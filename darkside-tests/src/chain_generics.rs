@@ -51,7 +51,7 @@ pub(crate) mod conduct_chain {
     use crate::utils::scenarios::DarksideEnvironment;
     use crate::utils::update_tree_states_for_transaction;
 
-    /// doesnt use the full extent of DarksideEnvironment, preferring to rely on server truths when ever possible.
+    /// doesnt use the full extent of `DarksideEnvironment`, preferring to rely on server truths when ever possible.
     impl ConductChain for DarksideEnvironment {
         async fn setup() -> Self {
             let elf = DarksideEnvironment::new(None).await;
@@ -73,7 +73,7 @@ pub(crate) mod conduct_chain {
                 .await;
             let config = self
                 .client_builder
-                .make_unique_data_dir_and_load_config(self.activation_heights);
+                .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
@@ -100,7 +100,7 @@ pub(crate) mod conduct_chain {
 
         fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
             self.client_builder
-                .make_unique_data_dir_and_load_config(self.activation_heights)
+                .make_unique_data_dir_and_load_config(self.configured_activation_heights)
         }
 
         async fn increase_chain_height(&mut self) {
@@ -171,7 +171,7 @@ pub(crate) mod conduct_chain {
                         {
                             sapling_tree
                                 .append(sapling_crypto::Node::from_cmu(output.cmu()))
-                                .unwrap()
+                                .unwrap();
                         }
                         for action in transaction
                             .orchard_bundle()
@@ -180,7 +180,7 @@ pub(crate) mod conduct_chain {
                         {
                             orchard_tree
                                 .append(MerkleHashOrchard::from_cmx(action.cmx()))
-                                .unwrap()
+                                .unwrap();
                         }
                     }
                 }
@@ -204,7 +204,7 @@ pub(crate) mod conduct_chain {
                 sapling_tree: hex::encode(sapling_tree_bytes),
                 orchard_tree: hex::encode(orchard_tree_bytes),
                 network: crate::constants::first_tree_state().network,
-                hash: "".to_string(),
+                hash: String::new(),
                 time: 0,
             };
             self.darkside_connector

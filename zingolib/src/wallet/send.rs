@@ -1,4 +1,4 @@
-//! This mod contains pieces of the impl LightWallet that are invoked during a send.
+//! This mod contains pieces of the impl `LightWallet` that are invoked during a send.
 
 use std::ops::Range;
 
@@ -7,6 +7,7 @@ use nonempty::NonEmpty;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::NoteInterface;
+use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -43,6 +44,7 @@ pub struct SendProgress {
 
 impl SendProgress {
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn new(id: u32) -> Self {
         SendProgress {
             id,
@@ -130,7 +132,7 @@ impl LightWallet {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
-        let usk = self
+        let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&sending_account)
             .ok_or(KeyError::NoAccountKeys)?
@@ -141,7 +143,7 @@ impl LightWallet {
             &network,
             &sapling_prover,
             &sapling_prover,
-            &usk,
+            &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
         )
@@ -326,14 +328,13 @@ fn check_note_shards_are_scanned(
         .iter()
         .filter(|&shard_range| shard_range.contains(&note_height))
         .all(|note_shard_range| {
-            //dbg!(note_shard_range);
             scan_ranges
                 .iter()
                 .filter(|&scan_range| {
                     scan_range.priority() == ScanPriority::Scanned
                         || scan_range.priority() == ScanPriority::ScannedWithoutMapping
                 })
-                .map(|scan_range| scan_range.block_range())
+                .map(pepper_sync::sync::ScanRange::block_range)
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)

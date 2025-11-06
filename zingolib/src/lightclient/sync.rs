@@ -1,4 +1,4 @@
-//! Sync implementations for [crate::lightclient::LightClient] and related types.
+//! Sync implementations for [`crate::lightclient::LightClient`] and related types.
 
 use std::borrow::BorrowMut;
 use std::sync::atomic;
@@ -162,14 +162,14 @@ pub mod test {
     ) -> LightClient {
         // install default crypto provider (ring)
         if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-            log::error!("Error installing crypto provider: {:?}", e)
-        };
+            log::error!("Error installing crypto provider: {e:?}");
+        }
 
         let mut lc = wallet_case.load_example_wallet_with_client().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
-        println!("{}", sync_result);
-        println!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
+        tracing::info!("{sync_result}");
+        tracing::info!("{:?}", lc.account_balance(zip32::AccountId::ZERO).await);
         lc
     }
 

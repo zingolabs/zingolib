@@ -2,31 +2,16 @@
 //! This module contains all regtest-specific functionality
 
 use std::path::PathBuf;
-use zingolib::testutils::scenarios::{LIGHTWALLETD_BIN, ZCASH_CLI_BIN, ZCASHD_BIN};
-use zingolib::testutils::testvectors::REG_O_ADDR_FROM_ABANDONART;
-use zingolib::testutils::zingo_infra_services::LocalNet;
-use zingolib::testutils::zingo_infra_services::indexer::{Lightwalletd, LightwalletdConfig};
-use zingolib::testutils::zingo_infra_services::validator::{Zcashd, ZcashdConfig};
+use zcash_local_net::LocalNet;
+use zcash_local_net::indexer::lightwalletd::Lightwalletd;
+use zcash_local_net::process::Process as _;
+use zcash_local_net::validator::zcashd::Zcashd;
 
 /// Launch a local regtest network
-pub(crate) async fn launch_local_net() -> LocalNet<Lightwalletd, Zcashd> {
-    LocalNet::<Lightwalletd, Zcashd>::launch(
-        LightwalletdConfig {
-            lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-            listen_port: None,
-            zcashd_conf: PathBuf::new(),
-            darkside: false,
-        },
-        ZcashdConfig {
-            zcashd_bin: ZCASHD_BIN.clone(),
-            zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-            rpc_listen_port: None,
-            activation_heights: zingolib::testutils::default_regtest_heights(),
-            miner_address: Some(REG_O_ADDR_FROM_ABANDONART),
-            chain_cache: None,
-        },
-    )
-    .await
+pub(crate) async fn launch_local_net() -> LocalNet<Zcashd, Lightwalletd> {
+    LocalNet::launch_default()
+        .await
+        .expect("A Regtest LocalNet should've launched.")
 }
 /// Get the default regtest data directory
 pub(crate) fn get_regtest_dir() -> PathBuf {

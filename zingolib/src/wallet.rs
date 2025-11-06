@@ -75,7 +75,7 @@ impl std::fmt::Display for RecoveryInfo {
     }
 }
 
-/// Data used to initialize new instance of LightWallet
+/// Data used to initialize new instance of `LightWallet`
 pub enum WalletBase {
     /// Generate a wallet with a new seed for a number of accounts.
     FreshEntropy { no_of_accounts: NonZeroU32 },
@@ -117,7 +117,7 @@ pub struct LightWallet {
     pub birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
-    /// Unified_addresses
+    /// `Unified_addresses`
     unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
     transparent_addresses: BTreeMap<TransparentAddressId, String>,
@@ -233,7 +233,7 @@ impl LightWallet {
             }
             Err(KeyError::NoViewCapability) => (),
             Err(e) => return Err(e.into()),
-        };
+        }
 
         Ok(Self {
             current_version: LightWallet::serialized_version(),
@@ -258,32 +258,38 @@ impl LightWallet {
     }
 
     /// Returns current wallet version.
+    #[must_use]
     pub fn current_version(&self) -> u64 {
         self.current_version
     }
 
     /// Returns wallet version that was read from on wallet load.
+    #[must_use]
     pub fn read_version(&self) -> u64 {
         self.read_version
     }
 
     /// Returns the wallet's mnemonic (seed and phrase).
+    #[must_use]
     pub fn mnemonic(&self) -> Option<&Mnemonic> {
         self.mnemonic.as_ref()
     }
 
     /// Returns the wallet's mnemonic phrase.
+    #[must_use]
     pub fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic()
             .map(|mnemonic| mnemonic.phrase().to_string())
     }
 
     /// Returns unified addresses.
+    #[must_use]
     pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
         &self.unified_addresses
     }
 
     /// Returns unified addresses in a JSON array.
+    #[must_use]
     pub fn unified_addresses_json(&self) -> json::JsonValue {
         json::JsonValue::Array(
             self.unified_addresses
@@ -303,11 +309,13 @@ impl LightWallet {
     }
 
     /// Returns transparent addresses.
+    #[must_use]
     pub fn transparent_addresses(&self) -> &BTreeMap<TransparentAddressId, String> {
         &self.transparent_addresses
     }
 
     /// Returns transparent addresses in a JSON array.
+    #[must_use]
     pub fn transparent_addresses_json(&self) -> json::JsonValue {
         json::JsonValue::Array(
             self.transparent_addresses
@@ -324,6 +332,7 @@ impl LightWallet {
         )
     }
 
+    #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
             seed_phrase: self.mnemonic_phrase()?,
@@ -441,7 +450,7 @@ impl LightWallet {
                     .get_confirmed_height()
                     .is_some_and(|height| height <= fully_scanned_height)
             })
-            .map(|transaction| transaction.datetime())
+            .map(pepper_sync::wallet::WalletTransaction::datetime)
             .collect();
 
         let prune_below = self
@@ -530,7 +539,7 @@ mod tests {
         for commitment in commitments {
             orchard_tree
                 .append(MerkleHashOrchard::from_bytes(&commitment).unwrap())
-                .unwrap()
+                .unwrap();
         }
         // This value was produced by the Python test vector generation code implemented here:
         // https://github.com/zcash-hackworks/zcash-test-vectors/blob/f4d756410c8f2456f5d84cedf6dac6eb8c068eed/orchard_merkle_tree.py

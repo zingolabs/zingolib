@@ -12,12 +12,7 @@ use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
 use zcash_primitives::consensus::NetworkConstants;
-use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::local_consensus::LocalNetwork;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
-use zingo_infra_services::LocalNet;
-use zingo_infra_services::indexer::Indexer;
-use zingo_infra_services::validator::Validator;
 
 use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
@@ -28,7 +23,6 @@ use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
 use crate::wallet::{LightWallet, WalletBase, WalletSettings};
-use lightclient::get_base_address;
 
 pub mod assertions;
 pub mod chain_generics;
@@ -36,29 +30,13 @@ pub mod fee_tables;
 pub mod lightclient;
 pub mod macros;
 pub mod paths;
-pub mod scenarios;
 
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
-pub use testvectors;
-pub use zingo_infra_services;
 
-/// This function provides a DRY and succint instance of the most common regtest height
-/// config.
-pub fn default_regtest_heights() -> LocalNetwork {
-    LocalNetwork {
-        overwinter: Some(1.into()),
-        sapling: Some(1.into()),
-        blossom: Some(1.into()),
-        heartwood: Some(1.into()),
-        canopy: Some(1.into()),
-        nu5: Some(1.into()),
-        nu6: Some(1.into()),
-        nu6_1: Some(1.into()),
-    }
-}
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
@@ -77,6 +55,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
 }
 
 /// TODO: Add Doc Comment Here!
+#[must_use]
 pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
@@ -140,9 +119,7 @@ pub fn assert_transaction_summary_equality(
 ) {
     assert!(
         check_transaction_summary_equality(observed, expected),
-        "observed: {}\n\n\nexpected: {}\n\n\n",
-        observed,
-        expected,
+        "observed: {observed}\n\n\nexpected: {expected}\n\n\n",
     );
 }
 
@@ -150,6 +127,7 @@ pub fn assert_transaction_summary_equality(
 /// Datetime is also based on time of run.
 /// Check all the other fields
 ///   TODO:  seed random numbers in tests deterministically
+#[must_use]
 pub fn check_transaction_summary_equality(
     first: &TransactionSummary,
     second: &TransactionSummary,
@@ -179,7 +157,7 @@ pub fn check_transaction_summary_equality(
 fn check_note_summary_equality(first: &[BasicNoteSummary], second: &[BasicNoteSummary]) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && check_spend_status_equality(first[i].spend_status, second[i].spend_status)
@@ -197,7 +175,7 @@ fn check_outgoing_note_summary_equality(
 ) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && first[i].memo == second[i].memo
@@ -219,7 +197,7 @@ fn check_transparent_coin_summary_equality(
 ) -> bool {
     if first.len() != second.len() {
         return false;
-    };
+    }
     for i in 0..first.len() {
         if !(first[i].value == second[i].value
             && check_spend_status_equality(first[i].spend_summary, second[i].spend_summary))
@@ -243,73 +221,22 @@ fn check_spend_status_equality(first: SpendStatus, second: SpendStatus) -> bool 
     )
 }
 
-/// Send from sender to recipient and then bump chain and sync both lightclients
-pub async fn send_value_between_clients_and_sync<I: Indexer, V: Validator>(
-    local_net: &LocalNet<I, V>,
-    sender: &mut LightClient,
-    recipient: &mut LightClient,
-    value: u64,
-    address_pool: PoolType,
-) -> Result<String, LightClientError> {
-    let txid = lightclient::from_inputs::quick_send(
-        sender,
-        vec![(
-            &get_base_address(recipient, address_pool).await,
-            value,
-            None,
-        )],
-    )
-    .await
-    .unwrap();
-    increase_height_and_wait_for_client(local_net, sender, 1).await?;
-    recipient.sync_and_await().await?;
-    Ok(txid.first().to_string())
-}
-
-/// This function increases the chain height reliably (with polling) but
-/// it _also_ ensures that the client state is synced.
-/// Unsynced clients are very interesting to us.  See increase_server_height
-/// to reliably increase the server without syncing the client
-pub async fn increase_height_and_wait_for_client<I: Indexer, V: Validator>(
-    local_net: &LocalNet<I, V>,
-    client: &mut LightClient,
-    n: u32,
-) -> Result<(), LightClientError> {
-    sync_to_target_height(
-        client,
-        generate_n_blocks_return_new_height(local_net, n).await,
-    )
-    .await
-}
-
-/// TODO: Add Doc Comment Here!
-pub async fn generate_n_blocks_return_new_height<I: Indexer, V: Validator>(
-    local_net: &LocalNet<I, V>,
-    n: u32,
-) -> BlockHeight {
-    let start_height = local_net.validator().get_chain_height().await;
-    let target = start_height + n;
-    local_net.validator().generate_blocks(n).await.unwrap();
-    assert_eq!(local_net.validator().get_chain_height().await, target);
-
-    target
-}
-
 /// Will hang if chain does not reach `target_block_height`
 pub async fn sync_to_target_height(
     client: &mut LightClient,
-    target_block_height: BlockHeight,
+    target_block_height: u32,
 ) -> Result<(), LightClientError> {
     // sync first so ranges exist for the `fully_scanned_height` call
     client.sync_and_await().await?;
-    while client
-        .wallet
-        .read()
-        .await
-        .sync_state
-        .fully_scanned_height()
-        .unwrap()
-        < target_block_height
+    while u32::from(
+        client
+            .wallet
+            .read()
+            .await
+            .sync_state
+            .fully_scanned_height()
+            .unwrap(),
+    ) < target_block_height
     {
         tokio::time::sleep(Duration::from_millis(500)).await;
         client.sync_and_await().await?;
@@ -328,7 +255,7 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let for_info = self.from.read(buf)?;
-        log::info!("{:?}", for_info);
+        log::info!("{for_info:?}");
         self.read_lengths.push(for_info);
         Ok(for_info)
     }
@@ -615,6 +542,7 @@ pub fn port_to_localhost_uri(port: impl std::fmt::Display) -> http::Uri {
 }
 
 /// a quick and dirty way to proptest across protocols.
+#[must_use]
 pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
     match int {
         1 => ShieldedProtocol::Sapling,
@@ -624,6 +552,7 @@ pub fn int_to_shieldedprotocol(int: i32) -> ShieldedProtocol {
 }
 
 /// a quick and dirty way to proptest across pools.
+#[must_use]
 pub fn int_to_pooltype(int: i32) -> PoolType {
     match int {
         0 => PoolType::Transparent,
@@ -634,7 +563,7 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// helperized test print.
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub fn timestamped_test_log(text: &str) {
-    println!("{}: {}", crate::utils::now(), text);
+    tracing::info!("{}: {}", crate::utils::now(), text);
 }
 
 #[allow(unused_macros)]
@@ -718,7 +647,7 @@ pub fn encoded_orchard_only_from_ua(
         Some(
             unified_address
                 .orchard()
-                .cloned()
+                .copied()
                 .expect("no orchard receiver"),
         ),
         None,

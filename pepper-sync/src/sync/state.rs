@@ -60,7 +60,7 @@ where
     Ok(wallet_height)
 }
 
-/// Returns the scan_targets for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
+/// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
 fn find_scan_targets(
     sync_state: &SyncState,
     block_range: &Range<BlockHeight>,
@@ -78,7 +78,7 @@ fn find_scan_targets(
                 narrow_scan_area: false,
             },
         )
-        .cloned()
+        .copied()
         .collect()
 }
 
@@ -355,7 +355,7 @@ pub(super) fn set_scan_priority(
         sync_state.scan_ranges[index] =
             ScanRange::from_parts(range.block_range().clone(), scan_priority);
     } else {
-        panic!("scan range with block range {:?} not found!", block_range)
+        panic!("scan range with block range {block_range:?} not found!")
     }
 }
 
@@ -392,7 +392,7 @@ fn punch_scan_priority(
         ) {
             (true, true, _) => scan_ranges_contained_by_block_range.push(scan_range.clone()),
             (true, false, _) | (false, true, _) => {
-                scan_ranges_for_splitting.push((index, scan_range.clone()))
+                scan_ranges_for_splitting.push((index, scan_range.clone()));
             }
             (false, false, true) => scan_ranges_for_splitting.push((index, scan_range.clone())),
             (false, false, false) => {}
@@ -478,11 +478,10 @@ fn determine_block_range(
 
             let range = Range { start, end };
 
-            if !range.contains(&block_height) {
-                panic!(
-                    "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
-                );
-            }
+            assert!(
+                range.contains(&block_height),
+                "block height should always be within the incomplete shard at chain tip when no complete shard range is found!"
+            );
 
             range
         } else {
@@ -552,7 +551,7 @@ fn split_out_scan_range(
             scan_range.block_range().clone(),
             scan_priority,
         ));
-    };
+    }
 
     split_ranges
 }
@@ -830,7 +829,7 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
         })
-        .map(|scan_range| scan_range.block_range())
+        .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
             acc + (block_range.end - block_range.start)
         })

@@ -44,13 +44,14 @@ impl LightWallet {
                     TransactionKind::Received | TransactionKind::Sent(SendType::Shield) => {
                         transaction.total_value_received()
                     }
-                    TransactionKind::Sent(SendType::Send)
-                    | TransactionKind::Sent(SendType::SendToSelf) => transaction.total_value_sent(),
+                    TransactionKind::Sent(SendType::Send | SendType::SendToSelf) => {
+                        transaction.total_value_sent()
+                    }
                 };
                 let fee: Option<u64> = self
                     .calculate_transaction_fee(transaction)
                     .ok()
-                    .map(|z| z.into_u64());
+                    .map(zcash_protocol::value::Zatoshis::into_u64);
                 let orchard_notes = transaction
                     .orchard_notes()
                     .iter()
@@ -66,7 +67,7 @@ impl LightWallet {
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
-                            output.output_id().output_index() as u32,
+                            u32::from(output.output_id().output_index()),
                             memo,
                         )
                     })
@@ -86,7 +87,7 @@ impl LightWallet {
                         BasicNoteSummary::from_parts(
                             output.value(),
                             spend_status,
-                            output.output_id().output_index() as u32,
+                            u32::from(output.output_id().output_index()),
                             memo,
                         )
                     })
@@ -100,7 +101,7 @@ impl LightWallet {
                         BasicCoinSummary::from_parts(
                             output.value(),
                             spend_status,
-                            output.output_id().output_index() as u32,
+                            u32::from(output.output_id().output_index()),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -165,7 +166,7 @@ impl LightWallet {
                                 .filter_map(|(output_index, transparent_output)| {
                                     transparent_output.recipient_address().map(|address| {
                                         OutgoingCoinSummary {
-                                            value: transparent_output.value.into_u64(),
+                                            value: transparent_output.value().into_u64(),
                                             recipient: transparent::encode_address(
                                                 &self.network,
                                                 address,
@@ -482,12 +483,13 @@ impl LightWallet {
                         });
                     }
                 }
-            };
+            }
         }
 
         Ok(ValueTransfers::new(value_transfers))
     }
 
+    #[must_use]
     pub fn note_summaries<N>(&self, include_spent_notes: bool) -> NoteSummaries
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
@@ -528,6 +530,7 @@ impl LightWallet {
         NoteSummaries::new(note_summaries)
     }
 
+    #[must_use]
     pub fn coin_summaries(&self, include_spent_coins: bool) -> Vec<CoinSummary> {
         self.wallet_outputs::<TransparentCoin>()
             .into_iter()
@@ -557,7 +560,7 @@ impl LightWallet {
             .collect()
     }
 
-    /// Provides a list of ValueTransfers associated with the sender, or containing the string.
+    /// Provides a list of `ValueTransfers` associated with the sender, or containing the string.
     pub async fn messages_containing(
         &self,
         filter: Option<&str>,
@@ -578,7 +581,7 @@ impl LightWallet {
                     if vt.recipient_address == Some(s.to_string()) {
                         true
                     } else {
-                        for memo in vt.memos.iter() {
+                        for memo in &vt.memos {
                             if memo.contains(s) {
                                 return true;
                             }
@@ -694,7 +697,7 @@ impl LightWallet {
         })?;
         let mut addresses = addresses.into_iter().collect::<Vec<_>>();
         addresses.sort();
-        addresses.into_iter().for_each(|address| {
+        for address in addresses {
             let outgoing_notes_to_address: Vec<&OutgoingNoteSummary> = outgoing_notes
                 .iter()
                 .filter(|&&note| {
@@ -705,7 +708,7 @@ impl LightWallet {
                     };
                     query_address == address
                 })
-                .cloned()
+                .copied()
                 .collect();
             let outgoing_coins_to_address: Vec<&OutgoingCoinSummary> = outgoing_coins
                 .iter()
@@ -733,7 +736,7 @@ impl LightWallet {
                 pool_received: None,
                 memos,
             });
-        });
+        }
 
         Ok(value_transfers)
     }

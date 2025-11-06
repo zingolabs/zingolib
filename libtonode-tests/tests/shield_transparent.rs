@@ -1,5 +1,8 @@
 use zingolib::get_base_address_macro;
-use zingolib::testutils::{lightclient::from_inputs, scenarios::faucet_recipient_default};
+use zingolib::testutils::lightclient::from_inputs;
+use zingolib_testutils::scenarios::{
+    faucet_recipient_default, increase_height_and_wait_for_client,
+};
 
 #[tokio::test]
 #[ignore]
@@ -7,7 +10,7 @@ async fn shield_transparent() {
     let (local_net, mut faucet, mut recipient) = faucet_recipient_default().await;
     let transparent_funds = 100_000;
 
-    println!(
+    tracing::info!(
         "scenario initial
             faucet: {}
             recipient: {}",
@@ -31,7 +34,7 @@ async fn shield_transparent() {
     .await
     .unwrap();
 
-    println!(
+    tracing::info!(
         "sent to recipient
             faucet: {}
             recipient: {}",
@@ -44,11 +47,11 @@ async fn shield_transparent() {
             .await
             .unwrap(),
     );
-    zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
 
-    println!(
+    tracing::info!(
         "synced recipient
             faucet: {}
             recipient: {}",
@@ -67,15 +70,15 @@ async fn shield_transparent() {
         .await
         .unwrap();
 
-    println!("Initial proposal {:?}", proposal);
-    println!("Shielding proposal {:?}", shielding_proposal);
+    tracing::info!("Initial proposal {proposal:?}");
+    tracing::info!("Shielding proposal {shielding_proposal:?}");
 
     recipient.send_stored_proposal().await.unwrap();
-    zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
+    increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
 
-    println!(
+    tracing::info!(
         "post-shield recipient
             faucet: {}
             recipient: {}",

@@ -1,4 +1,4 @@
-//! ZingoCli
+//! `ZingoCli`
 //! TODO: Add Crate Description Here!
 
 #![forbid(unsafe_code)]
@@ -23,6 +23,7 @@ use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
+
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::RT;
@@ -92,7 +93,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
         ).get_matches()
 }
 
-/// Custom function to parse a string into an http::Uri
+/// Custom function to parse a string into an `http::Uri`
 fn parse_uri(s: &str) -> Result<http::Uri, String> {
     s.parse::<http::Uri>().map_err(|e| e.to_string())
 }
@@ -107,8 +108,7 @@ fn parse_seed(s: &str) -> Result<String, String> {
                 Ok(s)
             } else {
                 Err(format!(
-                    "Expected 12/15/18/21/24 words, but received: {}.",
-                    count
+                    "Expected 12/15/18/21/24 words, but received: {count}."
                 ))
             }
         }
@@ -136,23 +136,17 @@ fn report_permission_error() {
     let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
     let current_executable =
         std::env::current_exe().expect("Unexpected error reporting executable path!");
-    eprintln!("USER: {}", user);
-    eprintln!("HOME: {}", home);
+    eprintln!("USER: {user}");
+    eprintln!("HOME: {home}");
     eprintln!("Executable: {}", current_executable.display());
     if home == "/" {
-        eprintln!(
-            "User {} must have permission to write to '{}.zcash/' .",
-            user, home
-        );
+        eprintln!("User {user} must have permission to write to '{home}.zcash/' .");
     } else {
-        eprintln!(
-            "User {} must have permission to write to '{}/.zcash/' .",
-            user, home
-        );
+        eprintln!("User {user} must have permission to write to '{home}/.zcash/' .");
     }
 }
 
-/// TODO: start_interactive does not explicitly reference a wallet, do we need
+/// TODO: `start_interactive` does not explicitly reference a wallet, do we need
 /// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
 /// the CLI?
 fn start_interactive(
@@ -169,15 +163,15 @@ fn start_interactive(
         match resp_receiver.recv() {
             Ok(s) => s,
             Err(e) => {
-                let e = format!("Error executing command {}: {}", cmd, e);
-                eprintln!("{}", e);
-                error!("{}", e);
-                "".to_string()
+                let e = format!("Error executing command {cmd}: {e}");
+                eprintln!("{e}");
+                error!("{e}");
+                String::new()
             }
         }
     };
 
-    let mut chain_name = "".to_string();
+    let mut chain_name = String::new();
 
     loop {
         if chain_name.is_empty() {
@@ -186,7 +180,7 @@ fn start_interactive(
                 .map(|mut json_info| json_info.remove("chain_name"))
                 .ok()
                 .and_then(|name| name.as_str().map(ToString::to_string))
-                .unwrap_or("".to_string());
+                .unwrap_or_default();
         }
         // Read the height first
         let height = json::parse(&send_command(
@@ -199,7 +193,7 @@ fn start_interactive(
 
         match send_command("sync".to_string(), vec!["poll".to_string()]) {
             poll if poll.starts_with("Error:") => {
-                eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.")
+                eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.");
             }
             poll if poll.starts_with("Sync completed succesfully:") => println!("{poll}"),
             _ => (),
@@ -210,21 +204,17 @@ fn start_interactive(
             _ => (),
         }
 
-        let readline = rl.readline(&format!(
-            "({}) Block:{} (type 'help') >> ",
-            chain_name, height
-        ));
+        let readline = rl.readline(&format!("({chain_name}) Block:{height} (type 'help') >> "));
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
                     .expect("Ability to add history entry");
                 // Parse command line arguments
-                let mut cmd_args = match shellwords::split(&line) {
-                    Ok(args) => args,
-                    Err(_) => {
-                        println!("Mismatched Quotes");
-                        continue;
-                    }
+                let mut cmd_args = if let Ok(args) = shellwords::split(&line) {
+                    args
+                } else {
+                    println!("Mismatched Quotes");
+                    continue;
                 };
 
                 if cmd_args.is_empty() {
@@ -252,7 +242,7 @@ fn start_interactive(
                 break;
             }
             Err(err) => {
-                println!("Error: {:?}", err);
+                println!("Error: {err:?}");
                 break;
             }
         }
@@ -268,7 +258,7 @@ pub fn command_loop(
 
     std::thread::spawn(move || {
         while let Ok((cmd, args)) = command_receiver.recv() {
-            let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
+            let args: Vec<_> = args.iter().map(std::convert::AsRef::as_ref).collect();
 
             let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
             resp_transmitter.send(cmd_response).unwrap();
@@ -321,7 +311,7 @@ impl ConfigTemplate {
         }
         let maybe_birthday = matches
             .get_one::<u32>("birthday")
-            .map(|bday| bday.to_string());
+            .map(std::string::ToString::to_string);
         let from_provided = seed.is_some() || ufvk.is_some();
         if from_provided && maybe_birthday.is_none() {
             eprintln!("ERROR!");
@@ -338,8 +328,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             Ok(b) => b,
             Err(e) => {
                 return Err(format!(
-                    "Couldn't parse birthday. This should be a block number. Error={}",
-                    e
+                    "Couldn't parse birthday. This should be a block number. Error={e}"
                 ));
             }
         };
@@ -355,7 +344,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            zingolib::config::chain_from_str(chain)?
+            zingolib::config::chain_from_str(chain).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
@@ -363,8 +352,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
             return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-                server
+                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
             ));
         }
 
@@ -422,7 +410,7 @@ pub fn startup(
                     mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
-                            format!("Invalid seed phrase. {}", e),
+                            format!("Invalid seed phrase. {e}"),
                         )
                     })?,
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -430,11 +418,11 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
             false,
         )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
         LightClient::create_from_wallet(
@@ -444,15 +432,15 @@ pub fn startup(
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
             )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {}", e)))?,
+            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
             false,
         )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if config.wallet_path_exists() {
         // Open existing wallet from path
         LightClient::create_from_wallet_path(config.clone())
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else {
         // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
         println!("Creating a new wallet");
@@ -466,17 +454,17 @@ pub fn startup(
                     .await
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?;
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
         LightClient::new(config.clone(), chain_height - 100, false)
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {}", e)))?
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
     if filled_template.command.is_none() {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Light Client config {:?}", config);
+        info!("Light Client config {config:?}");
 
         info!(
             "Lightclient connecting to {}",
@@ -488,7 +476,7 @@ pub fn startup(
         info!("Creating tor client");
         lightclient = RT.block_on(async move {
             if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}")
+                eprintln!("error: failed to create tor client. price updates disabled. {e}");
             }
             lightclient
         });
@@ -497,11 +485,11 @@ pub fn startup(
     // At startup, run a sync.
     if filled_template.sync {
         let update = commands::do_user_command("sync", &["run"], &mut lightclient);
-        println!("{}", update);
+        println!("{update}");
     }
 
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
-    println!("{}", update);
+    println!("{update}");
 
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);
@@ -514,13 +502,13 @@ fn start_cli_service(
     match startup(cli_config) {
         Ok(c) => c,
         Err(e) => {
-            let emsg = format!("Error during startup:\n{}\n", e);
-            eprintln!("{}", emsg);
-            error!("{}", emsg);
+            let emsg = format!("Error during startup:\n{e}\n");
+            eprintln!("{emsg}");
+            error!("{emsg}");
             #[cfg(target_os = "linux")]
             // TODO: Test report_permission_error() for macos and change to target_family = "unix"
             if let Some(13) = e.raw_os_error() {
-                report_permission_error()
+                report_permission_error();
             }
             panic!();
         }
@@ -543,8 +531,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                     Ok(resp) => {
                         if resp.starts_with("Error:") {
                             eprintln!(
-                                "Sync error while waiting: {}\nProceeding to execute the command.",
-                                resp
+                                "Sync error while waiting: {resp}\nProceeding to execute the command."
                             );
                             break;
                         } else if resp.starts_with("Sync completed succesfully:") {
@@ -573,21 +560,21 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 cli_config
                     .params
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<String>>(),
             ))
             .unwrap();
 
         match resp_receiver.recv() {
-            Ok(s) => println!("{}", s),
+            Ok(s) => println!("{s}"),
             Err(e) => {
                 let e = format!(
                     "Error executing command {}: {}",
                     cli_config.command.clone().unwrap(),
                     e
                 );
-                eprintln!("{}", e);
-                error!("{}", e);
+                eprintln!("{e}");
+                error!("{e}");
             }
         }
 
@@ -595,9 +582,9 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
             .send(("quit".to_string(), vec![]))
             .unwrap();
         match resp_receiver.recv() {
-            Ok(s) => println!("{}", s),
+            Ok(s) => println!("{s}"),
             Err(e) => {
-                eprintln!("{}", e);
+                eprintln!("{e}");
             }
         }
     }
@@ -608,7 +595,7 @@ pub fn run_cli() {
     // Initialize logging
     match ConfigTemplate::fill(build_clap_app()) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {:?}", e),
+        Err(e) => eprintln!("Error filling config template: {e:?}"),
     }
 }
 
@@ -627,7 +614,7 @@ pub fn run_regtest_cli() {
     // Get the lightwalletd port from the launched network
     let lightwalletd_port = local_net.indexer().port();
 
-    println!("Local network launched on port {}", lightwalletd_port);
+    println!("Local network launched on port {lightwalletd_port}");
 
     // Create a regtest-specific config directly
     let data_dir = regtest::get_regtest_dir();
@@ -642,8 +629,7 @@ pub fn run_regtest_cli() {
     let cli_config = ConfigTemplate {
         params: vec![],
         server: zingolib::config::construct_lightwalletd_uri(Some(format!(
-            "http://127.0.0.1:{}",
-            lightwalletd_port
+            "http://127.0.0.1:{lightwalletd_port}"
         ))),
         seed: None,
         ufvk: None,
@@ -652,17 +638,19 @@ pub fn run_regtest_cli() {
         sync: false, // Don't auto-sync in regtest
         waitsync: false,
         command: None,
-        chaintype: ChainType::Regtest(zingolib::testutils::default_regtest_heights()),
+        chaintype: ChainType::Regtest(
+            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
+        ),
         tor_enabled: false,
     };
 
     // Start the CLI in interactive mode
-    dispatch_command_or_start_interactive(&cli_config)
+    dispatch_command_or_start_interactive(&cli_config);
 }
 
 fn short_circuit_on_help(params: Vec<String>) {
     for h in commands::HelpCommand::exec_without_lc(params).lines() {
-        println!("{}", h);
+        println!("{h}");
     }
     std::process::exit(0x0100);
 }

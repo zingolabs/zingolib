@@ -60,7 +60,7 @@ pub mod receivers {
     }
 
     /// Creates a [`zcash_client_backend::zip321::TransactionRequest`] from receivers.
-    /// Note this fn is called to calculate the spendable_shielded balance
+    /// Note this fn is called to calculate the `spendable_shielded` balance
     /// shielding and TEX should be handled mutually exclusively
     pub fn transaction_request_from_receivers(
         receivers: Receivers,
@@ -70,7 +70,7 @@ pub mod receivers {
         //  * if there's a TEX address it's readable.
         let payments = receivers
             .into_iter()
-            .map(|receiver| receiver.into())
+            .map(std::convert::Into::into)
             .collect();
 
         TransactionRequest::new(payments)

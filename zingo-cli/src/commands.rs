@@ -15,7 +15,6 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
-use zingolib::testutils;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -24,6 +23,8 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+#[cfg(feature = "regtest")]
+use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -55,9 +56,9 @@ pub trait ShortCircuitedCommand {
 struct GetVersionCommand {}
 impl Command for GetVersionCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Return the git describe --dirty of the repo at build time.
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -72,7 +73,7 @@ impl Command for GetVersionCommand {
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Change the lightwalletd server to receive blockchain data from
 
             Usage:
@@ -80,7 +81,7 @@ impl Command for ChangeServerCommand {
 
             Example:
             change_server https://mainnet.lightwalletd.com:9067
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -115,12 +116,12 @@ impl Command for ChangeServerCommand {
 struct BirthdayCommand {}
 impl Command for BirthdayCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Returns block height wallet was created.
 
             Usage:
             birthday
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -135,11 +136,11 @@ impl Command for BirthdayCommand {
 struct WalletKindCommand {}
 impl Command for WalletKindCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Displays the kind of wallet currently loaded
             If a Ufvk, displays what pools are supported.
             Currently, spend-capable wallets will always have spend capability for all three pools
-            "#}
+            "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -192,14 +193,14 @@ impl Command for WalletKindCommand {
 struct ParseAddressCommand {}
 impl Command for ParseAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Parse an address
             Usage:
             parse_address <address>
 
             Example
             parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -219,7 +220,8 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                zingolib::config::ChainType::Regtest(testutils::default_regtest_heights()),
+                #[cfg(feature = "regtest")]
+                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -255,10 +257,10 @@ impl Command for ParseAddressCommand {
                 Address::Unified(ua) => {
                     let mut receivers_available = vec![];
                     if ua.sapling().is_some() {
-                        receivers_available.push("sapling")
+                        receivers_available.push("sapling");
                     }
                     if ua.transparent().is_some() {
-                        receivers_available.push("transparent")
+                        receivers_available.push("transparent");
                     }
                     if ua.orchard().is_some() {
                         receivers_available.push("orchard");
@@ -267,7 +269,7 @@ impl Command for ParseAddressCommand {
                             "chain_name" => chain_name_string,
                             "address_kind" => "unified",
                             "receivers_available" => receivers_available,
-                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().cloned(), None, None).expect("To construct UA").encode(&chain_name),
+                            "only_orchard_ua" => zcash_keys::address::UnifiedAddress::from_receivers(ua.orchard().copied(), None, None).expect("To construct UA").encode(&chain_name),
                         }
                         .to_string()
                     } else {
@@ -295,14 +297,14 @@ impl Command for ParseAddressCommand {
 struct ParseViewKeyCommand {}
 impl Command for ParseViewKeyCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Parse a View Key
             Usage:
             parse_viewkey viewing_key
 
             Example
             parse_viewkey uviewregtest1l6s73mncrefycjhksvcp3zd6x2rpwddewv852ms8w0j828wu77h8v07fs6ph68kyp0ujwk4qmr3w4v9js4mr3ufqyasr0sddgumzyjamcgreda44kxtv4ar084szez337ld58avd9at4r5lptltgkn6uayzd055upf8cnlkarnxp69kz0vzelfww08xxhm0q0azdsplxff0mn2yyve88jyl8ujfau66pnc37skvl9528zazztf6xgk8aeewswjg4eeahpml77cxh57spgywdsc99h99twmp8sqhmp7g78l3g90equ2l4vh9vy0va6r8p568qr7nm5l5y96qgwmw9j2j788lalpeywy0af86krh4td69xqrrye6dvfx0uff84s3pm50kqx3tg3ktx88j2ujswe25s7pqvv3w4x382x07w0dp5gguqu757wlyf80f5nu9uw7wqttxmvrjhkl22x43de960c7kt97ge0dkt52j7uckht54eq768
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -318,13 +320,13 @@ impl Command for ParseViewKeyCommand {
                         for fvk in ufvk.items_as_parsed() {
                             match fvk {
                             zcash_address::unified::Fvk::Orchard(_) => {
-                                pools_available.push("orchard")
+                                pools_available.push("orchard");
                             }
                             zcash_address::unified::Fvk::Sapling(_) => {
-                                pools_available.push("sapling")
+                                pools_available.push("sapling");
                             }
                             zcash_address::unified::Fvk::P2pkh(_) => {
-                                pools_available.push("transparent")
+                                pools_available.push("transparent");
                             }
                             zcash_address::unified::Fvk::Unknown { .. } => pools_available
                                 .push("Unknown future protocol. Perhaps you're using old software"),
@@ -359,7 +361,7 @@ impl Command for ParseViewKeyCommand {
 struct SyncCommand {}
 impl Command for SyncCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Launches a task for syncing the wallet to the latest state of the block chain.
 
             Sub-commands:
@@ -377,7 +379,7 @@ impl Command for SyncCommand {
             sync status
             sync poll
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -398,18 +400,18 @@ impl Command for SyncCommand {
                 } else {
                     RT.block_on(async move {
                         match lightclient.sync().await {
-                            Ok(_) => "Launching sync task...".to_string(),
+                            Ok(()) => "Launching sync task...".to_string(),
                             Err(e) => format!("Error: {e}"),
                         }
                     })
                 }
             }
             "pause" => match lightclient.pause_sync() {
-                Ok(_) => "Pausing sync task...".to_string(),
+                Ok(()) => "Pausing sync task...".to_string(),
                 Err(e) => format!("Error: {e}"),
             },
             "stop" => match lightclient.stop_sync() {
-                Ok(_) => "Stopping sync task...".to_string(),
+                Ok(()) => "Stopping sync task...".to_string(),
                 Err(e) => format!("Error: {e}"),
             },
             "status" => RT.block_on(async move {
@@ -434,12 +436,12 @@ impl Command for SyncCommand {
 struct SendProgressCommand {}
 impl Command for SendProgressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Get the progress of any send transactions that are currently computing
 
             Usage:
             send_progress
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -456,13 +458,13 @@ impl Command for SendProgressCommand {
 struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
             birthday.
 
             Usage:
             rescan
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -478,7 +480,7 @@ impl Command for RescanCommand {
 
         RT.block_on(async move {
             match lightclient.rescan().await {
-                Ok(_) => "Launching rescan...".to_string(),
+                Ok(()) => "Launching rescan...".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -488,13 +490,13 @@ impl Command for RescanCommand {
 struct ClearCommand {}
 impl Command for ClearCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Clear the wallet state, rolling back the wallet to an empty state.
             Usage:
             clear
 
             This command will clear all notes, utxos and transactions from the wallet, setting up the wallet to be synced from scratch.
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -538,9 +540,9 @@ impl Command for HelpCommand {
         match args.len() {
             0 => {
                 responses.push("Available commands:".to_string());
-                get_commands().iter().for_each(|(cmd, obj)| {
+                for (cmd, obj) in &get_commands() {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
-                });
+                }
 
                 responses.sort();
                 responses.join("\n")
@@ -562,9 +564,9 @@ impl ShortCircuitedCommand for HelpCommand {
         match args.len() {
             0 => {
                 responses.push("Available commands:".to_string());
-                get_commands().iter().for_each(|(cmd, obj)| {
+                for (cmd, obj) in &get_commands() {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
-                });
+                }
 
                 responses.sort();
                 responses.join("\n")
@@ -581,12 +583,12 @@ impl ShortCircuitedCommand for HelpCommand {
 struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Get info about the lightwalletd we're connected to
             Usage:
             info
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -601,7 +603,7 @@ impl Command for InfoCommand {
 struct CurrentPriceCommand {}
 impl Command for CurrentPriceCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Updates and returns current price of ZEC.
             Currently only supports USD.
 
@@ -611,7 +613,7 @@ impl Command for CurrentPriceCommand {
             Usage:
             current_price
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -637,9 +639,9 @@ impl Command for CurrentPriceCommand {
 struct BalanceCommand {}
 impl Command for BalanceCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Return the wallet ZEC balance for each pool (account 0).
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -659,13 +661,13 @@ impl Command for BalanceCommand {
 struct SpendableBalanceCommand {}
 impl Command for SpendableBalanceCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Display the wallet's spendable balance.
 
             Usage:
             spendable_balance
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -718,8 +720,7 @@ impl Command for MaxSendValueCommand {
             Ok(address_and_zennies) => address_and_zennies,
             Err(e) => {
                 return format!(
-                    "Error: {}\nTry 'help max_send_value' for correct usage and examples.",
-                    e
+                    "Error: {e}\nTry 'help max_send_value' for correct usage and examples."
                 );
             }
         };
@@ -745,7 +746,7 @@ impl Command for MaxSendValueCommand {
 struct NewUnifiedAddressCommand {}
 impl Command for NewUnifiedAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Create a new unified address.
 
             Transparent receivers not supported.
@@ -763,7 +764,7 @@ impl Command for NewUnifiedAddressCommand {
 
             - sapling-only
             new_address z
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -806,12 +807,12 @@ impl Command for NewUnifiedAddressCommand {
 struct NewTransparentAddressCommand {}
 impl Command for NewTransparentAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Create a new transparent address.
 
             Usage:
             new_taddress
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -838,16 +839,68 @@ impl Command for NewTransparentAddressCommand {
     }
 }
 
+struct NewTransparentAddressAllowGapCommand {}
+impl Command for NewTransparentAddressAllowGapCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Create a new transparent address even if the current one has not received funds.
+
+            Usage:
+            new_taddress_allow_gap
+
+            Notes:
+            This command bypasses the built-in "no-gap" rule that normally prevents creating a new
+            transparent address until the last one has received funds. The rule exists to avoid
+            large gaps in address indices, which can cause problems when restoring a wallet from
+            seed, since all unused addresses beyond the gap may not be discovered automatically.
+
+            By using this command you take responsibility for:
+              - Tracking unused addresses yourself.
+              - Ensuring you do not create excessive gaps that make wallet recovery slow or incomplete.
+              - Understanding that funds sent to skipped addresses may not appear after recovery
+                unless you explicitly rescan or adjust the gap limit.
+
+           Use only if you know why you need consecutive empty transparent addresses and are
+           prepared to manage the risks of wallet recovery and scanning.
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Create a new transparent address (even if the last one did not receive any funds)."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
+        RT.block_on(async move {
+            // Generate without enforcing the no-gap constraint
+            let mut wallet = lightclient.wallet.write().await;
+            let network = wallet.network;
+
+            match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
+                Ok((id, transparent_address)) => {
+                    json::object! {
+                        "account" => u32::from(id.account_id()),
+                        "address_index" => id.address_index().index(),
+                        "scope" => id.scope().to_string(),
+                        "encoded_address" => transparent::encode_address(&network, transparent_address),
+                    }
+                }
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
+        })
+    }
+}
+
 struct UnifiedAddressesCommand {}
 impl Command for UnifiedAddressesCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             List unified addresses in the wallet.
 
             Usage:
             addresses
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -862,13 +915,13 @@ impl Command for UnifiedAddressesCommand {
 struct TransparentAddressesCommand {}
 impl Command for TransparentAddressesCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             List transparent addresses in the wallet.
 
             Usage:
             t_addresses
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -883,7 +936,7 @@ impl Command for TransparentAddressesCommand {
 struct CheckAddressCommand {}
 impl Command for CheckAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Checks if the given encoded address is derived by the wallet's keys.
 
             Usage:
@@ -891,7 +944,7 @@ impl Command for CheckAddressCommand {
 
             Example:
             check_address u1p32nu0pgev5cr0u6t4ja9lcn29kaw37xch8nyglwvp7grl07f72c46hxvw0u3q58ks43ntg324fmulc2xqf4xl3pv42s232m25vaukp05s6av9z76s3evsstax4u6f5g7tql5yqwuks9t4ef6vdayfmrsymenqtshgxzj59hdydzygesqa7pdpw463hu7afqf4an29m69kfasdwr494
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -977,13 +1030,13 @@ impl Command for CheckAddressCommand {
 struct ExportUfvkCommand {}
 impl Command for ExportUfvkCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Export unified full viewing key for the wallet.
             Note: If you want to backup spend capability, use the 'recovery_info' command instead.
 
             Usage:
             export_ufvk
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1038,20 +1091,14 @@ impl Command for SendCommand {
         let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    e
-                );
+                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
             }
         };
         let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
         {
             Ok(request) => request,
             Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help send' for correct usage and examples.",
-                    e
-                );
+                return format!("Error: {e}\nTry 'help send' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
@@ -1106,10 +1153,7 @@ impl Command for SendAllCommand {
         let (address, zennies_for_zingo, memo) = match utils::parse_send_all_args(args) {
             Ok(parse_results) => parse_results,
             Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help sendall' for correct usage and examples.",
-                    e
-                );
+                return format!("Error: {e}\nTry 'help sendall' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
@@ -1166,26 +1210,20 @@ impl Command for QuickSendCommand {
         let receivers = match utils::parse_send_args(args) {
             Ok(receivers) => receivers,
             Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                );
+                return format!("Error: {e}\nTry 'help quicksend' for correct usage and examples.");
             }
         };
         let request = match zingolib::data::receivers::transaction_request_from_receivers(receivers)
         {
             Ok(request) => request,
             Err(e) => {
-                return format!(
-                    "Error: {}\nTry 'help quicksend' for correct usage and examples.",
-                    e
-                );
+                return format!("Error: {e}\nTry 'help quicksend' for correct usage and examples.");
             }
         };
         RT.block_on(async move {
             match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -1199,7 +1237,7 @@ impl Command for QuickSendCommand {
 struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Propose a shield of transparent funds to the orchard pool.
             The fee required to send this transaction will be added to the proposal and displayed to the user.
             The 'confirm' command must be called to complete and broadcast the proposed shield.
@@ -1210,7 +1248,7 @@ impl Command for ShieldCommand {
                 shield
                 confirm
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1258,7 +1296,7 @@ impl Command for ShieldCommand {
 struct QuickShieldCommand {}
 impl Command for QuickShieldCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Shield transparent funds to the orchard pool. Combines `shield` and `confirm` into a single command.
             The fee required to send this transaction is additionally deducted from your balance.
             Warning:
@@ -1266,7 +1304,7 @@ impl Command for QuickShieldCommand {
             Usage:
                 quickshield
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1286,7 +1324,7 @@ impl Command for QuickShieldCommand {
                 .quick_shield(zip32::AccountId::ZERO)
                 .await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -1331,7 +1369,7 @@ impl Command for ConfirmCommand {
                 .send_stored_proposal()
                 .await {
                 Ok(txids) => {
-                    object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
                 Err(e) => {
                     object! { "error" => e.to_string() }
@@ -1373,7 +1411,7 @@ impl Command for ResendCommand {
 
         RT.block_on(async move {
             match lightclient.resend(txid).await {
-                Ok(_) => "Successfully resent transaction.".to_string(),
+                Ok(()) => "Successfully resent transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1385,14 +1423,14 @@ impl Command for ResendCommand {
 struct DeleteCommand {}
 impl Command for DeleteCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Delete the wallet from disk
             Usage:
             delete
 
             The wallet is deleted from disk. If you want to use another wallet first you need to remove the existing wallet file
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1402,7 +1440,7 @@ impl Command for DeleteCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_delete().await {
-                Ok(_) => {
+                Ok(()) => {
                     let r = object! { "result" => "success",
                     "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
                     r.pretty(2)
@@ -1422,7 +1460,7 @@ impl Command for DeleteCommand {
 struct RecoveryInfoCommand {}
 impl Command for RecoveryInfoCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Display the wallet's seed phrase, birthday and number of accounts in use.
 
             Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone.
@@ -1430,7 +1468,7 @@ impl Command for RecoveryInfoCommand {
             Usage:
             recovery_info
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1450,13 +1488,13 @@ impl Command for RecoveryInfoCommand {
 struct ValueTransfersCommand {}
 impl Command for ValueTransfersCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             List all value transfers for this wallet.
             A value transfer is a group of all notes to a specific receiver in a transaction.
 
             Usage:
             value_transfers
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1476,7 +1514,7 @@ impl Command for ValueTransfersCommand {
 struct MessagesFilterCommand {}
 impl Command for MessagesFilterCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             List memo-containing value transfers sent to/from wallet. If an address is provided,
             only messages to/from that address will be provided. If a string is provided,
             messages containing that string are displayed. Otherwise, all memos are displayed.
@@ -1485,7 +1523,7 @@ impl Command for MessagesFilterCommand {
 
             Usage:
             messages [address]/[string]
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1510,12 +1548,12 @@ impl Command for MessagesFilterCommand {
 struct TransactionsCommand {}
 impl Command for TransactionsCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Provides a list of transaction summaries related to this wallet in order of blockheight.
 
             Usage:
             transactions
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1539,11 +1577,11 @@ impl Command for TransactionsCommand {
 struct MemoBytesToAddressCommand {}
 impl Command for MemoBytesToAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Get an object where keys are addresses and values are total bytes of memo sent to that address.
             usage:
             memobytes_to_address
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1567,11 +1605,11 @@ impl Command for MemoBytesToAddressCommand {
 struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Get an object where keys are addresses and values are total value sent to that address.
             usage:
             value_to_address
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1595,11 +1633,11 @@ impl Command for ValueToAddressCommand {
 struct SendsToAddressCommand {}
 impl Command for SendsToAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Get an object where keys are addresses and values are total value sent to that address.
             usage:
             sends_to_address
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1623,7 +1661,7 @@ impl Command for SendsToAddressCommand {
 struct SettingsCommand {}
 impl Command for SettingsCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Show or set wallet settings.
 
             If there are no arguments the full list of current settings will be shown.
@@ -1639,7 +1677,7 @@ impl Command for SettingsCommand {
             settings
             settings performance high
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1652,10 +1690,10 @@ impl Command for SettingsCommand {
 
             if args.is_empty() {
                 return format!(
-                    r#"
+                    r"
 performance: {}
 min confirmations: {}
-            "#,
+            ",
                     wallet.wallet_settings.sync_config.performance_level,
                     wallet.wallet_settings.min_confirmations,
                 );
@@ -1685,7 +1723,7 @@ min confirmations: {}
                                 .to_string();
                         }
                     };
-                    wallet.wallet_settings.min_confirmations = min_confirmations
+                    wallet.wallet_settings.min_confirmations = min_confirmations;
                 }
                 _ => {
             return "Error: invalid arguments\nTry 'help settings' for correct usage and examples"
@@ -1702,13 +1740,13 @@ min confirmations: {}
 struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Returns the blockchain height at the time the wallet last requested the latest block height from the server.
 
             Usage:
             height
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1717,7 +1755,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.wallet_height().map_or(0, u32::from))}.pretty(2)
         })
     }
 }
@@ -1749,8 +1787,7 @@ impl Command for NotesCommand {
                 "all" => true,
                 a => {
                     return format!(
-                        "Invalid argument \"{}\". Specify 'all' to include spent notes",
-                        a
+                        "Invalid argument \"{a}\". Specify 'all' to include spent notes"
                     );
                 }
             }
@@ -1797,8 +1834,7 @@ impl Command for CoinsCommand {
                 "all" => true,
                 a => {
                     return format!(
-                        "Invalid argument \"{}\". Specify 'all' to include spent coins",
-                        a
+                        "Invalid argument \"{a}\". Specify 'all' to include spent coins"
                     );
                 }
             }
@@ -1853,7 +1889,7 @@ impl Command for RemoveTransactionCommand {
                 .await
                 .remove_unconfirmed_transaction(txid)
             {
-                Ok(_) => "Successfully removed transaction.".to_string(),
+                Ok(()) => "Successfully removed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1863,7 +1899,7 @@ impl Command for RemoveTransactionCommand {
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Launches a save task which saves the wallet to persistance when the wallet state changes.
             Not intended to be called manually.
 
@@ -1872,7 +1908,7 @@ impl Command for SaveCommand {
             save check
             save shutdown
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1891,16 +1927,16 @@ impl Command for SaveCommand {
                 "Launching save task...".to_string()
             }
             "check" => match RT.block_on(async move { lightclient.check_save_error().await }) {
-                Ok(_) => "".to_string(),
+                Ok(()) => String::new(),
                 Err(e) => {
-                    format!("Error: save failed. {}\nRestarting save task...", e)
+                    format!("Error: save failed. {e}\nRestarting save task...")
                 }
             },
             "shutdown" => {
                 match RT.block_on(async move { lightclient.shutdown_save_task().await }) {
-                    Ok(_) => "Save task shutdown successfully.".to_string(),
+                    Ok(()) => "Save task shutdown successfully.".to_string(),
                     Err(e) => {
-                        format!("Error: save failed. {}", e)
+                        format!("Error: save failed. {e}")
                     }
                 }
             }
@@ -1912,12 +1948,12 @@ impl Command for SaveCommand {
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
+        indoc! {r"
             Quit the light client
             Usage:
             quit
 
-        "#}
+        "}
     }
 
     fn short_help(&self) -> &'static str {
@@ -1963,7 +1999,7 @@ impl Command for QuitCommand {
                     .expect("error while killing regtest-spawned processes!");
             }
         }
-        format!("{}\nZingo CLI quit successfully.", save_shutdown)
+        format!("{save_shutdown}\nZingo CLI quit successfully.")
     }
 }
 
@@ -2012,6 +2048,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("coins", Box::new(CoinsCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
+        (
+            "new_taddress_allow_gap",
+            Box::new(NewTransparentAddressAllowGapCommand {}),
+        ),
         ("recovery_info", Box::new(RecoveryInfoCommand {})),
         ("birthday", Box::new(BirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
@@ -2026,9 +2066,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
-        None => format!(
-            "Unknown command : {}. Type 'help' for a list of commands",
-            cmd
-        ),
+        None => format!("Unknown command : {cmd}. Type 'help' for a list of commands"),
     }
 }

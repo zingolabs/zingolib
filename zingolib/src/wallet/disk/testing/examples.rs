@@ -2,16 +2,18 @@ use std::num::NonZeroU32;
 
 use bytes::Buf;
 
+use http::Uri;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_infra_services::network::localhost_uri;
+use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::ChainType;
+use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
-/// ExampleWalletNetworkCase sorts first by Network, then seed, then last saved version.
+/// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
 #[non_exhaustive]
 #[derive(Clone)]
@@ -28,7 +30,7 @@ pub enum NetworkSeedVersion {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum MainnetSeedVersion {
-    /// this is a mainnet wallet originally called missing_data_test
+    /// this is a mainnet wallet originally called `missing_data_test`
     VillageTarget(VillageTargetVersion),
     /// empty mainnet wallet
     HotelHumor(HotelHumorVersion),
@@ -92,9 +94,9 @@ pub enum MobileShuffleVersion {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum RegtestSeedVersion {
-    /// this is a regtest wallet originally called old_wallet_reorg_test_wallet
+    /// this is a regtest wallet originally called `old_wallet_reorg_test_wallet`
     HospitalMuseum(HospitalMuseumVersion),
-    /// this is a regtest wallet originally called v26/sap_only
+    /// this is a regtest wallet originally called `v26/sap_only`
     AbandonAbandon(AbandonAbandonVersion),
     /// another regtest wallet
     AbsurdAmount(AbsurdAmountVersion),
@@ -126,6 +128,7 @@ pub enum AbsurdAmountVersion {
 impl NetworkSeedVersion {
     /// Loads wallet from test wallet files.
     // TODO: improve with macro
+    #[must_use]
     pub fn load_example_wallet(&self, network: ChainType) -> LightWallet {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
@@ -274,12 +277,13 @@ impl NetworkSeedVersion {
     pub async fn load_example_wallet_with_client(&self) -> LightClient {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
-                let lightwalletd_uri = localhost_uri(0);
+                // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
+                let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
 
                 crate::config::load_clientconfig(
                     lightwalletd_uri,
                     None,
-                    crate::config::ChainType::Regtest(crate::testutils::default_regtest_heights()),
+                    crate::config::ChainType::Regtest(for_test::all_height_one_nus()),
                     WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -301,14 +305,15 @@ impl NetworkSeedVersion {
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
+    #[must_use]
     pub fn example_wallet_base(&self) -> String {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(_) => {
-                    testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string()
+                    seeds::HOSPITAL_MUSEUM_SEED.to_string()
                 },
                 RegtestSeedVersion::AbandonAbandon(_) => {
-                    testvectors::seeds::ABANDON_ART_SEED.to_string()
+                    seeds::ABANDON_ART_SEED.to_string()
                 },
                 RegtestSeedVersion::AbsurdAmount(_) => {
                     "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic".to_string()
@@ -317,7 +322,7 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(
                     _,
-                ) => testvectors::seeds::CHIMNEY_BETTER_SEED.to_string(),
+                ) => seeds::CHIMNEY_BETTER_SEED.to_string(),
                 TestnetSeedVersion::MobileShuffle(
                     _,
                 ) => "mobile shuffle keen mother globe desk bless hub oil town begin potato explain table crawl just wild click spring pottery gasp often pill plug".to_string(),
@@ -334,6 +339,7 @@ impl NetworkSeedVersion {
         }
     }
     /// picks the first receiver associated with an example wallet
+    #[must_use]
     pub fn example_wallet_address(&self, pool: PoolType) -> String {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {

@@ -11,33 +11,29 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["test_lwd_zcashd"] # temparory until zebrad supports mining to shielded pool (or we implement a workaround) and when all zainod tests pass (current issues with missing mining reward [WIP])
+default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "testvectors", "tempfile", "zebra-chain"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
 zaino-test = ['testutils']
-test_zainod_zcashd = []
-test_lwd_zebrad = []
-test_lwd_zcashd = []
 
 [dependencies]
+
+# zingolib
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
-testvectors = { workspace = true, optional = true }
-hyper-rustls = { workspace = true }
-hyper-util = { workspace = true }
-tokio-rustls = { workspace = true }
-webpki-roots = { workspace = true }
-tower = { workspace = true }
 
-zebra-chain = { workspace = true, optional = true }
+# zingo
+zingo_common_components = { workspace = true }
+zingo_netutils = { workspace = true }
 
-# TODO: separate activation heights into different crate and make this optional for testutils
-zingo-infra-services = { workspace = true }
+# testutils feature
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}
 
+# blockchain
+zebra-chain = { workspace = true }
 orchard = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 incrementalmerkletree = { workspace = true }
@@ -55,10 +51,19 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
 zip32.workspace = true
-
 bip0039.workspace = true
 bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 bs58 = { workspace = true, features = ["check"] }
+sapling-crypto.workspace = true
+
+# network
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+tower = { workspace = true }
+
+# other
 
 append-only-vec = { workspace = true }
 byteorder = { workspace = true }
@@ -78,7 +83,6 @@ prost = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 rustls.workspace = true
-sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -94,10 +98,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zingo-infra-services = { workspace = true }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
-testvectors = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
