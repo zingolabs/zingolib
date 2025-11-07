@@ -17,7 +17,7 @@ use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_note_encryption::{BatchDomain, Domain, ENC_CIPHERTEXT_SIZE, ShieldedOutput};
 use zcash_primitives::{
     memo::Memo,
-    transaction::{Transaction, TxId},
+    transaction::{Transaction, TxId, fees::transparent::OutputView},
     zip32::AccountId,
 };
 use zcash_protocol::{
@@ -25,7 +25,6 @@ use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkConstants},
 };
 
-use zcash_transparent::bundle::TxIn;
 use zingo_memo::ParsedMemo;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -563,10 +562,10 @@ fn collect_outpoints<A: zcash_primitives::transaction::components::transparent::
     transparent_bundle
         .vin
         .iter()
-        .map(TxIn::prevout)
+        .map(|txin| txin.prevout.clone())
         .for_each(|outpoint| {
             outpoint_map.insert(
-                OutputId::from(outpoint),
+                OutputId::from(&outpoint),
                 ScanTarget {
                     block_height,
                     txid,

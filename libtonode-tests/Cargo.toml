@@ -18,9 +18,11 @@ zingo_common_components = { workspace = true, features = ["for_test"] }
 pepper-sync = { workspace = true }
 zingo-status = { workspace = true }
 
-zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = [
+    "test_lwd_zcashd",
+] }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "fix/pooltype-reexport" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "fix/pooltype-reexport" }
 
 zip32 = { workspace = true }
 zcash_address = { workspace = true, features = ["test-dependencies"] }

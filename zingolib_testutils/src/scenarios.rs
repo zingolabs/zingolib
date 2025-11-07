@@ -23,6 +23,7 @@ use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
 use zcash_local_net::LocalNet;
+use zcash_local_net::PoolType as LocalNetPoolType;
 use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
@@ -97,8 +98,20 @@ where
     I: Indexer + LogsToStdoutAndStderr,
     <I as Process>::Config: Send + IndexerConfig + Default,
 {
+    let local_net_pool = match mine_to_pool {
+        PoolType::Transparent => LocalNetPoolType::Transparent,
+        PoolType::Shielded(s) => match s {
+            zcash_protocol::ShieldedProtocol::Sapling => LocalNetPoolType::SAPLING,
+            zcash_protocol::ShieldedProtocol::Orchard => LocalNetPoolType::ORCHARD,
+        },
+    };
+
     let mut validator_config = <V as Process>::Config::default();
-    validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
+    validator_config.set_test_parameters(
+        local_net_pool,
+        configured_activation_heights,
+        chain_cache,
+    );
     let mut indexer_config = <I as Process>::Config::default();
     indexer_config.set_listen_port(indexer_listen_port);
     LocalNet::launch_from_two_configs(validator_config, indexer_config)
@@ -493,12 +506,12 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     faucet.sync_and_await().await.unwrap();
     quick_send(
@@ -522,12 +535,12 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -580,12 +593,12 @@ pub async fn funded_transparent_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
@@ -621,12 +634,12 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().get_activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await

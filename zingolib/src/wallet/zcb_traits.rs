@@ -5,12 +5,10 @@ use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
-        Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
-        NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, SAPLING_SHARD_HEIGHT, TargetValue,
+        Account, AccountBirthday, AccountPurpose, BlockMetadata, InputSource, NullifierQuery,
+        ORCHARD_SHARD_HEIGHT, SAPLING_SHARD_HEIGHT, SpendableNotes, TargetValue,
         TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
-        Zip32Derivation,
-        chain::CommitmentTreeRoot,
-        wallet::{ConfirmationsPolicy, TargetHeight},
+        Zip32Derivation, chain::CommitmentTreeRoot,
     },
     wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
 };
@@ -27,6 +25,7 @@ use zcash_primitives::{
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
+    value::Zatoshis,
 };
 use zcash_transparent::bundle::{OutPoint, TxOut};
 
@@ -148,7 +147,7 @@ impl WalletRead for LightWallet {
 
     fn get_wallet_summary(
         &self,
-        _min_confirmations: ConfirmationsPolicy,
+        min_confirmations: u32,
     ) -> Result<Option<WalletSummary<Self::AccountId>>, Self::Error> {
         unimplemented!()
     }
@@ -186,7 +185,7 @@ impl WalletRead for LightWallet {
     fn get_target_and_anchor_heights(
         &self,
         min_confirmations: NonZeroU32,
-    ) -> Result<Option<(TargetHeight, BlockHeight)>, Self::Error> {
+    ) -> Result<Option<(BlockHeight, BlockHeight)>, Self::Error> {
         let target_height = if let Some(height) = self.sync_state.wallet_height() {
             height + 1
         } else {
@@ -207,7 +206,7 @@ impl WalletRead for LightWallet {
         );
 
         Ok(Some((
-            target_height.into(),
+            target_height,
             std::cmp::max(1.into(), anchor_height),
         )))
     }
@@ -250,9 +249,7 @@ impl WalletRead for LightWallet {
     fn get_transparent_receivers(
         &self,
         account: Self::AccountId,
-        // TODO: only get internal receivers if true
         _include_change: bool,
-        _include_standalone_receivers: bool,
     ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
         self.transparent_addresses
             .iter()
@@ -276,9 +273,8 @@ impl WalletRead for LightWallet {
     fn get_transparent_balances(
         &self,
         _account: Self::AccountId,
-        _max_height: TargetHeight,
-        _confirmations_policy: ConfirmationsPolicy,
-    ) -> Result<HashMap<TransparentAddress, Balance>, Self::Error> {
+        _max_height: BlockHeight,
+    ) -> Result<HashMap<TransparentAddress, Zatoshis>, Self::Error> {
         unimplemented!()
     }
 
@@ -412,10 +408,7 @@ impl WalletWrite for LightWallet {
             sent_transaction.tx().write(&mut transaction_bytes)?;
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
-                consensus::BranchId::for_height(
-                    &self.network,
-                    sent_transaction.target_height().into(),
-                ),
+                consensus::BranchId::for_height(&self.network, sent_transaction.target_height()),
             )?;
 
             match pepper_sync::scan_pending_transaction(
@@ -423,7 +416,7 @@ impl WalletWrite for LightWallet {
                 &SyncWallet::get_unified_full_viewing_keys(self)?,
                 self,
                 transaction,
-                ConfirmationStatus::Calculated(sent_transaction.target_height().into()),
+                ConfirmationStatus::Calculated(sent_transaction.target_height()),
                 sent_transaction.created().unix_timestamp() as u32,
             ) {
                 Ok(()) => (),
@@ -578,12 +571,11 @@ impl InputSource for LightWallet {
         account: Self::AccountId,
         target_value: TargetValue,
         sources: &[ShieldedProtocol],
-        _target_height: TargetHeight,
-        confirmations_policy: ConfirmationsPolicy,
+        anchor_height: BlockHeight,
         exclude: &[Self::NoteRef],
-    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+    ) -> Result<SpendableNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
-            .get_target_and_anchor_heights(confirmations_policy.trusted())
+            .get_target_and_anchor_heights(self.wallet_settings.min_confirmations)
             .expect("infallible")
             .ok_or(WalletError::NoSyncData)?;
 
@@ -667,33 +659,33 @@ impl InputSource for LightWallet {
                     selected_orchard_notes.extend(notes);
                 }
                 (selected_sapling_notes, selected_orchard_notes)
-            }
-            TargetValue::AllFunds(max_spend_mode) => {
-                let include_potentially_spent_notes = matches!(
-                    max_spend_mode,
-                    zcash_client_backend::data_api::MaxSpendMode::Everything
-                );
-                (
-                    self.spendable_notes::<SaplingNote>(
-                        anchor_height,
-                        &exclude_sapling,
-                        account,
-                        include_potentially_spent_notes,
-                    )?
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                    self.spendable_notes::<OrchardNote>(
-                        anchor_height,
-                        &exclude_orchard,
-                        account,
-                        include_potentially_spent_notes,
-                    )?
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                )
-            }
+            } // TODO: Check if this is okay
+              // TargetValue::AllFunds(max_spend_mode) => {
+              //     let include_potentially_spent_notes = matches!(
+              //         max_spend_mode,
+              //         zcash_client_backend::data_api::MaxSpendMode::Everything
+              //     );
+              //     (
+              //         self.spendable_notes::<SaplingNote>(
+              //             anchor_height,
+              //             &exclude_sapling,
+              //             account,
+              //             include_potentially_spent_notes,
+              //         )?
+              //         .into_iter()
+              //         .cloned()
+              //         .collect::<Vec<_>>(),
+              //         self.spendable_notes::<OrchardNote>(
+              //             anchor_height,
+              //             &exclude_orchard,
+              //             account,
+              //             include_potentially_spent_notes,
+              //         )?
+              //         .into_iter()
+              //         .cloned()
+              //         .collect::<Vec<_>>(),
+              //     )
+              // }
         };
 
         /* TODO: Priority
@@ -742,8 +734,6 @@ impl InputSource for LightWallet {
                     note.key_id().scope,
                     note.position()
                         .expect("note selection should filter on notes with positions"),
-                    None, // mined_height. TODO: How should we use this here?
-                    None, // max_shielding_input_height. TODO: How should we use this here?
                 )
             })
             .collect::<Vec<_>>();
@@ -761,13 +751,11 @@ impl InputSource for LightWallet {
                     note.key_id().scope,
                     note.position()
                         .expect("note selection should filter on notes with positions"),
-                    None, // mined_height. TODO: How should we use this here?
-                    None, // max_shielding_input_height. TODO: How should we use this here?
                 )
             })
             .collect::<Vec<_>>();
 
-        Ok(ReceivedNotes::new(
+        Ok(SpendableNotes::new(
             sapling_recieved_notes,
             orchard_recieved_notes,
         ))
@@ -792,16 +780,13 @@ impl InputSource for LightWallet {
     fn get_spendable_transparent_outputs(
         &self,
         address: &TransparentAddress,
-        target_height: TargetHeight,
-        min_confirmations: ConfirmationsPolicy,
+        target_height: BlockHeight,
+        min_confirmations: u32,
     ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
         let address = transparent::encode_address(&self.network, *address);
 
         Ok(self
-            .spendable_transparent_coins(
-                target_height.into(),
-                min_confirmations.allow_zero_conf_shielding(),
-            )
+            .spendable_transparent_coins(target_height, false)
             .into_iter()
             .filter(|&output| output.address() == address)
             .filter_map(|output| {
@@ -820,15 +805,5 @@ impl InputSource for LightWallet {
                 )
             })
             .collect())
-    }
-
-    fn select_unspent_notes(
-        &self,
-        _account: Self::AccountId,
-        _sources: &[ShieldedProtocol],
-        _target_height: TargetHeight,
-        _exclude: &[Self::NoteRef],
-    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
-        unimplemented!()
     }
 }

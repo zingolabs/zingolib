@@ -561,7 +561,7 @@ impl WalletTransaction {
                 bundle
                     .vin
                     .iter()
-                    .map(zcash_transparent::bundle::TxIn::prevout)
+                    .map(|txin| &txin.prevout)
                     .collect::<Vec<_>>()
             })
     }
@@ -576,6 +576,8 @@ impl WalletTransaction {
             .transaction
             .transparent_bundle()
             .map_or(0, |bundle| {
+                use zcash_primitives::transaction::fees::transparent::OutputView;
+
                 bundle
                     .vout
                     .iter()

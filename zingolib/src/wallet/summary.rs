@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::{cmp::Ordering, collections::HashMap};
 
 use zcash_primitives::memo::Memo;
+use zcash_primitives::transaction::fees::transparent::OutputView;
 use zcash_protocol::PoolType;
 
 use pepper_sync::keys::transparent;

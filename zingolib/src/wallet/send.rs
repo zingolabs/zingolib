@@ -7,7 +7,6 @@ use nonempty::NonEmpty;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::NoteInterface;
-use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
@@ -143,7 +142,7 @@ impl LightWallet {
             &network,
             &sapling_prover,
             &sapling_prover,
-            &SpendingKeys::new(usk),
+            &usk,
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
         )
