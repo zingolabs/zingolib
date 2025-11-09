@@ -460,12 +460,12 @@ mod fast {
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
         let mut faucet =
-            client_builder.build_faucet(true, local_net.validator().get_activation_heights());
+            client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         let network = recipient.wallet.read().await.network;
 
@@ -515,7 +515,7 @@ mod fast {
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             true,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         if let Some(_ua) =
             recipient
@@ -1193,7 +1193,7 @@ mod fast {
             seed_phrase,
             0,
             false,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         let network = recipient.wallet.read().await.network;
         let (new_address_id, new_address) = recipient
@@ -1266,7 +1266,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
 
         assert_eq!(
@@ -1752,18 +1752,18 @@ mod slow {
 
         tracing_subscriber::fmt().init();
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().get_activation_heights());
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(local_net.validator().get_activation_heights()),
+            ChainType::Regtest(local_net.validator().get_activation_heights().await),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -3371,13 +3371,13 @@ TransactionSummary {
     async fn list_value_transfers_check_fees() {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().get_activation_heights());
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
@@ -3416,13 +3416,13 @@ TransactionSummary {
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet =
-            client_builder.build_faucet(false, local_net.validator().get_activation_heights());
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             0,
             false,
-            local_net.validator().get_activation_heights(),
+            local_net.validator().get_activation_heights().await,
         );
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");
