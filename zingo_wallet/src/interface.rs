@@ -1,4 +1,5 @@
 use http::Uri;
+use zcash_wallet_interface::BlockHeight;
 use zingolib::testutils::tempfile::TempDir;
 
 use crate::ZingoWallet;
@@ -173,14 +174,14 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         use zcash_client_backend::data_api::WalletRead;
 
         match &self.lightclient {
-            Some(client) => client
+            Some(client) => Ok(client
                 .wallet
                 .read()
                 .await
                 .chain_height()
                 .map_err(GetMaxScannedHeightError::WalletError)?
                 .map(|h| zcash_wallet_interface::BlockHeight(h.into()))
-                .ok_or(GetMaxScannedHeightError::NoHeightFoundForServer),
+                .unwrap_or(BlockHeight(0))),
             None => Err(GetMaxScannedHeightError::NoServer),
         }
     }
