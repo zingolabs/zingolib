@@ -1,4 +1,4 @@
-use std::time::Duration;
+pub(crate) use std::time::Duration;
 
 use zcash_wallet_interface::Wallet as _;
 use zingo_wallet::ZingoWallet;
@@ -7,7 +7,7 @@ use zingolib::config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
 #[test_group::group(live)]
 #[test_group::group(live_testnet)]
 #[tokio::test]
-async fn create_default() {
+async fn create() {
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
     wallet
@@ -21,8 +21,16 @@ async fn create_default() {
 }
 #[test_group::group(live)]
 #[test_group::group(live_testnet)]
+#[test_group::group(sleep)]
 #[tokio::test]
-async fn create_scan() {
+async fn scan() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
     wallet
@@ -38,7 +46,7 @@ async fn create_scan() {
         .await
         .unwrap();
     tracing::debug!("{initial_scan_height:#?}");
-    tokio::time::sleep(Duration::from_secs(10));
+    tokio::time::sleep(Duration::from_secs(10)).await;
     let later_scan_height = wallet
         .get_max_scanned_height_for_server(single_server_url.to_string())
         .await

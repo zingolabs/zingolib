@@ -27,6 +27,8 @@ pub enum AddServerError {
     CreateDataDir(#[from] std::io::Error),
     #[error("Wallet creation failed with >{0}<.")]
     CreateLightClient(#[from] zingolib::lightclient::error::LightClientError),
+    #[error("Wallet creation failed with >{0}<.")]
+    StartSync(zingolib::lightclient::error::LightClientError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -145,7 +147,11 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                     .create()
             };
             let overwrite = false;
-            let lightclient = LightClient::create_from_wallet(wallet, config, overwrite)?;
+            let mut lightclient = LightClient::create_from_wallet(wallet, config, overwrite)?;
+            lightclient
+                .sync()
+                .await
+                .map_err(AddServerError::StartSync)?;
             self.lightclient = Some(lightclient);
             Ok(())
         } else {

@@ -8980,6 +8980,7 @@ dependencies = [
  "tokio",
  "tonic 0.13.1",
  "tracing",
+ "tracing-subscriber",
  "zcash_client_backend",
  "zcash_primitives",
  "zcash_wallet_interface",
