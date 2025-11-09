@@ -398,6 +398,7 @@ pub fn startup(
             min_confirmations: NonZeroU32::try_from(3).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
 
