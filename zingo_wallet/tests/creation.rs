@@ -32,12 +32,12 @@ async fn create_scan() {
         .get_max_scanned_height_for_server(single_server_url.to_string())
         .await
         .unwrap();
+    tracing::debug!("{initial_scan_height:#?}");
     tokio::time::sleep(Duration::from_secs(10));
     let later_scan_height = wallet
         .get_max_scanned_height_for_server(single_server_url.to_string())
         .await
         .unwrap();
-    tracing::debug!(initial_scan_height);
-    tracing::debug!(later_scan_height);
+    tracing::debug!("{later_scan_height:#?}");
     assert!(initial_scan_height < later_scan_height);
 }

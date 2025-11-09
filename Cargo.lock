@@ -8507,7 +8507,7 @@ dependencies = [
 [[package]]
 name = "zcash_wallet_interface"
 version = "0.1.0"
-source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?branch=dev#02d99e830e9e1b43c365bd0d2eaf836e8e384f8f"
+source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?branch=dev#93a7e590ba4344c56bf2bde59e7062c2bf5d34d4"
 
 [[package]]
 name = "zebra-chain"
@@ -8960,7 +8960,7 @@ dependencies = [
  "bip0039",
  "http",
  "pepper-sync",
- "rustls 0.23.34",
+ "rustls 0.23.35",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
