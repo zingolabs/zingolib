@@ -23,6 +23,7 @@ tempfile.workspace = true
 
 thiserror.workspace = true
 tracing.workspace = true
+test-group = "1.0.1"
 
 [dev-dependencies]
 tokio.workspace = true

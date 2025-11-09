@@ -1,6 +1,5 @@
 use http::Uri;
 use zcash_wallet_interface::BlockHeight;
-use zingolib::testutils::tempfile::TempDir;
 
 use crate::ZingoWallet;
 
@@ -136,7 +135,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 LightWallet::new(chain_type, wallet_base, birthday, wallet_settings.clone())
                     .map_err(AddServerError::CreateLightWallet)?;
             // ZingoConfig allows a save-director of None, but crashes if that value is used.
-            let save_dir = TempDir::new()?;
+            let save_dir = tempfile::TempDir::new()?;
             let config = {
                 ZingoConfigBuilder::default()
                     .set_lightwalletd_uri(server_uri)

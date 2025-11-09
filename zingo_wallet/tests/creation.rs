@@ -4,6 +4,8 @@ use zcash_wallet_interface::Wallet as _;
 use zingo_wallet::ZingoWallet;
 use zingolib::config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
 
+#[test_group::group(live)]
+#[test_group::group(live_testnet)]
 #[tokio::test]
 async fn create_default() {
     let mut wallet = ZingoWallet::new_wallet().await;
@@ -17,6 +19,9 @@ async fn create_default() {
         .await
         .unwrap();
 }
+#[test_group::group(live)]
+#[test_group::group(live_testnet)]
+#[tokio::test]
 async fn create_scan() {
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
