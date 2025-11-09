@@ -166,8 +166,8 @@ where
             status,
             ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == wallet_height_at_send + 1
         ) {
-            dbg!(status);
-            dbg!(wallet_height_at_send);
+            tracing::debug!("{status:?}");
+            tracing::debug!("{wallet_height_at_send:?}");
             panic!();
         }
     }

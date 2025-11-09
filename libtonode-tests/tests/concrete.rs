@@ -370,8 +370,8 @@ mod fast {
     //     let transactions = recipient.do_list_transactions().await;
 
     //     // There are 2 unspent notes, the pending transaction, and the final receipt
-    //     //println!("{}", json::stringify_pretty(notes.clone(), 4));
-    //     //println!("{}", json::stringify_pretty(transactions.clone(), 4));
+    //     //tracing::info!("{}", json::stringify_pretty(notes.clone(), 4));
+    //     //tracing::info!("{}", json::stringify_pretty(transactions.clone(), 4));
     //     // Two unspent notes: one change, pending, one from faucet, confirmed
     //     assert_eq!(notes["unspent_orchard_notes"].len(), 2);
     //     assert_eq!(notes["unspent_sapling_notes"].len(), 0);
@@ -1485,14 +1485,14 @@ mod slow {
             .await
             .unwrap();
 
-        println!(
+        tracing::info!(
             "{}",
             &recipient
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
         );
-        println!(
+        tracing::info!(
             "{}",
             JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(4)
         );
@@ -1772,6 +1772,7 @@ mod slow {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         )
         .unwrap();
 
@@ -1973,28 +1974,28 @@ mod slow {
         increase_height_and_wait_for_client(local_net, &mut recipient, 1)
             .await
             .unwrap();
-        println!(
+        tracing::info!(
             "{}",
             &recipient
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries(false).await.unwrap());
-        println!(
+        tracing::info!("{}", recipient.transaction_summaries(false).await.unwrap());
+        tracing::info!(
             "{}",
             JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
         );
         recipient.rescan_and_await().await.unwrap();
-        println!(
+        tracing::info!(
             "{}",
             &recipient
                 .account_balance(zip32::AccountId::ZERO)
                 .await
                 .unwrap()
         );
-        println!("{}", recipient.transaction_summaries(false).await.unwrap());
-        println!(
+        tracing::info!("{}", recipient.transaction_summaries(false).await.unwrap());
+        tracing::info!(
             "{}",
             JsonValue::from(recipient.value_transfers(true).await.unwrap()).pretty(2)
         );
@@ -2467,11 +2468,11 @@ TransactionSummary {
         faucet.sync_and_await().await.unwrap();
         let faucet_orch = three_blocks_reward + orch_change + u64::from(MINIMUM_FEE);
 
-        println!(
+        tracing::info!(
             "{}",
             JsonValue::from(faucet.value_transfers(true).await.unwrap()).pretty(4)
         );
-        println!(
+        tracing::info!(
             "{}",
             &faucet
                 .account_balance(zip32::AccountId::ZERO)
@@ -2661,7 +2662,7 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        println!(
+        tracing::info!(
             "{}",
             json::stringify_pretty(recipient.transaction_summaries(false).await.unwrap(), 4)
         );
@@ -3045,7 +3046,7 @@ TransactionSummary {
     //             .transaction_size_filter
     //     );
 
-    //     println!("creating vec");
+    //     tracing::info!("creating vec");
     //     from_inputs::quick_send(
     //         faucet,
     //         vec![(&get_base_address_macro!(faucet, "unified"), 10, None); 15],
@@ -3306,7 +3307,7 @@ TransactionSummary {
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap();
-        println!("{bal}");
+        tracing::info!("{bal}");
         assert_eq!(bal.total_orchard_balance.unwrap().into_u64(), value);
         assert_eq!(bal.confirmed_orchard_balance.unwrap().into_u64(), value);
         assert_eq!(bal.unconfirmed_orchard_balance.unwrap().into_u64(), 0);
@@ -4025,26 +4026,26 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&faucet, txid1.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Change:\n{:?}",
     //         tx_outputs(&faucet, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
     //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
     //         total_tx_value(&faucet, txid1.as_str()).await - 40_000;
-    //     println!("Fee Paid: {}", calculated_fee_txid1);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
     //         * (cmp::max(
@@ -4053,30 +4054,30 @@ mod basic_transactions {
     //                 + tx_actions_txid1.sapling_tx_actions
     //                 + tx_actions_txid1.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid1);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
 
     //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&faucet, txid2.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&recipient, txid2.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Change:\n{:?}",
     //         tx_outputs(&faucet, txid2.as_str()).await
     //     );
 
     //     let tx_actions_txid2 =
     //         tx_actions(&faucet, Some(&recipient), txid2.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid2);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid2);
 
     //     let calculated_fee_txid2 =
     //         total_tx_value(&faucet, txid2.as_str()).await - 40_000;
-    //     println!("Fee Paid: {}", calculated_fee_txid2);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid2);
 
     //     let expected_fee_txid2 = 5000
     //         * (cmp::max(
@@ -4085,30 +4086,30 @@ mod basic_transactions {
     //                 + tx_actions_txid2.sapling_tx_actions
     //                 + tx_actions_txid2.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid2);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid2);
 
     //     assert_eq!(calculated_fee_txid2, expected_fee_txid2 as u64);
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&faucet, txid3.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&recipient, txid3.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Change:\n{:?}",
     //         tx_outputs(&faucet, txid3.as_str()).await
     //     );
 
     //     let tx_actions_txid3 =
     //         tx_actions(&faucet, Some(&recipient), txid3.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid3);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid3);
 
     //     let calculated_fee_txid3 =
     //         total_tx_value(&faucet, txid3.as_str()).await - 40_000;
-    //     println!("Fee Paid: {}", calculated_fee_txid3);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid3);
 
     //     let expected_fee_txid3 = 5000
     //         * (cmp::max(
@@ -4117,7 +4118,7 @@ mod basic_transactions {
     //                 + tx_actions_txid3.sapling_tx_actions
     //                 + tx_actions_txid3.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid3);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid3);
 
     //     assert_eq!(calculated_fee_txid3, expected_fee_txid3 as u64);
 
@@ -4141,26 +4142,26 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&recipient, txid4.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&faucet, txid4.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Change:\n{:?}",
     //         tx_outputs(&recipient, txid4.as_str()).await
     //     );
 
     //     let tx_actions_txid4 =
     //         tx_actions(&recipient, Some(&faucet), txid4.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid4);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid4);
 
     //     let calculated_fee_txid4 =
     //         total_tx_value(&recipient, txid4.as_str()).await - 55_000;
-    //     println!("Fee Paid: {}", calculated_fee_txid4);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid4);
 
     //     let expected_fee_txid4 = 5000
     //         * (cmp::max(
@@ -4169,7 +4170,7 @@ mod basic_transactions {
     //                 + tx_actions_txid4.sapling_tx_actions
     //                 + tx_actions_txid4.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid4);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid4);
 
     //     assert_eq!(calculated_fee_txid4, expected_fee_txid4 as u64);
     // }
@@ -4199,26 +4200,26 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&faucet, txid1.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Change:\n{:?}",
     //         tx_outputs(&faucet, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
     //         tx_actions(&faucet, Some(&recipient), txid1.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
     //         total_tx_value(&faucet, txid1.as_str()).await;
-    //     println!("Fee Paid: {}", calculated_fee_txid1);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
     //         * (cmp::max(
@@ -4227,7 +4228,7 @@ mod basic_transactions {
     //                 + tx_actions_txid1.sapling_tx_actions
     //                 + tx_actions_txid1.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid1);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
 
     //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
     // }
@@ -4264,22 +4265,22 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
 
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Inputs:\n{:?}",
     //         tx_inputs(&recipient, txid1.as_str()).await
     //     );
-    //     println!(
+    //     tracing::info!(
     //         "Transaction Outputs:\n{:?}",
     //         tx_outputs(&recipient, txid1.as_str()).await
     //     );
 
     //     let tx_actions_txid1 =
     //         tx_actions(&recipient, None, txid1.as_str()).await;
-    //     println!("Transaction Actions:\n{:?}", tx_actions_txid1);
+    //     tracing::info!("Transaction Actions:\n{:?}", tx_actions_txid1);
 
     //     let calculated_fee_txid1 =
     //         total_tx_value(&recipient, txid1.as_str()).await;
-    //     println!("Fee Paid: {}", calculated_fee_txid1);
+    //     tracing::info!("Fee Paid: {}", calculated_fee_txid1);
 
     //     let expected_fee_txid1 = 5000
     //         * (cmp::max(
@@ -4288,7 +4289,7 @@ mod basic_transactions {
     //                 + tx_actions_txid1.sapling_tx_actions
     //                 + tx_actions_txid1.orchard_tx_actions,
     //         ));
-    //     println!("Expected Fee: {}", expected_fee_txid1);
+    //     tracing::info!("Expected Fee: {}", expected_fee_txid1);
 
     //     assert_eq!(calculated_fee_txid1, expected_fee_txid1 as u64);
 

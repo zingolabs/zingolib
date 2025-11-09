@@ -36,6 +36,7 @@ async fn sync_mainnet_test() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -60,18 +61,18 @@ async fn sync_mainnet_test() {
         interval.tick().await;
         {
             let wallet = lightclient.wallet.read().await;
-            println!(
+            tracing::info!(
                 "{}",
                 json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
             );
-            println!("WALLET DEBUG:");
-            println!("uas: {}", wallet.unified_addresses().len());
-            println!("taddrs: {}", wallet.transparent_addresses().len());
-            println!("blocks: {}", wallet.wallet_blocks.len());
-            println!("txs: {}", wallet.wallet_transactions.len());
-            println!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
-            println!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
-            println!("outpoints: {}", wallet.outpoint_map.len());
+            tracing::info!("WALLET DEBUG:");
+            tracing::info!("uas: {}", wallet.unified_addresses().len());
+            tracing::info!("taddrs: {}", wallet.transparent_addresses().len());
+            tracing::info!("blocks: {}", wallet.wallet_blocks.len());
+            tracing::info!("txs: {}", wallet.wallet_transactions.len());
+            tracing::info!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
+            tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
+            tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
         lightclient.wallet.write().await.save().unwrap();
     }
@@ -105,6 +106,7 @@ async fn sync_status() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -148,21 +150,21 @@ async fn sync_test() {
     //     .await
     //     .unwrap();
 
-    // println!("{}", recipient.transaction_summaries().await.unwrap());
-    println!("{}", recipient.value_transfers(false).await.unwrap());
-    println!(
+    // tracing::info!("{}", recipient.transaction_summaries().await.unwrap());
+    tracing::info!("{}", recipient.value_transfers(false).await.unwrap());
+    tracing::info!(
         "{}",
         recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "{:?}",
         recipient.propose_shield(zip32::AccountId::ZERO).await
     );
 
-    // println!(
+    // tracing::info!(
     //     "{:?}",
     //     recipient
     //         .get_spendable_shielded_balance(
