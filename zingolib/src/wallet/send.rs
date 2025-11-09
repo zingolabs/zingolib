@@ -218,11 +218,12 @@ impl LightWallet {
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|_| TransmissionError::TransactionWrite)?;
-            let transaction = Transaction::read(
-                transaction_bytes.as_slice(),
-                consensus::BranchId::for_height(&network, height),
-            )
-            .map_err(|_| TransmissionError::TransactionRead)?;
+            let consensus_branch_id = consensus::BranchId::for_height(&network, height);
+            tracing::debug!(
+                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}"
+            );
+            let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
+                .map_err(|_| TransmissionError::TransactionRead)?;
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),

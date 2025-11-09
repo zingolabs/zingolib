@@ -41,3 +41,4 @@ http = { workspace = true }
 
 [dev-dependencies]
 rustls.workspace = true
+test-log.workspace = true
