@@ -8990,6 +8990,7 @@ dependencies = [
  "http",
  "pepper-sync",
  "rustls 0.23.34",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tonic 0.13.1",

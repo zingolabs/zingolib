@@ -1,4 +1,5 @@
 use http::Uri;
+use zingolib::testutils::tempfile::TempDir;
 
 use crate::ZingoWallet;
 
@@ -9,21 +10,23 @@ pub enum AddServerError {
     )]
     NeedsSingleSeed,
     #[error("URI parse from string '{0}' failed with >{1}<.")]
-    CantParseUri(String, http::uri::InvalidUri),
+    ParseUri(String, http::uri::InvalidUri),
     #[error("Creating network-client connected to '{0}' failed with >{1}<.")]
-    CantCreateClient(Uri, zingo_netutils::GetClientError),
+    CreateNetworkClient(Uri, zingo_netutils::GetClientError),
     #[error("Server call returned unexpected result: >{0}<.")]
     Callback(#[from] tonic::Status),
     #[error("Server reported unusable chain: >{0}<.")]
     Chain(#[from] zingolib::config::ChainFromStringError),
     #[error("Server reported overflow block height: >{0}<.")]
     BlockHeight(#[from] std::num::TryFromIntError),
-    #[error("Wallet creation failed with >{0}<.")]
-    CreateLightWallet(#[from] zingolib::wallet::error::WalletError),
-    #[error("Wallet creation failed with >{0}<.")]
-    CreateLightClient(#[from] zingolib::lightclient::error::LightClientError),
     #[error("Seed parse from string '{0}' failed with >{1}<.")]
     ParseSeed(String, bip0039::Error),
+    #[error("Wallet creation failed with >{0}<.")]
+    CreateLightWallet(#[from] zingolib::wallet::error::WalletError),
+    #[error("Temporary data dir creation failed with >{0}<.")]
+    CreateDataDir(#[from] std::io::Error),
+    #[error("Wallet creation failed with >{0}<.")]
+    CreateLightClient(#[from] zingolib::lightclient::error::LightClientError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -70,8 +73,6 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         use std::num::NonZeroU32;
 
         use std::str::FromStr as _;
-        use std::sync::Arc;
-        use std::sync::RwLock;
 
         use zingolib::config::ChainType;
         use zingolib::config::SyncConfig;
@@ -86,9 +87,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             && let Some(key) = self.keys.first()
         {
             let server_uri = Uri::from_str(server_address.as_str())
-                .map_err(|invalid_uri| AddServerError::CantParseUri(server_address, invalid_uri))?;
-
-            let lightwalletd_uri: Arc<RwLock<Uri>> = Arc::new(RwLock::new(server_uri.clone()));
+                .map_err(|invalid_uri| AddServerError::ParseUri(server_address, invalid_uri))?;
 
             let (chain_type, birthday) = {
                 // we need to ask the indexer for this information
@@ -98,7 +97,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                     rustls::crypto::ring::default_provider().install_default();
                     zingolib::grpc_client::get_zcb_client(server_uri.clone())
                         .await
-                        .map_err(|e| AddServerError::CantCreateClient(server_uri.clone(), e))?
+                        .map_err(|e| AddServerError::CreateNetworkClient(server_uri.clone(), e))?
                 };
 
                 let lightd_info = client
@@ -135,17 +134,23 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             let wallet =
                 LightWallet::new(chain_type, wallet_base, birthday, wallet_settings.clone())
                     .map_err(AddServerError::CreateLightWallet)?;
+            // ZingoConfig allows a save-director of None, but crashes if that value is used.
+            let save_dir = TempDir::new()?;
             let config = {
                 ZingoConfigBuilder::default()
                     .set_lightwalletd_uri(server_uri)
                     .set_wallet_settings(wallet_settings)
                     .set_no_of_accounts(no_of_accounts)
+                    .set_wallet_dir(save_dir.path().to_path_buf())
                     .create()
             };
             let overwrite = false;
             let lightclient = LightClient::create_from_wallet(wallet, config, overwrite)?;
+            self.lightclient = Some(lightclient);
+            Ok(())
+        } else {
+            Err(AddServerError::NeedsSingleSeed)
         }
-        Err(AddServerError::NeedsSingleSeed)
     }
 
     type AddKeyError = AddKeyError;
