@@ -220,7 +220,7 @@ impl LightWallet {
                 .map_err(|_| TransmissionError::TransactionWrite)?;
             let consensus_branch_id = consensus::BranchId::for_height(&network, height);
             tracing::debug!(
-                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}"
+                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}, at height {height}."
             );
             let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
                 .map_err(|_| TransmissionError::TransactionRead)?;
