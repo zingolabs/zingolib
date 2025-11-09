@@ -1,8 +1,11 @@
-pub(crate) use std::time::Duration;
+pub(crate) use core::time::Duration;
 
 use zcash_wallet_interface::Wallet as _;
 use zingo_wallet::ZingoWallet;
 use zingolib::config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
+
+mod common;
+use common::init_tracing;
 
 #[test_group::group(live)]
 #[test_group::group(live_testnet)]
@@ -24,12 +27,7 @@ async fn create() {
 #[test_group::group(sleep)]
 #[tokio::test]
 async fn scan() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    init_tracing();
 
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
