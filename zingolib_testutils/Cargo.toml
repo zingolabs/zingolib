@@ -16,7 +16,7 @@ pepper-sync.workspace = true
 zingo_common_components.workspace = true
 
 # zingo infrastructure
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "activation_heights_debug_tracing" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
 # zcash
