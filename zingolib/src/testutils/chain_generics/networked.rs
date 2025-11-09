@@ -40,8 +40,8 @@ impl ConductChain for NetworkedTestEnvironment {
         unimplemented!()
     }
 
-    fn zingo_config(&mut self) -> crate::config::ZingoConfig {
-        todo!()
+    async fn zingo_config(&mut self) -> crate::config::ZingoConfig {
+        unimplemented!()
     }
 
     async fn increase_chain_height(&mut self) {

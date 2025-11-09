@@ -98,7 +98,7 @@ pub(crate) mod conduct_chain {
             lightclient
         }
 
-        fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
+        async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
             self.client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights)
         }
