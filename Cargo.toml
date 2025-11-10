@@ -118,6 +118,10 @@ zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
+# Test Attributes
+test-log = "0.2"
+test-group = "1.0.1"
+
 [patch.crates-io]
 zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}

@@ -5,11 +5,11 @@ use zingo_wallet::ZingoWallet;
 use zingolib::config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
 
 mod common;
-use common::init_tracing;
 
 #[test_group::group(live)]
 #[test_group::group(live_testnet)]
 #[tokio::test]
+#[test_log::test]
 async fn create() {
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
@@ -26,9 +26,8 @@ async fn create() {
 #[test_group::group(live_testnet)]
 #[test_group::group(sleep)]
 #[tokio::test]
+#[test_log::test]
 async fn scan() {
-    init_tracing();
-
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
     wallet
