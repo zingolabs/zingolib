@@ -14,7 +14,6 @@ use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_proofs::prover::LocalTxProver;
-use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
 use pepper_sync::wallet::traits::SyncWallet;
