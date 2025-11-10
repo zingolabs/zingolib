@@ -213,17 +213,22 @@ impl LightWallet {
 
             let height = calculated_transaction.status().get_height();
 
-            let mut transaction_bytes = vec![];
-            calculated_transaction
-                .transaction()
-                .write(&mut transaction_bytes)
-                .map_err(|_| TransmissionError::TransactionWrite)?;
-            let consensus_branch_id = consensus::BranchId::for_height(&network, height);
+            let lrz_transaction = calculated_transaction.transaction();
+            let consensus_branch_id = lrz_transaction.consensus_branch_id();
             tracing::debug!(
                 "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}, at height {height}."
             );
+
+            let mut transaction_bytes = vec![];
+            lrz_transaction
+                .write(&mut transaction_bytes)
+                .map_err(|_| TransmissionError::TransactionWrite)?;
+
+            // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
+            let consensus_branch_id = consensus::BranchId::for_height(&network, height);
             let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
                 .map_err(|_| TransmissionError::TransactionRead)?;
+            //
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),
