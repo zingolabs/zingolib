@@ -7,7 +7,7 @@ edition = "2024"
 zingolib = { workspace = true }
 pepper-sync.workspace = true
 
-zcash_wallet_interface = { git = "file:///home/cupress/ZINGO/zcash_wallet_interface", branch = "dev" }
+zcash_wallet_interface = { git = "https://github.com/zingolabs/zcash_wallet_interface.git", branch = "dev" }
 
 zingo_netutils.workspace = true
 zingo_common_components.workspace = true

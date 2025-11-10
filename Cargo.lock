@@ -8563,7 +8563,7 @@ dependencies = [
 [[package]]
 name = "zcash_wallet_interface"
 version = "0.1.0"
-source = "git+file:///home/cupress/ZINGO/zcash_wallet_interface?branch=dev#93a7e590ba4344c56bf2bde59e7062c2bf5d34d4"
+source = "git+https://github.com/zingolabs/zcash_wallet_interface.git?branch=dev#93a7e590ba4344c56bf2bde59e7062c2bf5d34d4"
 
 [[package]]
 name = "zebra-chain"
