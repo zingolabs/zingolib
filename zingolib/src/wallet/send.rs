@@ -225,7 +225,6 @@ impl LightWallet {
                 .map_err(|_| TransmissionError::TransactionWrite)?;
 
             // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
-            let consensus_branch_id = consensus::BranchId::for_height(&network, height);
             let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
                 .map_err(|_| TransmissionError::TransactionRead)?;
             //
