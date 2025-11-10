@@ -25,12 +25,12 @@ pub trait ConductChain {
     async fn create_faucet(&mut self) -> LightClient;
 
     /// sets server parameters
-    fn zingo_config(&mut self) -> crate::config::ZingoConfig;
+    async fn zingo_config(&mut self) -> crate::config::ZingoConfig;
 
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
         let config = self.zingo_config();
-        let mut lightclient = LightClient::new(config, 0.into(), false).unwrap();
+        let mut lightclient = LightClient::new(config.await, 0.into(), false).unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await

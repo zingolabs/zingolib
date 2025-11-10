@@ -13,7 +13,7 @@ zingo_netutils = { workspace = true }
 zingo_common_components = { workspace = true, features = ["for_test"] }
 
 zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.3.0" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
 zebra-chain = { workspace = true }

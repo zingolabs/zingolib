@@ -1316,7 +1316,7 @@ dependencies = [
  "zebra-chain",
  "zingo_common_components",
  "zingo_netutils",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3205,7 +3205,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components",
  "zingo_netutils",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -8392,7 +8392,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#8053b165d65f3f1c4255def86fcfd1ec28056744"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.3.0#7d833158da3b7f6656b5459fbda618e8ebbca49e"
 dependencies = [
  "getset",
  "hex",
@@ -8410,7 +8410,7 @@ dependencies = [
  "zebra-node-services",
  "zebra-rpc",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.3.0)",
 ]
 
 [[package]]
@@ -8990,6 +8990,14 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.3.0#7d833158da3b7f6656b5459fbda618e8ebbca49e"
+dependencies = [
+ "bip0039",
+]
+
+[[package]]
+name = "zingo_test_vectors"
+version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#8053b165d65f3f1c4255def86fcfd1ec28056744"
 dependencies = [
  "bip0039",
@@ -9058,7 +9066,7 @@ dependencies = [
  "zingo-status",
  "zingo_common_components",
  "zingo_netutils",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zip32",
 ]
@@ -9076,7 +9084,7 @@ dependencies = [
  "zcash_protocol",
  "zebra-chain",
  "zingo_common_components",
- "zingo_test_vectors",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zip32",
 ]

@@ -98,7 +98,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.3.0" }
 portpicker = { workspace = true }
 concat-idents = { workspace = true }
 tempfile = { workspace = true }

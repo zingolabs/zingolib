@@ -10,7 +10,7 @@ regtest = ["zingolib/testutils", "zingo_common_components/for_test", "zcash_loca
 zingolib = { workspace = true }
 pepper-sync = { workspace = true }
 
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.3.0", optional = true }
 
 zcash_protocol = { workspace = true }
 
