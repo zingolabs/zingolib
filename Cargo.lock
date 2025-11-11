@@ -6022,21 +6022,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
-name = "tklog"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0f9f3abb3fcc49882b5d32abfc11cf804768b54e6b73d210c6bb5ec6f123a9f"
-dependencies = [
- "chrono",
- "crossbeam-channel",
- "flate2",
- "log",
- "once_cell",
- "regex",
- "tokio",
-]
-
-[[package]]
 name = "tokio"
 version = "1.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8359,7 +8344,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#28eb01b268383342935286988b8ed0da70eed8be"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#4a22805f0c6c6615a0ba451501899b802d5b5459"
 dependencies = [
  "getset",
  "hex",
@@ -8369,7 +8354,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
- "tklog",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -8959,7 +8943,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#28eb01b268383342935286988b8ed0da70eed8be"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#4a22805f0c6c6615a0ba451501899b802d5b5459"
 dependencies = [
  "bip0039",
 ]
