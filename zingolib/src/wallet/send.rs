@@ -14,7 +14,6 @@ use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_proofs::prover::LocalTxProver;
-use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
 use pepper_sync::wallet::traits::SyncWallet;
@@ -213,16 +212,21 @@ impl LightWallet {
 
             let height = calculated_transaction.status().get_height();
 
+            let lrz_transaction = calculated_transaction.transaction();
+            let consensus_branch_id = lrz_transaction.consensus_branch_id();
+            tracing::debug!(
+                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}, at height {height}."
+            );
+
             let mut transaction_bytes = vec![];
-            calculated_transaction
-                .transaction()
+            lrz_transaction
                 .write(&mut transaction_bytes)
                 .map_err(|_| TransmissionError::TransactionWrite)?;
-            let transaction = Transaction::read(
-                transaction_bytes.as_slice(),
-                consensus::BranchId::for_height(&network, height),
-            )
-            .map_err(|_| TransmissionError::TransactionRead)?;
+
+            // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
+            let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
+                .map_err(|_| TransmissionError::TransactionRead)?;
+            //
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),

@@ -485,7 +485,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to batcher:\n{:#?}", &scan_task);
+        tracing::trace!("Adding scan task to batcher:\n{:#?}", &scan_task);
         self.scan_task_sender
             .clone()
             .expect("batcher should be running")
@@ -613,7 +613,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+        tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
         self.scan_task_sender
             .clone()
             .expect("worker should be running")
