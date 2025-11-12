@@ -155,6 +155,7 @@ pub fn load_clientconfig(
     chain: ChainType,
     wallet_settings: WalletSettings,
     no_of_accounts: NonZeroU32,
+    wallet_name: String,
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
@@ -180,12 +181,19 @@ pub fn load_clientconfig(
         }
     }
 
+    // if id is empty, the name is the default name
+    let wallet_name_config = if wallet_name.is_empty() {
+        DEFAULT_WALLET_NAME
+    } else {
+        &wallet_name
+    };
+
     // Create a Light Client Config
     let config = ZingoConfig {
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
         wallet_dir: data_dir,
-        wallet_name: DEFAULT_WALLET_NAME.into(),
+        wallet_name: wallet_name_config.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
         no_of_accounts,
@@ -540,6 +548,32 @@ impl ZingoConfig {
 
     /// TODO: Add Doc Comment Here!
     #[must_use]
+    pub fn get_wallet_with_name_pathbuf(&self, wallet_name: String) -> PathBuf {
+        let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
+        // if id is empty, the name is the default name
+        if wallet_name.is_empty() {
+            wallet_location.push(&self.wallet_name);
+        } else {
+            wallet_location.push(wallet_name);
+        }
+        wallet_location
+    }
+
+    /// TODO: Add Doc Comment Here!
+    #[must_use]
+    pub fn get_wallet_with_name_path(&self, wallet_name: String) -> Box<Path> {
+        self.get_wallet_with_name_pathbuf(wallet_name)
+            .into_boxed_path()
+    }
+
+    /// TODO: Add Doc Comment Here!
+    #[must_use]
+    pub fn wallet_with_name_path_exists(&self, wallet_name: String) -> bool {
+        self.get_wallet_with_name_path(wallet_name).exists()
+    }
+
+    /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
@@ -633,6 +667,7 @@ mod tests {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         );
 
         assert!(valid_config.is_ok());
@@ -667,6 +702,7 @@ mod tests {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         )
         .unwrap();
 
