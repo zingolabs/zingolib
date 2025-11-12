@@ -24,7 +24,9 @@ pub trait ConductChain {
     /// builds a faucet (funded from mining)
     async fn create_faucet(&mut self) -> LightClient;
 
-    /// sets server parameters
+    /// the server communicates some parameters (asyncronously)
+    /// that are here compiled into an appropriate wallet configuration
+    // super awful that this function has to exist, because the wallet should be able to communicate without 'test-only helpers'
     async fn zingo_config(&mut self) -> crate::config::ZingoConfig;
 
     /// builds an empty client
