@@ -433,7 +433,8 @@ pub fn init_from_b64(
 pub fn save_to_b64() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // Return the wallet as a base64 encoded string
-        if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
             // we need to use STANDARD because swift is expecting the encoded String with padding
             // I tried with STANDARD_NO_PAD and the decoding return `nil`.
             Ok(RT.block_on(async move {
