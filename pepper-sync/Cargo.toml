@@ -22,7 +22,7 @@ darkside_test = []
 # Zingo
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
-zingo-netutils = { workspace = true }
+zingo_netutils = { workspace = true }
 
 # Zcash
 zcash_address.workspace = true

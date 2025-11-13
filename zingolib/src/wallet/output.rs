@@ -33,7 +33,8 @@ pub struct OutputRef {
 }
 
 impl OutputRef {
-    /// Creates new OutputRef from parts.
+    /// Creates new `OutputRef` from parts.
+    #[must_use]
     pub fn new(output_id: OutputId, pool_type: PoolType) -> Self {
         OutputRef {
             output_id,
@@ -42,21 +43,25 @@ impl OutputRef {
     }
 
     /// Output identifier.
+    #[must_use]
     pub fn output_id(&self) -> OutputId {
         self.output_id
     }
 
     /// Output identifier.
+    #[must_use]
     pub fn txid(&self) -> TxId {
         self.output_id.txid()
     }
 
     /// Output identifier.
+    #[must_use]
     pub fn output_index(&self) -> u16 {
         self.output_id.output_index()
     }
 
     /// Pool type.
+    #[must_use]
     pub fn pool_type(&self) -> PoolType {
         self.pool_type
     }
@@ -95,15 +100,18 @@ pub enum SpendStatus {
 }
 
 impl SpendStatus {
+    #[must_use]
     pub fn is_unspent(&self) -> bool {
         matches!(self, Self::Unspent)
     }
 
+    #[must_use]
     pub fn is_pending_spent(&self) -> bool {
         matches!(self, Self::CalculatedSpent(_))
             || matches!(self, Self::TransmittedSpent(_))
             || matches!(self, Self::MempoolSpent(_))
     }
+    #[must_use]
     pub fn is_confirmed_spent(&self) -> bool {
         matches!(self, Self::Spent(_))
     }
@@ -113,10 +121,10 @@ impl std::fmt::Display for SpendStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SpendStatus::Unspent => write!(f, "unspent"),
-            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated spent in {}", txid),
-            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted spent in {}", txid),
-            SpendStatus::MempoolSpent(txid) => write!(f, "mempool spent in {}", txid),
-            SpendStatus::Spent(txid) => write!(f, "confirmed spent in {}", txid),
+            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated spent in {txid}"),
+            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted spent in {txid}"),
+            SpendStatus::MempoolSpent(txid) => write!(f, "mempool spent in {txid}"),
+            SpendStatus::Spent(txid) => write!(f, "confirmed spent in {txid}"),
         }
     }
 }
@@ -129,7 +137,7 @@ impl LightWallet {
             .expect("transaction should exist in the wallet")
     }
 
-    /// Returns [self::SpendStatus] for the given `output`.
+    /// Returns [`self::SpendStatus`] for the given `output`.
     pub fn output_spend_status(&self, output: &impl OutputInterface) -> SpendStatus {
         if let Some(txid) = output.spending_transaction() {
             match self
@@ -149,6 +157,7 @@ impl LightWallet {
     }
 
     /// Gets all outputs of a given type in the wallet.
+    #[must_use]
     pub fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
         self.wallet_transactions
             .values()
@@ -157,6 +166,7 @@ impl LightWallet {
     }
 
     /// Sum the values of all outputs in the wallet which match the given `query`.
+    #[must_use]
     pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
         self.wallet_transactions
             .values()
@@ -166,6 +176,7 @@ impl LightWallet {
     }
 
     /// Sum the values of all outputs in the `transaction` which match the given `query`.
+    #[must_use]
     pub fn sum_queried_transaction_output_values(
         &self,
         transaction: &WalletTransaction,
@@ -173,21 +184,21 @@ impl LightWallet {
     ) -> u64 {
         let mut sum = 0;
         if query.transparent() {
-            for output in transaction.transparent_coins().iter() {
+            for output in transaction.transparent_coins() {
                 if self.query_output_spend_status(query.spend_status, output) {
                     sum += output.value();
                 }
             }
         }
         if query.sapling() {
-            for output in transaction.sapling_notes().iter() {
+            for output in transaction.sapling_notes() {
                 if self.query_output_spend_status(query.spend_status, output) {
                     sum += output.value();
                 }
             }
         }
         if query.orchard() {
-            for output in transaction.orchard_notes().iter() {
+            for output in transaction.orchard_notes() {
                 if self.query_output_spend_status(query.spend_status, output) {
                     sum += output.value();
                 }
@@ -305,9 +316,10 @@ impl LightWallet {
         allow_zero_conf_shielding: bool,
     ) -> Vec<&TransparentCoin> {
         // TODO: add support for zero conf shielding
-        if allow_zero_conf_shielding {
-            panic!("zero conf shielding not currently supported!");
-        }
+        assert!(
+            !allow_zero_conf_shielding,
+            "zero conf shielding not currently supported!"
+        );
 
         self.wallet_transactions
             .values()
@@ -394,24 +406,20 @@ impl LightWallet {
                 }
             };
 
-            match unselected_notes.get(unselected_note_index) {
-                Some(&smallest_unselected) => {
-                    // select a note to test if it has enough value to complete the transaction without creating dust as change
-                    if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64()
-                    {
-                        selected_notes.push(smallest_unselected);
-                        unselected_notes.remove(unselected_note_index);
-                    } else {
-                        // this note is not big enough. try the next
-                        unselected_note_index += 1;
-                    }
+            if let Some(&smallest_unselected) = unselected_notes.get(unselected_note_index) {
+                // select a note to test if it has enough value to complete the transaction without creating dust as change
+                if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64() {
+                    selected_notes.push(smallest_unselected);
+                    unselected_notes.remove(unselected_note_index);
+                } else {
+                    // this note is not big enough. try the next
+                    unselected_note_index += 1;
                 }
-                None => {
-                    // the iterator went off the end of the vector without finding a note big enough to complete the transaction
-                    // add the biggest note and reset the iteration
-                    selected_notes.push(unselected_notes.pop().expect("should be nonempty"));
-                    unselected_note_index = 0;
-                }
+            } else {
+                // the iterator went off the end of the vector without finding a note big enough to complete the transaction
+                // add the biggest note and reset the iteration
+                selected_notes.push(unselected_notes.pop().expect("should be nonempty"));
+                unselected_note_index = 0;
             }
         }
 
@@ -428,7 +436,7 @@ pub(crate) enum RemainingNeeded {
 /// There are two mutually exclusive cases:
 ///    (Change) There's no more needed so we've selected 0 or more change
 ///    (Positive) We need > 0 more value.
-/// This function represents the NonPositive case as None, which then serves to signal a break in the note selection
+/// This function represents the `NonPositive` case as None, which then serves to signal a break in the note selection
 /// for where this helper is uniquely called.
 fn calculate_remaining_needed(target_value: Zatoshis, selected_value: Zatoshis) -> RemainingNeeded {
     if let Some(amount) = target_value - selected_value {

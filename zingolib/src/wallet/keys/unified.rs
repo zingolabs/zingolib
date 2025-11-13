@@ -93,17 +93,20 @@ impl UnifiedKeyStore {
     }
 
     /// Returns true if [`UnifiedKeyStore`] is of `Spend` variant
+    #[must_use]
     pub fn is_spending_key(&self) -> bool {
         matches!(self, UnifiedKeyStore::Spend(_))
     }
 
     /// Returns true if [`UnifiedKeyStore`] is of `Empty` variant
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         matches!(self, UnifiedKeyStore::Empty)
     }
 
     /// Returns the default receivers for unified address generation depending on the wallet's capability.
     /// Returns `None` if the wallet does not have viewing capabilities of at least 1 shielded pool.
+    #[must_use]
     pub fn default_receivers(&self) -> Option<ReceiverSelection> {
         match self {
             UnifiedKeyStore::Spend(_) => Some(ReceiverSelection::orchard_only()),
@@ -249,7 +252,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedKeyStore {
             x => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Unknown key type: {}", x),
+                    format!("Unknown key type: {x}"),
                 ));
             }
         })
@@ -302,7 +305,7 @@ impl ReadableWriteable<ChainType, ChainType> for UnifiedFullViewingKey {
         UnifiedFullViewingKey::decode(&input, ufvk_encoded).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("UFVK decoding error: {}", e),
+                format!("UFVK decoding error: {e}"),
             )
         })
     }
@@ -391,6 +394,7 @@ pub struct ReceiverSelection {
 
 impl ReceiverSelection {
     /// All shielded receivers.
+    #[must_use]
     pub fn all_shielded() -> Self {
         Self {
             orchard: true,
@@ -399,6 +403,7 @@ impl ReceiverSelection {
     }
 
     /// Only orchard receiver.
+    #[must_use]
     pub fn orchard_only() -> Self {
         Self {
             orchard: true,
@@ -407,6 +412,7 @@ impl ReceiverSelection {
     }
 
     /// Only sapling receiver.
+    #[must_use]
     pub fn sapling_only() -> Self {
         Self {
             orchard: false,
@@ -432,10 +438,10 @@ impl ReadableWriteable for ReceiverSelection {
         let mut receivers = 0;
         if self.orchard {
             receivers |= 0b1;
-        };
+        }
         if self.sapling {
             receivers |= 0b10;
-        };
+        }
         writer.write_u8(receivers)?;
         Ok(())
     }

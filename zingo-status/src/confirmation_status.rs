@@ -1,5 +1,5 @@
 //! If a note is confirmed, it is:
-//!  Confirmed === on-record on-chain at BlockHeight
+//!  Confirmed === on-record on-chain at `BlockHeight`
 
 use std::io::{Read, Write};
 
@@ -8,24 +8,25 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation states. Every transaction record includes exactly one of these variants.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
     /// The transaction has been included in at-least one block mined to the zcash blockchain.
     /// The height of a confirmed block that contains the transaction.
     Confirmed(BlockHeight),
     /// The transaction is known to be or have been in the mempool.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
+    /// The `BlockHeight` is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
     Mempool(BlockHeight),
     /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
     Transmitted(BlockHeight),
     /// The transaction has been calculated but not yet broadcast to the chain.
-    /// The BlockHeight is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
     Calculated(BlockHeight),
 }
 
 impl ConfirmationStatus {
     /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
+    #[must_use]
     pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
         if pending {
             Self::Transmitted(blockheight)
@@ -46,6 +47,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Mempool(10.into()).is_confirmed());
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed());
     /// ```
+    #[must_use]
     pub fn is_confirmed(&self) -> bool {
         matches!(self, Self::Confirmed(_))
     }
@@ -70,6 +72,7 @@ impl ConfirmationStatus {
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after_or_at(&11.into()));
     /// ```
+    #[must_use]
     pub fn is_confirmed_after_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height >= comparison_height)
     }
@@ -94,6 +97,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_after(&11.into()));
     /// ```
+    #[must_use]
     pub fn is_confirmed_after(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height > comparison_height)
     }
@@ -119,6 +123,7 @@ impl ConfirmationStatus {
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before_or_at(&11.into()));
     /// ```
     // TODO: blockheight impls copy so remove ref
+    #[must_use]
     pub fn is_confirmed_before_or_at(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height <= comparison_height)
     }
@@ -143,6 +148,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&10.into()));
     /// assert!(ConfirmationStatus::Confirmed(10.into()).is_confirmed_before(&11.into()));
     /// ```
+    #[must_use]
     pub fn is_confirmed_before(&self, comparison_height: &BlockHeight) -> bool {
         matches!(self, Self::Confirmed(self_height) if self_height < comparison_height)
     }
@@ -168,6 +174,7 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
     /// ```
     // TODO remove 'pending' and fix spend status.
+    #[must_use]
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
             Self::Calculated(self_height)
@@ -190,6 +197,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Mempool(15.into());
     /// assert_eq!(status.get_confirmed_height(), None);
     /// ```
+    #[must_use]
     pub fn get_confirmed_height(&self) -> Option<BlockHeight> {
         match self {
             Self::Confirmed(self_height) => Some(*self_height),
@@ -206,6 +214,7 @@ impl ConfirmationStatus {
     /// let status = ConfirmationStatus::Confirmed(15.into());
     /// assert_eq!(status.get_height(), 15.into());
     /// ```
+    #[must_use]
     pub fn get_height(&self) -> BlockHeight {
         match self {
             Self::Calculated(self_height) => *self_height,
@@ -250,6 +259,7 @@ impl ConfirmationStatus {
     }
 }
 
+/// a public interface, writ in stone
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -267,6 +277,42 @@ impl std::fmt::Display for ConfirmationStatus {
             }
         }
     }
+}
+#[test]
+fn stringify_display() {
+    let status = ConfirmationStatus::Transmitted(BlockHeight::from_u32(16_000));
+    let string = format!("{status}");
+    assert_eq!(string, "transmitted");
+}
+
+/// a more complete stringification
+impl std::fmt::Debug for ConfirmationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Calculated(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Calculated for {hi}")
+            }
+            Self::Transmitted(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Transmitted for {hi}")
+            }
+            Self::Mempool(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Mempool for {hi}")
+            }
+            Self::Confirmed(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Confirmed at {hi}")
+            }
+        }
+    }
+}
+#[test]
+fn stringify_debug() {
+    let status = ConfirmationStatus::Transmitted(BlockHeight::from_u32(16_000));
+    let string = format!("{status:?}");
+    assert_eq!(string, "Transmitted for 16000");
 }
 
 impl From<ConfirmationStatus> for String {

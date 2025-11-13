@@ -8,7 +8,7 @@ use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClien
 use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
-/// allows using existing ChainGeneric functions with TestNet wallets
+/// allows using existing `ChainGeneric` functions with `TestNet` wallets
 pub struct NetworkedTestEnvironment {
     indexer_uri: Uri,
     latest_known_server_height: Option<BlockHeight>,
@@ -40,8 +40,8 @@ impl ConductChain for NetworkedTestEnvironment {
         unimplemented!()
     }
 
-    fn zingo_config(&mut self) -> crate::config::ZingoConfig {
-        todo!()
+    async fn zingo_config(&mut self) -> crate::config::ZingoConfig {
+        unimplemented!()
     }
 
     async fn increase_chain_height(&mut self) {

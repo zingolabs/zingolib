@@ -149,7 +149,7 @@ pub mod send_with_proposal {
                 config::ZingoConfigBuilder, lightclient::LightClient,
                 mocks::proposal::ProposalBuilder,
             };
-            use testvectors::seeds::ABANDON_ART_SEED;
+            use zingo_test_vectors::seeds::ABANDON_ART_SEED;
 
             let config = ZingoConfigBuilder::default().create();
             let mut lc = LightClient::create_from_wallet(
@@ -183,7 +183,7 @@ pub mod send_with_proposal {
 
         /// live sync: execution time increases linearly until example wallet is upgraded
         /// live send TESTNET: these assume the wallet has on-chain TAZ.
-        /// waits up to five blocks for confirmation per transaction. see [zingolib/src/testutils/chain_generics/live_chain.rs]
+        /// waits up to five blocks for confirmation per transaction. see [`zingolib/src/testutils/chain_generics/live_chain.rs`]
         /// as of now, average block time is supposedly about 75 seconds
         mod testnet {
             use zcash_protocol::{PoolType, ShieldedProtocol};

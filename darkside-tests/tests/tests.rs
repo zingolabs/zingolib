@@ -1,15 +1,12 @@
-use std::path::PathBuf;
-
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 // use darkside_tests::utils::scenarios::DarksideEnvironment;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
-use testvectors::seeds::DARKSIDE_SEED;
-use zingo_infra_services::indexer::Indexer;
-use zingo_infra_services::indexer::Lightwalletd;
-use zingo_infra_services::indexer::LightwalletdConfig;
-use zingo_infra_services::network::localhost_uri;
+use zcash_local_net::indexer::Indexer;
+use zcash_local_net::network::localhost_uri;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_test_vectors::seeds::DARKSIDE_SEED;
 // use zcash_client_backend::PoolType::Shielded;
 // use zcash_client_backend::ShieldedProtocol::Orchard;
 // use zingo_status::confirmation_status::ConfirmationStatus;
@@ -17,29 +14,22 @@ use zingolib::get_base_address_macro;
 // use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
 // use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
-use zingolib::testutils::scenarios::ClientBuilder;
-use zingolib::testutils::scenarios::LIGHTWALLETD_BIN;
 use zingolib::testutils::tempfile;
-use zingolib::testutils::testvectors;
-use zingolib::testutils::zingo_infra_services;
 use zingolib::wallet::balance::AccountBalance;
+use zingolib_testutils::scenarios::ClientBuilder;
+
+use darkside_tests::utils::lightwalletd;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
 async fn simple_sync() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -50,7 +40,7 @@ async fn simple_sync() {
 
     let result = light_client.sync_and_await().await.unwrap();
 
-    println!("{}", result);
+    tracing::info!("{result}");
 
     assert_eq!(result.sync_end_height, 3.into());
     assert_eq!(result.blocks_scanned, 3);
@@ -76,20 +66,14 @@ async fn simple_sync() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn reorg_receipt_sync_generic() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = all_height_one_nus();
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
@@ -142,13 +126,7 @@ async fn reorg_receipt_sync_generic() {
 #[ignore = "investigate invalid block hash length"]
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
@@ -157,11 +135,11 @@ async fn sent_transaction_reorged_into_mempool() {
 
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
-    let activation_heights = zingolib::testutils::default_regtest_heights();
+    let activation_heights = all_height_one_nus();
     let mut light_client =
         client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
     let mut recipient = client_manager.build_client(
-        zingolib::testutils::testvectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+        zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
         activation_heights,
@@ -191,7 +169,7 @@ async fn sent_transaction_reorged_into_mempool() {
     )
     .await
     .unwrap();
-    println!("{}", one_txid.first());
+    tracing::info!("{}", one_txid.first());
     recipient.sync_and_await().await.unwrap();
 
     let connector = DarksideConnector(server_id.clone());
@@ -210,14 +188,14 @@ async fn sent_transaction_reorged_into_mempool() {
 
     recipient.sync_and_await().await.unwrap();
     //  light_client.do_sync(false).await.unwrap();
-    println!(
+    tracing::info!(
         "Recipient pre-reorg: {}",
         &recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "Sender pre-reorg (unsynced): {}",
         &light_client
             .account_balance(zip32::AccountId::ZERO)
@@ -235,14 +213,14 @@ async fn sent_transaction_reorged_into_mempool() {
 
     recipient.sync_and_await().await.unwrap();
     light_client.sync_and_await().await.unwrap();
-    println!(
+    tracing::info!(
         "Recipient post-reorg: {}",
         &recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "Sender post-reorg: {}",
         &light_client
             .account_balance(zip32::AccountId::ZERO)

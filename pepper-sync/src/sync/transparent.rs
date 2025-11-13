@@ -19,7 +19,7 @@ use crate::wallet::{KeyIdInterface, ScanTarget};
 
 use super::MAX_VERIFICATION_WINDOW;
 
-/// Discovers all addresses in use by the wallet and returns scan_targets for any new relevant transactions to scan transparent
+/// Discovers all addresses in use by the wallet and returns `scan_targets` for any new relevant transactions to scan transparent
 /// bundles.
 /// `wallet_height` should be the value before updating to latest chain height.
 pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
@@ -79,13 +79,13 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
         // To summarise, keeping transaction scanning within the scanner is much better co-ordinated and allows us to leverage
         // any new developments to sync state management and scanning. It also separates concerns, with tasks happening in one
         // place and performed once, wherever possible.
-        transactions.iter().for_each(|(height, tx)| {
+        for (height, tx) in &transactions {
             scan_targets.insert(ScanTarget {
                 block_height: *height,
                 txid: tx.txid(),
                 narrow_scan_area: true,
             });
-        });
+        }
     }
 
     let mut scopes = Vec::new();
@@ -102,7 +102,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     // discover new addresses and find scan_targets for relevant transactions
     for (account_id, ufvk) in ufvks {
         if let Some(account_pubkey) = ufvk.transparent() {
-            for scope in scopes.iter() {
+            for scope in &scopes {
                 // start with the first address index previously unused by the wallet
                 let mut address_index = if let Some(id) = wallet_addresses
                     .keys()
@@ -142,13 +142,13 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                     if transactions.is_empty() {
                         unused_address_count += 1;
                     } else {
-                        transactions.iter().for_each(|(height, tx)| {
+                        for (height, tx) in &transactions {
                             scan_targets.insert(ScanTarget {
                                 block_height: *height,
                                 txid: tx.txid(),
                                 narrow_scan_area: true,
                             });
-                        });
+                        }
                         unused_address_count = 0;
                     }
 
@@ -156,9 +156,9 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
                 }
 
                 addresses.truncate(addresses.len() - config.gap_limit as usize);
-                addresses.into_iter().for_each(|(id, address)| {
+                for (id, address) in addresses {
                     wallet_addresses.insert(id, address);
-                });
+                }
             }
         }
     }

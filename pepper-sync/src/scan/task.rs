@@ -43,11 +43,11 @@ pub(crate) enum ScannerState {
 
 impl ScannerState {
     fn verified(&mut self) {
-        *self = ScannerState::Scan
+        *self = ScannerState::Scan;
     }
 
     fn shutdown(&mut self) {
-        *self = ScannerState::Shutdown
+        *self = ScannerState::Shutdown;
     }
 }
 
@@ -222,11 +222,10 @@ where
                     {
                         // the last scan ranges with `Verify` priority are currently being scanned.
                         return Ok(());
-                    } else {
-                        // verification complete
-                        self.state.verified();
-                        return Ok(());
                     }
+                    // verification complete
+                    self.state.verified();
+                    return Ok(());
                 }
 
                 // scan ranges with `Verify` priority
@@ -390,7 +389,16 @@ where
                         return Err(e.into());
                     }
                 } {
-                    if !fetch_nullifiers_only {
+                    if fetch_nullifiers_only {
+                        sapling_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.spends.len());
+                        orchard_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                    } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
                             && scan_task.scan_range.block_range().start == block.block_height() + 1
@@ -430,15 +438,6 @@ where
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.outputs.len());
                         orchard_output_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    } else {
-                        sapling_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        orchard_nullifier_count += compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
@@ -486,7 +485,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to batcher:\n{:#?}", &scan_task);
+        tracing::trace!("Adding scan task to batcher:\n{:#?}", &scan_task);
         self.scan_task_sender
             .clone()
             .expect("batcher should be running")
@@ -614,7 +613,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+        tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
         self.scan_task_sender
             .clone()
             .expect("worker should be running")

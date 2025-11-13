@@ -15,8 +15,6 @@
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
-use std::sync::LazyLock;
-use zcash_protocol::local_consensus::LocalNetwork;
 
 use bip0039::Mnemonic;
 
@@ -24,49 +22,44 @@ use portpicker::Port;
 use tempfile::TempDir;
 use zcash_protocol::PoolType;
 
-use testvectors::{
-    FUND_OFFLOAD_ORCHARD_ONLY, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
-    REG_Z_ADDR_FROM_ABANDONART, seeds,
-};
-use zebra_chain::parameters::NetworkKind;
-use zingo_infra_services::indexer::{
-    Indexer, Lightwalletd, LightwalletdConfig, Zainod, ZainodConfig,
-};
-use zingo_infra_services::network::localhost_uri;
-use zingo_infra_services::utils::ExecutableLocation;
-use zingo_infra_services::validator::{Validator, Zcashd, ZcashdConfig, Zebrad, ZebradConfig};
-use zingo_infra_services::{LocalNet, Process};
+use zcash_local_net::LocalNet;
+use zcash_local_net::ProcessId;
+use zcash_local_net::indexer::{Indexer, IndexerConfig};
+use zcash_local_net::logs::LogsToStdoutAndStderr;
+use zcash_local_net::network::localhost_uri;
+use zcash_local_net::process::Process;
+use zcash_local_net::validator::{Validator, ValidatorConfig};
+use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
-use crate::config::{ChainType, ZingoConfig, load_clientconfig};
-use crate::get_base_address_macro;
-use crate::lightclient::LightClient;
-use crate::testutils::increase_height_and_wait_for_client;
-use crate::testutils::lightclient::from_inputs::quick_send;
-use crate::wallet::WalletBase;
-use crate::wallet::keys::unified::ReceiverSelection;
-use crate::wallet::{LightWallet, WalletSettings};
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-
+use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use zingolib::get_base_address_macro;
+use zingolib::lightclient::LightClient;
+use zingolib::lightclient::error::LightClientError;
+use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
+use zingolib::testutils::lightclient::get_base_address;
+use zingolib::testutils::sync_to_target_height;
+use zingolib::wallet::WalletBase;
+use zingolib::wallet::keys::unified::ReceiverSelection;
+use zingolib::wallet::{LightWallet, WalletSettings};
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_infra_services::{indexer::Zainod, validator::Zcashd};
-
-    pub type DefaultIndexer = Zainod;
-    pub type DefaultValidator = Zcashd;
+    pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
+    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(all(not(feature = "test_zainod_zcashd"), feature = "test_lwd_zebrad"))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_infra_services::{indexer::Lightwalletd, validator::Zebrad};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zebrad;
+    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(all(
@@ -76,10 +69,8 @@ pub mod network_combo {
 ))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_infra_services::{indexer::Lightwalletd, validator::Zcashd};
-
-    pub type DefaultIndexer = Lightwalletd;
-    pub type DefaultValidator = Zcashd;
+    pub type DefaultIndexer = zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    pub type DefaultValidator = zcash_local_net::validator::zcashd::Zcashd;
 }
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(not(any(
@@ -89,157 +80,45 @@ pub mod network_combo {
 )))]
 #[allow(missing_docs)]
 pub mod network_combo {
-    use zingo_infra_services::{indexer::Zainod, validator::Zebrad};
-
-    pub type DefaultIndexer = Zainod;
-    pub type DefaultValidator = Zebrad;
+    pub type DefaultIndexer = zcash_local_net::indexer::zainod::Zainod;
+    pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
-/// Trait for generalising local network functionality across any combination of zcash processes.
-pub trait ZingoTestLocalNetwork<I: Indexer, V: Validator> {
-    /// Launch local network.
-    fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
-        chain_cache: Option<PathBuf>,
-    ) -> impl Future<Output = LocalNet<I, V>>;
-}
-
-impl ZingoTestLocalNetwork<Zainod, Zebrad> for (Zainod, Zebrad) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        _mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Zainod, Zebrad> {
-        LocalNet::<Zainod, Zebrad>::launch(
-            ZainodConfig {
-                zainod_bin: ZAINOD_BIN.clone(),
-                listen_port: indexer_listen_port,
-                validator_port: 0,
-                chain_cache: None,
-                network: NetworkKind::Regtest,
-            },
-            ZebradConfig {
-                zebrad_bin: ZEBRAD_BIN.clone(),
-                network_listen_port: None,
-                rpc_listen_port: None,
-                indexer_listen_port: None,
-                activation_heights,
-                miner_address: REG_T_ADDR_FROM_ABANDONART,
-                chain_cache,
-                network: NetworkKind::Regtest,
-            },
-        )
+/// To launch a `LocalNet` with darkside settings.
+pub async fn launch_test<V, I>(
+    indexer_listen_port: Option<Port>,
+    mine_to_pool: PoolType,
+    configured_activation_heights: ConfiguredActivationHeights,
+    chain_cache: Option<PathBuf>,
+) -> LocalNet<V, I>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send + ValidatorConfig + Default,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send + IndexerConfig + Default,
+{
+    let mut validator_config = <V as Process>::Config::default();
+    validator_config.set_test_parameters(mine_to_pool, configured_activation_heights, chain_cache);
+    let mut indexer_config = <I as Process>::Config::default();
+    indexer_config.set_listen_port(indexer_listen_port);
+    LocalNet::launch_from_two_configs(validator_config, indexer_config)
         .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Zainod, Zcashd> for (Zainod, Zcashd) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Zainod, Zcashd> {
-        let miner_address = match mine_to_pool {
-            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
-            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
-            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
-        };
-
-        LocalNet::<Zainod, Zcashd>::launch(
-            ZainodConfig {
-                zainod_bin: ZAINOD_BIN.clone(),
-                listen_port: indexer_listen_port,
-                validator_port: 0,
-                chain_cache: None,
-                network: NetworkKind::Regtest,
-            },
-            ZcashdConfig {
-                zcashd_bin: ZCASHD_BIN.clone(),
-                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-                rpc_listen_port: None,
-                activation_heights,
-                miner_address: Some(miner_address),
-                chain_cache,
-            },
-        )
-        .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Lightwalletd, Zcashd> for (Lightwalletd, Zcashd) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Lightwalletd, Zcashd> {
-        let miner_address = match mine_to_pool {
-            PoolType::ORCHARD => REG_O_ADDR_FROM_ABANDONART,
-            PoolType::SAPLING => REG_Z_ADDR_FROM_ABANDONART,
-            PoolType::Transparent => REG_T_ADDR_FROM_ABANDONART,
-        };
-
-        LocalNet::<Lightwalletd, Zcashd>::launch(
-            LightwalletdConfig {
-                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-                listen_port: indexer_listen_port,
-                zcashd_conf: PathBuf::new(),
-                darkside: false,
-            },
-            ZcashdConfig {
-                zcashd_bin: ZCASHD_BIN.clone(),
-                zcash_cli_bin: ZCASH_CLI_BIN.clone(),
-                rpc_listen_port: None,
-                activation_heights,
-                miner_address: Some(miner_address),
-                chain_cache,
-            },
-        )
-        .await
-    }
-}
-
-impl ZingoTestLocalNetwork<Lightwalletd, Zebrad> for (Lightwalletd, Zebrad) {
-    async fn launch(
-        indexer_listen_port: Option<Port>,
-        _mine_to_pool: PoolType,
-        activation_heights: LocalNetwork,
-        chain_cache: Option<PathBuf>,
-    ) -> LocalNet<Lightwalletd, Zebrad> {
-        LocalNet::<Lightwalletd, Zebrad>::launch(
-            LightwalletdConfig {
-                lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-                listen_port: indexer_listen_port,
-                zcashd_conf: PathBuf::new(),
-                darkside: false,
-            },
-            ZebradConfig {
-                zebrad_bin: ZEBRAD_BIN.clone(),
-                network_listen_port: None,
-                rpc_listen_port: None,
-                indexer_listen_port: None,
-                activation_heights,
-                miner_address: REG_T_ADDR_FROM_ABANDONART,
-                chain_cache,
-                network: NetworkKind::Regtest,
-            },
-        )
-        .await
-    }
+        .expect("ing to launch a LocalNetwork with testconfiguration.")
 }
 
 /// Generate 100 blocks and shield the faucet if attempting to mine to a shielded pool as Zebrad does not currently
 /// support this. Also generates an additional block to confirm the shield, dumps the excess funds and generates a
 /// final block to confirm the send.
-async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
-    local_net: &LocalNet<I, V>,
+async fn zebrad_shielded_funds<V, I>(
+    local_net: &LocalNet<V, I>,
     mine_to_pool: PoolType,
     faucet: &mut LightClient,
-) {
+) where
+    I: Indexer + LogsToStdoutAndStderr,
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <I as Process>::Config: Send,
+    <V as Process>::Config: Send,
+{
     if !matches!(mine_to_pool, PoolType::Transparent) {
         local_net.validator().generate_blocks(100).await.unwrap();
         faucet.sync_and_await().await.unwrap();
@@ -252,49 +131,6 @@ async fn zebrad_shielded_funds<I: Indexer, V: Validator>(
         local_net.validator().generate_blocks(1).await.unwrap();
     }
 }
-
-/// Helper function to get the test binary path
-fn get_test_binary_path(binary_name: &str) -> ExecutableLocation {
-    // Try CARGO_WORKSPACE_DIR first (available in newer cargo versions)
-    // Otherwise fall back to CARGO_MANIFEST_DIR and go up one level
-    let workspace_dir = std::env::var("CARGO_WORKSPACE_DIR")
-        .map(PathBuf::from)
-        .or_else(|_| {
-            std::env::var("CARGO_MANIFEST_DIR")
-                .map(|manifest_dir| PathBuf::from(manifest_dir).parent().unwrap().to_path_buf())
-        })
-        .unwrap_or_else(|_| PathBuf::from("."));
-
-    let path = workspace_dir
-        .join("test_binaries")
-        .join("bins")
-        .join(binary_name);
-    if path.exists() {
-        ExecutableLocation::Specific(path.canonicalize().unwrap())
-    } else {
-        ExecutableLocation::Global(binary_name.to_string())
-    }
-}
-
-/// Zcashd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASHD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zcashd"));
-
-/// Zcash CLI binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZCASH_CLI_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zcash-cli"));
-
-/// Zebrad binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZEBRAD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zebrad"));
-
-/// Lightwalletd binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static LIGHTWALLETD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("lightwalletd"));
-
-/// Zainod binary location. First checks test_binaries/bins, then $PATH if not found.
-pub static ZAINOD_BIN: LazyLock<ExecutableLocation> =
-    LazyLock::new(|| get_test_binary_path("zainod"));
 
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
@@ -318,30 +154,30 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
-        //! Each client requires a unique data_dir, we use the
-        //! client_number counter for this.
+        //! Each client requires a unique `data_dir`, we use the
+        //! `client_number` counter for this.
         self.client_number += 1;
         let conf_path = format!(
             "{}_client_{}",
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), activation_heights)
+        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
             self.server_id.clone(),
             Some(conf_path),
-            ChainType::Regtest(activation_heights),
+            ChainType::Regtest(configured_activation_heights),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -350,6 +186,7 @@ impl ClientBuilder {
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             },
             1.try_into().unwrap(),
+            "".to_string(),
         )
         .unwrap()
     }
@@ -358,14 +195,14 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
             seeds::ABANDON_ART_SEED.to_string(),
             0,
             overwrite,
-            activation_heights,
+            configured_activation_heights,
         )
     }
 
@@ -375,9 +212,9 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        activation_heights: zcash_protocol::local_consensus::LocalNetwork,
+        configured_activation_heights: ConfiguredActivationHeights,
     ) -> LightClient {
-        let config = self.make_unique_data_dir_and_load_config(activation_heights);
+        let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
             config.chain,
             WalletBase::Mnemonic {
@@ -398,17 +235,21 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    activation_heights: LocalNetwork,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
-    let (local_net, mut client_builder) =
-        custom_clients(PoolType::ORCHARD, activation_heights, chain_cache).await;
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
+    let (local_net, mut client_builder) = custom_clients(
+        PoolType::ORCHARD,
+        configured_activation_heights,
+        chain_cache,
+    )
+    .await;
 
     let mut lightclient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        configured_activation_heights,
     );
     lightclient.sync_and_await().await.unwrap();
 
@@ -416,9 +257,9 @@ pub async fn unfunded_client(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient)
+pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(crate::testutils::default_regtest_heights(), None).await
+    unfunded_client(all_height_one_nus(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -433,15 +274,15 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultIndexer, DefaultValid
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) =
-        custom_clients(mine_to_pool, activation_heights, chain_cache).await;
+        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
 
-    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -451,37 +292,32 @@ pub async fn faucet(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn faucet_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, LightClient) {
-    faucet(
-        PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
-        None,
-    )
-    .await
+pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
+    faucet(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
 ) {
     let (local_net, mut client_builder) =
-        custom_clients(mine_to_pool, activation_heights, chain_cache).await;
+        custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, activation_heights);
+    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        activation_heights,
+        configured_activation_heights,
     );
 
-    if matches!(DefaultValidator::PROCESS, Process::Zebrad) {
+    if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
     }
 
@@ -493,16 +329,11 @@ pub async fn faucet_recipient(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient_default() -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(
-        PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
-        None,
-    )
-    .await
+    faucet_recipient(PoolType::ORCHARD, all_height_one_nus(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -511,10 +342,10 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
     Option<String>,
@@ -522,14 +353,14 @@ pub async fn faucet_funded_recipient(
     Option<String>,
 ) {
     let (local_net, mut faucet, mut recipient) =
-        faucet_recipient(mine_to_pool, activation_heights, chain_cache).await;
+        faucet_recipient(mine_to_pool, configured_activation_heights, chain_cache).await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
 
     let orchard_txid = if let Some(funds) = orchard_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
             )
@@ -543,7 +374,7 @@ pub async fn faucet_funded_recipient(
     };
     let sapling_txid = if let Some(funds) = sapling_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
             )
@@ -557,7 +388,7 @@ pub async fn faucet_funded_recipient(
     };
     let transparent_txid = if let Some(funds) = transparent_funds {
         Some(
-            super::lightclient::from_inputs::quick_send(
+            quick_send(
                 &mut faucet,
                 vec![(
                     &get_base_address_macro!(recipient, "transparent"),
@@ -592,7 +423,7 @@ pub async fn faucet_funded_recipient(
 pub async fn faucet_funded_recipient_default(
     orchard_funds: u64,
 ) -> (
-    LocalNet<DefaultIndexer, DefaultValidator>,
+    LocalNet<DefaultValidator, DefaultIndexer>,
     LightClient,
     LightClient,
     String,
@@ -603,7 +434,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            crate::testutils::default_regtest_heights(),
+            all_height_one_nus(),
             None,
         )
         .await;
@@ -614,13 +445,15 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    activation_heights: LocalNetwork,
+    configured_activation_heights: ConfiguredActivationHeights,
     chain_cache: Option<PathBuf>,
-) -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder) {
-    let local_net = <(DefaultIndexer, DefaultValidator) as ZingoTestLocalNetwork<
-        DefaultIndexer,
-        DefaultValidator,
-    >>::launch(None, mine_to_pool, activation_heights, chain_cache)
+) -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder) {
+    let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
+        None,
+        mine_to_pool,
+        configured_activation_heights,
+        chain_cache,
+    )
     .await;
 
     local_net.validator().generate_blocks(2).await.unwrap();
@@ -634,48 +467,42 @@ pub async fn custom_clients(
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn custom_clients_default() -> (LocalNet<DefaultIndexer, DefaultValidator>, ClientBuilder)
+pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
-    let (local_net, client_builder) = custom_clients(
-        PoolType::ORCHARD,
-        crate::testutils::default_regtest_heights(),
-        None,
-    )
-    .await;
+    let (local_net, client_builder) =
+        custom_clients(PoolType::ORCHARD, all_height_one_nus(), None).await;
 
     (local_net, client_builder)
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn unfunded_mobileclient() -> LocalNet<DefaultIndexer, DefaultValidator> {
-    <(DefaultIndexer, DefaultValidator) as ZingoTestLocalNetwork<
-        DefaultIndexer,
-        DefaultValidator,
-    >>::launch(
+pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexer> {
+    launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
-        crate::testutils::default_regtest_heights(),
+        all_height_one_nus(),
         None,
     )
     .await
 }
 
 /// TODO: Add Doc Comment Here!
-pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer, DefaultValidator> {
+pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     faucet.sync_and_await().await.unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -689,23 +516,24 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultIndexer,
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_with_3_txs_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
     )
@@ -714,7 +542,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -728,7 +556,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .await
         .unwrap();
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -746,25 +574,26 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 /// This scenario funds a client with transparent funds.
 pub async fn funded_transparent_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -786,25 +615,26 @@ pub async fn funded_transparent_mobileclient(
 /// TODO: Add Doc Comment Here!
 pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     value: u64,
-) -> LocalNet<DefaultIndexer, DefaultValidator> {
+) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet = client_builder.build_faucet(true, local_net.validator().activation_heights());
+    let mut faucet =
+        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
     let mut recipient = client_builder.build_client(
         seeds::HOSPITAL_MUSEUM_SEED.to_string(),
         1,
         true,
-        local_net.validator().activation_heights(),
+        local_net.validator().get_activation_heights().await,
     );
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
 
     // // received from a faucet to orchard
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "unified"),
@@ -819,7 +649,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to sapling
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "sapling"),
@@ -834,7 +664,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // received from a faucet to transparent
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut faucet,
         vec![(
             &get_base_address_macro!(recipient, "transparent"),
@@ -849,7 +679,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to a faucet
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &get_base_address_macro!(faucet, "unified"),
@@ -865,7 +695,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self orchard
     let recipient_unified_address = get_base_address_macro!(recipient, "unified");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_unified_address,
@@ -881,7 +711,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self sapling
     let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_sapling_address,
@@ -897,7 +727,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 
     // // send to self transparent
     let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
-    super::lightclient::from_inputs::quick_send(
+    quick_send(
         &mut recipient,
         vec![(
             &recipient_transparent_address,
@@ -923,4 +753,71 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     local_net.validator().generate_blocks(1).await.unwrap();
 
     local_net
+}
+
+/// Send from sender to recipient and then bump chain and sync both lightclients
+pub async fn send_value_between_clients_and_sync<V, I>(
+    local_net: &LocalNet<V, I>,
+    sender: &mut LightClient,
+    recipient: &mut LightClient,
+    value: u64,
+    address_pool: PoolType,
+) -> Result<String, LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send,
+{
+    let txid = from_inputs::quick_send(
+        sender,
+        vec![(
+            &get_base_address(recipient, address_pool).await,
+            value,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    increase_height_and_wait_for_client(local_net, sender, 1).await?;
+    recipient.sync_and_await().await?;
+    Ok(txid.first().to_string())
+}
+
+/// This function increases the chain height reliably (with polling) but
+/// it _also_ ensures that the client state is synced.
+/// Unsynced clients are very interesting to us.  See `increase_server_height`
+/// to reliably increase the server without syncing the client
+pub async fn increase_height_and_wait_for_client<V, I>(
+    local_net: &LocalNet<V, I>,
+    client: &mut LightClient,
+    n: u32,
+) -> Result<(), LightClientError>
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send,
+{
+    sync_to_target_height(
+        client,
+        generate_n_blocks_return_new_height(local_net, n).await,
+    )
+    .await
+}
+
+/// TODO: Add Doc Comment Here!
+pub async fn generate_n_blocks_return_new_height<V, I>(local_net: &LocalNet<V, I>, n: u32) -> u32
+where
+    V: Validator + LogsToStdoutAndStderr + Send,
+    <V as Process>::Config: Send,
+    I: Indexer + LogsToStdoutAndStderr,
+    <I as Process>::Config: Send,
+{
+    let start_height = local_net.validator().get_chain_height().await;
+    let target = start_height + n;
+    local_net.validator().generate_blocks(n).await.unwrap();
+    assert_eq!(local_net.validator().get_chain_height().await, target);
+
+    target
 }
