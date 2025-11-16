@@ -519,37 +519,61 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
     } else {
-        // Optionally wait for background sync to finish before executing command
+        // Optionally wait for background sync to finish before executing command.
+        // Retry requesting status until the channel closes or the percentage field
+        // indicates completion.
         if cli_config.sync && cli_config.waitsync {
             use std::{thread, time::Duration};
+            const COMPLETE_THRESHOLD: f64 = 99.999;
+
             loop {
-                // Poll sync task status
+                // Request machine-readable sync status.
                 command_transmitter
-                    .send(("sync".to_string(), vec!["poll".to_string()]))
+                    .send(("sync".to_string(), vec!["status".to_string()]))
                     .unwrap();
+
                 match resp_receiver.recv() {
                     Ok(resp) => {
-                        if resp.starts_with("Error:") {
-                            eprintln!(
-                                "Sync error while waiting: {resp}\nProceeding to execute the command."
-                            );
-                            break;
-                        } else if resp.starts_with("Sync completed succesfully:") {
-                            // Sync finished; proceed
-                            break;
-                        } else if resp == "Sync task has not been launched." {
-                            // Try to launch sync and continue waiting
-                            command_transmitter
-                                .send(("sync".to_string(), vec!["run".to_string()]))
-                                .unwrap();
-                            let _ = resp_receiver.recv();
-                            thread::sleep(Duration::from_millis(500));
-                        } else {
-                            // Not ready yet
-                            thread::sleep(Duration::from_millis(500));
+                        // Parse JSON and inspect the numeric completion field.
+                        match serde_json::from_str::<serde_json::Value>(&resp) {
+                            Ok(json_val) => {
+                                // Extract both percentage fields as f64.
+                                let blocks_pct_opt = json_val
+                                    .get("percentage_total_blocks_scanned")
+                                    .and_then(|v| v.as_f64());
+
+                                let outputs_pct_opt = json_val
+                                    .get("percentage_total_outputs_scanned")
+                                    .and_then(|v| v.as_f64());
+
+                                // If both percentages are present and near 100, we're done.
+                                if let (Some(blocks_pct), Some(outputs_pct)) =
+                                    (blocks_pct_opt, outputs_pct_opt)
+                                {
+                                    if blocks_pct >= COMPLETE_THRESHOLD
+                                        && outputs_pct >= COMPLETE_THRESHOLD
+                                    {
+                                        break;
+                                    }
+                                } else {
+                                    // missing percentage fields in sync status; stopping wait.
+                                    break;
+                                }
+
+                                // Not complete yet; wait a short interval before re-checking.
+                                thread::sleep(Duration::from_millis(500));
+                                continue;
+                            }
+                            Err(_) => {
+                                // Parse error
+                                break;
+                            }
                         }
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        // Channel closed; stop waiting.
+                        break;
+                    }
                 }
             }
         }
