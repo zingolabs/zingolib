@@ -8,6 +8,14 @@ edition = "2024"
 zingolib = { workspace = true }
 pepper-sync = { workspace = true }
 
+zcash_primitives = { workspace = true }
+zcash_keys = { workspace = true }
+zcash_address = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_client_backend = { workspace = true }
+
+zingo_common_components = { workspace = true }
+
 http = { workspace = true }
 json = { workspace = true }
 lazy_static = { workspace = true }
@@ -22,12 +30,6 @@ serde_json = { workspace = true }
 bip0039 = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
-
-zcash_primitives = { workspace = true }
-zcash_keys = { workspace = true }
-zcash_address = { workspace = true }
-zcash_protocol = { workspace = true }
-zcash_client_backend = { workspace = true }
 
 [build-dependencies]
 uniffi_build = { workspace = true, features = ["builtin-bindgen"] }
