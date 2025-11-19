@@ -51,7 +51,8 @@ use tokio::runtime::Runtime;
 use zcash_primitives::memo::MemoBytes;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::data::proposal::total_fee;
-use zingolib::testutils;
+
+use zingo_common_components::protocol::activation_heights::for_test;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ZingolibError {
@@ -234,7 +235,7 @@ fn construct_uri_load_config(
     let chaintype = match chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
-        "regtest" => ChainType::Regtest(testutils::default_regtest_heights()),
+        "regtest" => ChainType::Regtest(for_test::all_height_one_nus()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let performancetype = match performance_level.as_str() {
@@ -256,6 +257,7 @@ fn construct_uri_load_config(
             min_confirmations: NonZeroU32::try_from(min_confirmations).unwrap(),
         },
         NonZeroU32::try_from(1).expect("hard-coded integer"),
+        "".to_string(),
     ) {
         Ok(c) => c,
         Err(e) => {
@@ -433,7 +435,8 @@ pub fn init_from_b64(
 pub fn save_to_b64() -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         // Return the wallet as a base64 encoded string
-        if let Some(lightclient) = &mut *LIGHTCLIENT.write().unwrap() {
+        let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
+        if let Some(lightclient) = &mut *guard {
             // we need to use STANDARD because swift is expecting the encoded String with padding
             // I tried with STANDARD_NO_PAD and the decoding return `nil`.
             Ok(RT.block_on(async move {
@@ -760,7 +763,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
                 [
                     ChainType::Mainnet,
                     ChainType::Testnet,
-                    ChainType::Regtest(testutils::default_regtest_heights()),
+                    ChainType::Regtest(for_test::all_height_one_nus()),
                 ]
                 .iter()
                 .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
