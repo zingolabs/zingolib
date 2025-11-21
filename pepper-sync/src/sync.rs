@@ -61,6 +61,8 @@ const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub sync_start_height: BlockHeight,
+    pub total_blocks: u32,
+    pub total_outputs: u32,
     pub session_blocks_scanned: u32,
     pub total_blocks_scanned: u32,
     pub percentage_session_blocks_scanned: f32,
@@ -98,6 +100,11 @@ impl From<SyncStatus> for json::JsonValue {
             })
             .collect();
 
+        // Derive a simple boolean completeness flag from integer counts
+        let sync_complete = value.total_blocks_scanned >= value.total_blocks
+            && (value.total_sapling_outputs_scanned + value.total_orchard_outputs_scanned)
+                >= value.total_outputs;
+
         json::object! {
             "scan_ranges" => scan_ranges,
             "sync_start_height" => u32::from(value.sync_start_height),
@@ -111,6 +118,7 @@ impl From<SyncStatus> for json::JsonValue {
             "total_orchard_outputs_scanned" => value.total_orchard_outputs_scanned,
             "percentage_session_outputs_scanned" => value.percentage_session_outputs_scanned,
             "percentage_total_outputs_scanned" => value.percentage_total_outputs_scanned,
+            "sync_complete" => sync_complete,
         }
     }
 }
@@ -598,6 +606,8 @@ where
         return Ok(SyncStatus {
             scan_ranges: sync_state.scan_ranges.clone(),
             sync_start_height: 0.into(),
+            total_blocks: 0,
+            total_outputs: 0,
             session_blocks_scanned: 0,
             total_blocks_scanned: 0,
             percentage_session_blocks_scanned: 0.0,
@@ -671,6 +681,8 @@ where
     Ok(SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),
         sync_start_height: sync_state.initial_sync_state.sync_start_height,
+        total_blocks,
+        total_outputs,
         session_blocks_scanned,
         total_blocks_scanned,
         percentage_session_blocks_scanned,
