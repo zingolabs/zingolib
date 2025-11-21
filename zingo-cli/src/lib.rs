@@ -524,7 +524,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
         // indicates completion.
         if cli_config.sync && cli_config.waitsync {
             use std::{thread, time::Duration};
-            const COMPLETE_THRESHOLD: f64 = 99.999;
 
             loop {
                 // Request machine-readable sync status.
@@ -537,26 +536,10 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                         // Parse JSON and inspect the numeric completion field.
                         match serde_json::from_str::<serde_json::Value>(&resp) {
                             Ok(json_val) => {
-                                // Extract both percentage fields as f64.
-                                let blocks_pct_opt = json_val
-                                    .get("percentage_total_blocks_scanned")
-                                    .and_then(|v| v.as_f64());
-
-                                let outputs_pct_opt = json_val
-                                    .get("percentage_total_outputs_scanned")
-                                    .and_then(|v| v.as_f64());
-
-                                // If both percentages are present and near 100, we're done.
-                                if let (Some(blocks_pct), Some(outputs_pct)) =
-                                    (blocks_pct_opt, outputs_pct_opt)
+                                // if sync is complete, stop waiting
+                                if let Some(true) =
+                                    json_val.get("sync_complete").and_then(|v| v.as_bool())
                                 {
-                                    if blocks_pct >= COMPLETE_THRESHOLD
-                                        && outputs_pct >= COMPLETE_THRESHOLD
-                                    {
-                                        break;
-                                    }
-                                } else {
-                                    // missing percentage fields in sync status; stopping wait.
                                     break;
                                 }
 

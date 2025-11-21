@@ -8908,6 +8908,7 @@ dependencies = [
  "pepper-sync",
  "rustls 0.23.35",
  "rustyline",
+ "serde_json",
  "shellwords",
  "tokio",
  "tracing-subscriber",
