@@ -36,6 +36,7 @@ mod chain_generics {
         fixtures::send_shield_cycle::<LibtonodeEnvironment>(1).await;
     }
     #[tokio::test]
+    #[test_log::test]
     async fn ignore_dust_inputs() {
         fixtures::ignore_dust_inputs::<LibtonodeEnvironment>().await;
     }
