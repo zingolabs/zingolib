@@ -337,6 +337,7 @@ pub trait SyncShardTrees: SyncWallet {
     }
 }
 
+// TODO: move into `update_shard_trees` trait method
 async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     checkpoint_height: BlockHeight,
