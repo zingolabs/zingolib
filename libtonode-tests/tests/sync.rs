@@ -231,7 +231,7 @@ async fn store_all_checkpoints_in_verification_window() {
     )
     .await;
 
-    for height in 12..111 {
+    for height in 12..112 {
         assert!(
             lightclient
                 .wallet
@@ -242,7 +242,8 @@ async fn store_all_checkpoints_in_verification_window() {
                 .store()
                 .get_checkpoint(&BlockHeight::from_u32(height))
                 .unwrap()
-                .is_some()
+                .is_some(),
+            "missing sapling checkpoint at height {height}"
         );
         assert!(
             lightclient
@@ -254,7 +255,8 @@ async fn store_all_checkpoints_in_verification_window() {
                 .store()
                 .get_checkpoint(&BlockHeight::from_u32(height))
                 .unwrap()
-                .is_some()
+                .is_some(),
+            "missing orchard checkpoint at height {height}"
         );
     }
 }
