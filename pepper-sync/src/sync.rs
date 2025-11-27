@@ -1003,22 +1003,22 @@ where
                 );
 
                 // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
-                let scan_range_to_verify = state::set_verify_scan_range(
+                let verification_start = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
-                );
+                )
+                .block_range()
+                .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)?;
-
-                if initial_verification_height - scan_range_to_verify.block_range().start
-                    > MAX_VERIFICATION_WINDOW
-                {
+                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
                     clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
                 }
+
+                truncate_wallet_data(wallet, verification_start - 1)?;
 
                 state::set_initial_state(
                     consensus_parameters,
