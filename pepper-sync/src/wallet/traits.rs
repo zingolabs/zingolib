@@ -370,8 +370,8 @@ where
             })
             .expect("infallible");
 
-        if let Some(prev) = previous_checkpoint {
-            prev
+        let tree_state = if let Some(checkpoint) = previous_checkpoint {
+            checkpoint.tree_state()
         } else {
             let frontiers =
                 client::get_frontiers(fetch_request_sender.clone(), checkpoint_height - 1).await?;
@@ -379,14 +379,14 @@ where
                 ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),
             };
-            let tree_state = if tree_size == 0 {
+            if tree_size == 0 {
                 TreeState::Empty
             } else {
                 TreeState::AtPosition(incrementalmerkletree::Position::from(tree_size - 1))
-            };
+            }
+        };
 
-            Checkpoint::from_parts(tree_state, BTreeSet::new())
-        }
+        Checkpoint::from_parts(tree_state, BTreeSet::new())
     };
 
     shard_tree
