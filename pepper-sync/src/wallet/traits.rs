@@ -249,16 +249,14 @@ pub trait SyncShardTrees: SyncWallet {
             // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
+            let verification_window_start =
+                wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
             let checkpoint_range = match (
-                scan_range.block_range().start
-                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
-                scan_range.block_range().end - 1
-                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
+                scan_range.block_range().start >= verification_window_start,
+                scan_range.block_range().end > verification_window_start,
             ) {
                 (true, _) => scan_range.block_range().clone(),
-                (false, true) => {
-                    (wallet_height - MAX_VERIFICATION_WINDOW)..scan_range.block_range().end
-                }
+                (false, true) => verification_window_start..scan_range.block_range().end,
                 (false, false) => BlockHeight::from_u32(0)..BlockHeight::from_u32(0),
             };
 
@@ -337,6 +335,7 @@ pub trait SyncShardTrees: SyncWallet {
     }
 }
 
+// TODO: move into `update_shard_trees` trait method
 async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     checkpoint_height: BlockHeight,
@@ -373,7 +372,7 @@ where
             checkpoint.tree_state()
         } else {
             let frontiers =
-                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height - 1).await?;
+                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height).await?;
             let tree_size = match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),

@@ -176,7 +176,7 @@ pub enum ServerError {
     InvalidSubtreeRoot,
     /// Server returned blocks that could not be verified against wallet block data. Exceeded max verification window.
     #[error(
-        "server returned blocks that could not be verified against wallet block data. exceeded max verification window."
+        "server returned blocks that could not be verified against wallet block data. exceeded max verification window. wallet data has been cleared as shard tree data cannot be truncated further. wallet rescan required."
     )]
     ChainVerificationError,
     /// Fetcher task was dropped.
