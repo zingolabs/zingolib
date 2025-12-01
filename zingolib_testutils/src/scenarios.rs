@@ -452,11 +452,13 @@ pub async fn custom_clients(
         None,
         mine_to_pool,
         configured_activation_heights,
-        chain_cache,
+        chain_cache.clone(),
     )
     .await;
 
-    local_net.validator().generate_blocks(2).await.unwrap();
+    if chain_cache.is_none() {
+        local_net.validator().generate_blocks(2).await.unwrap();
+    }
 
     let client_builder = ClientBuilder::new(
         localhost_uri(local_net.indexer().listen_port()),
