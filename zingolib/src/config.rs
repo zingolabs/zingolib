@@ -122,9 +122,8 @@ pub enum ChainFromStringError {
 /// * `Err(String)` - An error message if the chain name is invalid
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
     match chain_name {
-        "testnet" => Ok(ChainType::Testnet),
-        "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Err(ChainFromStringError::UnknownRegtestChain),
+        "testnet" | "test" | "regtest" => Ok(ChainType::Testnet),  // Treat regtest/test as testnet
+        "mainnet" | "main" => Ok(ChainType::Mainnet),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
@@ -350,7 +349,7 @@ impl Default for ZingoConfigBuilder {
             wallet_dir: None,
             wallet_name: None,
             logfile_name: None,
-            chain: ChainType::Mainnet,
+            chain: ChainType::Testnet,  // Default to testnet for regtest compatibility
             wallet_settings: WalletSettings {
                 sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
