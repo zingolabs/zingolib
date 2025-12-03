@@ -320,6 +320,7 @@ pub trait SyncShardTrees: SyncWallet {
     ) -> Result<(), SyncError<Self::Error>> {
         if truncate_height == zcash_protocol::consensus::H0 {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+            tracing::info!("Clearing shard trees.");
             shard_trees.sapling =
                 ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
             shard_trees.orchard =
@@ -331,6 +332,7 @@ pub trait SyncShardTrees: SyncWallet {
                 .sapling
                 .truncate_to_checkpoint(&truncate_height)?
             {
+                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
                 return Err(SyncError::TruncationError(
                     truncate_height,
                     PoolType::SAPLING,
@@ -342,6 +344,7 @@ pub trait SyncShardTrees: SyncWallet {
                 .orchard
                 .truncate_to_checkpoint(&truncate_height)?
             {
+                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
                 return Err(SyncError::TruncationError(
                     truncate_height,
                     PoolType::ORCHARD,
