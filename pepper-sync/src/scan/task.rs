@@ -337,7 +337,7 @@ where
         let consensus_parameters = self.consensus_parameters.clone();
 
         let handle: JoinHandle<Result<(), ServerError>> = tokio::spawn(async move {
-            // save seam blocks between scan tasks for linear scanning continuuity checks
+            // save seam blocks between scan tasks for linear scanning continuity checks
             // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
             let mut previous_task_first_block: Option<WalletBlock> = None;
             let mut previous_task_last_block: Option<WalletBlock> = None;
