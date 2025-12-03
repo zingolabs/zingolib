@@ -455,8 +455,12 @@ pub fn startup(
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
-
-        LightClient::new(config.clone(), chain_height - 100, false)
+        let birthday = if matches!(config.chain, ChainType::Testnet){
+            BlockHeight::from_u32(0)
+        } else {
+            chain_height - 100
+        };
+        LightClient::new(config.clone(),birthday, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
