@@ -342,9 +342,10 @@ pub trait SyncShardTrees: SyncWallet {
                 .orchard
                 .truncate_to_checkpoint(&truncate_height)?
             {
-                panic!(
-                    "max checkpoints should always be higher or equal to max verification window!"
-                );
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::ORCHARD,
+                ));
             }
         }
 
