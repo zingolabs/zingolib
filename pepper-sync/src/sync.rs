@@ -866,26 +866,6 @@ where
         + SyncShardTrees
         + Send,
 {
-    let shard_trees = wallet.get_shard_trees().map_err(SyncError::WalletError)?;
-    tracing::info!("SAPLING CHECKPOINT HEIGHTS:");
-    shard_trees
-        .sapling
-        .store()
-        .for_each_checkpoint(1000, |height, _cp| {
-            tracing::info!("{height}");
-            Ok(())
-        })
-        .unwrap();
-    tracing::info!("ORCHARD CHECKPOINT HEIGHTS:");
-    shard_trees
-        .orchard
-        .store()
-        .for_each_checkpoint(1000, |height, _cp| {
-            tracing::info!("{height}");
-            Ok(())
-        })
-        .unwrap();
-
     match scan_results {
         Ok(results) => {
             let ScanResults {
@@ -1146,7 +1126,7 @@ where
     match wallet.truncate_shard_trees(checked_truncate_height) {
         Ok(_) => Ok(()),
         Err(SyncError::TruncationError(height, pooltype)) => {
-            // clear_wallet_data(wallet)?;
+            clear_wallet_data(wallet)?;
 
             Err(SyncError::TruncationError(height, pooltype))
         }
