@@ -1123,9 +1123,6 @@ where
     wallet
         .truncate_outpoints(checked_truncate_height)
         .map_err(SyncError::WalletError)?;
-    // wallet.truncate_shard_trees(checked_truncate_height)?;
-
-    // temporary critical error handling until missing checkpoint bug is fixed
     match wallet.truncate_shard_trees(checked_truncate_height) {
         Ok(_) => Ok(()),
         Err(SyncError::TruncationError(height, pooltype)) => {
