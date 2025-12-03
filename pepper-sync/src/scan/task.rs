@@ -588,6 +588,27 @@ where
 
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
+                tracing::info!(
+                    "NEW SCAN RANGE: {}, {}",
+                    scan_task.scan_range.block_range().start,
+                    scan_task.scan_range.block_range().end
+                );
+                if let Some(ssb) = scan_task.start_seam_block.clone() {
+                    tracing::info!(
+                        "START SEAM BLOCK HEIGHT AND HASH: {}, {}",
+                        ssb.block_height,
+                        ssb.block_hash,
+                    );
+                } else {
+                    tracing::info!("NO START SEAM BLOCK");
+                }
+                let first_cb = scan_task.compact_blocks.first().unwrap().clone();
+                tracing::info!(
+                    "FIRST BLOCK HEIGHT AND PREV_HASH: {}, {}",
+                    first_cb.height,
+                    first_cb.prev_hash()
+                );
+
                 let scan_range = scan_task.scan_range.clone();
                 let scan_results = scan(
                     fetch_request_sender.clone(),
