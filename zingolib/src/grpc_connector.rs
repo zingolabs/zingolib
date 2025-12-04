@@ -59,7 +59,7 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
 
     let info = response.into_inner();
     
-    // Convert chain_height to BlockId
+    // Convert chain_height to Blockid
     Ok(BlockId {
         height: info.chain_height,
         hash: info.best_block_hash,
