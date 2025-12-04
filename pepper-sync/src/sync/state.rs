@@ -51,19 +51,19 @@ where
     W: SyncWallet,
 {
     let wallet_height = if let Some(height) = wallet.get_sync_state()?.wallet_height() {
+        eprintln!("DEBUG: get_wallet_height() - Found sync_state height: {:?}", height);
         height
     } else {
         let birthday = checked_birthday(consensus_parameters, wallet)?;
-        // FIX: Don't subtract 1 from birthday if it's 0 (prevents underflow for regtest)
-        if birthday == BlockHeight::from_u32(0) {
-            birthday
-        } else {
-            birthday - 1
-        }
+        eprintln!("DEBUG: get_wallet_height() - No sync_state, using birthday: {:?}", birthday);
+        eprintln!("DEBUG: get_wallet_height() - Returning birthday - 1 = {:?}", birthday.saturating_sub(1));
+        birthday.saturating_sub(1)
     };
 
+    eprintln!("DEBUG: get_wallet_height() - Final wallet_height: {:?}", wallet_height);
     Ok(wallet_height)
 }
+
 /// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
 fn find_scan_targets(
     sync_state: &SyncState,

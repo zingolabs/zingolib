@@ -360,16 +360,18 @@ where
     let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
         .map_err(SyncError::WalletError)?;
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+
+    eprintln!("DEBUG: sync() - wallet_height: {:?}, chain_height: {:?}", wallet_height, chain_height);
+
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     if wallet_height > chain_height {
+        eprintln!("DEBUG: sync() - WALLET AHEAD! wallet_height ({:?}) > chain_height ({:?})", wallet_height, chain_height);
+        eprintln!("DEBUG: sync() - Difference: {:?}", wallet_height - chain_height);
         if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
         }
-        truncate_wallet_data(&mut *wallet_guard, chain_height)?;
-        wallet_height = chain_height;
-    }
 
     let ufvks = wallet_guard
         .get_unified_full_viewing_keys()
