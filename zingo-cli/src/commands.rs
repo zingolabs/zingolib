@@ -1221,7 +1221,7 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
+            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1339,7 +1339,7 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Confirms the latest proposal, completing and broadcasting the transaction(s).
+            Confirms the latest proposal, completing and broadcasting the transaction(s) and resuming the sync task.
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
@@ -1366,7 +1366,7 @@ impl Command for ConfirmCommand {
 
         RT.block_on(async move {
             match lightclient
-                .send_stored_proposal()
+                .send_stored_proposal(true)
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
