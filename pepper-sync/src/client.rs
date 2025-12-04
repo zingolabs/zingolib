@@ -31,7 +31,6 @@ use crate::error::{MempoolError, ServerError};
 
 pub(crate) mod fetch;
 
-#[cfg(not(feature = "darkside_test"))]
 const MAX_RETRIES: u8 = 3;
 
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
@@ -290,20 +289,42 @@ pub(crate) async fn get_transparent_address_transactions(
     transparent_address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::TransparentAddressTxs(
-            reply_sender,
-            (transparent_address, block_range),
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-    let mut raw_transaction_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
-
     let mut raw_transactions: Vec<RawTransaction> = Vec::new();
-    while let Some(raw_tx) = raw_transaction_stream.message().await? {
-        raw_transactions.push(raw_tx);
+    let mut retry_count = 0;
+    'retry: loop {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+        fetch_request_sender
+            .send(FetchRequest::TransparentAddressTxs(
+                reply_sender,
+                (transparent_address.clone(), block_range.clone()),
+            ))
+            .map_err(|_| ServerError::FetcherDropped)?;
+        let mut raw_transaction_stream = reply_receiver
+            .await
+            .map_err(|_| ServerError::FetcherDropped)??;
+
+        while let Some(raw_tx) = match raw_transaction_stream.message().await {
+            Ok(s) => s,
+            Err(e)
+                if (e.code() == tonic::Code::DeadlineExceeded
+                    || e.message().contains("Unexpected EOF decoding stream."))
+                    && retry_count < MAX_RETRIES =>
+            {
+                // wait and retry in case of network weather or low bandwidth
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                retry_count += 1;
+                raw_transactions = Vec::new();
+
+                continue 'retry;
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        } {
+            raw_transactions.push(raw_tx);
+        }
+
+        break 'retry;
     }
 
     let transactions = raw_transactions
