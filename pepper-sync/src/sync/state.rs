@@ -54,8 +54,8 @@ where
         height
     } else {
         let birthday = checked_birthday(consensus_parameters, wallet)?;
-        // FIX: Don't subtract 1 from birthday if it's 0 (regtest/fresh wallet)
-        if birthday.into(): u32 == 0 {
+        // FIX: Don't subtract 1 from birthday if it's 0 (prevents underflow for regtest)
+        if birthday == BlockHeight::from_u32(0) {
             birthday
         } else {
             birthday - 1
@@ -64,7 +64,6 @@ where
 
     Ok(wallet_height)
 }
-
 /// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
 fn find_scan_targets(
     sync_state: &SyncState,
