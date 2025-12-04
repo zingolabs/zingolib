@@ -42,27 +42,27 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 }
 
 /// `get_latest_block` GRPC call
-/// WORKAROUND: Uses GetBlockchainInfo instead of GetLatestBlock to avoid Zaino regtest bug
+/// WORKAROUND: Uses GetLightdInfo instead of GetLatestBlock to avoid Zaino regtest bug
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
     let mut client = crate::grpc_client::get_zcb_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
-    let request = Request::new(ChainSpec {});
+    let request = Request::new(Empty {});
 
-    // WORKAROUND: Use GetBlockchainInfo instead of GetLatestBlock
+    // WORKAROUND: Use GetLightdInfo instead of GetLatestBlock
     // GetLatestBlock returns mainnet height on regtest (Zaino bug)
     let response = client
-        .get_blockchain_info(request)
+        .get_lightd_info(request)
         .await
-        .map_err(|e| format!("Error with get_blockchain_info response at {uri}: {e:?}"))?;
+        .map_err(|e| format!("Error with get_lightd_info response at {uri}: {e:?}"))?;
 
     let info = response.into_inner();
     
-    // Convert chain_height to Blockid
+    // GetLightdInfo returns block_height as latest block
     Ok(BlockId {
-        height: info.chain_height,
-        hash: info.best_block_hash,
+        height: info.block_height,
+        hash: vec![], // GetLightdInfo doesn't return hash, but it's not needed for birthday
     })
 }
 
