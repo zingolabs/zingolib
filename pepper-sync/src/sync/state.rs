@@ -54,7 +54,12 @@ where
         height
     } else {
         let birthday = checked_birthday(consensus_parameters, wallet)?;
-        birthday - 1
+        // FIX: Don't subtract 1 from birthday if it's 0 (regtest/fresh wallet)
+        if birthday.into(): u32 == 0 {
+            birthday
+        } else {
+            birthday - 1
+        }
     };
 
     Ok(wallet_height)
