@@ -166,6 +166,7 @@ pub(crate) async fn get_subtree_roots(
     shielded_protocol: i32,
     max_entries: u32,
 ) -> Result<Vec<SubtreeRoot>, ServerError> {
+    let mut subtree_roots = Vec::new();
     let mut retry_count = 0;
     'retry: loop {
         let (reply_sender, reply_receiver) = oneshot::channel();
@@ -180,7 +181,6 @@ pub(crate) async fn get_subtree_roots(
         let mut subtree_root_stream = reply_receiver
             .await
             .map_err(|_| ServerError::FetcherDropped)??;
-        let mut subtree_roots = Vec::new();
 
         while let Some(subtree_root) = match subtree_root_stream.message().await {
             Ok(s) => s,
@@ -203,8 +203,10 @@ pub(crate) async fn get_subtree_roots(
             start_index += 1;
         }
 
-        return Ok(subtree_roots);
+        break 'retry;
     }
+
+    Ok(subtree_roots)
 }
 
 /// Gets the frontiers for a specified block height.
