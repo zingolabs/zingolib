@@ -31,6 +31,9 @@ use crate::error::{MempoolError, ServerError};
 
 pub(crate) mod fetch;
 
+#[cfg(not(feature = "darkside_test"))]
+const MAX_RETRIES: u8 = 3;
+
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
@@ -160,28 +163,49 @@ pub(crate) async fn get_nullifier_range(
 #[cfg(not(feature = "darkside_test"))]
 pub(crate) async fn get_subtree_roots(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    start_index: u32,
+    mut start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
 ) -> Result<Vec<SubtreeRoot>, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::SubtreeRoots(
-            reply_sender,
-            start_index,
-            shielded_protocol,
-            max_entries,
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-    let mut subtree_root_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
-    let mut subtree_roots = Vec::new();
-    while let Some(subtree_root) = subtree_root_stream.message().await? {
-        subtree_roots.push(subtree_root);
-    }
+    let mut retry_count = 0;
+    'retry: loop {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+        fetch_request_sender
+            .send(FetchRequest::SubtreeRoots(
+                reply_sender,
+                start_index,
+                shielded_protocol,
+                max_entries,
+            ))
+            .map_err(|_| ServerError::FetcherDropped)?;
+        let mut subtree_root_stream = reply_receiver
+            .await
+            .map_err(|_| ServerError::FetcherDropped)??;
+        let mut subtree_roots = Vec::new();
 
-    Ok(subtree_roots)
+        while let Some(subtree_root) = match subtree_root_stream.message().await {
+            Ok(s) => s,
+            Err(e)
+                if (e.code() == tonic::Code::DeadlineExceeded
+                    || e.message().contains("Unexpected EOF decoding stream."))
+                    && retry_count < MAX_RETRIES =>
+            {
+                // wait and retry in case of network weather or low bandwidth
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                retry_count += 1;
+
+                continue 'retry;
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        } {
+            subtree_roots.push(subtree_root);
+            start_index += 1;
+        }
+
+        return Ok(subtree_roots);
+    }
 }
 
 /// Gets the frontiers for a specified block height.

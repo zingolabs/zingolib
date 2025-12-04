@@ -368,7 +368,12 @@ where
                 };
                 while let Some(compact_block) = match block_stream.message().await {
                     Ok(b) => b,
-                    Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
+                    Err(e)
+                        if e.code() == tonic::Code::DeadlineExceeded
+                            || e.message().contains("Unexpected EOF decoding stream.") =>
+                    {
+                        // wait and retry once in case of network weather or low bandwidth
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                         block_stream = if fetch_nullifiers_only {
                             client::get_nullifier_range(
                                 fetch_request_sender.clone(),
