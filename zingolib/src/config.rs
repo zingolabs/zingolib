@@ -122,8 +122,11 @@ pub enum ChainFromStringError {
 /// * `Err(String)` - An error message if the chain name is invalid
 pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
     match chain_name {
-        "testnet" | "test" | "regtest" => Ok(ChainType::Testnet),  // Treat regtest/test as testnet
+        "testnet" | "test" => Ok(ChainType::Testnet),
         "mainnet" | "main" => Ok(ChainType::Mainnet),
+        "regtest" => Ok(ChainType::Regtest(
+            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
+        )),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
