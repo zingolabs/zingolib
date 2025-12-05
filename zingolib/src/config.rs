@@ -124,9 +124,21 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
     match chain_name {
         "testnet" | "test" => Ok(ChainType::Testnet),
         "mainnet" | "main" => Ok(ChainType::Mainnet),
-        "regtest" => Ok(ChainType::Regtest(
-            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
-        )),
+        "regtest" => {
+            // Create regtest with all activation heights at 1
+            Ok(ChainType::Regtest(
+                zingo_common_components::protocol::activation_heights::ActivationHeights {
+                    overwinter: Some(1),
+                    sapling: Some(1),
+                    blossom: Some(1),
+                    heartwood: Some(1),
+                    canopy: Some(1),
+                    nu5: Some(1),
+                    nu6: Some(1),
+                    nu6_1: Some(1),
+                }
+            ))
+        }
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }
