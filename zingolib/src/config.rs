@@ -128,6 +128,7 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
             // Create regtest with all activation heights at 1
             Ok(ChainType::Regtest(
                 zebra_chain::parameters::testnet::ConfiguredActivationHeights {
+                    before_overwinter: Some(1),
                     overwinter: Some(1),
                     sapling: Some(1),
                     blossom: Some(1),
@@ -136,6 +137,7 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
                     nu5: Some(1),
                     nu6: Some(1),
                     nu6_1: Some(1),
+                    nu7: Some(1),
                 }
             ))
         }
