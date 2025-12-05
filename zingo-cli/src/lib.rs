@@ -455,11 +455,20 @@ pub fn startup(
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+        
+        eprintln!("DEBUG lib.rs: chain_height from get_latest_block: {:?}", chain_height);
+        eprintln!("DEBUG lib.rs: config.chain: {:?}", config.chain);
+        
         let birthday = if matches!(config.chain, ChainType::Testnet){
+            eprintln!("DEBUG lib.rs: Using birthday 0 for testnet!");
             BlockHeight::from_u32(0)
         } else {
+            eprintln!("DEBUG lib.rs: Using chain_height - 100 for mainnet");
             chain_height - 100
         };
+        
+        eprintln!("DEBUG lib.rs: Final birthday being passed to LightClient::new: {:?}", birthday);
+        
         LightClient::new(config.clone(),birthday, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
