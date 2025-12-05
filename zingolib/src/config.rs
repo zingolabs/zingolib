@@ -127,7 +127,7 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
         "regtest" => {
             // Create regtest with all activation heights at 1
             Ok(ChainType::Regtest(
-                zingo_common_components::protocol::activation_heights::ActivationHeights {
+                zebra_chain::parameters::testnet::ConfiguredActivationHeights {
                     overwinter: Some(1),
                     sapling: Some(1),
                     blossom: Some(1),
