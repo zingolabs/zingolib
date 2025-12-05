@@ -3,13 +3,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use orchard::tree::MerkleHashOrchard;
+use shardtree::ShardTree;
+use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use tokio::sync::mpsc;
 use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
-use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::{PoolType, ShieldedProtocol};
 use zip32::DiversifierIndex;
 
 use crate::error::{ServerError, SyncError};
@@ -310,25 +312,41 @@ pub trait SyncShardTrees: SyncWallet {
     }
 
     /// Removes all shard tree data above the given `block_height`.
+    ///
+    /// A `truncate_height` of zero should replace the shard trees with empty trees.
     fn truncate_shard_trees(
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), SyncError<Self::Error>> {
-        if !self
-            .get_shard_trees_mut()
-            .map_err(SyncError::WalletError)?
-            .sapling
-            .truncate_to_checkpoint(&truncate_height)?
-        {
-            panic!("max checkpoints should always be higher or equal to max verification window!");
-        }
-        if !self
-            .get_shard_trees_mut()
-            .map_err(SyncError::WalletError)?
-            .orchard
-            .truncate_to_checkpoint(&truncate_height)?
-        {
-            panic!("max checkpoints should always be higher or equal to max verification window!");
+        if truncate_height == zcash_protocol::consensus::H0 {
+            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+            shard_trees.sapling =
+                ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+            shard_trees.orchard =
+                ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        } else {
+            if !self
+                .get_shard_trees_mut()
+                .map_err(SyncError::WalletError)?
+                .sapling
+                .truncate_to_checkpoint(&truncate_height)?
+            {
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::SAPLING,
+                ));
+            }
+            if !self
+                .get_shard_trees_mut()
+                .map_err(SyncError::WalletError)?
+                .orchard
+                .truncate_to_checkpoint(&truncate_height)?
+            {
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::ORCHARD,
+                ));
+            }
         }
 
         Ok(())

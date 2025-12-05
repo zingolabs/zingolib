@@ -1,18 +1,12 @@
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
-// use darkside_tests::utils::scenarios::DarksideEnvironment;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
 use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
-// use zcash_client_backend::PoolType::Shielded;
-// use zcash_client_backend::ShieldedProtocol::Orchard;
-// use zingo_status::confirmation_status::ConfirmationStatus;
 use zingolib::get_base_address_macro;
-// use zingolib::testutils::chain_generics::conduct_chain::ConductChain as _;
-// use zingolib::testutils::chain_generics::with_assertions::to_clients_proposal;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::tempfile;
 use zingolib::wallet::balance::AccountBalance;

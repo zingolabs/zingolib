@@ -1135,7 +1135,15 @@ where
     wallet
         .truncate_outpoints(checked_truncate_height)
         .map_err(SyncError::WalletError)?;
-    wallet.truncate_shard_trees(checked_truncate_height)?;
+    match wallet.truncate_shard_trees(checked_truncate_height) {
+        Ok(_) => Ok(()),
+        Err(SyncError::TruncationError(height, pooltype)) => {
+            clear_wallet_data(wallet)?;
+
+            Err(SyncError::TruncationError(height, pooltype))
+        }
+        Err(e) => Err(e),
+    }?;
 
     Ok(())
 }
