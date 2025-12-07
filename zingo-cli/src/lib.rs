@@ -6,9 +6,6 @@
 
 mod commands;
 
-#[cfg(feature = "regtest")]
-mod regtest;
-
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -604,55 +601,6 @@ pub fn run_cli() {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {e:?}"),
     }
-}
-
-/// Run CLI in regtest mode
-/// This function is only available when the regtest feature is enabled
-/// It bypasses clap entirely and directly sets up a regtest environment
-#[cfg(feature = "regtest")]
-pub fn run_regtest_cli() {
-    use crate::commands::RT;
-
-    println!("Launching local regtest network...");
-
-    // Launch the local network first
-    let local_net = RT.block_on(regtest::launch_local_net());
-
-    // Get the lightwalletd port from the launched network
-    let lightwalletd_port = local_net.indexer().port();
-
-    println!("Local network launched on port {lightwalletd_port}");
-
-    // Create a regtest-specific config directly
-    let data_dir = regtest::get_regtest_dir();
-
-    // Ensure the regtest directory exists
-    std::fs::create_dir_all(&data_dir).expect("Failed to create regtest directory");
-
-    // Use a temporary directory for wallet data in regtest
-    let wallet_dir = zingolib::testutils::tempfile::tempdir().expect("Failed to create temp dir");
-    let wallet_data_dir = wallet_dir.path().to_path_buf();
-
-    let cli_config = ConfigTemplate {
-        params: vec![],
-        server: zingolib::config::construct_lightwalletd_uri(Some(format!(
-            "http://127.0.0.1:{lightwalletd_port}"
-        ))),
-        seed: None,
-        ufvk: None,
-        birthday: 0,
-        data_dir: wallet_data_dir,
-        sync: false, // Don't auto-sync in regtest
-        waitsync: false,
-        command: None,
-        chaintype: ChainType::Regtest(
-            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
-        ),
-        tor_enabled: false,
-    };
-
-    // Start the CLI in interactive mode
-    dispatch_command_or_start_interactive(&cli_config);
 }
 
 fn short_circuit_on_help(params: Vec<String>) {
