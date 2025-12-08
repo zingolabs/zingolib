@@ -30,6 +30,6 @@ jobs:
           fi
 
       - name: Run cargo-checkmate
-        uses: zingolabs/infrastructure/.github/actions/cargo-checkmate@20485fed7a080e381130ed8120419dc81acae641
+        uses: zingolabs/infrastructure/.github/actions/cargo-checkmate@e6b0a710b7af9e68999e885c8a2478741fe28e64
         with:
           phase: ${{ matrix.phase }}

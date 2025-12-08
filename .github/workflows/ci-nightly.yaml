@@ -36,7 +36,7 @@ jobs:
           fi
 
       - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@e6b0a710b7af9e68999e885c8a2478741fe28e64
         with:
           hack-subcommand: build
 
