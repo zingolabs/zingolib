@@ -10,20 +10,7 @@ jobs:
 
   pr-checks:
     needs: [ create-cache-key ]
-    uses: ./.github/workflows/ci.yaml
-
-  cargo-checkmate:
-    uses: ./.github/workflows/cargo-checkmate.yaml
-
-  reject-trailing-whitespace:
-    name: Reject trailing whitespace
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Reject trailing whitespace
-        run: ./utils/trailing-whitespace.sh reject
+    uses: ./.github/workflows/ci-pr.yaml
 
   cargo-hack-build:
     name: Cargo Hack Build
@@ -52,9 +39,6 @@ jobs:
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: build
-
-  test:
-    uses: ./.github/workflows/test.yaml
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
