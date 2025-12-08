@@ -75,7 +75,7 @@ memuse = "0.2"
 nonempty = "0.11.0"
 portpicker = "0.1"
 proptest = "1.6.0"
-prost = "0.13"
+prost = "0.14"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17"
