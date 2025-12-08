@@ -1184,8 +1184,8 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let wallet_height = sync_state
-        .wallet_height()
+    let highest_scanned_height = sync_state
+        .highest_scanned_height()
         .expect("scan ranges should not be empty in this scope");
     for transaction in transactions.values() {
         state::update_found_note_shard_priority(
@@ -1220,7 +1220,7 @@ where
         .update_shard_trees(
             fetch_request_sender,
             scan_range,
-            wallet_height,
+            highest_scanned_height,
             sapling_located_trees,
             orchard_located_trees,
         )
