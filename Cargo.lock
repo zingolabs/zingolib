@@ -7859,7 +7859,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -8386,7 +8386,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#a29df5fd0d999a38d0af50555a39eda6f1a0d368"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#ba4d5b22fcf33cc4ea2aed43e7d2b3e719563b19"
 dependencies = [
  "getset",
  "hex",
@@ -8398,7 +8398,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "zcash_protocol",
  "zebra-chain",
  "zebra-node-services",
@@ -8914,7 +8913,6 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_keys",
- "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
  "zingo_common_components",
@@ -8987,7 +8985,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#a29df5fd0d999a38d0af50555a39eda6f1a0d368"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#ba4d5b22fcf33cc4ea2aed43e7d2b3e719563b19"
 dependencies = [
  "bip0039",
 ]
