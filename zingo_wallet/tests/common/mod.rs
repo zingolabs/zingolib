@@ -6,11 +6,11 @@ use zingo_wallet::ZingoWallet;
 pub(super) async fn connect(single_server_url: &str) {
     let mut wallet = ZingoWallet::new_wallet().await;
     wallet
-        .add_key(zingo_test_vectors::seeds::ABANDON_ART_SEED.to_string())
+        .add_key(zingo_test_vectors::seeds::ABANDON_ART_SEED.to_owned())
         .await
         .unwrap();
     wallet
-        .add_server(single_server_url.to_string())
+        .add_server(single_server_url.to_owned())
         .await
         .unwrap();
 }
