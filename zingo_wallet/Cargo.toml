@@ -28,5 +28,4 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
-test-group.workspace = true
 test-log.workspace = true

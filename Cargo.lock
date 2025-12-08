@@ -5925,19 +5925,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-group"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "710211810efd63fc5fe6d800bf73f2f91bd69a9215e18ff7ca90beeb0bef98b4"
-dependencies = [
- "hex",
- "proc-macro2",
- "quote",
- "sha2 0.10.9",
- "syn 2.0.111",
-]
-
-[[package]]
 name = "test-log"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9017,7 +9004,6 @@ dependencies = [
  "pepper-sync",
  "rustls 0.23.35",
  "tempfile",
- "test-group",
  "test-log",
  "thiserror 2.0.17",
  "tokio",
