@@ -364,7 +364,7 @@ where
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     if wallet_height > chain_height {
-        if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
+        if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
         }
         truncate_wallet_data(&mut *wallet_guard, chain_height)?;
@@ -1003,20 +1003,22 @@ where
                 );
 
                 // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
-                let scan_range_to_verify = state::set_verify_scan_range(
+                let verification_start = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
-                );
+                )
+                .block_range()
+                .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)?;
+                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
+                    clear_wallet_data(wallet)?;
 
-                if initial_verification_height - scan_range_to_verify.block_range().start
-                    > MAX_VERIFICATION_WINDOW
-                {
                     return Err(ServerError::ChainVerificationError.into());
                 }
+
+                truncate_wallet_data(wallet, verification_start - 1)?;
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1091,13 +1093,13 @@ where
     Ok(())
 }
 
-/// Removes all wallet data above the given `truncate_height`.
+/// Removes wallet blocks, transactions, nullifiers, outpoints and shard tree data above the given `truncate_height`.
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let birthday = wallet
         .get_sync_state()
@@ -1106,7 +1108,7 @@ where
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&birthday) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
-        std::cmp::Ordering::Less => birthday,
+        std::cmp::Ordering::Less => consensus::H0,
     };
 
     wallet
@@ -1118,9 +1120,48 @@ where
     wallet
         .truncate_nullifiers(checked_truncate_height)
         .map_err(SyncError::WalletError)?;
-    wallet.truncate_shard_trees(checked_truncate_height)?;
+    wallet
+        .truncate_outpoints(checked_truncate_height)
+        .map_err(SyncError::WalletError)?;
+    match wallet.truncate_shard_trees(checked_truncate_height) {
+        Ok(_) => Ok(()),
+        Err(SyncError::TruncationError(height, pooltype)) => {
+            clear_wallet_data(wallet)?;
+
+            Err(SyncError::TruncationError(height, pooltype))
+        }
+        Err(e) => Err(e),
+    }?;
 
     Ok(())
+}
+
+fn clear_wallet_data<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    let scan_targets = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?
+        .values()
+        .filter_map(|transaction| {
+            transaction
+                .status()
+                .get_confirmed_height()
+                .map(|height| ScanTarget {
+                    block_height: height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: true,
+                })
+        })
+        .collect::<Vec<_>>();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    *sync_state = SyncState::new();
+    add_scan_targets(sync_state, &scan_targets);
+
+    truncate_wallet_data(wallet, consensus::H0)
 }
 
 /// Updates the wallet with data from `scan_results`
@@ -1143,8 +1184,8 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let wallet_height = sync_state
-        .wallet_height()
+    let highest_scanned_height = sync_state
+        .highest_scanned_height()
         .expect("scan ranges should not be empty in this scope");
     for transaction in transactions.values() {
         state::update_found_note_shard_priority(
@@ -1179,7 +1220,7 @@ where
         .update_shard_trees(
             fetch_request_sender,
             scan_range,
-            wallet_height,
+            highest_scanned_height,
             sapling_located_trees,
             orchard_located_trees,
         )
