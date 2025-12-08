@@ -651,7 +651,7 @@ mod fast {
             .await
             .unwrap();
 
-        recipient.send_stored_proposal().await.unwrap();
+        recipient.send_stored_proposal(true).await.unwrap();
     }
 
     #[tokio::test]
@@ -669,7 +669,7 @@ mod fast {
             .await
             .unwrap();
 
-        recipient.send_stored_proposal().await.unwrap();
+        recipient.send_stored_proposal(true).await.unwrap();
 
         let value_transfers = &recipient.value_transfers(true).await.unwrap();
 
@@ -771,7 +771,7 @@ mod fast {
                     .await
                     .unwrap();
                 // Complete and broadcast the stored proposal
-                $client.send_stored_proposal().await.unwrap();
+                $client.send_stored_proposal(true).await.unwrap();
                 // Increase the height and wait for the client
                 increase_height_and_wait_for_client(&local_net, &mut $client, 1)
                     .await
@@ -1017,7 +1017,8 @@ mod fast {
                 .await
                 .unwrap();
             assert_eq!(proposal.steps().len(), 2usize);
-            let _sent_txids_according_to_broadcast = sender.send_stored_proposal().await.unwrap();
+            let _sent_txids_according_to_broadcast =
+                sender.send_stored_proposal(true).await.unwrap();
             let _txids = sender
                 .wallet
                 .read()
@@ -4433,7 +4434,7 @@ mod send_all {
             )
             .await
             .unwrap();
-        recipient.send_stored_proposal().await.unwrap();
+        recipient.send_stored_proposal(true).await.unwrap();
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
