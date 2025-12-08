@@ -8,7 +8,7 @@ mod common;
 
 #[tokio::test]
 #[test_log::test]
-async fn connect_livetestnet() {
+async fn connect() {
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
     wallet
@@ -22,7 +22,7 @@ async fn connect_livetestnet() {
 }
 #[tokio::test]
 #[test_log::test]
-async fn beginscan_livetestnet_sleepy() {
+async fn beginscan_sleepy() {
     let mut wallet = ZingoWallet::new_wallet().await;
     let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
     wallet
