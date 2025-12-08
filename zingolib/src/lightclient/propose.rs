@@ -1,4 +1,4 @@
-//! LightClient function do_propose generates a proposal to send to specified addresses.
+//! `LightClient` function `do_propose` generates a proposal to send to specified addresses.
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
@@ -26,7 +26,7 @@ impl LightClient {
         receivers.push(dev_donation_receiver);
     }
 
-    /// Stores a proposal in the `latest_proposal` field of the LightClient.
+    /// Stores a proposal in the `latest_proposal` field of the `LightClient`.
     /// This field must be populated in order to then create and transmit a transaction.
     async fn store_proposal(&mut self, proposal: ZingoProposal) {
         self.latest_proposal = Some(proposal);
@@ -114,7 +114,7 @@ impl LightClient {
     /// the given `address`. If the wallet is still syncing, the spendable balance may be less than the confirmed
     /// balance - minus the fee - due to notes being above the minimum confirmation threshold or not being able to
     /// construct a witness from the current state of the wallet's note commitment tree.
-    /// If `zennies_for_zingo` is set true, an additional payment of 1_000_000 ZAT to the ZingoLabs developer address
+    /// If `zennies_for_zingo` is set true, an additional payment of `1_000_000` ZAT to the `ZingoLabs` developer address
     /// will be taken into account.
     ///
     /// # Error

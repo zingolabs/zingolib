@@ -68,13 +68,13 @@ where
     let mut orchard_initial_tree_size;
     let mut sapling_final_tree_size = initial_scan_data.sapling_initial_tree_size;
     let mut orchard_final_tree_size = initial_scan_data.orchard_initial_tree_size;
-    for block in compact_blocks.iter() {
+    for block in &compact_blocks {
         sapling_initial_tree_size = sapling_final_tree_size;
         orchard_initial_tree_size = orchard_final_tree_size;
 
         let block_height = block.height();
 
-        for transaction in block.vtx.iter() {
+        for transaction in &block.vtx {
             // collect trial decryption results by transaction
             let incoming_sapling_outputs = runners
                 .sapling
@@ -86,20 +86,20 @@ where
             // gather the txids of all transactions relevant to the wallet
             // the edge case of transactions that this capability created but did not receive change
             // or create outgoing data is handled when the nullifiers are added and linked
-            incoming_sapling_outputs.iter().for_each(|(output_id, _)| {
+            for output_id in incoming_sapling_outputs.keys() {
                 decrypted_scan_targets.insert(ScanTarget {
                     block_height,
                     txid: output_id.txid(),
                     narrow_scan_area: false,
                 });
-            });
-            incoming_orchard_outputs.iter().for_each(|(output_id, _)| {
+            }
+            for output_id in incoming_orchard_outputs.keys() {
                 decrypted_scan_targets.insert(ScanTarget {
                     block_height,
                     txid: output_id.txid(),
                     narrow_scan_area: false,
                 });
-            });
+            }
 
             collect_nullifiers(&mut nullifiers, block.height(), transaction)?;
 
@@ -152,7 +152,7 @@ where
             txids: block
                 .vtx
                 .iter()
-                .map(|transaction| transaction.txid())
+                .map(zcash_client_backend::proto::compact_formats::CompactTx::txid)
                 .collect(),
             tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
@@ -327,19 +327,16 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
     D: Domain,
     K: ScanningKeyOps<D, Nf>,
 {
-    incoming_decrypted_outputs
-        .iter()
-        .for_each(|(output_id, incoming_output)| {
-            let position =
-                Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
-            let key = keys
-                .get(&incoming_output.ivk_tag)
-                .expect("key should be available as it was used to decrypt output");
-            let nullifier = key
-                .nf(&incoming_output.note, position)
-                .expect("only fvks currently supported");
-            nullifiers_and_positions.insert(*output_id, (nullifier, position));
-        });
+    for (output_id, incoming_output) in incoming_decrypted_outputs {
+        let position = Position::from(u64::from(tree_size + u32::from(output_id.output_index())));
+        let key = keys
+            .get(&incoming_output.ivk_tag)
+            .expect("key should be available as it was used to decrypt output");
+        let nullifier = key
+            .nf(&incoming_output.note, position)
+            .expect("only fvks currently supported");
+        nullifiers_and_positions.insert(*output_id, (nullifier, position));
+    }
 }
 
 // TODO: unify sapling and orchard leaf and retention fns
@@ -362,7 +359,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
             .enumerate()
             .map(|(output_index, output)| {
                 let note_commitment = CompactOutputDescription::try_from(output)
-                    .map_err(|_| ScanError::InvalidSaplingOutput)?
+                    .map_err(|()| ScanError::InvalidSaplingOutput)?
                     .cmu;
                 let leaf = sapling_crypto::Node::from_cmu(&note_commitment);
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
@@ -399,7 +396,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
             .enumerate()
             .map(|(output_index, output)| {
                 let note_commitment = CompactAction::try_from(output)
-                    .map_err(|_| ScanError::InvalidOrchardAction)?
+                    .map_err(|()| ScanError::InvalidOrchardAction)?
                     .cmx();
                 let leaf = MerkleHashOrchard::from_cmx(&note_commitment);
                 let decrypted: bool = incoming_output_indexes.contains(&(output_index as u16));
@@ -497,6 +494,7 @@ fn set_checkpoint_retentions<L>(
                     marking: Marking::None,
                 };
             }
+            // NOTE: if there are no outputs in the block, this last retention will be a checkpoint and nothing will need to be mutated.
             _ => (),
         }
     }

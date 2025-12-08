@@ -76,13 +76,13 @@ where
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Sapling,
-        sapling_spend_scan_targets.values().cloned(),
+        sapling_spend_scan_targets.values().copied(),
     );
     state::set_found_note_scan_ranges(
         consensus_parameters,
         sync_state,
         ShieldedProtocol::Orchard,
-        orchard_spend_scan_targets.values().cloned(),
+        orchard_spend_scan_targets.values().copied(),
     );
 
     // in the edge case where a spending transaction received no change, scan the transactions that evaded trial decryption
@@ -94,7 +94,7 @@ where
         sapling_spend_scan_targets
             .values()
             .chain(orchard_spend_scan_targets.values())
-            .cloned(),
+            .copied(),
         scanned_blocks,
     )
     .await?;
@@ -194,13 +194,13 @@ pub(super) fn collect_derived_nullifiers(
 ) {
     let sapling_nullifiers = wallet_transactions
         .values()
-        .flat_map(|tx| tx.sapling_notes())
-        .flat_map(|note| note.nullifier)
+        .flat_map(super::super::wallet::WalletTransaction::sapling_notes)
+        .filter_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let orchard_nullifiers = wallet_transactions
         .values()
-        .flat_map(|tx| tx.orchard_notes())
-        .flat_map(|note| note.nullifier)
+        .flat_map(super::super::wallet::WalletTransaction::orchard_notes)
+        .filter_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
     (sapling_nullifiers, orchard_nullifiers)
@@ -217,11 +217,11 @@ pub(super) fn detect_shielded_spends(
 ) {
     let sapling_spend_scan_targets = sapling_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.sapling.remove_entry(nf))
+        .filter_map(|nf| nullifier_map.sapling.remove_entry(nf))
         .collect();
     let orchard_spend_scan_targets = orchard_derived_nullifiers
         .iter()
-        .flat_map(|nf| nullifier_map.orchard.remove_entry(nf))
+        .filter_map(|nf| nullifier_map.orchard.remove_entry(nf))
         .collect();
 
     (sapling_spend_scan_targets, orchard_spend_scan_targets)
@@ -322,7 +322,7 @@ pub(super) fn collect_transparent_output_ids(
 ) -> Vec<OutputId> {
     wallet_transactions
         .values()
-        .flat_map(|tx| tx.transparent_coins())
+        .flat_map(super::super::wallet::WalletTransaction::transparent_coins)
         .map(|coin| coin.output_id)
         .collect()
 }
@@ -334,7 +334,7 @@ pub(super) fn detect_transparent_spends(
 ) -> BTreeMap<OutputId, ScanTarget> {
     transparent_output_ids
         .iter()
-        .flat_map(|output_id| outpoint_map.remove_entry(output_id))
+        .filter_map(|output_id| outpoint_map.remove_entry(output_id))
         .collect()
 }
 

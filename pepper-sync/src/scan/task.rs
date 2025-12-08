@@ -43,11 +43,11 @@ pub(crate) enum ScannerState {
 
 impl ScannerState {
     fn verified(&mut self) {
-        *self = ScannerState::Scan
+        *self = ScannerState::Scan;
     }
 
     fn shutdown(&mut self) {
-        *self = ScannerState::Shutdown
+        *self = ScannerState::Shutdown;
     }
 }
 
@@ -222,11 +222,10 @@ where
                     {
                         // the last scan ranges with `Verify` priority are currently being scanned.
                         return Ok(());
-                    } else {
-                        // verification complete
-                        self.state.verified();
-                        return Ok(());
                     }
+                    // verification complete
+                    self.state.verified();
+                    return Ok(());
                 }
 
                 // scan ranges with `Verify` priority
@@ -338,7 +337,7 @@ where
         let consensus_parameters = self.consensus_parameters.clone();
 
         let handle: JoinHandle<Result<(), ServerError>> = tokio::spawn(async move {
-            // save seam blocks between scan tasks for linear scanning continuuity checks
+            // save seam blocks between scan tasks for linear scanning continuity checks
             // during non-linear scanning the wallet blocks from the scanned ranges will already be saved in the wallet
             let mut previous_task_first_block: Option<WalletBlock> = None;
             let mut previous_task_last_block: Option<WalletBlock> = None;
@@ -369,7 +368,12 @@ where
                 };
                 while let Some(compact_block) = match block_stream.message().await {
                     Ok(b) => b,
-                    Err(e) if e.code() == tonic::Code::DeadlineExceeded => {
+                    Err(e)
+                        if e.code() == tonic::Code::DeadlineExceeded
+                            || e.message().contains("Unexpected EOF decoding stream.") =>
+                    {
+                        // wait and retry once in case of network weather or low bandwidth
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                         block_stream = if fetch_nullifiers_only {
                             client::get_nullifier_range(
                                 fetch_request_sender.clone(),
@@ -390,7 +394,16 @@ where
                         return Err(e.into());
                     }
                 } {
-                    if !fetch_nullifiers_only {
+                    if fetch_nullifiers_only {
+                        sapling_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.spends.len());
+                        orchard_nullifier_count += compact_block
+                            .vtx
+                            .iter()
+                            .fold(0, |acc, transaction| acc + transaction.actions.len());
+                    } else {
                         if let Some(block) = previous_task_last_block.as_ref()
                             && scan_task.start_seam_block.is_none()
                             && scan_task.scan_range.block_range().start == block.block_height() + 1
@@ -430,15 +443,6 @@ where
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.outputs.len());
                         orchard_output_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.actions.len());
-                    } else {
-                        sapling_nullifier_count += compact_block
-                            .vtx
-                            .iter()
-                            .fold(0, |acc, transaction| acc + transaction.spends.len());
-                        orchard_nullifier_count += compact_block
                             .vtx
                             .iter()
                             .fold(0, |acc, transaction| acc + transaction.actions.len());
@@ -486,7 +490,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to batcher:\n{:#?}", &scan_task);
+        tracing::trace!("Adding scan task to batcher:\n{:#?}", &scan_task);
         self.scan_task_sender
             .clone()
             .expect("batcher should be running")
@@ -614,7 +618,7 @@ where
     }
 
     fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::debug!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+        tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
         self.scan_task_sender
             .clone()
             .expect("worker should be running")

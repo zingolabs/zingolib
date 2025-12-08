@@ -207,12 +207,11 @@ impl std::fmt::Display for ScanRange {
 
 impl ScanRange {
     /// Constructs a scan range from its constituent parts.
+    #[must_use]
     pub fn from_parts(block_range: Range<BlockHeight>, priority: ScanPriority) -> Self {
         assert!(
             block_range.end >= block_range.start,
-            "{:?} is invalid for ScanRange({:?})",
-            block_range,
-            priority,
+            "{block_range:?} is invalid for ScanRange({priority:?})",
         );
         ScanRange {
             block_range,
@@ -221,21 +220,25 @@ impl ScanRange {
     }
 
     /// Returns the range of block heights to be scanned.
+    #[must_use]
     pub fn block_range(&self) -> &Range<BlockHeight> {
         &self.block_range
     }
 
     /// Returns the priority with which the scan range should be scanned.
+    #[must_use]
     pub fn priority(&self) -> ScanPriority {
         self.priority
     }
 
     /// Returns whether or not the scan range is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.block_range.is_empty()
     }
 
     /// Returns the number of blocks in the scan range.
+    #[must_use]
     pub fn len(&self) -> usize {
         usize::try_from(u32::from(self.block_range.end) - u32::from(self.block_range.start))
             .expect("due to number of max blocks should always be valid usize")
@@ -244,6 +247,7 @@ impl ScanRange {
     /// Shifts the start of the block range to the right if `block_height >
     /// self.block_range().start`. Returns `None` if the resulting range would
     /// be empty (or the range was already empty).
+    #[must_use]
     pub fn truncate_start(&self, block_height: BlockHeight) -> Option<Self> {
         if block_height >= self.block_range.end || self.is_empty() {
             None
@@ -258,6 +262,7 @@ impl ScanRange {
     /// Shifts the end of the block range to the left if `block_height <
     /// self.block_range().end`. Returns `None` if the resulting range would
     /// be empty (or the range was already empty).
+    #[must_use]
     pub fn truncate_end(&self, block_height: BlockHeight) -> Option<Self> {
         if block_height <= self.block_range.start || self.is_empty() {
             None
@@ -272,6 +277,7 @@ impl ScanRange {
     /// Splits this scan range at the specified height, such that the provided height becomes the
     /// end of the first range returned and the start of the second. Returns `None` if
     /// `p <= self.block_range().start || p >= self.block_range().end`.
+    #[must_use]
     pub fn split_at(&self, p: BlockHeight) -> Option<(Self, Self)> {
         (p > self.block_range.start && p < self.block_range.end).then_some((
             ScanRange {
@@ -358,7 +364,7 @@ where
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     if wallet_height > chain_height {
-        if wallet_height - chain_height > MAX_VERIFICATION_WINDOW {
+        if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
             return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
         }
         truncate_wallet_data(&mut *wallet_guard, chain_height)?;
@@ -552,7 +558,7 @@ where
     drop(fetch_request_sender);
 
     match mempool_handle.await.expect("task panicked") {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
         Err(e) => return Err(e.into()),
     }
@@ -576,7 +582,7 @@ where
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
-/// Intended to be called while [self::sync] is running in a separate task.
+/// Intended to be called while [`self::sync`] is running in a separate task.
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
 where
     W: SyncWallet + SyncBlocks,
@@ -997,20 +1003,22 @@ where
                 );
 
                 // extend verification range to VERIFY_BLOCK_RANGE_SIZE blocks below current verification range
-                let scan_range_to_verify = state::set_verify_scan_range(
+                let verification_start = state::set_verify_scan_range(
                     sync_state,
                     height - 1,
                     state::VerifyEnd::VerifyHighest,
-                );
+                )
+                .block_range()
+                .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                truncate_wallet_data(wallet, scan_range_to_verify.block_range().start - 1)?;
+                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
+                    clear_wallet_data(wallet)?;
 
-                if initial_verification_height - scan_range_to_verify.block_range().start
-                    > MAX_VERIFICATION_WINDOW
-                {
                     return Err(ServerError::ChainVerificationError.into());
                 }
+
+                truncate_wallet_data(wallet, verification_start - 1)?;
 
                 state::set_initial_state(
                     consensus_parameters,
@@ -1085,13 +1093,13 @@ where
     Ok(())
 }
 
-/// Removes all wallet data above the given `truncate_height`.
+/// Removes wallet blocks, transactions, nullifiers, outpoints and shard tree data above the given `truncate_height`.
 fn truncate_wallet_data<W>(
     wallet: &mut W,
     truncate_height: BlockHeight,
 ) -> Result<(), SyncError<W::Error>>
 where
-    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncShardTrees,
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
     let birthday = wallet
         .get_sync_state()
@@ -1100,7 +1108,7 @@ where
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&birthday) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
-        std::cmp::Ordering::Less => birthday,
+        std::cmp::Ordering::Less => consensus::H0,
     };
 
     wallet
@@ -1112,9 +1120,48 @@ where
     wallet
         .truncate_nullifiers(checked_truncate_height)
         .map_err(SyncError::WalletError)?;
-    wallet.truncate_shard_trees(checked_truncate_height)?;
+    wallet
+        .truncate_outpoints(checked_truncate_height)
+        .map_err(SyncError::WalletError)?;
+    match wallet.truncate_shard_trees(checked_truncate_height) {
+        Ok(_) => Ok(()),
+        Err(SyncError::TruncationError(height, pooltype)) => {
+            clear_wallet_data(wallet)?;
+
+            Err(SyncError::TruncationError(height, pooltype))
+        }
+        Err(e) => Err(e),
+    }?;
 
     Ok(())
+}
+
+fn clear_wallet_data<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+{
+    let scan_targets = wallet
+        .get_wallet_transactions()
+        .map_err(SyncError::WalletError)?
+        .values()
+        .filter_map(|transaction| {
+            transaction
+                .status()
+                .get_confirmed_height()
+                .map(|height| ScanTarget {
+                    block_height: height,
+                    txid: transaction.txid(),
+                    narrow_scan_area: true,
+                })
+        })
+        .collect::<Vec<_>>();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    *sync_state = SyncState::new();
+    add_scan_targets(sync_state, &scan_targets);
+
+    truncate_wallet_data(wallet, consensus::H0)
 }
 
 /// Updates the wallet with data from `scan_results`
@@ -1137,8 +1184,8 @@ where
     let sync_state = wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
-    let wallet_height = sync_state
-        .wallet_height()
+    let highest_scanned_height = sync_state
+        .highest_scanned_height()
         .expect("scan ranges should not be empty in this scope");
     for transaction in transactions.values() {
         state::update_found_note_shard_priority(
@@ -1173,7 +1220,7 @@ where
         .update_shard_trees(
             fetch_request_sender,
             scan_range,
-            wallet_height,
+            highest_scanned_height,
             sapling_located_trees,
             orchard_located_trees,
         )
@@ -1207,7 +1254,7 @@ where
             note.note().recipient(),
             ivk.diversifier_index(&note.note().recipient())
                 .expect("must be key used to create this address"),
-        )?
+        )?;
     }
     for note in transaction
         .sapling_notes()
@@ -1226,7 +1273,7 @@ where
             note.note().recipient(),
             ivk.decrypt_diversifier(&note.note().recipient())
                 .expect("must be key used to create this address"),
-        )?
+        )?;
     }
 
     Ok(())
@@ -1535,7 +1582,7 @@ where
                 && transaction.status().get_height()
                     <= wallet_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
         })
-        .map(|transaction| transaction.txid())
+        .map(super::wallet::WalletTransaction::txid)
         .chain(
             wallet_transactions
                 .values()
@@ -1544,7 +1591,7 @@ where
                         || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
                         && wallet_height >= transaction.transaction().expiry_height()
                 })
-                .map(|transaction| transaction.txid()),
+                .map(super::wallet::WalletTransaction::txid),
         )
         .collect::<Vec<_>>();
     reset_spends(wallet_transactions, invalid_txids);

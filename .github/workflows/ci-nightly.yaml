@@ -1,11 +1,17 @@
 name: CI (Nightly)
 
 on:
+  workflow_call:
+  workflow_dispatch:
   schedule:
     - cron: '30 3 * * *'
-  workflow_dispatch:
 
 jobs:
+
+  pr-checks:
+    needs: [ create-cache-key ]
+    uses: ./.github/workflows/ci.yaml
+
   cargo-checkmate:
     uses: ./.github/workflows/cargo-checkmate.yaml
 
@@ -20,12 +26,32 @@ jobs:
         run: ./utils/trailing-whitespace.sh reject
 
   cargo-hack-build:
-    uses: ./.github/workflows/cargo-hack.yaml
+    name: Cargo Hack Build
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    # with:                # (optional) override defaults
-    #   hack-flags: "--workspace --all-features --all-targets --target-dir target/hack"
-    #   rustflags: "-D warnings"
-    #   toolchain: "stable"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: |
+          if ! command -v protoc; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          fi
+
+      - name: Run cargo-hack
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
+        with:
+          hack-subcommand: build
 
   test:
     uses: ./.github/workflows/test.yaml

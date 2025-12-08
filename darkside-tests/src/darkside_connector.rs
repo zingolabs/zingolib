@@ -86,8 +86,8 @@ impl DarksideConnector {
         ) -> Empty {
             DarksideEmptyBlocks {
                 height,
-                count,
-                nonce
+                nonce,
+                count
             }
         },
 

@@ -12,15 +12,16 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 // TODO: revisit after implementing nullifier refetching
 #[derive(Default, Debug, Clone, Copy)]
 pub enum PerformanceLevel {
-    /// - number of outputs per batch is halved
+    /// - number of outputs per batch is quartered
     /// - nullifier map only contains chain tip
     Low,
     /// - nullifier map has a small maximum size
+    /// - nullifier map only contains chain tip
     Medium,
     /// - nullifier map has a large maximum size
     #[default]
     High,
-    /// - number of outputs per batch is doubled
+    /// - number of outputs per batch is quadrupled
     /// - nullifier map has no maximum size
     ///
     /// WARNING: this may cause the wallet to become less responsive on slower systems and may use a lot of memory for
@@ -124,13 +125,13 @@ impl SyncConfig {
         let mut scopes = 0;
         if self.transparent_address_discovery.scopes.external {
             scopes |= 0b1;
-        };
+        }
         if self.transparent_address_discovery.scopes.internal {
             scopes |= 0b10;
-        };
+        }
         if self.transparent_address_discovery.scopes.refund {
             scopes |= 0b100;
-        };
+        }
         writer.write_u8(scopes)?;
         self.performance_level.write(writer)?;
 
@@ -160,6 +161,7 @@ impl Default for TransparentAddressDiscovery {
 
 impl TransparentAddressDiscovery {
     /// Constructs a transparent address discovery config with a gap limit of 1 and ignoring the internal scope.
+    #[must_use]
     pub fn minimal() -> Self {
         Self {
             gap_limit: 1,
@@ -168,6 +170,7 @@ impl TransparentAddressDiscovery {
     }
 
     /// Constructs a transparent address discovery config with a gap limit of 20 for all scopes.
+    #[must_use]
     pub fn recovery() -> Self {
         Self {
             gap_limit: 20,
@@ -177,6 +180,7 @@ impl TransparentAddressDiscovery {
 
     /// Disables transparent address discovery. Sync will only scan transparent outputs for addresses already in the
     /// wallet in transactions that also contain shielded inputs or outputs relevant to the wallet.
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             gap_limit: 0,
@@ -212,6 +216,7 @@ impl Default for TransparentAddressDiscoveryScopes {
 
 impl TransparentAddressDiscoveryScopes {
     /// Constructor with all all scopes active.
+    #[must_use]
     pub fn recovery() -> Self {
         Self {
             external: true,

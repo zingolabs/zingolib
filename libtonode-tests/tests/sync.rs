@@ -2,18 +2,22 @@ use std::{num::NonZeroU32, time::Duration};
 
 use bip0039::Mnemonic;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use shardtree::store::ShardStore;
+use zcash_local_net::validator::Validator;
+use zcash_protocol::consensus::BlockHeight;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::testutils::lightclient::from_inputs::quick_send;
+use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
     get_base_address_macro,
     lightclient::LightClient,
-    testutils::{
-        lightclient::from_inputs::{self},
-        scenarios,
-    },
+    testutils::lightclient::from_inputs::{self},
     wallet::{LightWallet, WalletBase, WalletSettings},
 };
+use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]
@@ -38,6 +42,7 @@ async fn sync_mainnet_test() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -62,18 +67,18 @@ async fn sync_mainnet_test() {
         interval.tick().await;
         {
             let wallet = lightclient.wallet.read().await;
-            println!(
+            tracing::info!(
                 "{}",
                 json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
             );
-            println!("WALLET DEBUG:");
-            println!("uas: {}", wallet.unified_addresses().len());
-            println!("taddrs: {}", wallet.transparent_addresses().len());
-            println!("blocks: {}", wallet.wallet_blocks.len());
-            println!("txs: {}", wallet.wallet_transactions.len());
-            println!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
-            println!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
-            println!("outpoints: {}", wallet.outpoint_map.len());
+            tracing::info!("WALLET DEBUG:");
+            tracing::info!("uas: {}", wallet.unified_addresses().len());
+            tracing::info!("taddrs: {}", wallet.transparent_addresses().len());
+            tracing::info!("blocks: {}", wallet.wallet_blocks.len());
+            tracing::info!("txs: {}", wallet.wallet_transactions.len());
+            tracing::info!("nullifiers o: {}", wallet.nullifier_map.orchard.len());
+            tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
+            tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
         lightclient.wallet.write().await.save().unwrap();
     }
@@ -107,6 +112,7 @@ async fn sync_status() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         },
         1.try_into().unwrap(),
+        "".to_string(),
     )
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
@@ -150,21 +156,21 @@ async fn sync_test() {
     //     .await
     //     .unwrap();
 
-    // println!("{}", recipient.transaction_summaries().await.unwrap());
-    println!("{}", recipient.value_transfers(false).await.unwrap());
-    println!(
+    // tracing::info!("{}", recipient.transaction_summaries().await.unwrap());
+    tracing::info!("{}", recipient.value_transfers(false).await.unwrap());
+    tracing::info!(
         "{}",
         recipient
             .account_balance(zip32::AccountId::ZERO)
             .await
             .unwrap()
     );
-    println!(
+    tracing::info!(
         "{:?}",
         recipient.propose_shield(zip32::AccountId::ZERO).await
     );
 
-    // println!(
+    // tracing::info!(
     //     "{:?}",
     //     recipient
     //         .get_spendable_shielded_balance(
@@ -176,4 +182,82 @@ async fn sync_test() {
     // );
     // let wallet = recipient.wallet.lock().await;
     // dbg!(wallet.wallet_blocks.len());
+}
+
+#[ignore = "only for building chain cache"]
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window_chain_cache() {
+    let (mut local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
+
+    let recipient_orchard_addr = get_base_address_macro!(recipient, "unified");
+    let recipient_sapling_addr = get_base_address_macro!(recipient, "sapling");
+
+    for _ in 0..27 {
+        quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+
+        quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+
+        quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
+            .await
+            .unwrap();
+        quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
+            .await
+            .unwrap();
+    }
+
+    local_net
+        .validator_mut()
+        .cache_chain(get_cargo_manifest_dir().join("store_all_checkpoints_test"));
+}
+
+#[ignore = "ignored until we add framework for chain caches as we don't want to check these into the zingolib repo"]
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window() {
+    let (_local_net, lightclient) = scenarios::unfunded_client(
+        all_height_one_nus(),
+        Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
+    )
+    .await;
+
+    for height in 12..112 {
+        assert!(
+            lightclient
+                .wallet
+                .read()
+                .await
+                .shard_trees
+                .sapling
+                .store()
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .unwrap()
+                .is_some(),
+            "missing sapling checkpoint at height {height}"
+        );
+        assert!(
+            lightclient
+                .wallet
+                .read()
+                .await
+                .shard_trees
+                .orchard
+                .store()
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .unwrap()
+                .is_some(),
+            "missing orchard checkpoint at height {height}"
+        );
+    }
 }

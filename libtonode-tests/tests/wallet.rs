@@ -1,10 +1,8 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
-    use zingolib::testutils::zingo_full_stack_tests::validator::Validator;
-    use zingolib::{
-        get_base_address_macro,
-        testutils::{lightclient::from_inputs, scenarios},
-    };
+    use zcash_local_net::validator::Validator as _;
+    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
     // FIXME: sync integration semi-complete, need to transribe all the old do_list_transactions printouts to new types
     // #[tokio::test]
@@ -16,7 +14,7 @@ mod load_wallet {
     //         false,
     //     )
     //     .await;
-    //     println!("Shutting down initial zcd/lwd unneeded processes");
+    //     tracing::info!("Shutting down initial zcd/lwd unneeded processes");
     //     drop(cph);
 
     //     let zcd_datadir = &regtest_manager.zcashd_data_dir;
@@ -60,7 +58,7 @@ mod load_wallet {
     //         .output()
     //         .expect("wallet copy failed");
     //     let _cph = regtest_manager.launch(false).unwrap();
-    //     println!("loading wallet");
+    //     tracing::info!("loading wallet");
 
     //     let recipient = examples::NetworkSeedVersion::Regtest(
     //         examples::RegtestSeedVersion::HospitalMuseum(examples::HospitalMuseumVersion::V27),
@@ -185,7 +183,7 @@ mod load_wallet {
         // "mempool height" which is the server_height + 1
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
         // Ensure that the client has confirmed spendable funds
-        zingolib::testutils::increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 5)
             .await
             .unwrap();
 

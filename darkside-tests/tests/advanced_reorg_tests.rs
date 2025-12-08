@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use darkside_tests::{
     constants::{
         ADVANCED_REORG_TESTS_USER_WALLET, BRANCH_ID, REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER,
@@ -10,36 +8,27 @@ use darkside_tests::{
     },
     darkside_connector::DarksideConnector,
     darkside_types::{Empty, TreeState},
-    utils::{read_dataset, read_lines},
+    utils::{lightwalletd, read_dataset, read_lines},
 };
 
 use tokio::time::sleep;
+use zcash_local_net::indexer::Indexer;
+use zcash_local_net::network::localhost_uri;
 use zcash_primitives::consensus::BlockHeight;
+use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::testutils::zingo_full_stack_tests::{
-    indexer::{Indexer, Lightwalletd, LightwalletdConfig},
-    network::localhost_uri,
-};
+use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
-use zingolib::{testutils::scenarios::LIGHTWALLETD_BIN, wallet::summary::data::SentValueTransfer};
 use zingolib::{
-    testutils::{
-        LocalNetwork, LocalNetworkExt, lightclient::from_inputs, paths::get_cargo_manifest_dir,
-        scenarios::ClientBuilder,
-    },
+    testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
 };
+use zingolib_testutils::scenarios::ClientBuilder;
 
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -52,7 +41,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -89,9 +78,9 @@ async fn reorg_changes_incoming_tx_height() {
     let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
-        Ok(value) => println!("{}", value),
-        Err(err_str) => println!("{}", err_str),
-    };
+        Ok(value) => tracing::info!("{value}"),
+        Err(err_str) => tracing::info!("{err_str}"),
+    }
 
     // Assert that balance holds
     assert_eq!(
@@ -141,7 +130,7 @@ async fn prepare_before_tx_height_change_reorg(uri: http::Uri) -> Result<(), Str
         REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
     );
 
-    println!("dataset path: {}", dataset_path);
+    tracing::info!("dataset path: {dataset_path}");
 
     connector
         .stage_blocks_stream(read_dataset(dataset_path))
@@ -197,13 +186,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 #[ignore]
 #[tokio::test]
 async fn reorg_changes_incoming_tx_index() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -216,7 +199,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -253,9 +236,9 @@ async fn reorg_changes_incoming_tx_index() {
     let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
-        Ok(value) => println!("{}", value),
-        Err(err_str) => println!("{}", err_str),
-    };
+        Ok(value) => tracing::info!("{value}"),
+        Err(err_str) => tracing::info!("{err_str}"),
+    }
 
     // Assert that balance holds
     assert_eq!(
@@ -305,7 +288,7 @@ async fn prepare_before_tx_index_change_reorg(uri: http::Uri) -> Result<(), Stri
         REORG_CHANGES_INCOMING_TX_INDEX_BEFORE
     );
 
-    println!("dataset path: {}", dataset_path);
+    tracing::info!("dataset path: {dataset_path}");
 
     connector
         .stage_blocks_stream(read_dataset(dataset_path))
@@ -361,13 +344,7 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 #[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
 async fn reorg_expires_incoming_tx() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -380,7 +357,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -417,9 +394,9 @@ async fn reorg_expires_incoming_tx() {
     let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
-        Ok(value) => println!("{}", value),
-        Err(err_str) => println!("{}", err_str),
-    };
+        Ok(value) => tracing::info!("{value}"),
+        Err(err_str) => tracing::info!("{err_str}"),
+    }
 
     // Assert that balance holds
     assert_eq!(
@@ -465,7 +442,7 @@ async fn prepare_expires_incoming_tx_before_reorg(uri: http::Uri) -> Result<(), 
         REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE
     );
 
-    println!("dataset path: {}", dataset_path);
+    tracing::info!("dataset path: {dataset_path}");
 
     connector
         .stage_blocks_stream(read_dataset(dataset_path))
@@ -547,13 +524,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 /// 14. sync to latest height
 /// 15. verify that there's no pending transaction and that the tx is displayed on the sentTransactions collection
 async fn reorg_changes_outgoing_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -566,7 +537,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -609,7 +580,7 @@ async fn reorg_changes_outgoing_tx_height() {
     .await
     .unwrap();
 
-    println!("SENT TX ID: {:?}", sent_tx_id);
+    tracing::info!("SENT TX ID: {sent_tx_id:?}");
 
     let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
     let tx = incoming_transaction_stream
@@ -646,7 +617,7 @@ async fn reorg_changes_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.value_transfers(true).await);
+    tracing::info!("{:?}", light_client.value_transfers(true).await);
 
     assert_eq!(
         light_client
@@ -692,9 +663,9 @@ async fn reorg_changes_outgoing_tx_height() {
     let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
-        Ok(value) => println!("{}", value),
-        Err(err_str) => println!("{}", err_str),
-    };
+        Ok(value) => tracing::info!("{value}"),
+        Err(err_str) => tracing::info!("{err_str}"),
+    }
 
     let expected_after_reorg_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
@@ -721,7 +692,7 @@ async fn reorg_changes_outgoing_tx_height() {
 
     assert_eq!(after_reorg_transactions.len(), 3);
 
-    println!("{:?}", light_client.value_transfers(true).await);
+    tracing::info!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -767,7 +738,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
         REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE
     );
 
-    println!("dataset path: {}", dataset_path);
+    tracing::info!("dataset path: {dataset_path}");
 
     connector
         .stage_blocks_stream(read_dataset(dataset_path))
@@ -793,7 +764,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 
 #[ignore = "darkside block continuity error, after re-org block 206's prev hash does not match 205's hash"]
 #[tokio::test]
-/// ### ReOrg Removes Outbound TxAnd Is Never Mined
+/// ### `ReOrg` Removes Outbound `TxAnd` Is Never Mined
 /// Transaction was included in a block, and then is not included in a block after a reorg, and expires.
 /// Steps:
 /// 1. create fake chain
@@ -808,13 +779,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 /// 8. sync to latest height
 /// 9. verify that there's an expired transaction as a pending transaction
 async fn reorg_expires_outgoing_tx_height() {
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -827,7 +792,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -872,7 +837,7 @@ async fn reorg_expires_outgoing_tx_height() {
     .await
     .unwrap();
 
-    println!("SENT TX ID: {:?}", sent_tx_id);
+    tracing::info!("SENT TX ID: {sent_tx_id:?}");
 
     let sent_tx_height: i32 = 205;
     _ = connector.apply_staged(sent_tx_height).await;
@@ -902,7 +867,7 @@ async fn reorg_expires_outgoing_tx_height() {
     // check that the outgoing transaction has the correct height before
     // the reorg is triggered
 
-    println!("{:?}", light_client.value_transfers(true).await.unwrap());
+    tracing::info!("{:?}", light_client.value_transfers(true).await.unwrap());
 
     let send_height = light_client
         .value_transfers(true)
@@ -941,9 +906,9 @@ async fn reorg_expires_outgoing_tx_height() {
     let reorg_sync_result = light_client.sync_and_await().await;
 
     match reorg_sync_result {
-        Ok(value) => println!("{}", value),
-        Err(err_str) => println!("{}", err_str),
-    };
+        Ok(value) => tracing::info!("{value}"),
+        Err(err_str) => tracing::info!("{err_str}"),
+    }
 
     // Assert that balance is equal to the initial balance since the
     // sent transaction was never mined and has expired.
@@ -959,7 +924,7 @@ async fn reorg_expires_outgoing_tx_height() {
 
     assert_eq!(after_reorg_transactions.len(), 1);
 
-    println!("{:?}", light_client.value_transfers(true).await);
+    tracing::info!("{:?}", light_client.value_transfers(true).await);
 
     // FIXME: This test is broken because if this issue
     // https://github.com/zingolabs/zingolib/issues/622
@@ -996,8 +961,8 @@ async fn reorg_expires_outgoing_tx_height() {
 ///   - Wallet has spendable funds
 ///
 /// 1. Setup w/ default dataset
-/// 2. applyStaged(received_Tx_height)
-/// 3. sync up to received_Tx_height
+/// 2. `applyStaged(received_Tx_height)`
+/// 3. sync up to `received_Tx_height`
 /// 4. create transaction
 /// 5. stage 10 empty blocks
 /// 6. submit tx at sentTxHeight
@@ -1007,20 +972,14 @@ async fn reorg_expires_outgoing_tx_height() {
 /// 7. sync to  sentTxHeight + 2
 /// 8. stage sentTx and otherTx at sentTxheight
 /// 9. applyStaged(sentTx + 2)
-/// 10. sync up to received_Tx_height + 2
+/// 10. sync up to `received_Tx_height` + 2
 /// 11. verify that the sent tx is mined and balance is correct
 /// 12. applyStaged(sentTx + 10)
 /// 13. verify that there's no more pending transaction
 async fn reorg_changes_outgoing_tx_index() {
     tracing_subscriber::fmt().init();
 
-    let lightwalletd = Lightwalletd::launch(LightwalletdConfig {
-        lightwalletd_bin: LIGHTWALLETD_BIN.clone(),
-        listen_port: None,
-        zcashd_conf: PathBuf::new(),
-        darkside: true,
-    })
-    .unwrap();
+    let lightwalletd = lightwalletd().await.unwrap();
 
     let server_id = localhost_uri(lightwalletd.listen_port());
 
@@ -1033,7 +992,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        LocalNetwork::default_regtest_heights(),
+        for_test::all_height_one_nus(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -1076,7 +1035,7 @@ async fn reorg_changes_outgoing_tx_index() {
     .await
     .unwrap();
 
-    println!("SENT TX ID: {:?}", sent_tx_id);
+    tracing::info!("SENT TX ID: {sent_tx_id:?}");
 
     let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
     let tx = incoming_transaction_stream
@@ -1138,10 +1097,10 @@ async fn reorg_changes_outgoing_tx_index() {
         Some(BlockHeight::from(sent_tx_height as u32))
     );
 
-    println!("pre re-org value transfers:");
-    println!("{}", light_client.value_transfers(true).await.unwrap());
-    println!("pre re-org tx summaries:");
-    println!(
+    tracing::info!("pre re-org value transfers:");
+    tracing::info!("{}", light_client.value_transfers(true).await.unwrap());
+    tracing::info!("pre re-org tx summaries:");
+    tracing::info!(
         "{}",
         light_client.transaction_summaries(false).await.unwrap()
     );
@@ -1193,10 +1152,10 @@ async fn reorg_changes_outgoing_tx_index() {
 
     let after_reorg_transactions = light_client.value_transfers(true).await.unwrap();
 
-    println!("post re-org value transfers:");
-    println!("{}", after_reorg_transactions);
-    println!("post re-org tx summaries:");
-    println!(
+    tracing::info!("post re-org value transfers:");
+    tracing::info!("{after_reorg_transactions}");
+    tracing::info!("post re-org tx summaries:");
+    tracing::info!(
         "{}",
         light_client.transaction_summaries(false).await.unwrap()
     );
@@ -1236,7 +1195,7 @@ async fn test_read_block_dataset() {
         REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE
     );
     let blocks = read_dataset(dataset_path);
-    assert_eq!(blocks.len(), 21)
+    assert_eq!(blocks.len(), 21);
 }
 
 #[tokio::test]
@@ -1248,7 +1207,7 @@ async fn test_read_tree_state_from_file() {
         203
     );
 
-    println!("{}", tree_state_path);
+    tracing::info!("{tree_state_path}");
 
     let tree_state = TreeState::from_file(tree_state_path).unwrap();
 

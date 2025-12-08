@@ -47,7 +47,7 @@ impl LightWallet {
         if fail_on_miss {
             let spend_links = spends
                 .iter()
-                .flat_map(|&spend| spend.spend_link())
+                .filter_map(|&spend| spend.spend_link())
                 .collect::<Vec<_>>();
 
             for input in Op::transaction_inputs(transaction) {
@@ -55,7 +55,7 @@ impl LightWallet {
                     return Err(SpendError::SpendNotFound {
                         pool: Op::POOL_TYPE,
                         txid: transaction.txid(),
-                        spend: format!("{:?}", input),
+                        spend: format!("{input:?}"),
                     });
                 }
             }
@@ -82,7 +82,7 @@ impl LightWallet {
                     .find(|&output| output.output_id() == outpoint)
                     .ok_or(FeeError::SpendNotFound {
                         txid: transaction.txid(),
-                        spend: format!("{:?}", outpoint),
+                        spend: format!("{outpoint:?}"),
                     })?;
 
                 Ok(Some(
@@ -106,7 +106,7 @@ impl LightWallet {
             }
         } else {
             return Err(RemovalError::TransactionNotFound);
-        };
+        }
 
         pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
         self.wallet_transactions.remove(&txid);

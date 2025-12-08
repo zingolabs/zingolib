@@ -1,4 +1,4 @@
-//! This mod contains pieces of the impl LightWallet that are invoked during a send.
+//! This mod contains pieces of the impl `LightWallet` that are invoked during a send.
 
 use std::ops::Range;
 
@@ -7,13 +7,13 @@ use nonempty::NonEmpty;
 use pepper_sync::sync::ScanPriority;
 use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::NoteInterface;
+use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_proofs::prover::LocalTxProver;
-use zcash_protocol::consensus;
 use zcash_protocol::consensus::Parameters;
 
 use pepper_sync::wallet::traits::SyncWallet;
@@ -43,6 +43,7 @@ pub struct SendProgress {
 
 impl SendProgress {
     /// TODO: Add Doc Comment Here!
+    #[must_use]
     pub fn new(id: u32) -> Self {
         SendProgress {
             id,
@@ -130,7 +131,7 @@ impl LightWallet {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
-        let usk = self
+        let usk: zcash_keys::keys::UnifiedSpendingKey = self
             .unified_key_store
             .get(&sending_account)
             .ok_or(KeyError::NoAccountKeys)?
@@ -141,7 +142,7 @@ impl LightWallet {
             &network,
             &sapling_prover,
             &sapling_prover,
-            &usk,
+            &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
             proposal,
         )
@@ -211,16 +212,21 @@ impl LightWallet {
 
             let height = calculated_transaction.status().get_height();
 
+            let lrz_transaction = calculated_transaction.transaction();
+            let consensus_branch_id = lrz_transaction.consensus_branch_id();
+            tracing::debug!(
+                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}, at height {height}."
+            );
+
             let mut transaction_bytes = vec![];
-            calculated_transaction
-                .transaction()
+            lrz_transaction
                 .write(&mut transaction_bytes)
                 .map_err(|_| TransmissionError::TransactionWrite)?;
-            let transaction = Transaction::read(
-                transaction_bytes.as_slice(),
-                consensus::BranchId::for_height(&network, height),
-            )
-            .map_err(|_| TransmissionError::TransactionRead)?;
+
+            // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
+            let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
+                .map_err(|_| TransmissionError::TransactionRead)?;
+            //
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),
@@ -326,14 +332,13 @@ fn check_note_shards_are_scanned(
         .iter()
         .filter(|&shard_range| shard_range.contains(&note_height))
         .all(|note_shard_range| {
-            //dbg!(note_shard_range);
             scan_ranges
                 .iter()
                 .filter(|&scan_range| {
                     scan_range.priority() == ScanPriority::Scanned
                         || scan_range.priority() == ScanPriority::ScannedWithoutMapping
                 })
-                .map(|scan_range| scan_range.block_range())
+                .map(pepper_sync::sync::ScanRange::block_range)
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)
