@@ -32,6 +32,11 @@ where
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// Critical non-recoverable truncation error due to missing shard tree checkpoints.
+    #[error(
+        "critical non-recoverable truncation error at height {0} due to missing {1} shard tree checkpoints. wallet data cleared. rescan required."
+    )]
+    TruncationError(BlockHeight, PoolType),
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
