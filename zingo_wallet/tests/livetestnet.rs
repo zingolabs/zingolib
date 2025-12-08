@@ -9,16 +9,7 @@ mod common;
 #[tokio::test]
 #[test_log::test]
 async fn connect() {
-    let mut wallet = ZingoWallet::new_wallet().await;
-    let single_server_url = DEFAULT_TESTNET_LIGHTWALLETD_SERVER;
-    wallet
-        .add_key(zingo_test_vectors::seeds::ABANDON_ART_SEED.to_string())
-        .await
-        .unwrap();
-    wallet
-        .add_server(single_server_url.to_string())
-        .await
-        .unwrap();
+    common::connect(DEFAULT_TESTNET_LIGHTWALLETD_SERVER).await;
 }
 #[tokio::test]
 #[test_log::test]
