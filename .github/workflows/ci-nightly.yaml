@@ -88,3 +88,6 @@ jobs:
     needs: [ create-cache-key, ios-build ]
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+
+  test:
+    uses: ./.github/workflows/test.yaml
