@@ -32,6 +32,11 @@ where
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// Critical non-recoverable truncation error due to missing shard tree checkpoints.
+    #[error(
+        "critical non-recoverable truncation error at height {0} due to missing {1} shard tree checkpoints. wallet data cleared. rescan required."
+    )]
+    TruncationError(BlockHeight, PoolType),
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
@@ -176,7 +181,7 @@ pub enum ServerError {
     InvalidSubtreeRoot,
     /// Server returned blocks that could not be verified against wallet block data. Exceeded max verification window.
     #[error(
-        "server returned blocks that could not be verified against wallet block data. exceeded max verification window."
+        "server returned blocks that could not be verified against wallet block data. exceeded max verification window. wallet data has been cleared as shard tree data cannot be truncated further. wallet rescan required."
     )]
     ChainVerificationError,
     /// Fetcher task was dropped.
