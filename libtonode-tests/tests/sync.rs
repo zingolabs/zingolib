@@ -2,7 +2,13 @@ use std::{num::NonZeroU32, time::Duration};
 
 use bip0039::Mnemonic;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use shardtree::store::ShardStore;
+use zcash_local_net::validator::Validator;
+use zcash_protocol::consensus::BlockHeight;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::testutils::lightclient::from_inputs::quick_send;
+use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
@@ -11,7 +17,7 @@ use zingolib::{
     testutils::lightclient::from_inputs::{self},
     wallet::{LightWallet, WalletBase, WalletSettings},
 };
-use zingolib_testutils::scenarios;
+use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]
@@ -176,4 +182,82 @@ async fn sync_test() {
     // );
     // let wallet = recipient.wallet.lock().await;
     // dbg!(wallet.wallet_blocks.len());
+}
+
+#[ignore = "only for building chain cache"]
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window_chain_cache() {
+    let (mut local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
+
+    let recipient_orchard_addr = get_base_address_macro!(recipient, "unified");
+    let recipient_sapling_addr = get_base_address_macro!(recipient, "sapling");
+
+    for _ in 0..27 {
+        quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+
+        quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
+            .await
+            .unwrap();
+
+        quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])
+            .await
+            .unwrap();
+        quick_send(&mut faucet, vec![(&recipient_sapling_addr, 10_000, None)])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
+            .await
+            .unwrap();
+    }
+
+    local_net
+        .validator_mut()
+        .cache_chain(get_cargo_manifest_dir().join("store_all_checkpoints_test"));
+}
+
+#[ignore = "ignored until we add framework for chain caches as we don't want to check these into the zingolib repo"]
+#[tokio::test]
+async fn store_all_checkpoints_in_verification_window() {
+    let (_local_net, lightclient) = scenarios::unfunded_client(
+        all_height_one_nus(),
+        Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
+    )
+    .await;
+
+    for height in 12..112 {
+        assert!(
+            lightclient
+                .wallet
+                .read()
+                .await
+                .shard_trees
+                .sapling
+                .store()
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .unwrap()
+                .is_some(),
+            "missing sapling checkpoint at height {height}"
+        );
+        assert!(
+            lightclient
+                .wallet
+                .read()
+                .await
+                .shard_trees
+                .orchard
+                .store()
+                .get_checkpoint(&BlockHeight::from_u32(height))
+                .unwrap()
+                .is_some(),
+            "missing orchard checkpoint at height {height}"
+        );
+    }
 }
