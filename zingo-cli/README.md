@@ -141,9 +141,9 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
 ```
 grpc-bind-addr: 127.0.0.1:9067
 cache-size: 10
-log-file: /home/oscar/tmp/lwd_regtest/logs/lwd.log
+log-file: /home/user/tmp/lwd_regtest/logs/lwd.log
 log-level: 10
-zcash-conf-path: /home/oscar/tmp/zcashd_regtest/zcash.conf
+zcash-conf-path: /home/user/tmp/zcashd_regtest/zcash.conf
 ```
 
 ## Exiting the CLI
