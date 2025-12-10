@@ -78,7 +78,7 @@ proptest = "1.6.0"
 prost = "0.13"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
-ring = "0.17"
+ring = "0.17.14"
 rusqlite = "0.32"
 rust_decimal = "1.37.2"
 rust-embed = "6"
