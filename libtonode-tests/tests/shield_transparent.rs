@@ -73,7 +73,7 @@ async fn shield_transparent() {
     tracing::info!("Initial proposal {proposal:?}");
     tracing::info!("Shielding proposal {shielding_proposal:?}");
 
-    recipient.send_stored_proposal().await.unwrap();
+    recipient.send_stored_proposal(true).await.unwrap();
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();

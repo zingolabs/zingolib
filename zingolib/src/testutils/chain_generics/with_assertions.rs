@@ -61,7 +61,7 @@ where
         .await
         .unwrap();
     timestamped_test_log(format!("proposed the following payments: {payments:?}").as_str());
-    let txids = sender.send_stored_proposal().await.unwrap();
+    let txids = sender.send_stored_proposal(true).await.unwrap();
     timestamped_test_log("Transmitted send.");
 
     follow_proposal(
@@ -96,7 +96,7 @@ where
         .map_err(|e| e.to_string())?;
     timestamped_test_log(format!("proposed a shield: {proposal:#?}").as_str());
 
-    let txids = client.send_stored_proposal().await.unwrap();
+    let txids = client.send_stored_proposal(true).await.unwrap();
     timestamped_test_log("Transmitted shield.");
 
     let (total_fee, _, s_shielded) =
