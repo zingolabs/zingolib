@@ -73,8 +73,4 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
 
 ## Regtest
-There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
-
-For a relatively recent user experience please see: https://free2z.cash/zingo-cli-in-regtest-mode
-
-Please see `docs/TEST_REGTEST.md` for a detailed explanation.
+Please see `zingo-cli/README.md` for details of running zingo-cli in regtest mode with a local network.

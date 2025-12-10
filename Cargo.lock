@@ -8912,7 +8912,6 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_keys",
- "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
  "zingo_common_components",
