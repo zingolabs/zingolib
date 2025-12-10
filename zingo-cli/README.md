@@ -71,7 +71,7 @@ cargo build --release -p zingo-cli --features regtest
 ./target/release/zingo-cli --chain regtest --server 127.0.0.1:9067 --data-dir ~/tmp/regtest_temp
 ```
 
-**Note:** The zcash_local_net crate will soon offer a binary for simplifying the process of launching and interacting with the local network. 
+**Note:** The zcash_local_net crate will soon offer a binary for simplifying the process of launching and interacting with the local network.
 https://github.com/zingolabs/infrastructure/tree/dev/zcash_local_net
 
 #### Example: Launching a Local Network
