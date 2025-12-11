@@ -1530,7 +1530,7 @@ pub fn confirm() -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
                 match lightclient
-                    .send_stored_proposal()
+                    .send_stored_proposal(true)
                     .await {
                     Ok(txids) => {
                         object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
