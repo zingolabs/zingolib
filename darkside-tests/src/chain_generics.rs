@@ -65,7 +65,7 @@ pub(crate) mod conduct_chain {
 
         /// the mock chain is fed to the Client via lightwalletd. where is that server to be found?
         fn lightserver_uri(&self) -> Option<http::Uri> {
-            Some(self.client_builder.server_id.clone())
+            self.client_builder.indexer_uri.clone()
         }
 
         async fn create_faucet(&mut self) -> LightClient {
@@ -76,7 +76,7 @@ pub(crate) mod conduct_chain {
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
-                    config.chain,
+                    config.chain_type,
                     WalletBase::Mnemonic {
                         mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -123,12 +123,10 @@ pub(crate) mod conduct_chain {
                 .unwrap();
 
             // trees
-            let trees = zingolib::grpc_connector::get_trees(
-                self.client_builder.server_id.clone(),
-                height_before,
-            )
-            .await
-            .unwrap();
+            let trees =
+                zingolib::grpc_connector::get_trees(self.lightserver_uri().unwrap(), height_before)
+                    .await
+                    .unwrap();
             let mut sapling_tree: sapling_crypto::CommitmentTree =
                 zcash_primitives::merkle_tree::read_commitment_tree(
                     hex::decode(trees.sapling_tree).unwrap().as_slice(),

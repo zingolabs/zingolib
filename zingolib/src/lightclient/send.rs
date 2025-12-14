@@ -35,16 +35,21 @@ pub mod send_with_proposal {
             proposal: &Proposal<zip317::FeeRule, OutputRef>,
             sending_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
-            let mut wallet = self.wallet.write().await;
-            let calculated_txids = wallet
-                .calculate_transactions(proposal, sending_account)
-                .await
-                .map_err(SendError::CalculateSendError)?;
-            self.latest_proposal = None;
+            match self.server_uri() {
+                None => Err(SendError::UnreachableIndexer),
+                Some(indexer_uri) => {
+                    let mut wallet = self.wallet.write().await;
+                    let calculated_txids = wallet
+                        .calculate_transactions(proposal, sending_account)
+                        .await
+                        .map_err(SendError::CalculateSendError)?;
+                    self.latest_proposal = None;
 
-            Ok(wallet
-                .transmit_transactions(self.server_uri(), calculated_txids)
-                .await?)
+                    Ok(wallet
+                        .transmit_transactions(indexer_uri, calculated_txids)
+                        .await?)
+                }
+            }
         }
 
         async fn shield(
@@ -52,27 +57,37 @@ pub mod send_with_proposal {
             proposal: &Proposal<zip317::FeeRule, Infallible>,
             shielding_account: zip32::AccountId,
         ) -> Result<NonEmpty<TxId>, SendError> {
-            let mut wallet = self.wallet.write().await;
-            let calculated_txids = wallet
-                .calculate_transactions(proposal, shielding_account)
-                .await
-                .map_err(SendError::CalculateShieldError)?;
-            self.latest_proposal = None;
+            match self.server_uri() {
+                None => Err(SendError::UnreachableIndexer),
+                Some(indexer_uri) => {
+                    let mut wallet = self.wallet.write().await;
+                    let calculated_txids = wallet
+                        .calculate_transactions(proposal, shielding_account)
+                        .await
+                        .map_err(SendError::CalculateShieldError)?;
+                    self.latest_proposal = None;
 
-            Ok(wallet
-                .transmit_transactions(self.server_uri(), calculated_txids)
-                .await?)
+                    Ok(wallet
+                        .transmit_transactions(indexer_uri, calculated_txids)
+                        .await?)
+                }
+            }
         }
 
         /// Re-transmits a previously calculated transaction that failed to send.
         pub async fn resend(&self, txid: TxId) -> Result<(), TransmissionError> {
-            self.wallet
-                .write()
-                .await
-                .transmit_transactions(self.server_uri(), NonEmpty::singleton(txid))
-                .await?;
+            match self.server_uri() {
+                None => Err(TransmissionError::UnreachableIndexer),
+                Some(indexer_uri) => {
+                    self.wallet
+                        .write()
+                        .await
+                        .transmit_transactions(indexer_uri, NonEmpty::singleton(txid))
+                        .await?;
 
-            Ok(())
+                    Ok(())
+                }
+            }
         }
 
         /// Creates and transmits transactions from a stored proposal.
@@ -173,7 +188,7 @@ pub mod send_with_proposal {
             let config = ZingoConfigBuilder::default().create();
             let mut lc = LightClient::create_from_wallet(
                 LightWallet::new(
-                    config.chain,
+                    config.chain_type,
                     WalletBase::Mnemonic {
                         mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
                         no_of_accounts: 1.try_into().unwrap(),

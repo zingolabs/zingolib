@@ -213,32 +213,43 @@ impl From<bip32::Error> for KeyError {
 pub enum TransmissionError {
     #[error("Transmission failed. {0}")]
     TransmissionFailed(String),
+
     #[error("Transaction not found in the wallet: {0}")]
     TransactionNotFound(TxId),
+
     #[error(
         "Transaction associated with given txid to transmit does not have `Calculated` status: {0}"
     )]
     IncorrectTransactionStatus(TxId),
+
     /// Failed to read transaction.
     #[error("Failed to read transaction.")]
     TransactionRead,
+
     /// Failed to write transaction.
     #[error("Failed to write transaction.")]
     TransactionWrite,
+
     /// Conversion failed
     #[error("Conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),
+
     /// No view capability
     #[error("No view capability")]
     NoViewCapability,
+
     /// Txid reported by server does not match calculated txid.
     #[error(
         "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
     )]
     IncorrectTxidFromServer(TxId, TxId),
+
     /// Failed to scan transmitted transaction..
     #[error("Failed to scan transmitted transaction. {0}")]
     SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
+
+    #[error("Indexer is unreachable.")]
+    UnreachableIndexer,
 }
 
 #[allow(missing_docs)] // error types document themselves

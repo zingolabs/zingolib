@@ -281,7 +281,7 @@ impl NetworkSeedVersion {
                 let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
 
                 crate::config::load_clientconfig(
-                    lightwalletd_uri,
+                    Some(lightwalletd_uri),
                     None,
                     crate::config::ChainType::Regtest(for_test::all_height_one_nus()),
                     WalletSettings {
@@ -300,7 +300,7 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let wallet = self.load_example_wallet(config.chain);
+        let wallet = self.load_example_wallet(config.chain_type);
 
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }

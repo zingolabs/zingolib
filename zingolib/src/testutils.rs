@@ -66,7 +66,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     );
     LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.chain_type,
             WalletBase::Ufvk(ufvk),
             0.into(),
             WalletSettings {

@@ -27,11 +27,11 @@ async fn sync_mainnet_test() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = parse_indexer_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = parse_indexer_uri(DEFAULT_LIGHTWALLETD_SERVER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = load_clientconfig(
-        uri.clone(),
+        Some(uri.clone()),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
         WalletSettings {
@@ -47,7 +47,7 @@ async fn sync_mainnet_test() {
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.chain_type,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -97,11 +97,11 @@ async fn sync_status() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = parse_indexer_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = parse_indexer_uri(DEFAULT_LIGHTWALLETD_SERVER.to_string()).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = load_clientconfig(
-        uri.clone(),
+        Some(uri.clone()),
         Some(temp_path),
         zingolib::config::ChainType::Mainnet,
         WalletSettings {
@@ -117,7 +117,7 @@ async fn sync_status() {
     .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.chain_type,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),

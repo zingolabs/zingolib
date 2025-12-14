@@ -792,7 +792,7 @@ mod fast {
         // messages
         let alice_to_bob = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().chain_type)).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
@@ -806,7 +806,7 @@ mod fast {
         .unwrap();
         let alice_to_bob_2 = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().chain_type)).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
@@ -820,7 +820,7 @@ mod fast {
         .unwrap();
         let alice_to_charlie = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&charlie.encode(&faucet.config().chain_type)).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
@@ -840,7 +840,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Charlie->Alice #2\nReply to\n".to_string()
-                            + &charlie.encode(&faucet.config().chain)),
+                            + &charlie.encode(&faucet.config().chain_type)),
                     )
                     .unwrap(),
                 )),
@@ -858,7 +858,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Bob->Alice #2\nReply to\n".to_string()
-                            + &bob.encode(&faucet.config().chain)),
+                            + &bob.encode(&faucet.config().chain_type)),
                     )
                     .unwrap(),
                 )),
@@ -884,11 +884,11 @@ mod fast {
 
         // Collect observations
         let value_transfers_bob = &recipient
-            .messages_containing(Some(&bob.encode(&recipient.config().chain)))
+            .messages_containing(Some(&bob.encode(&recipient.config().chain_type)))
             .await
             .unwrap();
         let value_transfers_charlie = &recipient
-            .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
+            .messages_containing(Some(&charlie.encode(&recipient.config().chain_type)))
             .await
             .unwrap();
         let all_vts = &recipient.value_transfers(true).await.unwrap();
@@ -1762,7 +1762,7 @@ mod slow {
             local_net.validator().get_activation_heights().await,
         );
         let zingo_config = zingolib::config::load_clientconfig(
-            client_builder.server_id,
+            client_builder.indexer_uri,
             Some(client_builder.zingo_datadir.path().to_path_buf()),
             ChainType::Regtest(local_net.validator().get_activation_heights().await),
             WalletSettings {

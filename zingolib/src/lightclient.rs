@@ -11,7 +11,6 @@ use std::{
 };
 
 use json::JsonValue;
-use log4rs::config;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -76,7 +75,7 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         Self::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.chain_type,
                 WalletBase::FreshEntropy {
                     no_of_accounts: config.no_of_accounts,
                 },
@@ -141,7 +140,7 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
+        Self::create_from_wallet(LightWallet::read(buffer, config.chain_type)?, config, true)
     }
 
     /// Returns config used to create lightclient.
@@ -156,12 +155,12 @@ impl LightClient {
 
     /// Returns URI of the server the lightclient is connected to.
     pub fn server_uri(&self) -> Option<http::Uri> {
-        self.config.get_lightwalletd_uri()
+        self.config.get_indexer_uri()
     }
 
     /// Set the server uri.
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server;
+        *self.config.indexer_uri.write().unwrap() = Some(server);
     }
 
     /// Creates a tor client for current price updates.
@@ -182,28 +181,6 @@ impl LightClient {
     /// Removes the tor client.
     pub async fn remove_tor_client(&mut self) {
         self.tor_client = None;
-    }
-
-    /// Returns server information.
-    // TODO: return concrete struct with from json impl
-    pub async fn do_info(&self) -> String {
-        match crate::grpc_connector::get_info(self.server_uri()).await {
-            Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.server_uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
-            }
-            Err(e) => e,
-        }
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
@@ -337,7 +314,7 @@ mod tests {
             .create();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts,
@@ -356,7 +333,7 @@ mod tests {
 
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts,

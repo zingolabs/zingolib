@@ -18,6 +18,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingolib::ConfiguredActivationHeights;
 use zingolib::config::ChainType;
 use zingolib::lightclient::LightClient;
 
@@ -42,11 +43,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("chain")
                 .long("chain").short('c')
                 .value_name("CHAIN")
-                .help(if cfg!(feature = "regtest") {
+                .help(
                     r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
-                } else {
-                    r#"What chain to expect. One of "mainnet" or "testnet". Defaults to "mainnet""#
-                }))
+                ))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -88,6 +87,38 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .index(2)
                 .action(clap::ArgAction::Append)
         ).get_matches()
+}
+
+/// An error determining chain id and parameters '`ChainType`' from string.
+#[derive(thiserror::Error, Debug)]
+pub enum ChainFromStringError {
+    /// Invalid chain name. Expected one of: mainnet, testnet or regtest.
+    #[error("Invalid chain name '{0}'. Expected one of: mainnet, testnet or regtest.")]
+    UnknownChain(String),
+}
+
+/// Parses a chain name (`"mainnet"`, `"testnet"`, or `"regtest"`) into a [`ChainType`].
+///
+/// Returns an error for unknown names.
+pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringError> {
+    match chain_name {
+        "testnet" => Ok(ChainType::Testnet),
+        "mainnet" => Ok(ChainType::Mainnet),
+        // TODO: FIXME
+        "regtest" => Ok(ChainType::Regtest(ConfiguredActivationHeights {
+            before_overwinter: Some(1),
+            overwinter: Some(1),
+            sapling: Some(1),
+            blossom: Some(1),
+            heartwood: Some(1),
+            canopy: Some(1),
+            nu5: Some(1),
+            nu6: Some(1),
+            nu6_1: Some(1),
+            nu7: None,
+        })),
+        _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
+    }
 }
 
 /// Custom function to parse a string into an `http::Uri`
@@ -273,7 +304,7 @@ pub fn command_loop(
 /// TODO: Add Doc Comment Here!
 pub struct ConfigTemplate {
     params: Vec<String>,
-    server: http::Uri,
+    server: Option<http::Uri>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -335,29 +366,36 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        let server = matches
+        let indexer_uri_str = matches
             .get_one::<http::Uri>("server")
             .map(ToString::to_string);
+
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::parse_indexer_uri(server);
+
+        let indexer_uri: Option<http::Uri> = match indexer_uri_str {
+            Some(s) => Some(zingolib::config::parse_indexer_uri(s)?),
+            None => None,
+        };
+
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            zingolib::config::chain_from_str(chain).map_err(|e| e.to_string())?
+            chain_from_str(chain).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
 
-        // Test to make sure the server has all of scheme, host and port
-        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-            ));
+        if let Some(server) = &indexer_uri {
+            if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
+                return Err(format!(
+                    "Please provide --server as [scheme]://[host]:[port]. You provided: {server}"
+                ));
+            }
         }
 
         let sync = !matches.get_flag("nosync");
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             params,
-            server,
+            server: indexer_uri,
             seed,
             ufvk,
             birthday,
@@ -377,9 +415,15 @@ pub type CommandRequest = (String, Vec<String>);
 /// Command responses are strings
 pub type CommandResponse = String;
 
-/// Used by the zingocli crate, and the zingo-mobile application:
-/// <https://github.com/zingolabs/zingolib/tree/dev/cli>
-/// <https://github.com/zingolabs/zingo-mobile>
+/// Builds a `ZingoConfig` and initializes a `LightClient` from (in order):
+/// an explicit seed phrase, a UFVK, an existing wallet file, or fresh entropy.
+///
+/// For fresh wallets, the birthday is chosen as follows: if an indexer is configured,
+/// we query the chain tip and start at `tip - 100`. Otherwise we
+/// fall back to a conservative activation height and create the wallet offline.
+///
+/// Optionally creates a Tor client, runs an initial sync (if enabled), saves, and
+/// returns the command-loop channels.
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
@@ -402,7 +446,7 @@ pub fn startup(
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(
@@ -424,7 +468,7 @@ pub fn startup(
         // Create client from UFVK
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.chain_type,
                 WalletBase::Ufvk(ufvk),
                 (filled_template.birthday as u32).into(),
                 config.wallet_settings.clone(),
@@ -435,25 +479,24 @@ pub fn startup(
         )
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if config.wallet_path_exists() {
-        // Open existing wallet from path
         LightClient::create_from_wallet_path(config.clone())
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else {
-        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
         println!("Creating a new wallet");
-        // Call the lightwalletd server to get the current block-height
-        // Do a getinfo first, before opening the wallet
-        let server_uri = config.get_lightwalletd_uri();
 
-        let chain_height = RT
-            .block_on(async move {
-                zingolib::grpc_connector::get_latest_block(server_uri)
-                    .await
-                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
-            })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
+        let chain_height: BlockHeight = match config.get_indexer_uri() {
+            Some(server_uri) => RT
+                .block_on(async move {
+                    zingolib::grpc_connector::get_latest_block(server_uri)
+                        .await
+                        .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                })
+                .map_err(|e| std::io::Error::other(format!("Failed to query latest block. {e}")))?,
+            None => BlockHeight::from_u32(config.orchard_activation_height() as u32),
+        };
 
-        LightClient::new(config.clone(), chain_height - 100, false)
+        let birthday = chain_height.saturating_sub(100);
+        LightClient::new(config.clone(), birthday, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
@@ -463,10 +506,10 @@ pub fn startup(
         info!("Starting Zingo-CLI");
         info!("Light Client config {config:?}");
 
-        info!(
-            "Lightclient connecting to {}",
-            config.get_lightwalletd_uri()
-        );
+        match config.get_indexer_uri() {
+            Some(uri) => info!("Lightclient connecting to {}", uri),
+            None => info!("Lightclient is offline"),
+        }
     }
 
     if filled_template.tor_enabled {
@@ -493,6 +536,7 @@ pub fn startup(
 
     Ok((command_transmitter, resp_receiver))
 }
+
 fn start_cli_service(
     cli_config: &ConfigTemplate,
 ) -> (Sender<(String, Vec<String>)>, Receiver<String>) {

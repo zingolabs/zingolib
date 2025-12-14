@@ -14,8 +14,13 @@ license = "MIT"
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
-regtest = [ "zingo_common_components/for_test" ]
+testutils = [
+    "portpicker",
+    "zingo_test_vectors",
+    "tempfile",
+    "zingo_common_components/for_test",
+]
+regtest = ["zingo_common_components/for_test"]
 
 [dependencies]
 
@@ -30,7 +35,7 @@ zingo_common_components = { workspace = true }
 zingo_netutils = { workspace = true }
 
 # testutils feature
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true }
 
 # blockchain
 zebra-chain = { workspace = true }
@@ -98,9 +103,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 portpicker = { workspace = true }
-concat-idents = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]

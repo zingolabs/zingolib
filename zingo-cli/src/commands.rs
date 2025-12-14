@@ -15,6 +15,7 @@ use pepper_sync::config::PerformanceLevel;
 use pepper_sync::keys::transparent;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
+use zingolib::{ConfiguredActivationHeights, grpc_connector};
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -23,8 +24,6 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -220,8 +219,18 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
+                zingolib::config::ChainType::Regtest(ConfiguredActivationHeights {
+                    before_overwinter: Some(1),
+                    overwinter: Some(1),
+                    sapling: Some(1),
+                    blossom: Some(1),
+                    heartwood: Some(1),
+                    canopy: Some(1),
+                    nu5: Some(1),
+                    nu6: Some(1),
+                    nu6_1: Some(1),
+                    nu7: None,
+                }),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -231,7 +240,6 @@ impl Command for ParseAddressCommand {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
-                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -596,7 +604,28 @@ impl Command for InfoCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.do_info().await })
+        RT.block_on(async move {
+            match lightclient.server_uri() {
+                Some(uri) => match grpc_connector::get_info(uri.clone()).await {
+                    Ok(i) => {
+                        let o = json::object! {
+                            "version" => i.version,
+                            "git_commit" => i.git_commit,
+                            "server_uri" => uri.to_string(),
+                            "vendor" => i.vendor,
+                            "taddr_support" => i.taddr_support,
+                            "chain_name" => i.chain_name,
+                            "sapling_activation_height" => i.sapling_activation_height,
+                            "consensus_branch_id" => i.consensus_branch_id,
+                            "latest_block_height" => i.block_height
+                        };
+                        o.pretty(2)
+                    }
+                    Err(e) => e,
+                },
+                None => "Error: No server URI set".to_string(),
+            }
+        })
     }
 }
 

@@ -135,7 +135,7 @@ async fn zebrad_shielded_funds<V, I>(
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
     /// Indexer URI
-    pub server_id: http::Uri,
+    pub indexer_uri: Option<http::Uri>,
     /// Directory for wallet files
     pub zingo_datadir: TempDir,
     client_number: u8,
@@ -143,10 +143,10 @@ pub struct ClientBuilder {
 
 impl ClientBuilder {
     /// TODO: Add Doc Comment Here!
-    pub fn new(server_id: http::Uri, zingo_datadir: TempDir) -> Self {
+    pub fn new(server_id: Option<http::Uri>, zingo_datadir: TempDir) -> Self {
         let client_number = 0;
         ClientBuilder {
-            server_id,
+            indexer_uri: server_id,
             zingo_datadir,
             client_number,
         }
@@ -164,18 +164,17 @@ impl ClientBuilder {
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
+        self.create_lightclient_config(PathBuf::from(conf_path), configured_activation_heights)
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn create_clientconfig(
+    pub fn create_lightclient_config(
         &self,
         conf_path: PathBuf,
         configured_activation_heights: ConfiguredActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
-            self.server_id.clone(),
+            self.indexer_uri.clone(),
             Some(conf_path),
             ChainType::Regtest(configured_activation_heights),
             WalletSettings {
@@ -216,7 +215,7 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
-            config.chain,
+            config.chain_type,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),
@@ -461,7 +460,7 @@ pub async fn custom_clients(
     }
 
     let client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().listen_port()),
+        Some(localhost_uri(local_net.indexer().listen_port())),
         tempfile::tempdir().unwrap(),
     );
 
@@ -492,7 +491,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
 pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        Some(localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -521,7 +520,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        Some(localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -579,7 +578,7 @@ pub async fn funded_transparent_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        Some(localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -620,7 +619,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        Some(localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =

@@ -10,7 +10,8 @@ members = [
     "zingolib",
     "zingo-memo",
     "pepper-sync",
-    "zingo-price", "zingolib_testutils",
+    "zingo-price",
+    "zingolib_testutils",
 ]
 resolver = "2"
 
@@ -54,7 +55,6 @@ byteorder = "1"
 bytes = "1"
 chrono = "0.4"
 clap = "4"
-concat-idents = "1"
 dirs = "6"
 futures = "0.3"
 futures-util = "0.3"
@@ -79,11 +79,9 @@ prost = "0.13"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17.14"
-rusqlite = "0.32"
 rust_decimal = "1.37.2"
 rust-embed = "6"
 rustls = { version = "0.23", features = ["ring"] }
-rustls-pemfile = "2"
 rustyline = "11"
 secp256k1 = "0.29.1"
 secrecy = "0.8"
@@ -120,12 +118,12 @@ zingolib = { path = "zingolib" }
 test-log = "0.2"
 
 [patch.crates-io]
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
 
 [profile.test]
 opt-level = 3

@@ -37,7 +37,7 @@ async fn reorg_changes_incoming_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
@@ -195,7 +195,7 @@ async fn reorg_changes_incoming_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
@@ -353,7 +353,7 @@ async fn reorg_expires_incoming_tx() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
@@ -533,7 +533,7 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
@@ -788,7 +788,7 @@ async fn reorg_expires_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
@@ -988,7 +988,7 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
+    let mut light_client = ClientBuilder::new(Some(server_id.clone()), wallet_dir).build_client(
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
