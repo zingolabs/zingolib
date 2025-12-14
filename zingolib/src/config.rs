@@ -27,9 +27,6 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
-
 use crate::wallet::WalletSettings;
 
 /// Mainnet UA for donations
