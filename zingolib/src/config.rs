@@ -136,48 +136,44 @@ pub fn load_clientconfig(
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
-    // if id is empty, the name is the default name
     let wallet_name_config = if wallet_name.is_empty() {
         DEFAULT_WALLET_NAME
     } else {
         &wallet_name
     };
-    let config = if lightwallet_uri.is_none() {
-        info!("Using offline mode");
 
-        // Create a Light Client Config
-        ZingoConfig {
-            indexer_uri: Arc::new(RwLock::new(None)),
-            chain_type: chain,
-            wallet_dir: data_dir,
-            wallet_name: wallet_name_config.into(),
-            logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            wallet_settings,
-            no_of_accounts,
-        }
-    } else {
-        let indexer_uri = lightwallet_uri.clone().unwrap();
-        let host = lightwallet_uri.as_ref().unwrap().host().unwrap();
-        let port = lightwallet_uri.as_ref().unwrap().port().unwrap();
-
-        match format!("{}:{}", host, port).to_socket_addrs() {
-            Ok(_) => {
-                info!("Connected to {indexer_uri}");
-            }
-            Err(e) => {
-                info!("Couldn't resolve server: {e}");
+    let config = match lightwallet_uri.clone() {
+        None => {
+            info!("Using offline mode");
+            ZingoConfig {
+                indexer_uri: Arc::new(RwLock::new(None)),
+                chain_type: chain,
+                wallet_dir: data_dir,
+                wallet_name: wallet_name_config.into(),
+                logfile_name: DEFAULT_LOGFILE_NAME.into(),
+                wallet_settings,
+                no_of_accounts,
             }
         }
+        Some(indexer_uri) => {
+            if let (Some(host), Some(port)) = (indexer_uri.host(), indexer_uri.port_u16()) {
+                match format!("{host}:{port}").to_socket_addrs() {
+                    Ok(_) => info!("Configured indexer: {indexer_uri}"),
+                    Err(e) => info!("Couldn't resolve server {host}:{port}: {e}"),
+                }
+            } else {
+                info!("Configured indexer URI is missing host or port: {indexer_uri}");
+            }
 
-        // Create a Light Client Config
-        ZingoConfig {
-            indexer_uri: Arc::new(RwLock::new(Some(indexer_uri))),
-            chain_type: chain,
-            wallet_dir: data_dir,
-            wallet_name: wallet_name_config.into(),
-            logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            wallet_settings,
-            no_of_accounts,
+            ZingoConfig {
+                indexer_uri: Arc::new(RwLock::new(Some(indexer_uri))),
+                chain_type: chain,
+                wallet_dir: data_dir,
+                wallet_name: wallet_name_config.into(),
+                logfile_name: DEFAULT_LOGFILE_NAME.into(),
+                wallet_settings,
+                no_of_accounts,
+            }
         }
     };
 
