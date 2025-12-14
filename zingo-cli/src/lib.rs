@@ -383,13 +383,12 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             ChainType::Mainnet
         };
 
-        if let Some(server) = &indexer_uri {
-            if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
+        if let Some(server) = &indexer_uri
+            && (server.scheme_str().is_none() || server.host().is_none() || server.port().is_none()) {
                 return Err(format!(
                     "Please provide --server as [scheme]://[host]:[port]. You provided: {server}"
                 ));
             }
-        }
 
         let sync = !matches.get_flag("nosync");
         let waitsync = matches.get_flag("waitsync");

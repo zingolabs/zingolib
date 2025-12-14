@@ -7,7 +7,6 @@ use std::{
     io::{self, Error},
     num::NonZeroU32,
     path::{Path, PathBuf},
-    string::ParseError,
     sync::{Arc, RwLock},
 };
 
@@ -514,7 +513,7 @@ impl ZingoConfig {
                     .clone(),
             );
         }
-        return None;
+        None
     }
 
     /// Returns the directory where the specified wallet file is stored.
