@@ -7,6 +7,7 @@ use std::{
     io::{self, Error},
     num::NonZeroU32,
     path::{Path, PathBuf},
+    string::ParseError,
     sync::{Arc, RwLock},
 };
 
@@ -154,7 +155,7 @@ pub use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 
 /// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
-    lightwallet_uri: http::Uri,
+    lightwallet_uri: Option<http::Uri>,
     data_dir: Option<PathBuf>,
     chain: ChainType,
     wallet_settings: WalletSettings,
@@ -163,73 +164,74 @@ pub fn load_clientconfig(
 ) -> std::io::Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
 
-    let host = lightwallet_uri.host();
-    let port = lightwallet_uri.port();
-
-    if host.is_none() || port.is_none() {
-        info!("Using offline mode");
-    } else {
-        match format!(
-            "{}:{}",
-            lightwallet_uri.host().unwrap(),
-            lightwallet_uri.port().unwrap()
-        )
-        .to_socket_addrs()
-        {
-            Ok(_) => {
-                info!("Connected to {lightwallet_uri}");
-            }
-            Err(e) => {
-                info!("Couldn't resolve server: {e}");
-            }
-        }
-    }
-
     // if id is empty, the name is the default name
     let wallet_name_config = if wallet_name.is_empty() {
         DEFAULT_WALLET_NAME
     } else {
         &wallet_name
     };
+    let config = if lightwallet_uri.is_none() {
+        info!("Using offline mode");
 
-    // Create a Light Client Config
-    let config = ZingoConfig {
-        lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
-        chain,
-        wallet_dir: data_dir,
-        wallet_name: wallet_name_config.into(),
-        logfile_name: DEFAULT_LOGFILE_NAME.into(),
-        wallet_settings,
-        no_of_accounts,
+        // Create a Light Client Config
+        ZingoConfig {
+            lightwalletd_uri: Arc::new(RwLock::new(None)),
+            chain,
+            wallet_dir: data_dir,
+            wallet_name: wallet_name_config.into(),
+            logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            wallet_settings,
+            no_of_accounts,
+        }
+    } else {
+        let indexer_uri = lightwallet_uri.clone().unwrap();
+        let host = lightwallet_uri.as_ref().unwrap().host().unwrap();
+        let port = lightwallet_uri.as_ref().unwrap().port().unwrap();
+
+        match format!("{}:{}", host, port).to_socket_addrs() {
+            Ok(_) => {
+                info!("Connected to {indexer_uri}");
+            }
+            Err(e) => {
+                info!("Couldn't resolve server: {e}");
+            }
+        }
+
+        // Create a Light Client Config
+        ZingoConfig {
+            lightwalletd_uri: Arc::new(RwLock::new(Some(indexer_uri))),
+            chain,
+            wallet_dir: data_dir,
+            wallet_name: wallet_name_config.into(),
+            logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            wallet_settings,
+            no_of_accounts,
+        }
     };
 
     Ok(config)
 }
 
-/// TODO: Add Doc Comment Here!
+// TODO: Is this really necessary?
+// All this could be replaced by:
+// let uri: http::Uri = server.parse().unwrap();
+// ...
 #[must_use]
-pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
-    match server {
-        Some(s) => {
-            if s.is_empty() {
-                return http::Uri::default();
-            } else {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse().unwrap();
-                if uri.port().is_none() {
-                    s += ":9067";
-                }
-                s
-            }
+pub fn parse_indexer_uri(server: String) -> Result<http::Uri, String> {
+    if server.is_empty() {
+        Err("Invalid server uri".to_string())
+    } else {
+        let mut s = if server.starts_with("http") {
+            server
+        } else {
+            "http://".to_string() + &server
+        };
+        let uri: http::Uri = s.parse().unwrap();
+        if uri.port().is_none() {
+            s += ":9067";
         }
-        None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
+        Ok(s.parse().unwrap())
     }
-    .parse()
-    .unwrap()
 }
 
 /// TODO: Add Doc Comment Here!
@@ -261,7 +263,7 @@ pub struct ZingoConfigBuilder {
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     /// TODO: Add Doc Comment Here!
-    pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
+    pub lightwalletd_uri: Arc<RwLock<Option<http::Uri>>>,
     /// TODO: Add Doc Comment Here!
     pub chain: ChainType,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -334,7 +336,7 @@ impl ZingoConfigBuilder {
     pub fn create(&self) -> ZingoConfig {
         let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
         ZingoConfig {
-            lightwalletd_uri: Arc::new(RwLock::new(lightwalletd_uri)),
+            lightwalletd_uri: Arc::new(RwLock::new(Some(lightwalletd_uri))),
             chain: self.chain,
             wallet_dir: self.wallet_dir.clone(),
             wallet_name: DEFAULT_WALLET_NAME.into(),
@@ -541,13 +543,19 @@ impl ZingoConfig {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
     #[must_use]
-    pub fn get_lightwalletd_uri(&self) -> http::Uri {
-        self.lightwalletd_uri
-            .read()
-            .expect("Couldn't read configured server URI!")
-            .clone()
+    pub fn get_lightwalletd_uri(&self) -> Option<http::Uri> {
+        if self.lightwalletd_uri.is_some() {
+            return Some(
+                self.lightwalletd_uri
+                    .as_ref()
+                    .unwrap()
+                    .read()
+                    .expect("Couldn't read configured server URI!")
+                    .clone(),
+            );
+        }
+        return None;
     }
 
     /// TODO: Add Doc Comment Here!
@@ -652,7 +660,7 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some(String::new()));
+        let valid_uri = crate::config::parse_indexer_uri(Some(String::new()));
 
         let temp_dir = tempfile::TempDir::new().unwrap();
 
@@ -684,7 +692,7 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some(
+        let valid_uri = crate::config::parse_indexer_uri(Some(
             crate::config::DEFAULT_LIGHTWALLETD_SERVER.to_string(),
         ));
         // let invalid_uri = construct_lightwalletd_uri(Some("Invalid URI".to_string()));

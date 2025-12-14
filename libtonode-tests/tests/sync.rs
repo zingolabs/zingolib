@@ -11,7 +11,7 @@ use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
-    config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
+    config::{DEFAULT_LIGHTWALLETD_SERVER, load_clientconfig, parse_indexer_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
@@ -27,7 +27,7 @@ async fn sync_mainnet_test() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = parse_indexer_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = load_clientconfig(
@@ -97,7 +97,7 @@ async fn sync_status() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = parse_indexer_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = load_clientconfig(

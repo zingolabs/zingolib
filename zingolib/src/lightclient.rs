@@ -11,6 +11,7 @@ use std::{
 };
 
 use json::JsonValue;
+use log4rs::config;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -87,6 +88,10 @@ impl LightClient {
         )
     }
 
+    pub fn new_offline(config: ZingoConfig, overwrite: bool) -> Result<Self, LightClientError> {
+        todo!()
+    }
+
     /// Creates a `LightClient` from a `wallet` and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     #[allow(clippy::result_large_err)]
@@ -150,7 +155,7 @@ impl LightClient {
     }
 
     /// Returns URI of the server the lightclient is connected to.
-    pub fn server_uri(&self) -> http::Uri {
+    pub fn server_uri(&self) -> Option<http::Uri> {
         self.config.get_lightwalletd_uri()
     }
 
