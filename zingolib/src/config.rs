@@ -211,9 +211,6 @@ pub struct ZingoConfigBuilder {
     /// The network type.
     pub chain_type: ChainType,
 
-    /// Extra blocks to rewind when choosing a sync start height.
-    pub reorg_buffer_offset: Option<u32>,
-
     /// Whether to watch the mempool.
     pub monitor_mempool: Option<bool>,
 
@@ -305,7 +302,6 @@ impl Default for ZingoConfigBuilder {
         ZingoConfigBuilder {
             indexer_uri: None,
             monitor_mempool: None,
-            reorg_buffer_offset: None,
             wallet_dir: None,
             wallet_name: None,
             logfile_name: None,
