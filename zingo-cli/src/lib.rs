@@ -419,7 +419,7 @@ pub type CommandResponse = String;
 /// an explicit seed phrase, a UFVK, an existing wallet file, or fresh entropy.
 ///
 /// For fresh wallets, the birthday is chosen as follows: if an indexer is configured,
-/// we query the chain tip and start at `tip - 100`. Otherwise we
+/// we query the chain height and start at `chain height - 100`. Otherwise we
 /// fall back to a conservative activation height and create the wallet offline.
 ///
 /// Optionally creates a Tor client, runs an initial sync (if enabled), saves, and
