@@ -2,17 +2,18 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use tokio::sync::mpsc;
+use zip32::DiversifierIndex;
+
 use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
-use tokio::sync::mpsc;
-use zcash_client_backend::keys::UnifiedFullViewingKey;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zip32::DiversifierIndex;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
