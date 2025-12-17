@@ -27,7 +27,7 @@ zingo-price = { workspace = true }
 
 # zingo
 zingo_common_components = { workspace = true }
-zingo_netutils = { workspace = true }
+zingo-netutils = { workspace = true }
 
 # testutils feature
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}

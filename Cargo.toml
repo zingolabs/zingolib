@@ -37,14 +37,14 @@ zcash_keys = { version = "0.12", features = [
     "orchard",
 ] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { version = "0.26" }
-zcash_proofs = { version = "0.26" }
-zcash_protocol = { version = "0.7" }
-zcash_transparent = { version = "0.6" }
+zcash_primitives = "0.26"
+zcash_proofs = "0.26"
+zcash_protocol = "0.7"
+zcash_transparent = "0.6"
 
-zebra-chain = { version = "3.0" }
+zebra-chain = "3.0"
 
-zingo_netutils = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo-netutils = "1.0.0"
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
 
 append-only-vec = "0.1.7"
@@ -97,7 +97,7 @@ tokio = "1"
 tokio-rustls = "0.26"
 tonic = { version = "0.13", features = ["tls-webpki-roots"] }
 tonic-build = "0.13"
-tower = { version = "0.5" }
+tower = "0.5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 webpki-roots = "0.25"
