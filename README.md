@@ -36,9 +36,6 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
 * Protobuf Compiler
     * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
-* OpenSSL Dev
-    * Please install development packages of openssl. On Ubuntu `sudo apt install libssl-dev`
-
 ```
 git clone https://github.com/zingolabs/zingolib.git
 cd zingolib
@@ -51,7 +48,7 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
-* Currently, the default, hard-coded `lightwalletd` server is https://mainnet.lightwalletd.com:9067/. To change this, you can modify the `DEFAULT_SERVER` const in `config/src/lib.rs`
+* If a server is not specified, the default indexer/lightwallet server is "https://zec.rocks:443".
 
 ## Running in non-interactive mode:
 You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit.
@@ -73,8 +70,4 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
 
 ## Regtest
-There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
-
-For a relatively recent user experience please see: https://free2z.cash/zingo-cli-in-regtest-mode
-
-Please see `docs/TEST_REGTEST.md` for a detailed explanation.
+Please see `zingo-cli/README.md` for details of running zingo-cli in regtest mode with a local network.

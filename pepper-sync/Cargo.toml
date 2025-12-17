@@ -20,9 +20,9 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-zingo-memo = { workspace = true }
-zingo-status = { workspace = true }
-zingo_netutils = { workspace = true }
+zingo-memo.workspace = true
+zingo-status.workspace = true
+zingo_netutils.workspace = true
 
 # Zcash
 zcash_address.workspace = true

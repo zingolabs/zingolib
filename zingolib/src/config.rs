@@ -27,6 +27,9 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
+#[cfg(feature = "regtest")]
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+
 use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
@@ -47,11 +50,11 @@ pub fn get_donation_address_for_chain(chain: &ChainType) -> &'static str {
 /// The networks a zingolib client can run against
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
-    /// Public testnet
+    /// Testnet
     Testnet,
     /// Mainnet
     Mainnet,
-    /// Local testnet
+    /// Regtest
     Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
 }
 
@@ -102,14 +105,12 @@ impl Parameters for ChainType {
 /// An error determining chain id and parameters '`ChainType`' from string.
 #[derive(thiserror::Error, Debug)]
 pub enum ChainFromStringError {
-    /// of unknown chain,
-    #[error("Invalid chain name '{0}'. Expected one of: testnet, mainnet.")]
+    /// Invalid chain name. Expected one of: mainnet, testnet or regtest.
+    #[error("Invalid chain name '{0}'. Expected one of: mainnet, testnet or regtest.")]
     UnknownChain(String),
-    /// of regtest without specific activation heights,
-    #[error(
-        "Invalid chain name 'regtest'. Cant create a regtest chain from a string without assuming activation heights."
-    )]
-    UnknownRegtestChain,
+    /// "regtest" feature is not enabled.
+    #[error("\"regtest\" feature is not enabled.")]
+    RegtestFeatureNotEnabled,
 }
 
 /// Converts a chain name string to a `ChainType` variant.
@@ -124,7 +125,10 @@ pub fn chain_from_str(chain_name: &str) -> Result<ChainType, ChainFromStringErro
     match chain_name {
         "testnet" => Ok(ChainType::Testnet),
         "mainnet" => Ok(ChainType::Mainnet),
-        "regtest" => Err(ChainFromStringError::UnknownRegtestChain),
+        #[cfg(feature = "regtest")]
+        "regtest" => Ok(ChainType::Regtest(all_height_one_nus())),
+        #[cfg(not(feature = "regtest"))]
+        "regtest" => Err(ChainFromStringError::RegtestFeatureNotEnabled),
         _ => Err(ChainFromStringError::UnknownChain(chain_name.to_string())),
     }
 }

@@ -86,7 +86,7 @@ pub mod from_inputs {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender
-            .quick_send(request, zip32::AccountId::ZERO)
+            .quick_send(request, zip32::AccountId::ZERO, true)
             .await
     }
 
