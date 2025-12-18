@@ -121,13 +121,5 @@ zingo-status = { path = "zingo-status" }
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
-[patch.crates-io]
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-
 [profile.test]
 opt-level = 3
