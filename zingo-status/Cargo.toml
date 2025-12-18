@@ -8,6 +8,9 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
+[badges]
+maintenance = { status = "actively-developed" }
+
 [dependencies]
 zcash_primitives = { workspace = true }
 byteorder = { workspace = true }
