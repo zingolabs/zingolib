@@ -1028,16 +1028,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75984efb6ed102a0d42db99afb6c1948f0380d1d91808d5529916e6c08b49d8d"
 
 [[package]]
-name = "concat-idents"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f76990911f2267d837d9d0ad060aa63aaad170af40904b29461734c339030d4d"
-dependencies = [
- "quote",
- "syn 2.0.111",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1298,7 +1288,6 @@ dependencies = [
  "incrementalmerkletree",
  "orchard",
  "proptest",
- "prost 0.13.5",
  "sapling-crypto",
  "serde_json",
  "tokio",
@@ -3161,7 +3150,6 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
- "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3190,7 +3178,6 @@ dependencies = [
  "zebra-chain",
  "zingo-status",
  "zingo_common_components",
- "zingo_netutils",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -8937,12 +8924,10 @@ version = "0.0.1"
 dependencies = [
  "byteorder",
  "reqwest",
- "rusqlite",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
- "tokio",
  "zcash_client_backend",
  "zcash_encoding 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -9001,7 +8986,6 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "concat-idents",
  "dirs",
  "futures",
  "hex",
@@ -9041,7 +9025,6 @@ dependencies = [
  "zcash_client_backend",
  "zcash_encoding 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_keys",
- "zcash_local_net",
  "zcash_primitives",
  "zcash_proofs",
  "zcash_protocol",
