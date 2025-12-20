@@ -22,3 +22,7 @@ rust_decimal = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+
+[package.metadata.cargo-machete]
+ignored = ["rusqlite"]
