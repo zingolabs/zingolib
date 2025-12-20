@@ -3183,7 +3183,6 @@ dependencies = [
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
- "zip32",
 ]
 
 [[package]]

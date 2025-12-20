@@ -13,32 +13,32 @@ ci = ["zingolib/ci"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
-zingo_common_components = { workspace = true, features = ["for_test"] }
-pepper-sync = { workspace = true }
-zingo-status = { workspace = true }
 
 zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils", features = ["test_lwd_zcashd"]}
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
-zip32 = { workspace = true }
-zcash_address = { workspace = true, features = ["test-dependencies"] }
-zcash_client_backend = { workspace = true }
-zcash_primitives = { workspace = true }
-zcash_protocol = { workspace = true }
-shardtree.workspace = true
-bip0039.workspace = true
-zebra-chain = { workspace = true }
-
-tokio = { workspace = true, features = ["full"] }
-json = { workspace = true }
-itertools = { workspace = true }
 proptest = { workspace = true, optional = true }
-tracing.workspace = true
-tracing-subscriber.workspace = true
 
 http = { workspace = true }
 
 [dev-dependencies]
 rustls.workspace = true
 test-log.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+bip0039.workspace = true
+itertools = { workspace = true }
+json = { workspace = true }
+pepper-sync = { workspace = true }
+shardtree.workspace = true
+tokio = { workspace = true, features = ["full"] }
+
+zcash_address = { workspace = true, features = ["test-dependencies"] }
+zcash_client_backend = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+zebra-chain = { workspace = true }
+
+zingo-status = { workspace = true }
+zingo_common_components = { workspace = true, features = ["for_test"] }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
