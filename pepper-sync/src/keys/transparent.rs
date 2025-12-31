@@ -67,6 +67,17 @@ pub enum TransparentScope {
     Refund,
 }
 
+impl TransparentScope {
+    /// Converts the internal scope into a [`TransparentKeyScope`].
+    pub fn to_zcb_scope(&self) -> TransparentKeyScope {
+        match self {
+            TransparentScope::External => TransparentKeyScope::EXTERNAL,
+            TransparentScope::Internal => TransparentKeyScope::INTERNAL,
+            TransparentScope::Refund => TransparentKeyScope::EPHEMERAL,
+        }
+    }
+}
+
 impl std::fmt::Display for TransparentScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
