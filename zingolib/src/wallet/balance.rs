@@ -15,6 +15,7 @@ use super::{
     error::{BalanceError, KeyError},
     keys::unified::UnifiedKeyStore,
 };
+const COINBASE_MATURITY: u32 = 100;
 
 /// Balance for a wallet account.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -330,8 +331,35 @@ impl LightWallet {
     where
         Op: OutputInterface,
     {
+        let current_height = self
+            .sync_state
+            .wallet_height()
+            .unwrap_or(self.birthday);
+        
         self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| transaction.status().is_confirmed(),
+            |output, transaction: &WalletTransaction| {
+                let is_confirmed = transaction.status().is_confirmed();
+                
+                if !is_confirmed {
+                    return false;
+                }
+                
+                // Check coinbase maturity for transparent outputs
+                if Op::POOL_TYPE == PoolType::Transparent {
+                    let is_coinbase = transaction
+                        .transaction()
+                        .transparent_bundle()
+                        .map_or(false, |bundle| bundle.is_coinbase());
+                    
+                    if is_coinbase {
+                        let tx_height = transaction.status().get_height();
+                        let confirmations = current_height.saturating_sub(tx_height);
+                        return confirmations >= COINBASE_MATURITY;
+                    }
+                }
+                
+                true
+            },
             account_id,
         )
     }
@@ -352,9 +380,39 @@ impl LightWallet {
     where
         Op: OutputInterface,
     {
+        // Get current chain height for maturity check
+        let current_height = self
+            .sync_state
+            .wallet_height()
+            .unwrap_or(self.birthday);
+        
         self.get_filtered_balance::<Op, _>(
-            |note, transaction: &WalletTransaction| {
-                Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
+            |output, transaction: &WalletTransaction| {
+                // Basic checks: value above dust and transaction confirmed
+                let basic_check = Op::value(output) > MARGINAL_FEE.into_u64() 
+                    && transaction.status().is_confirmed();
+                
+                if !basic_check {
+                    return false;
+                }
+                
+                // Additional check for transparent coinbase outputs
+                if Op::POOL_TYPE == PoolType::Transparent {
+                    // Check if this is a coinbase transaction
+                    let is_coinbase = transaction
+                        .transaction()
+                        .transparent_bundle()
+                        .map_or(false, |bundle| bundle.is_coinbase());
+                    
+                    if is_coinbase {
+                        // Coinbase transparent outputs need 100 confirmations
+                        let tx_height = transaction.status().get_height();
+                        let confirmations = current_height.saturating_sub(tx_height);
+                        return confirmations >= COINBASE_MATURITY;
+                    }
+                }
+                
+                true
             },
             account_id,
         )
