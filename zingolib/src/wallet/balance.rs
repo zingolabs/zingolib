@@ -15,6 +15,10 @@ use super::{
     error::{BalanceError, KeyError},
     keys::unified::UnifiedKeyStore,
 };
+
+/// Minimum number of confirmations required for transparent coinbase outputs.
+/// Per Zcash consensus rules (ZIP-213), transparent coinbase outputs cannot be
+/// spent until they are 100 blocks deep.
 const COINBASE_MATURITY: u32 = 100;
 
 /// Balance for a wallet account.
@@ -131,6 +135,43 @@ fn format_zatoshis(zatoshis: Zatoshis) -> String {
 }
 
 impl LightWallet {
+    /// Checks if a transparent output has reached coinbase maturity.
+    /// 
+    /// Returns `true` if the output can be included in balance calculations:
+    /// - For non-transparent outputs: always `true`
+    /// - For regular transparent outputs: always `true`
+    /// - For coinbase transparent outputs: `true` only if >= 100 confirmations
+    fn is_transparent_output_mature<Op: OutputInterface>(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> bool {
+        // Only transparent outputs need coinbase maturity check
+        if Op::POOL_TYPE != PoolType::Transparent {
+            return true;
+        }
+        
+        // Check if this is a coinbase transaction
+        let is_coinbase = transaction
+            .transaction()
+            .transparent_bundle()
+            .map_or(false, |bundle| bundle.is_coinbase());
+        
+        if is_coinbase {
+            // Coinbase transparent output needs 100 confirmations
+            let current_height = self
+                .sync_state
+                .wallet_height()
+                .unwrap_or(self.birthday);
+            let tx_height = transaction.status().get_height();
+            let confirmations = current_height.saturating_sub(tx_height);
+            
+            confirmations >= COINBASE_MATURITY
+        } else {
+            // Regular transparent output, no maturity needed
+            true
+        }
+    }
+
     /// Returns account balance.
     pub fn account_balance(
         &self,
@@ -331,34 +372,10 @@ impl LightWallet {
     where
         Op: OutputInterface,
     {
-        let current_height = self
-            .sync_state
-            .wallet_height()
-            .unwrap_or(self.birthday);
-        
         self.get_filtered_balance::<Op, _>(
-            |output, transaction: &WalletTransaction| {
-                let is_confirmed = transaction.status().is_confirmed();
-                
-                if !is_confirmed {
-                    return false;
-                }
-                
-                // Check coinbase maturity for transparent outputs
-                if Op::POOL_TYPE == PoolType::Transparent {
-                    let is_coinbase = transaction
-                        .transaction()
-                        .transparent_bundle()
-                        .map_or(false, |bundle| bundle.is_coinbase());
-                    
-                    if is_coinbase {
-                        let tx_height = transaction.status().get_height();
-                        let confirmations = current_height.saturating_sub(tx_height);
-                        return confirmations >= COINBASE_MATURITY;
-                    }
-                }
-                
-                true
+            |_output, transaction: &WalletTransaction| {
+                transaction.status().is_confirmed()
+                    && self.is_transparent_output_mature::<Op>(transaction)
             },
             account_id,
         )
@@ -380,39 +397,11 @@ impl LightWallet {
     where
         Op: OutputInterface,
     {
-        // Get current chain height for maturity check
-        let current_height = self
-            .sync_state
-            .wallet_height()
-            .unwrap_or(self.birthday);
-        
         self.get_filtered_balance::<Op, _>(
             |output, transaction: &WalletTransaction| {
-                // Basic checks: value above dust and transaction confirmed
-                let basic_check = Op::value(output) > MARGINAL_FEE.into_u64() 
-                    && transaction.status().is_confirmed();
-                
-                if !basic_check {
-                    return false;
-                }
-                
-                // Additional check for transparent coinbase outputs
-                if Op::POOL_TYPE == PoolType::Transparent {
-                    // Check if this is a coinbase transaction
-                    let is_coinbase = transaction
-                        .transaction()
-                        .transparent_bundle()
-                        .map_or(false, |bundle| bundle.is_coinbase());
-                    
-                    if is_coinbase {
-                        // Coinbase transparent outputs need 100 confirmations
-                        let tx_height = transaction.status().get_height();
-                        let confirmations = current_height.saturating_sub(tx_height);
-                        return confirmations >= COINBASE_MATURITY;
-                    }
-                }
-                
-                true
+                Op::value(output) > MARGINAL_FEE.into_u64()
+                    && transaction.status().is_confirmed()
+                    && self.is_transparent_output_mature::<Op>(transaction)
             },
             account_id,
         )
@@ -554,6 +543,25 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "testutils"))]
 mod test {
+    use super::*;
+    
+    // TODO: Add unit tests for coinbase maturity
+    // 
+    // #[test]
+    // fn test_immature_coinbase_excluded_from_balance() {
+    //     // Test that coinbase with < 100 confirmations is excluded from confirmed balance
+    // }
+    //
+    // #[test]
+    // fn test_mature_coinbase_included_in_balance() {
+    //     // Test that coinbase with >= 100 confirmations is included in confirmed balance
+    // }
+    //
+    // #[test]
+    // fn test_regular_transparent_utxo_unaffected() {
+    //     // Test that non-coinbase transparent UTXOs are included normally
+    // }
+    
     // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]
     // async fn confirmed_balance_excluding_dust() {
