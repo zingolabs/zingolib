@@ -157,20 +157,26 @@ impl LightWallet {
             .map_or(false, |bundle| bundle.is_coinbase());
         
         if is_coinbase {
-            // Coinbase transparent output needs 100 confirmations
             let current_height = self
                 .sync_state
                 .wallet_height()
                 .unwrap_or(self.birthday);
             let tx_height = transaction.status().get_height();
-            let confirmations = current_height.saturating_sub(tx_height);
             
+            // Work with u32 values
+            let current_height_u32: u32 = current_height.into();
+            let tx_height_u32: u32 = tx_height.into();
+            
+            if current_height_u32 < tx_height_u32 {
+                return false;
+            }
+            
+            let confirmations = current_height_u32 - tx_height_u32;
             confirmations >= COINBASE_MATURITY
         } else {
-            // Regular transparent output, no maturity needed
             true
         }
-    }
+    } // <-- This closing brace was missing
 
     /// Returns account balance.
     pub fn account_balance(
