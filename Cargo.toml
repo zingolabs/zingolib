@@ -100,7 +100,7 @@ tonic-build = "0.13"
 tower = { version = "0.5" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-webpki-roots = "0.25"
+webpki-roots = "1.0"
 
 # Parallel processing
 crossbeam-channel = "0.5"

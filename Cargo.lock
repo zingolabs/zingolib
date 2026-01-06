@@ -9036,7 +9036,7 @@ dependencies = [
  "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 0.25.4",
+ "webpki-roots 1.0.4",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
