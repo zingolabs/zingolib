@@ -160,6 +160,7 @@ mod fast {
         },
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
+    use zip32::AccountId;
 
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
@@ -1302,6 +1303,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
     }
 
+    /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
@@ -1310,11 +1312,29 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             None,
         )
         .await;
-        check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
+
+        let unconfirmed_balance = faucet
+            .wallet
+            .read()
+            .await
+            .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(unconfirmed_balance, Zatoshis::const_from_u64(1_875_000_000));
+
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000u64);
+
+        assert_eq!(
+            faucet
+                .wallet
+                .read()
+                .await
+                .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+                .unwrap(),
+            Zatoshis::const_from_u64(2_500_000_000u64)
+        );
     }
 
     // test fails to exit when syncing pre-sapling
