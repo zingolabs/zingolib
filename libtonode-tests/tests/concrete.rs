@@ -4339,7 +4339,7 @@ async fn mine_to_transparent_coinbase_maturity() {
             .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
             .unwrap()
             .into_u64(),
-        1_875_000_000 // FIXME: Should be 0 before fix!
+        0
     );
     
     // Mine 100 more blocks to mature the coinbase
