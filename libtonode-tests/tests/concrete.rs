@@ -4324,7 +4324,7 @@ async fn mine_to_transparent_coinbase_maturity() {
             .await;
 
     // After 3 blocks (BASE_HEIGHT), faucet has mined transparent coinbase
-    check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
+    check_client_balances!(faucet, o: 0 s: 0 t: 0);
 
     // Balance should be 0 because coinbase needs 100 confirmations
     assert_eq!(
