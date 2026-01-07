@@ -136,7 +136,7 @@ fn format_zatoshis(zatoshis: Zatoshis) -> String {
 
 impl LightWallet {
     /// Checks if a transparent output has reached coinbase maturity.
-    /// 
+    ///
     /// Returns `true` if the output can be included in balance calculations:
     /// - For non-transparent outputs: always `true`
     /// - For regular transparent outputs: always `true`
@@ -149,28 +149,25 @@ impl LightWallet {
         if Op::POOL_TYPE != PoolType::Transparent {
             return true;
         }
-        
+
         // Check if this is a coinbase transaction
         let is_coinbase = transaction
             .transaction()
             .transparent_bundle()
-            .map_or(false, |bundle| bundle.is_coinbase());
-        
+            .is_some_and(|bundle| bundle.is_coinbase());
+
         if is_coinbase {
-            let current_height = self
-                .sync_state
-                .wallet_height()
-                .unwrap_or(self.birthday);
+            let current_height = self.sync_state.wallet_height().unwrap_or(self.birthday);
             let tx_height = transaction.status().get_height();
-            
+
             // Work with u32 values
             let current_height_u32: u32 = current_height.into();
             let tx_height_u32: u32 = tx_height.into();
-            
+
             if current_height_u32 < tx_height_u32 {
                 return false;
             }
-            
+
             let confirmations = current_height_u32 - tx_height_u32;
             confirmations >= COINBASE_MATURITY
         } else {
@@ -549,10 +546,9 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "testutils"))]
 mod test {
-    use super::*;
-    
+
     // TODO: Add unit tests for coinbase maturity
-    // 
+    //
     // #[test]
     // fn test_immature_coinbase_excluded_from_balance() {
     //     // Test that coinbase with < 100 confirmations is excluded from confirmed balance
@@ -567,7 +563,7 @@ mod test {
     // fn test_regular_transparent_utxo_unaffected() {
     //     // Test that non-coinbase transparent UTXOs are included normally
     // }
-    
+
     // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]
     // async fn confirmed_balance_excluding_dust() {
