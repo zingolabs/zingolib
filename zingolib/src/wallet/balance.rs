@@ -16,6 +16,11 @@ use super::{
     keys::unified::UnifiedKeyStore,
 };
 
+/// Minimum number of confirmations required for transparent coinbase outputs.
+/// Per Zcash consensus rules (ZIP-213), transparent coinbase outputs cannot be
+/// spent until they are 100 blocks deep.
+const COINBASE_MATURITY: u32 = 100;
+
 /// Balance for a wallet account.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountBalance {
@@ -130,6 +135,46 @@ fn format_zatoshis(zatoshis: Zatoshis) -> String {
 }
 
 impl LightWallet {
+    /// Checks if a transparent output has reached coinbase maturity.
+    ///
+    /// Returns `true` if the output can be included in balance calculations:
+    /// - For non-transparent outputs: always `true`
+    /// - For regular transparent outputs: always `true`
+    /// - For coinbase transparent outputs: `true` only if >= 100 confirmations
+    fn is_transparent_output_mature<Op: OutputInterface>(
+        &self,
+        transaction: &WalletTransaction,
+    ) -> bool {
+        // Only transparent outputs need coinbase maturity check
+        if Op::POOL_TYPE != PoolType::Transparent {
+            return true;
+        }
+
+        // Check if this is a coinbase transaction
+        let is_coinbase = transaction
+            .transaction()
+            .transparent_bundle()
+            .is_some_and(|bundle| bundle.is_coinbase());
+
+        if is_coinbase {
+            let current_height = self.sync_state.wallet_height().unwrap_or(self.birthday);
+            let tx_height = transaction.status().get_height();
+
+            // Work with u32 values
+            let current_height_u32: u32 = current_height.into();
+            let tx_height_u32: u32 = tx_height.into();
+
+            if current_height_u32 < tx_height_u32 {
+                return false;
+            }
+
+            let confirmations = current_height_u32 - tx_height_u32;
+            confirmations >= COINBASE_MATURITY
+        } else {
+            true
+        }
+    }
+
     /// Returns account balance.
     pub fn account_balance(
         &self,
@@ -331,7 +376,10 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| transaction.status().is_confirmed(),
+            |_output, transaction: &WalletTransaction| {
+                transaction.status().is_confirmed()
+                    && self.is_transparent_output_mature::<Op>(transaction)
+            },
             account_id,
         )
     }
@@ -353,8 +401,10 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |note, transaction: &WalletTransaction| {
-                Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_confirmed()
+            |output, transaction: &WalletTransaction| {
+                Op::value(output) > MARGINAL_FEE.into_u64()
+                    && transaction.status().is_confirmed()
+                    && self.is_transparent_output_mature::<Op>(transaction)
             },
             account_id,
         )
@@ -496,6 +546,24 @@ impl LightWallet {
 
 #[cfg(any(test, feature = "testutils"))]
 mod test {
+
+    // TODO: Add unit tests for coinbase maturity
+    //
+    // #[test]
+    // fn test_immature_coinbase_excluded_from_balance() {
+    //     // Test that coinbase with < 100 confirmations is excluded from confirmed balance
+    // }
+    //
+    // #[test]
+    // fn test_mature_coinbase_included_in_balance() {
+    //     // Test that coinbase with >= 100 confirmations is included in confirmed balance
+    // }
+    //
+    // #[test]
+    // fn test_regular_transparent_utxo_unaffected() {
+    //     // Test that non-coinbase transparent UTXOs are included normally
+    // }
+
     // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]
     // async fn confirmed_balance_excluding_dust() {
