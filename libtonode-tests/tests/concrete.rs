@@ -4330,7 +4330,6 @@ async fn mine_to_transparent_coinbase_maturity() {
     check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
     
     // Balance should be 0 because coinbase needs 100 confirmations
-    // TODO: After fix, this should be 0
     assert_eq!(
         faucet
             .wallet
