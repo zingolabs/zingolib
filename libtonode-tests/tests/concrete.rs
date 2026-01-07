@@ -4358,7 +4358,7 @@ async fn mine_to_transparent_coinbase_maturity() {
         .into_u64();
     
     // Should have original coinbase + 100 new blocks worth
-    assert!(mature_balance > 1_875_000_000);
+    assert_eq!(mature_balance, 1_875_000_000);
 }
 
 
