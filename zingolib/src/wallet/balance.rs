@@ -176,7 +176,7 @@ impl LightWallet {
         } else {
             true
         }
-    } // <-- This closing brace was missing
+    }
 
     /// Returns account balance.
     pub fn account_balance(
