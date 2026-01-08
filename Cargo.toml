@@ -24,7 +24,7 @@ orchard = "0.11.0"
 sapling-crypto = "0.5.0"
 shardtree = "0.6.1"
 zcash_address = "0.10"
-zcash_client_backend = { version = "0.20", features = [
+zcash_client_backend = { version = "0.21", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
@@ -46,7 +46,7 @@ zcash_transparent = "0.6"
 zebra-chain = "3.0"
 
 # Zingo-common
-zingo-netutils = "1.0.0"
+zingo-netutils = "1.1.0"
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
 
 # Parallel processing
@@ -88,7 +88,7 @@ memuse = "0.2"
 nonempty = "0.11.0"
 portpicker = "0.1"
 proptest = "1.6.0"
-prost = "0.13"
+prost = "0.14"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17.14"
@@ -107,7 +107,7 @@ tempfile = "3"
 thiserror = "2"
 tokio = "1"
 tokio-rustls = "0.26"
-tonic = { version = "0.13", features = ["tls-webpki-roots"] }
+tonic = { version = "0.14", features = ["tls-webpki-roots"] }
 tonic-build = "0.13"
 tower = "0.5"
 tracing = "0.1"

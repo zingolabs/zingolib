@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
+use std::{collections::HashMap, convert::Infallible, num::NonZeroU32};
 
 use secrecy::SecretVec;
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
@@ -7,20 +7,17 @@ use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, InputSource,
         NullifierQuery, ORCHARD_SHARD_HEIGHT, ReceivedNotes, SAPLING_SHARD_HEIGHT, TargetValue,
-        TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
-        Zip32Derivation,
+        TransactionDataRequest, WalletCommitmentTrees, WalletRead, WalletSummary, WalletUtxo,
+        WalletWrite, Zip32Derivation,
         chain::CommitmentTreeRoot,
         wallet::{ConfirmationsPolicy, TargetHeight},
     },
-    wallet::{NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
+    wallet::{Exposure, NoteId, ReceivedNote, TransparentAddressMetadata, WalletTransparentOutput},
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::{
-        TransparentAddress,
-        keys::{NonHardenedChildIndex, TransparentKeyScope},
-    },
+    legacy::{TransparentAddress, keys::TransparentKeyScope},
     memo::Memo,
     transaction::{Transaction, TxId},
 };
@@ -253,7 +250,7 @@ impl WalletRead for LightWallet {
         // TODO: only get internal receivers if true
         _include_change: bool,
         _include_standalone_receivers: bool,
-    ) -> Result<HashMap<TransparentAddress, Option<TransparentAddressMetadata>>, Self::Error> {
+    ) -> Result<HashMap<TransparentAddress, TransparentAddressMetadata>, Self::Error> {
         self.transparent_addresses
             .iter()
             .filter(|(address_id, _)| {
@@ -263,12 +260,14 @@ impl WalletRead for LightWallet {
                 let address = ZcashAddress::try_from_encoded(encoded_address)?
                     .convert_if_network::<TransparentAddress>(self.network.network_type())
                     .expect("incorrect network should be checked on wallet load");
-                let address_metadata = TransparentAddressMetadata::new(
+                let address_metadata = TransparentAddressMetadata::derived(
                     address_id.scope().into(),
                     address_id.address_index(),
+                    Exposure::CannotKnow, // TODO: add exposure to wallet transparent address metadata
+                    None,
                 );
 
-                Ok((address, Some(address_metadata)))
+                Ok((address, address_metadata))
             })
             .collect()
     }
@@ -278,7 +277,7 @@ impl WalletRead for LightWallet {
         _account: Self::AccountId,
         _max_height: TargetHeight,
         _confirmations_policy: ConfirmationsPolicy,
-    ) -> Result<HashMap<TransparentAddress, Balance>, Self::Error> {
+    ) -> Result<HashMap<TransparentAddress, (TransparentKeyScope, Balance)>, Self::Error> {
         unimplemented!()
     }
 
@@ -287,34 +286,6 @@ impl WalletRead for LightWallet {
         _account: Self::AccountId,
     ) -> Result<zcash_protocol::consensus::BlockHeight, Self::Error> {
         unimplemented!()
-    }
-
-    fn get_known_ephemeral_addresses(
-        &self,
-        account: Self::AccountId,
-        index_range: Option<Range<NonHardenedChildIndex>>,
-    ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, Self::Error> {
-        self.transparent_addresses
-            .iter()
-            .filter(|(address_id, _)| {
-                address_id.account_id() == account
-                    && address_id.scope() == TransparentScope::Refund
-                    && index_range
-                        .clone()
-                        .is_none_or(|range| range.contains(&address_id.address_index()))
-            })
-            .map(|(address_id, encoded_address)| {
-                let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.network.network_type())
-                    .expect("incorrect network should be checked on wallet load");
-                let address_metadata = TransparentAddressMetadata::new(
-                    address_id.scope().into(),
-                    address_id.address_index(),
-                );
-
-                Ok((address, address_metadata))
-            })
-            .collect()
     }
 
     fn transaction_data_requests(&self) -> Result<Vec<TransactionDataRequest>, Self::Error> {
@@ -354,6 +325,10 @@ impl WalletWrite for LightWallet {
         _purpose: AccountPurpose,
         _key_source: Option<&str>,
     ) -> Result<Self::Account, Self::Error> {
+        unimplemented!()
+    }
+
+    fn delete_account(&mut self, _account: Self::AccountId) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
@@ -397,6 +372,10 @@ impl WalletWrite for LightWallet {
         &mut self,
         _received_tx: zcash_client_backend::data_api::DecryptedTransaction<Self::AccountId>,
     ) -> Result<(), Self::Error> {
+        unimplemented!()
+    }
+
+    fn set_tx_trust(&mut self, _txid: TxId, _trusted: bool) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
@@ -453,9 +432,11 @@ impl WalletWrite for LightWallet {
             .map(|(address_id, address)| {
                 (
                     address,
-                    TransparentAddressMetadata::new(
+                    TransparentAddressMetadata::derived(
                         TransparentKeyScope::EPHEMERAL,
                         address_id.address_index(),
+                        Exposure::CannotKnow, // TODO: add exposure to wallet transparent address metadata
+                        None,
                     ),
                 )
             })
@@ -561,6 +542,7 @@ impl InputSource for LightWallet {
         _txid: &TxId,
         _protocol: ShieldedProtocol,
         _index: u32,
+        _target_height: TargetHeight,
     ) -> Result<
         Option<
             zcash_client_backend::wallet::ReceivedNote<
@@ -777,6 +759,7 @@ impl InputSource for LightWallet {
         &self,
         _account: Self::AccountId,
         _selector: &zcash_client_backend::data_api::NoteFilter,
+        _target_height: TargetHeight,
         _exclude: &[Self::NoteRef],
     ) -> Result<zcash_client_backend::data_api::AccountMeta, Self::Error> {
         unimplemented!()
@@ -785,7 +768,8 @@ impl InputSource for LightWallet {
     fn get_unspent_transparent_output(
         &self,
         _outpoint: &OutPoint,
-    ) -> Result<Option<WalletTransparentOutput>, Self::Error> {
+        _target_height: TargetHeight,
+    ) -> Result<Option<WalletUtxo>, Self::Error> {
         unimplemented!()
     }
 
@@ -793,14 +777,15 @@ impl InputSource for LightWallet {
         &self,
         address: &TransparentAddress,
         target_height: TargetHeight,
-        min_confirmations: ConfirmationsPolicy,
-    ) -> Result<Vec<WalletTransparentOutput>, Self::Error> {
+        confirmations_policy: ConfirmationsPolicy,
+    ) -> Result<Vec<WalletUtxo>, Self::Error> {
         let address = transparent::encode_address(&self.network, *address);
 
+        // TODO: add recipient key scope metadata
         Ok(self
             .spendable_transparent_coins(
                 target_height.into(),
-                min_confirmations.allow_zero_conf_shielding(),
+                confirmations_policy.allow_zero_conf_shielding(),
             )
             .into_iter()
             .filter(|&output| output.address() == address)
@@ -818,6 +803,7 @@ impl InputSource for LightWallet {
                             .expect("output must be confirmed in this scope"),
                     ),
                 )
+                .map(|transparent_output| WalletUtxo::new(transparent_output, None))
             })
             .collect())
     }
