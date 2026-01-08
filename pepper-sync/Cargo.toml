@@ -2,7 +2,7 @@
 name = "pepper-sync"
 description = "Pepper-sync is a crate providing a sync engine for the zcash network."
 authors = ["<zingo@zingolabs.org>"]
-version = "1.0.0"
+version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
