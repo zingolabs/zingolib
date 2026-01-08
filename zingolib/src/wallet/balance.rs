@@ -547,23 +547,6 @@ impl LightWallet {
 #[cfg(any(test, feature = "testutils"))]
 mod test {
 
-    // TODO: Add unit tests for coinbase maturity
-    //
-    // #[test]
-    // fn test_immature_coinbase_excluded_from_balance() {
-    //     // Test that coinbase with < 100 confirmations is excluded from confirmed balance
-    // }
-    //
-    // #[test]
-    // fn test_mature_coinbase_included_in_balance() {
-    //     // Test that coinbase with >= 100 confirmations is included in confirmed balance
-    // }
-    //
-    // #[test]
-    // fn test_regular_transparent_utxo_unaffected() {
-    //     // Test that non-coinbase transparent UTXOs are included normally
-    // }
-
     // FIXME: zingo2 rewrite as an integration test
     // #[tokio::test]
     // async fn confirmed_balance_excluding_dust() {
