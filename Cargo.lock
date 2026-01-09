@@ -9137,7 +9137,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "rand 0.8.5",
  "zcash_address",
