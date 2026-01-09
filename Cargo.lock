@@ -1393,12 +1393,13 @@ dependencies = [
  "incrementalmerkletree",
  "orchard",
  "proptest",
- "prost 0.14.1",
+ "prost",
  "sapling-crypto",
  "serde_json",
  "tokio",
  "tonic",
- "tonic-build 0.13.1",
+ "tonic-prost",
+ "tonic-prost-build",
  "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
@@ -4379,42 +4380,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
-dependencies = [
- "bytes",
- "prost-derive 0.13.5",
-]
-
-[[package]]
-name = "prost"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
 dependencies = [
  "bytes",
- "prost-derive 0.14.1",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
-dependencies = [
- "heck",
- "itertools 0.14.0",
- "log",
- "multimap",
- "once_cell",
- "petgraph",
- "prettyplease",
- "prost 0.13.5",
- "prost-types 0.13.5",
- "regex",
- "syn 2.0.111",
- "tempfile",
+ "prost-derive",
 ]
 
 [[package]]
@@ -4430,26 +4401,13 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost 0.14.1",
- "prost-types 0.14.1",
+ "prost",
+ "prost-types",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.111",
  "tempfile",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
-dependencies = [
- "anyhow",
- "itertools 0.14.0",
- "proc-macro2",
- "quote",
- "syn 2.0.111",
 ]
 
 [[package]]
@@ -4467,20 +4425,11 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
-dependencies = [
- "prost 0.13.5",
-]
-
-[[package]]
-name = "prost-types"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
 dependencies = [
- "prost 0.14.1",
+ "prost",
 ]
 
 [[package]]
@@ -6420,20 +6369,6 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac6f67be712d12f0b41328db3137e0d0757645d8904b4cb7d51cd9c2279e847"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build 0.13.5",
- "prost-types 0.13.5",
- "quote",
- "syn 2.0.111",
-]
-
-[[package]]
-name = "tonic-build"
 version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c40aaccc9f9eccf2cd82ebc111adc13030d23e887244bc9cfa5d1d636049de3"
@@ -6451,7 +6386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
 dependencies = [
  "bytes",
- "prost 0.14.1",
+ "prost",
  "tonic",
 ]
 
@@ -6463,12 +6398,12 @@ checksum = "b4a16cba4043dc3ff43fcb3f96b4c5c154c64cbd18ca8dce2ab2c6a451d058a2"
 dependencies = [
  "prettyplease",
  "proc-macro2",
- "prost-build 0.14.1",
- "prost-types 0.14.1",
+ "prost-build",
+ "prost-types",
  "quote",
  "syn 2.0.111",
  "tempfile",
- "tonic-build 0.14.2",
+ "tonic-build",
 ]
 
 [[package]]
@@ -6477,8 +6412,8 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34da53e8387581d66db16ff01f98a70b426b091fdf76856e289d5c1bd386ed7b"
 dependencies = [
- "prost 0.14.1",
- "prost-types 0.14.1",
+ "prost",
+ "prost-types",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -8569,7 +8504,7 @@ dependencies = [
  "orchard",
  "pasta_curves",
  "percent-encoding",
- "prost 0.14.1",
+ "prost",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "rayon",
@@ -8998,7 +8933,7 @@ dependencies = [
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
  "nix 0.29.0",
- "prost 0.14.1",
+ "prost",
  "rand 0.8.5",
  "sapling-crypto",
  "semver",
@@ -9298,7 +9233,7 @@ dependencies = [
  "orchard",
  "pepper-sync",
  "portpicker",
- "prost 0.14.1",
+ "prost",
  "rand 0.8.5",
  "ring",
  "rust-embed",
