@@ -6,6 +6,8 @@ use json::JsonValue;
 use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
+use pepper_sync::wallet::TransparentCoin;
+use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 use zebra_chain::parameters::testnet;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
@@ -158,6 +160,7 @@ mod fast {
         },
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
+    use zip32::AccountId;
 
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
@@ -1300,6 +1303,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
     }
 
+    /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
@@ -1308,11 +1312,29 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             None,
         )
         .await;
-        check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
+
+        let unconfirmed_balance = faucet
+            .wallet
+            .read()
+            .await
+            .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(unconfirmed_balance, Zatoshis::const_from_u64(1_875_000_000));
+
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000u64);
+
+        assert_eq!(
+            faucet
+                .wallet
+                .read()
+                .await
+                .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+                .unwrap(),
+            Zatoshis::const_from_u64(2_500_000_000u64)
+        );
     }
 
     // test fails to exit when syncing pre-sapling
@@ -4312,6 +4334,44 @@ mod basic_transactions {
     //     faucet.do_sync(true).await.unwrap();
     //     recipient.do_sync(true).await.unwrap();
     // }
+}
+
+/// Tests that transparent coinbases are matured after 100 blocks.
+#[tokio::test]
+async fn mine_to_transparent_coinbase_maturity() {
+    let (local_net, mut faucet, _recipient) =
+        scenarios::faucet_recipient(PoolType::Transparent, for_test::all_height_one_nus(), None)
+            .await;
+
+    // After 3 blocks...
+    check_client_balances!(faucet, o: 0 s: 0 t: 0);
+
+    // Balance should be 0 because coinbase needs 100 confirmations
+    assert_eq!(
+        faucet
+            .wallet
+            .read()
+            .await
+            .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
+            .unwrap()
+            .into_u64(),
+        0
+    );
+
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
+        .await
+        .unwrap();
+
+    let mature_balance = faucet
+        .wallet
+        .read()
+        .await
+        .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
+        .unwrap()
+        .into_u64();
+
+    // Should have 3 blocks worth of rewards
+    assert_eq!(mature_balance, 1_875_000_000);
 }
 
 // FIXME: does not assert dust was included in the proposal
