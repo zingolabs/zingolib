@@ -272,6 +272,33 @@ impl WalletRead for LightWallet {
             .collect()
     }
 
+    fn get_ephemeral_transparent_receivers(
+        &self,
+        account: Self::AccountId,
+        _exposure_depth: u32,
+        _exclude_used: bool,
+    ) -> Result<HashMap<TransparentAddress, TransparentAddressMetadata>, Self::Error> {
+        self.transparent_addresses
+            .iter()
+            .filter(|(address_id, _)| {
+                address_id.account_id() == account && address_id.scope() == TransparentScope::Refund
+            })
+            .map(|(address_id, encoded_address)| {
+                let address = ZcashAddress::try_from_encoded(encoded_address)?
+                    .convert_if_network::<TransparentAddress>(self.network.network_type())
+                    .expect("incorrect network should be checked on wallet load");
+                let address_metadata = TransparentAddressMetadata::derived(
+                    address_id.scope().into(),
+                    address_id.address_index(),
+                    Exposure::CannotKnow, // TODO: add exposure to wallet transparent address metadata
+                    None,
+                );
+
+                Ok((address, address_metadata))
+            })
+            .collect()
+    }
+
     fn get_transparent_balances(
         &self,
         _account: Self::AccountId,
@@ -279,6 +306,25 @@ impl WalletRead for LightWallet {
         _confirmations_policy: ConfirmationsPolicy,
     ) -> Result<HashMap<TransparentAddress, (TransparentKeyScope, Balance)>, Self::Error> {
         unimplemented!()
+    }
+
+    fn get_transparent_address_metadata(
+        &self,
+        account: Self::AccountId,
+        address: &TransparentAddress,
+    ) -> Result<Option<TransparentAddressMetadata>, Self::Error> {
+        Ok(
+            if let Some(result) = self
+                .get_transparent_receivers(account, true, true)?
+                .get(address)
+            {
+                Some(result.clone())
+            } else {
+                self.get_ephemeral_transparent_receivers(account, u32::MAX, false)?
+                    .get(address)
+                    .cloned()
+            },
+        )
     }
 
     fn utxo_query_height(

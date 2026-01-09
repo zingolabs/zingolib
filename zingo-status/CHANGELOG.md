@@ -14,4 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [0.0.1] - 2025-12-18
+## [0.1.0] - 2026-01-09
+
+### Changed
+
+- `ConfirmationStatus`: removed derive Debug and added derive Eq, PartialOrd and Ord 
+
+## [0.0.1] - 2025-05-24
