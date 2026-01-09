@@ -18,6 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `ConfirmationStatus`: removed derive Debug and added derive Eq, PartialOrd and Ord 
+- `ConfirmationStatus`: removed derive Debug and added derive Eq, PartialOrd and Ord
 
 ## [0.0.1] - 2025-05-24
