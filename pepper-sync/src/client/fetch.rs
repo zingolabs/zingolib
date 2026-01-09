@@ -225,8 +225,6 @@ async fn get_block_range(
         }),
     });
 
-    // This is the deadline for the whole RPC; keep it >= your expected stream duration.
-    // The *stall protection* should still be the per-message timeout in the consumer.
     request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
     let resp = call_with_timeout(
