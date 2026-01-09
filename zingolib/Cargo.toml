@@ -24,7 +24,7 @@ regtest = [ "zingo_common_components/for_test" ]
 
 # Zingo
 zingo-memo = { workspace = true }
-zingo-status = { workspace = true }
+zingo-status = "0.1.0"
 pepper-sync = { workspace = true }
 zingo-price = { workspace = true }
 
