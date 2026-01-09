@@ -20,8 +20,8 @@ darkside_test = []
 
 [dependencies]
 # Zingo
-zingo-memo = "0.1.0"
-zingo-status = "0.1.0"
+zingo-memo.workspace = true
+zingo-status.workspace = true
 
 # Zingo-common
 zingo-netutils.workspace = true

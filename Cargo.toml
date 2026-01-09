@@ -116,9 +116,11 @@ tracing-subscriber = "0.3"
 webpki-roots = "0.25"
 
 # Workspace
-zingo-memo = { path = "zingo-memo" }
+# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+zingo-memo = "0.1.0"
 zingo-price = { path = "zingo-price" }
-zingo-status = { path = "zingo-status" }
+# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 
