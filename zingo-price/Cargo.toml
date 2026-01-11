@@ -9,8 +9,8 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [dependencies]
-zcash_encoding = { workspace = true }
 zcash_client_backend = { workspace = true }
+zcash_encoding = { workspace = true }
 
 byteorder = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = [
@@ -22,10 +22,6 @@ rust_decimal = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-rusqlite = { workspace = true, features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-
-[package.metadata.cargo-machete]
-ignored = ["rusqlite"]
