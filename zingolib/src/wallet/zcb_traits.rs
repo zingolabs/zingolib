@@ -20,10 +20,7 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::{
-        TransparentAddress,
-        keys::TransparentKeyScope,
-    },
+    legacy::{TransparentAddress, keys::TransparentKeyScope},
     memo::Memo,
     transaction::{Transaction, TxId},
 };
@@ -490,11 +487,11 @@ impl WalletWrite for LightWallet {
         unimplemented!()
     }
 
-    fn delete_account(&mut self, account: Self::AccountId) -> Result<(), Self::Error> {
+    fn delete_account(&mut self, _account: Self::AccountId) -> Result<(), Self::Error> {
         todo!()
     }
 
-    fn set_tx_trust(&mut self, txid: TxId, trusted: bool) -> Result<(), Self::Error> {
+    fn set_tx_trust(&mut self, _txid: TxId, _trusted: bool) -> Result<(), Self::Error> {
         todo!()
     }
 }
@@ -827,7 +824,7 @@ impl InputSource for LightWallet {
             )
             .into_iter()
             .filter(|&output| output.address() == address)
-            .filter_map(|output| {
+            .map(|output| {
                 let wallet_t_output = WalletTransparentOutput::from_parts(
                     output.output_id().into(),
                     TxOut::new(
@@ -843,10 +840,7 @@ impl InputSource for LightWallet {
                 )
                 .unwrap(); // TODO
 
-                Some(WalletUtxo::new(
-                    wallet_t_output,
-                    Some(TransparentKeyScope::EXTERNAL),
-                ))
+                WalletUtxo::new(wallet_t_output, Some(TransparentKeyScope::EXTERNAL))
             })
             .collect())
     }
