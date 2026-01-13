@@ -14,6 +14,8 @@ zcash_address = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_client_backend = { workspace = true }
 
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+
 zingo_common_components = { workspace = true }
 
 http = { workspace = true }
@@ -33,9 +35,6 @@ once_cell = { workspace = true }
 
 [build-dependencies]
 uniffi_build = { workspace = true, features = ["builtin-bindgen"] }
-
-[target.'cfg(target_os = "android")'.dependencies]
-rusqlite = { version = "0.37.0", features = ["bundled"] }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
