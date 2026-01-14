@@ -62,20 +62,17 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_interpret_memo_string_plain_text() {
         let result = interpret_memo_string("Hello World".to_string());
         assert!(result.is_ok());
     }
-
     #[test]
     fn test_interpret_memo_string_valid_hex() {
         // Valid hex should be decoded
         let result = interpret_memo_string("0x48656c6c6f".to_string());
         assert!(result.is_ok());
     }
-
     #[test]
     fn test_interpret_memo_string_ethereum_address() {
         // Ethereum address should be treated as plain text
@@ -92,7 +89,6 @@ mod tests {
         let result = interpret_memo_string("0xZZZZ".to_string());
         assert!(result.is_ok());
     }
-
     #[test]
     fn test_interpret_memo_string_too_long() {
         // String longer than 512 bytes should fail
@@ -100,5 +96,4 @@ mod tests {
         let result = interpret_memo_string(long_string);
         assert!(result.is_err());
     }
-    
 }
