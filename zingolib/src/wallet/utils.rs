@@ -59,7 +59,6 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
     Ok((sapling_output, sapling_spend))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
