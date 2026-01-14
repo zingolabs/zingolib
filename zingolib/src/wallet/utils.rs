@@ -25,15 +25,7 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
 
 /// Interpret a string or hex-encoded memo, and return a Memo object
 pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
-    let s_bytes = if memo_str.to_lowercase().starts_with("0x") {
-        match hex::decode(&memo_str[2..memo_str.len()]) {
-            Ok(data) if data.len() <= 512 => data,  // Only use hex if valid size
-            _ => Vec::from(memo_str.as_bytes()),    // Otherwise treat as text
-        }
-    } else {
-        Vec::from(memo_str.as_bytes())
-    };
-
+    let s_bytes = Vec::from(memo_str.as_bytes());
     MemoBytes::from_bytes(&s_bytes)
         .map_err(|_| format!("Error creating output. Memo '{memo_str:?}' is too long"))
 }
@@ -87,15 +79,14 @@ mod tests {
 
     #[test]
     fn test_interpret_memo_string_ethereum_address() {
-        // Ethereum address should be treated as plain text (decoded hex would be 20 bytes, but we want the full string)
+        // Ethereum address should be treated as plain text
         let eth_address = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
         let result = interpret_memo_string(eth_address.to_string());
         assert!(result.is_ok());
-        // Verify it's stored as the full string, not decoded hex
+        // Verify it's stored as the full string (43 bytes), not decoded hex (20 bytes)
         let memo_bytes = result.unwrap();
         assert_eq!(memo_bytes.as_slice().len(), eth_address.len());
     }
-
     #[test]
     fn test_interpret_memo_string_invalid_hex() {
         // Invalid hex should fall back to plain text
