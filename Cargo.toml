@@ -124,6 +124,7 @@ zingo-price = { path = "zingo-price" }
 zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
+libtonode-tests = { path = "libtonode-tests" }
 
 [profile.test]
 opt-level = 3

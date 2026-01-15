@@ -156,7 +156,7 @@ pub mod send_with_proposal {
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
-                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                conduct_chain::ConductChain as _, networked::TestnetEnvironment,
                 with_assertions,
             },
             wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
@@ -226,7 +226,7 @@ pub mod send_with_proposal {
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
 
                 with_assertions::assure_propose_send_bump_sync_all_recipients(
-                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut TestnetEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 20_000, None)],
                     vec![],
@@ -250,7 +250,7 @@ pub mod send_with_proposal {
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
 
                 with_assertions::assure_propose_send_bump_sync_all_recipients(
-                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut TestnetEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 20_000, None)],
                     vec![],
@@ -273,7 +273,7 @@ pub mod send_with_proposal {
 
                 let client_addr = get_base_address(&client, PoolType::Transparent).await;
 
-                let environment = &mut NetworkedTestEnvironment::setup().await;
+                let environment = &mut TestnetEnvironment::setup().await;
                 with_assertions::assure_propose_send_bump_sync_all_recipients(
                     environment,
                     &mut client,
@@ -302,12 +302,12 @@ pub mod send_with_proposal {
                 );
 
                 let mut client = sync_example_wallet(case).await;
-                let environment = &mut NetworkedTestEnvironment::setup().await;
+                let environment = &mut TestnetEnvironment::setup().await;
 
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Orchard)).await;
                 with_assertions::assure_propose_send_bump_sync_all_recipients(
-                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut TestnetEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 14_000, None)],
                     vec![],
@@ -319,7 +319,7 @@ pub mod send_with_proposal {
                 let client_addr =
                     get_base_address(&client, PoolType::Shielded(ShieldedProtocol::Sapling)).await;
                 with_assertions::assure_propose_send_bump_sync_all_recipients(
-                    &mut NetworkedTestEnvironment::setup().await,
+                    &mut TestnetEnvironment::setup().await,
                     &mut client,
                     vec![(&client_addr, 15_000, None)],
                     vec![],

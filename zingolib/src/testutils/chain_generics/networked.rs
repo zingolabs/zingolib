@@ -9,12 +9,12 @@ use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
-pub struct NetworkedTestEnvironment {
+pub struct TestnetEnvironment {
     indexer_uri: Uri,
     latest_known_server_height: Option<BlockHeight>,
 }
 
-impl NetworkedTestEnvironment {
+impl TestnetEnvironment {
     async fn update_server_height(&mut self) {
         let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
             .await
@@ -27,7 +27,7 @@ impl NetworkedTestEnvironment {
     }
 }
 
-impl ConductChain for NetworkedTestEnvironment {
+impl ConductChain for TestnetEnvironment {
     async fn setup() -> Self {
         Self {
             indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)

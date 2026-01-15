@@ -9231,6 +9231,7 @@ version = "0.1.0"
 dependencies = [
  "bip0039",
  "http",
+ "libtonode-tests",
  "pepper-sync",
  "rustls 0.23.35",
  "tempfile",

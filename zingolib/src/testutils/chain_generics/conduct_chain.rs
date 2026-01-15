@@ -19,6 +19,7 @@ pub trait ConductChain {
     async fn setup() -> Self;
 
     /// used to connect to server via grpc
+    // wish this was just a &str, because the more fundamental data type is more portable.
     fn lightserver_uri(&self) -> Option<http::Uri>;
 
     /// builds a faucet (funded from mining)

@@ -12,7 +12,7 @@ ci = ["zingolib/ci"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
+zingolib = { workspace = true, features = ["regtest", "testutils"] }
 zingo-netutils = { workspace = true }
 zingo_common_components = { workspace = true, features = ["for_test"] }
 pepper-sync = { workspace = true }
