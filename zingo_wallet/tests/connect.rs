@@ -1,5 +1,5 @@
 use libtonode_tests::chain_generics::RegtestEnvironment;
-use zcash_wallet_interface::Wallet as _;
+use zcash_wallet_interface::{BlockHeight, Wallet as _};
 use zingo_wallet::ZingoWallet;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::TestnetEnvironment;
@@ -15,7 +15,7 @@ where
         .await
         .unwrap();
     wallet
-        .add_server(chain.lightserver_uri().unwrap().to_string())
+        .begin_scanning_server_range(chain.lightserver_uri().unwrap().to_string(), None, None)
         .await
         .unwrap();
 }

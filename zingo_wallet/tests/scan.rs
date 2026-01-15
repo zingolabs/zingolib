@@ -1,12 +1,12 @@
 pub(crate) use core::time::Duration;
 
 use libtonode_tests::chain_generics::RegtestEnvironment;
-use zcash_wallet_interface::Wallet as _;
+use zcash_wallet_interface::{BlockHeight, Wallet as _};
 use zingo_wallet::ZingoWallet;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::TestnetEnvironment;
 
-async fn sleepy_scan_n<CC>(duration: usize)
+async fn sleepy_scan<CC>(duration: usize)
 where
     CC: ConductChain,
 {
@@ -18,7 +18,7 @@ where
         .await
         .unwrap();
     wallet
-        .add_server(single_server_url.to_string())
+        .begin_scanning_server_range(single_server_url.to_string(), None, None)
         .await
         .unwrap();
     let initial_scan_height = wallet
@@ -38,11 +38,42 @@ where
 #[tokio::test]
 #[test_log::test]
 async fn regtest_10_seconds() {
-    sleepy_scan_n::<RegtestEnvironment>(10).await;
+    sleepy_scan::<RegtestEnvironment>(10).await;
 }
 
 #[tokio::test]
 #[test_log::test]
 async fn testnet_10_seconds() {
-    sleepy_scan_n::<TestnetEnvironment>(10).await;
+    sleepy_scan::<TestnetEnvironment>(10).await;
+}
+
+// NOTE: zingolib doesnt stop scanning, this test just ends when the specified height is reached.
+async fn scan_wallet_range<CC>(seed: String, start: u32, end: u32)
+where
+    CC: ConductChain,
+{
+    let chain = CC::setup().await;
+    let single_server_url = chain.lightserver_uri().unwrap().to_string();
+    let mut wallet = ZingoWallet::new_wallet().await;
+    wallet.add_key(seed).await.unwrap();
+    wallet
+        .begin_scanning_server_range(
+            single_server_url.to_string(),
+            Some(BlockHeight(start)),
+            None,
+        )
+        .await
+        .unwrap();
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let later_scan_height = wallet
+            .get_max_scanned_height_for_server(single_server_url.to_string())
+            .await
+            .unwrap()
+            .0;
+        tracing::trace!("Scanning at block {later_scan_height}");
+        if later_scan_height >= end {
+            break;
+        }
+    }
 }
