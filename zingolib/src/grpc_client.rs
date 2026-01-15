@@ -10,7 +10,7 @@ use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxS
 use zingo_netutils::UnderlyingService;
 
 /// Creates a `zcash_client_backend` compatible GRPC client from a URI
-/// This duplicates the connection logic from `zingo_netutils` but creates a `zcash_client_backend` client
+/// This duplicates the connection logic from `zingo-netutils` but creates a `zcash_client_backend` client
 pub async fn get_zcb_client(
     uri: Uri,
 ) -> Result<CompactTxStreamerClient<UnderlyingService>, zingo_netutils::GetClientError> {
