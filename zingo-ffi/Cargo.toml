@@ -1,21 +1,20 @@
 [workspace]
-members = [
-    "lib", 
-    "android", 
-    "ios", 
-    "zingomobile_utils"
-]
+members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "2.1.0", features = [ "testutils" ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "2.1.0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "2.1.0", features = ["test_lwd_zcashd"] }
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "zingolib_v2.1.2", features = [
+    "testutils",
+] }
+pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v2.1.2" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v2.1.2", features = [
+    "test_lwd_zcashd",
+] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
 zcash_address = { version = "0.10" }
-zcash_client_backend = { version = "0.20", features = [
+zcash_client_backend = { version = "0.21", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
@@ -37,7 +36,7 @@ zebra-chain = { version = "3.0" }
 
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
 
-bip0039 = { version = "0.12", features = [ "rand" ] }
+bip0039 = { version = "0.12", features = ["rand"] }
 uniffi = "0.29"
 tokio = "1"
 rustls = { version = "0.23", features = ["ring"] }
@@ -54,13 +53,13 @@ uniffi_build = "0.29"
 thiserror = "1"
 once_cell = "1"
 
-[patch.crates-io]
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
-zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8"}
+# [patch.crates-io]
+# zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+# zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+# zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+# zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+# zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
+# zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
 
 [profile.release]
 debug = 1
