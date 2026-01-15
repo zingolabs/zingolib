@@ -26,12 +26,7 @@ impl LightWallet {
         request: TransactionRequest,
         account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
-        let refund_address_count = self
-            .transparent_addresses
-            .keys()
-            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
-            .count() as u32;
-        let memo = self.change_memo_from_transaction_request(&request, refund_address_count);
+        let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -134,13 +129,14 @@ impl LightWallet {
         Ok(proposed_shield)
     }
 
-    fn change_memo_from_transaction_request(
-        &self,
-        request: &TransactionRequest,
-        mut refund_address_count: u32,
-    ) -> MemoBytes {
+    fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
         let mut recipient_uas = Vec::new();
         let mut refund_address_indexes = Vec::new();
+        let mut refund_address_count = self
+            .transparent_addresses
+            .keys()
+            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
+            .count() as u32;
         for payment in request.payments().values() {
             if let Ok(address) = payment
                 .recipient_address()
@@ -152,7 +148,6 @@ impl LightWallet {
                         recipient_uas.push(unified_address);
                     }
                     zcash_keys::address::Address::Tex(_) => {
-                        // TODO: rework: only need to encode highest used refund address index, not all of them
                         refund_address_indexes.push(refund_address_count);
                         refund_address_count += 1;
                     }
@@ -161,6 +156,7 @@ impl LightWallet {
             }
         }
         let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+            &self.network,
             recipient_uas.as_slice(),
             refund_address_indexes.as_slice(),
         ) {

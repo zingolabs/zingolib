@@ -28,12 +28,12 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 ## Compiling from source
 
 #### Pre-requisites
-* Rust v1.85 or higher.
+* Rust v1.90 or higher.
     * Run `rustup update` to get the latest version of Rust if you already have it installed
 * Rustfmt
     * Run `rustup component add rustfmt` to add rustfmt
 * Build Tools
-    * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
+    * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc libsqlite3-dev`
 * Protobuf Compiler
     * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
 ```

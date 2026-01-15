@@ -23,19 +23,10 @@ pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
     writer.write_all(s.as_bytes())
 }
 
-/// Interpret a string or hex-encoded memo, and return a Memo object
-pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
-    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
-    // interpret it as a hex
-    let s_bytes = if memo_str.to_lowercase().starts_with("0x") {
-        match hex::decode(&memo_str[2..memo_str.len()]) {
-            Ok(data) => data,
-            Err(_) => Vec::from(memo_str.as_bytes()),
-        }
-    } else {
-        Vec::from(memo_str.as_bytes())
-    };
-
+/// Create memo bytes from string.
+// TODO: replace string err variant with error enum which maps to MemoBytes errors.
+pub fn memo_bytes_from_string(memo_str: String) -> Result<MemoBytes, String> {
+    let s_bytes = Vec::from(memo_str.as_bytes());
     MemoBytes::from_bytes(&s_bytes)
         .map_err(|_| format!("Error creating output. Memo '{memo_str:?}' is too long"))
 }
@@ -67,4 +58,48 @@ pub(crate) fn read_sapling_params() -> Result<(Vec<u8>, Vec<u8>), String> {
             .as_ref(),
     );
     Ok((sapling_output, sapling_spend))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memo_bytes_from_string_plain_text() {
+        let result = memo_bytes_from_string("Hello World".to_string());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memo_bytes_from_string_valid_hex() {
+        // Valid hex should be decoded
+        let result = memo_bytes_from_string("0x48656c6c6f".to_string());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memo_bytes_from_string_ethereum_address() {
+        // Ethereum address should be treated as plain text
+        let eth_address = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
+        let result = memo_bytes_from_string(eth_address.to_string());
+        assert!(result.is_ok());
+        // Verify it's stored as the full string (43 bytes), not decoded hex (20 bytes)
+        let memo_bytes = result.unwrap();
+        assert_eq!(memo_bytes.as_slice().len(), eth_address.len());
+    }
+
+    #[test]
+    fn test_memo_bytes_from_string_invalid_hex() {
+        // Invalid hex should fall back to plain text
+        let result = memo_bytes_from_string("0xZZZZ".to_string());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memo_bytes_from_string_too_long() {
+        // String longer than 512 bytes should fail
+        let long_string = "a".repeat(513);
+        let result = memo_bytes_from_string(long_string);
+        assert!(result.is_err());
+    }
 }
