@@ -38,17 +38,17 @@ fn git_description() {
 /// Also copies them to an internal location for use by mobile platforms.
 fn get_zcash_params() {
     println!("Checking if params are available...");
-    
+
     // First check if params already exist locally
     let internal_params_path = Path::new("zcash-params");
     let spend_path = internal_params_path.join("sapling-spend.params");
     let output_path = internal_params_path.join("sapling-output.params");
-    
+
     if spend_path.exists() && output_path.exists() {
         println!("Params already exist locally, skipping download");
         return;
     }
-    
+
     // Try to download params
     let params_path = match zcash_proofs::download_sapling_parameters(Some(400)) {
         Ok(p) => {
@@ -58,47 +58,51 @@ fn get_zcash_params() {
             p
         }
         Err(e) => {
-            println!("Warning: Error downloading params: {e}");
+            println!("Warning: Could not download params: {e}");
             println!("Checking if params exist in default location...");
-            
-            // Try to find params in ~/.zcash-params
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            let default_spend = Path::new(&home).join(".zcash-params/sapling-spend.params");
-            let default_output = Path::new(&home).join(".zcash-params/sapling-output.params");
-            
-            if default_spend.exists() && default_output.exists() {
-                println!("Found params in default location");
-                // Create dummy struct with paths
-                struct ParamsPaths {
-                    spend: std::path::PathBuf,
-                    output: std::path::PathBuf,
-                }
-                ParamsPaths {
-                    spend: default_spend,
-                    output: default_output,
-                }
-            } else {
-                eprintln!("ERROR: Could not download params and they don't exist in ~/.zcash-params");
+
+            // Try to find params in ~/.zcash-params or ZCASH_PARAMS_DIR
+            let params_dir = std::env::var("ZCASH_PARAMS_DIR")
+                .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.zcash-params", h)))
+                .unwrap_or_else(|_| ".zcash-params".to_string());
+
+            let default_spend = Path::new(&params_dir).join("sapling-spend.params");
+            let default_output = Path::new(&params_dir).join("sapling-output.params");
+
+            if !default_spend.exists() || !default_output.exists() {
+                eprintln!("ERROR: Could not download params and they don't exist in {}", params_dir);
                 eprintln!("Please manually download from https://download.z.cash/downloads/");
                 panic!("Missing Zcash parameters");
             }
+
+            println!("Found params in {}", params_dir);
+
+            // Return the same type that download_sapling_parameters returns
+            zcash_proofs::SaplingParameterPaths {
+                spend: default_spend,
+                output: default_output,
+            }
         }
     };
-    
+
     // Copy the params to the internal location
     if let Err(e) = std::fs::create_dir_all(internal_params_path) {
         eprintln!("Warning: Could not create zcash-params directory: {e}");
         return;
     }
-    
+
     if let Err(e) = std::fs::copy(&params_path.spend, &spend_path) {
         eprintln!("Warning: Could not copy spend params: {e}");
+    } else {
+        println!("Copied spend params to local directory");
     }
-    
+
     if let Err(e) = std::fs::copy(&params_path.output, &output_path) {
         eprintln!("Warning: Could not copy output params: {e}");
+    } else {
+        println!("Copied output params to local directory");
     }
-    
+
     println!("Params setup complete");
 }
 
