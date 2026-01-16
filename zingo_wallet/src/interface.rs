@@ -207,8 +207,8 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 .wallet
                 .read()
                 .await
-                .chain_height()
-                .map_err(GetMaxScannedHeightError::WalletError)?
+                .sync_state
+                .highest_scanned_height()
                 .map(|h| zcash_wallet_interface::BlockHeight(h.into()))
                 .unwrap_or(BlockHeight(0))),
             None => Err(GetMaxScannedHeightError::NoServer),

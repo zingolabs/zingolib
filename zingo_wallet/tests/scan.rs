@@ -5,6 +5,7 @@ use zcash_wallet_interface::{BlockHeight, Wallet as _};
 use zingo_wallet::ZingoWallet;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::TestnetEnvironment;
+use zingolib::wallet::disk::testing::examples::{NetworkSeedVersion, TestnetSeedVersion};
 
 async fn sleepy_scan(single_server_url: String, duration: u64) {
     let mut wallet = ZingoWallet::new_wallet().await;
@@ -69,9 +70,33 @@ async fn scan_wallet_range(single_server_url: String, seed: String, start: u32, 
             .await
             .unwrap()
             .0;
-        tracing::trace!("Scanning at block {later_scan_height}");
+        tracing::info!("Scanning at block {later_scan_height}");
         if later_scan_height >= end {
+            dbg!(
+                wallet
+                    .lightclient
+                    .unwrap()
+                    .wallet
+                    .read()
+                    .await
+                    .birthday
+                    .to_string()
+            );
             break;
         }
     }
+}
+
+#[tokio::test]
+#[test_log::test]
+async fn testnet_gg() {
+    let chain = TestnetEnvironment::setup().await;
+    // a Testnet wallet with 25 transactions over 2000 blocks.
+    scan_wallet_range(
+        chain.lightserver_uri().unwrap().to_string(),
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess).example_wallet_base(),
+        3_070_800u32,
+        3_072_799u32,
+    )
+    .await;
 }
