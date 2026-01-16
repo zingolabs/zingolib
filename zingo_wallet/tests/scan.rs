@@ -72,16 +72,6 @@ async fn scan_wallet_range(single_server_url: String, seed: String, start: u32, 
             .0;
         tracing::info!("Scanning at block {later_scan_height}");
         if later_scan_height >= end {
-            dbg!(
-                wallet
-                    .lightclient
-                    .unwrap()
-                    .wallet
-                    .read()
-                    .await
-                    .birthday
-                    .to_string()
-            );
             break;
         }
     }
@@ -89,14 +79,56 @@ async fn scan_wallet_range(single_server_url: String, seed: String, start: u32, 
 
 #[tokio::test]
 #[test_log::test]
-async fn testnet_gg() {
+// a Testnet wallet with 25 transactions over 2_000 blocks.
+async fn testnet_benchmark_1() {
     let chain = TestnetEnvironment::setup().await;
-    // a Testnet wallet with 25 transactions over 2000 blocks.
     scan_wallet_range(
         chain.lightserver_uri().unwrap().to_string(),
         NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess).example_wallet_base(),
         3_070_800u32,
         3_072_799u32,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[test_log::test]
+/// a Testnet wallet with 0 transactions over 20_000 blocks, about 3 batches at default PerformanceLevel::High.
+async fn testnet_benchmark_10() {
+    let chain = TestnetEnvironment::setup().await;
+    scan_wallet_range(
+        chain.lightserver_uri().unwrap().to_string(),
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess).example_wallet_base(),
+        1_000_000u32,
+        1_020_000u32,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[test_log::test]
+/// a Testnet wallet with 0 transactions over 200_000 blocks, about 25 batches at default PerformanceLevel::High.
+async fn testnet_benchmark_11() {
+    let chain = TestnetEnvironment::setup().await;
+    scan_wallet_range(
+        chain.lightserver_uri().unwrap().to_string(),
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess).example_wallet_base(),
+        1_000_000u32,
+        1_200_000u32,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[test_log::test]
+/// a Testnet wallet with 0 transactions over 2_000_000 blocks, about 245 batches at default PerformanceLevel::High.
+async fn testnet_benchmark_100() {
+    let chain = TestnetEnvironment::setup().await;
+    scan_wallet_range(
+        chain.lightserver_uri().unwrap().to_string(),
+        NetworkSeedVersion::Testnet(TestnetSeedVersion::GloryGoddess).example_wallet_base(),
+        1_000_000u32,
+        2_000_000u32,
     )
     .await;
 }
