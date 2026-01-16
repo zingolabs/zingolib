@@ -1,28 +1,21 @@
 use std::io::Write;
 use std::{env, fs::File, path::Path, process::Command};
 
-fn git_description() {
+fn git_description() -> Result<(), Box<dyn std::error::Error>> {
     let _fetch = Command::new("git")
         .args(["fetch", "--tags", "https://github.com/zingolabs/zingolib"])
-        .output()
-        .expect("Failed to execute git command");
+        .output()?;
+
     let output = Command::new("git")
         .args(["describe", "--dirty", "--always", "--long"])
-        .output()
-        .expect("Failed to execute git command");
+        .output()?;
 
-    eprintln!("Git command output: {output:?}");
-    println!("Git command output: {output:?}");
+    let git_description = String::from_utf8(output.stdout)?.trim_end().to_string();
 
-    let git_description = String::from_utf8(output.stdout)
-        .unwrap()
-        .trim_end()
-        .to_string();
-
-    // Write the git description to a file which will be included in the crate
-    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR")?;
     let dest_path = Path::new(&out_dir).join("git_description.rs");
-    let mut f = File::create(dest_path).unwrap();
+    let mut f = File::create(dest_path)?;
+
     writeln!(
         f,
         "/// The result of running 'git describe' at compile time:\n\
@@ -30,95 +23,100 @@ fn git_description() {
         /// of commits above it, and the hash of\n\
         /// the most recent commit\n\
         pub fn git_description() -> &'static str {{\"{git_description}\"}}"
-    )
-    .unwrap();
+    )?;
+
+    Ok(())
 }
 
-/// Checks if zcash params are available and downloads them if not.
-/// Also copies them to an internal location for use by mobile platforms.
-fn get_zcash_params() {
+#[cfg(target_os = "macos")]
+fn check_macos_permissions(dir: &Path) -> Result<(), String> {
+    let test_file = dir.join(".write_test");
+    match std::fs::write(&test_file, b"test") {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&test_file);
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "macOS permission issue: {}\nTry: chmod -R u+rw {:?}",
+            e, dir
+        )),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn check_macos_permissions(_dir: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn get_zcash_params() -> Result<(), Box<dyn std::error::Error>> {
     println!("Checking if params are available...");
 
-    // First check if params already exist locally
+    let params_dir = dirs::home_dir()
+        .ok_or("Cannot determine home directory")?
+        .join(".zcash-params");
+
+    if params_dir.exists() {
+        println!("Params directory exists at {:?}", params_dir);
+
+        // Check macOS permissions
+        if let Err(e) = check_macos_permissions(&params_dir) {
+            eprintln!("Warning: {}", e);
+        }
+
+        std::fs::read_dir(&params_dir)
+            .map_err(|e| format!("Cannot access {:?}: {}", params_dir, e))?;
+        println!("✓ Params directory is accessible");
+    }
+
+    let params_path = zcash_proofs::download_sapling_parameters(Some(400))
+        .map_err(|e| format!("Failed to download/access params: {}", e))?;
+
+    println!("✓ Params available");
+    println!("  Spend: {:?}", params_path.spend);
+    println!("  Output: {:?}", params_path.output);
+
     let internal_params_path = Path::new("zcash-params");
-    let spend_path = internal_params_path.join("sapling-spend.params");
-    let output_path = internal_params_path.join("sapling-output.params");
+    std::fs::create_dir_all(internal_params_path)
+        .map_err(|e| format!("Cannot create {:?}: {}", internal_params_path, e))?;
 
-    if spend_path.exists() && output_path.exists() {
-        println!("Params already exist locally, skipping download");
-        return;
-    }
+    std::fs::copy(
+        &params_path.spend,
+        internal_params_path.join("sapling-spend.params"),
+    )
+    .map_err(|e| format!("Cannot copy spend params: {}", e))?;
 
-    // Try to download params
-    let params_path = match zcash_proofs::download_sapling_parameters(Some(400)) {
-        Ok(p) => {
-            println!("Params downloaded!");
-            println!("Spend path: {}", p.spend.to_str().unwrap());
-            println!("Output path: {}", p.output.to_str().unwrap());
-            p
-        }
-        Err(e) => {
-            println!("Warning: Could not download params: {e}");
-            println!("Checking if params exist in default location...");
+    std::fs::copy(
+        &params_path.output,
+        internal_params_path.join("sapling-output.params"),
+    )
+    .map_err(|e| format!("Cannot copy output params: {}", e))?;
 
-            // Try to find params in ZCASH_PARAMS_DIR or ~/.zcash-params
-            let params_dir = if let Ok(dir) = std::env::var("ZCASH_PARAMS_DIR") {
-                dir
-            } else if let Ok(home) = std::env::var("HOME") {
-                format!("{}/.zcash-params", home)
-            } else {
-                eprintln!("ERROR: Could not determine HOME directory");
-                panic!("Missing Zcash parameters");
-            };
-
-            let default_spend = Path::new(&params_dir).join("sapling-spend.params");
-            let default_output = Path::new(&params_dir).join("sapling-output.params");
-
-            if !default_spend.exists() || !default_output.exists() {
-                eprintln!(
-                    "ERROR: Could not download params and they don't exist in {}",
-                    params_dir
-                );
-                eprintln!("Please manually download from https://download.z.cash/downloads/");
-                eprintln!("Expected locations:");
-                eprintln!("  - {}", default_spend.display());
-                eprintln!("  - {}", default_output.display());
-                panic!("Missing Zcash parameters");
-            }
-
-            println!("Found params in {}", params_dir);
-
-            // Return the same type that download_sapling_parameters returns
-            zcash_proofs::SaplingParameterPaths {
-                spend: default_spend,
-                output: default_output,
-            }
-        }
-    };
-
-    // Copy the params to the internal location
-    if let Err(e) = std::fs::create_dir_all(internal_params_path) {
-        eprintln!("Warning: Could not create zcash-params directory: {e}");
-        return;
-    }
-
-    if let Err(e) = std::fs::copy(&params_path.spend, &spend_path) {
-        eprintln!("Warning: Could not copy spend params: {e}");
-    } else {
-        println!("Copied spend params to local directory");
-    }
-
-    if let Err(e) = std::fs::copy(&params_path.output, &output_path) {
-        eprintln!("Warning: Could not copy output params: {e}");
-    } else {
-        println!("Copied output params to local directory");
-    }
-
-    println!("Params setup complete");
+    println!("✓ Params copied to internal location");
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    get_zcash_params();
-    git_description();
+    println!("\n=== Zingolib Build Script ===\n");
+
+    match get_zcash_params() {
+        Ok(_) => println!("✓ Zcash params setup complete"),
+        Err(e) => {
+            eprintln!("\n✗ Failed to setup Zcash params:\n  {}", e);
+            eprintln!("\nTroubleshooting:");
+            eprintln!("  1. Check: ls -la ~/.zcash-params/");
+            eprintln!("  2. Fix: chmod -R u+rw ~/.zcash-params/");
+            eprintln!("  3. Reset: rm -rf ~/.zcash-params/");
+            return Err(e);
+        }
+    }
+
+    match git_description() {
+        Ok(_) => println!("✓ Git description generated"),
+        Err(e) => {
+            eprintln!("Warning: Failed to generate git description: {}", e);
+        }
+    }
+
+    println!("\n✓ Build script completed successfully\n");
     Ok(())
 }

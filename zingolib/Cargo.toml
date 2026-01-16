@@ -121,3 +121,4 @@ zingolib = { workspace = true, features = ["testutils"] }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
+dirs = "5.0"
