@@ -23,7 +23,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::config::SyncConfig;
+use crate::config::{PerformanceLevel, SyncConfig};
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
@@ -456,6 +456,7 @@ where
                     scan_range,
                     scan_results,
                     initial_verification_height,
+                    config.performance_level,
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
@@ -848,6 +849,7 @@ where
 }
 
 /// Scan post-processing
+#[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
@@ -856,6 +858,7 @@ async fn process_scan_results<W>(
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
     initial_verification_height: BlockHeight,
+    performance_level: PerformanceLevel,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -870,15 +873,17 @@ where
         Ok(results) => {
             let ScanResults {
                 mut nullifiers,
-                outpoints,
+                mut outpoints,
                 scanned_blocks,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-                map_nullifiers,
+                mut map_nullifiers,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+                spend::update_transparent_spends(wallet, Some(&mut outpoints))
+                    .map_err(SyncError::WalletError)?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -925,6 +930,20 @@ where
                     true,
                 );
             } else {
+                // nullifiers and outpoints are not mapped if nullifier map size limit will be exceeded
+                let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
+                if map_nullifiers
+                    && max_nullifier_map_size(performance_level).is_some_and(|max| {
+                        nullifier_map.orchard.len()
+                            + nullifier_map.sapling.len()
+                            + nullifiers.orchard.len()
+                            + nullifiers.sapling.len()
+                            > max
+                    })
+                {
+                    map_nullifiers = false;
+                }
+
                 update_wallet_data(
                     consensus_parameters,
                     wallet,
@@ -936,13 +955,25 @@ where
                     } else {
                         None
                     },
-                    outpoints,
+                    if map_nullifiers {
+                        Some(&mut outpoints)
+                    } else {
+                        None
+                    },
                     wallet_transactions,
                     sapling_located_trees,
                     orchard_located_trees,
                 )
                 .await?;
-                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_transparent_spends(
+                    wallet,
+                    if map_nullifiers {
+                        None
+                    } else {
+                        Some(&mut outpoints)
+                    },
+                )
+                .map_err(SyncError::WalletError)?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -1173,7 +1204,7 @@ async fn update_wallet_data<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
     nullifiers: Option<&mut NullifierMap>,
-    mut outpoints: BTreeMap<OutputId, ScanTarget>,
+    outpoints: Option<&mut BTreeMap<OutputId, ScanTarget>>,
     transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -1213,9 +1244,11 @@ where
             .append_nullifiers(nullifiers)
             .map_err(SyncError::WalletError)?;
     }
-    wallet
-        .append_outpoints(&mut outpoints)
-        .map_err(SyncError::WalletError)?;
+    if let Some(outpoints) = outpoints {
+        wallet
+            .append_outpoints(outpoints)
+            .map_err(SyncError::WalletError)?;
+    }
     wallet
         .update_shard_trees(
             fetch_request_sender,
@@ -1597,4 +1630,13 @@ where
     reset_spends(wallet_transactions, invalid_txids);
 
     Ok(())
+}
+
+fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> {
+    match performance_level {
+        PerformanceLevel::Low => Some(0),
+        PerformanceLevel::Medium => Some(0),
+        PerformanceLevel::High => Some(2_000_000),
+        PerformanceLevel::Maximum => None,
+    }
 }
