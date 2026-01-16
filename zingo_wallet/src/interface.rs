@@ -113,7 +113,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
                 let mut client = {
                     // global configuration must be manually set *somewhere*
-                    rustls::crypto::ring::default_provider().install_default();
+                    let _ = rustls::crypto::ring::default_provider().install_default();
                     zingolib::grpc_client::get_zcb_client(server_uri.clone())
                         .await
                         .map_err(|e| {
@@ -217,7 +217,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
 
     async fn pay(
         &mut self,
-        payments: Vec<zcash_wallet_interface::Payment>,
+        _payments: Vec<zcash_wallet_interface::Payment>,
     ) -> Result<(), Self::PayError> {
         todo!()
     }
