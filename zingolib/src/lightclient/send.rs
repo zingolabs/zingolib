@@ -156,8 +156,7 @@ pub mod send_with_proposal {
         use crate::{
             lightclient::sync::test::sync_example_wallet,
             testutils::chain_generics::{
-                conduct_chain::ConductChain as _, networked::TestnetEnvironment,
-                with_assertions,
+                conduct_chain::ConductChain as _, networked::TestnetEnvironment, with_assertions,
             },
             wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
         };
