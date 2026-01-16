@@ -200,7 +200,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         &mut self,
         _server: String,
     ) -> Result<zcash_wallet_interface::BlockHeight, Self::GetMaxScannedHeightError> {
-        use zcash_client_backend::data_api::WalletRead;
+        
 
         match &self.lightclient {
             Some(client) => Ok(client

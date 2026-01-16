@@ -9252,7 +9252,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "2.1.0"
+version = "2.1.2"
 dependencies = [
  "append-only-vec",
  "bech32",
