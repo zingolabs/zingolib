@@ -55,9 +55,46 @@ fn get_zcash_params() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Cannot determine home directory")?
         .join(".zcash-params");
 
-    if params_dir.exists() {
-        println!("Params directory exists at {:?}", params_dir);
+    let spend_file = params_dir.join("sapling-spend.params");
+    let output_file = params_dir.join("sapling-output.params");
 
+    // Check if params already exist and are accessible
+    if spend_file.exists() && output_file.exists() {
+        println!("✓ Found existing params at {:?}", params_dir);
+        println!("  Spend: {} bytes", std::fs::metadata(&spend_file)?.len());
+        println!("  Output: {} bytes", std::fs::metadata(&output_file)?.len());
+
+        // Use the existing params directly instead of calling download function
+        let params_path = zcash_proofs::SaplingParameterPaths {
+            spend: spend_file.clone(),
+            output: output_file.clone(),
+        };
+
+        // Copy to internal location
+        let internal_params_path = Path::new("zcash-params");
+        std::fs::create_dir_all(internal_params_path)
+            .map_err(|e| format!("Cannot create {:?}: {}", internal_params_path, e))?;
+
+        std::fs::copy(
+            &params_path.spend,
+            internal_params_path.join("sapling-spend.params"),
+        )
+        .map_err(|e| format!("Cannot copy spend params: {}", e))?;
+
+        std::fs::copy(
+            &params_path.output,
+            internal_params_path.join("sapling-output.params"),
+        )
+        .map_err(|e| format!("Cannot copy output params: {}", e))?;
+
+        println!("✓ Params copied to internal location");
+        return Ok(());
+    }
+
+    // Params don't exist, try to download
+    println!("Params not found, attempting download...");
+
+    if params_dir.exists() {
         // Check macOS permissions
         if let Err(e) = check_macos_permissions(&params_dir) {
             eprintln!("Warning: {}", e);
@@ -69,9 +106,9 @@ fn get_zcash_params() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let params_path = zcash_proofs::download_sapling_parameters(Some(400))
-        .map_err(|e| format!("Failed to download/access params: {}", e))?;
+        .map_err(|e| format!("Failed to download params: {}", e))?;
 
-    println!("✓ Params available");
+    println!("✓ Params downloaded");
     println!("  Spend: {:?}", params_path.spend);
     println!("  Output: {:?}", params_path.output);
 
