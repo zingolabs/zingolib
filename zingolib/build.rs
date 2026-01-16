@@ -75,7 +75,10 @@ fn get_zcash_params() {
             let default_output = Path::new(&params_dir).join("sapling-output.params");
 
             if !default_spend.exists() || !default_output.exists() {
-                eprintln!("ERROR: Could not download params and they don't exist in {}", params_dir);
+                eprintln!(
+                    "ERROR: Could not download params and they don't exist in {}",
+                    params_dir
+                );
                 eprintln!("Please manually download from https://download.z.cash/downloads/");
                 eprintln!("Expected locations:");
                 eprintln!("  - {}", default_spend.display());
