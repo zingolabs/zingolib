@@ -61,20 +61,25 @@ fn get_zcash_params() {
             println!("Warning: Could not download params: {e}");
             println!("Checking if params exist in default location...");
 
-            // Try to find params in ~/.zcash-params or ZCASH_PARAMS_DIR
-            let params_dir = std::env::var("ZCASH_PARAMS_DIR")
-                .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.zcash-params", h)))
-                .unwrap_or_else(|_| ".zcash-params".to_string());
+            // Try to find params in ZCASH_PARAMS_DIR or ~/.zcash-params
+            let params_dir = if let Ok(dir) = std::env::var("ZCASH_PARAMS_DIR") {
+                dir
+            } else if let Ok(home) = std::env::var("HOME") {
+                format!("{}/.zcash-params", home)
+            } else {
+                eprintln!("ERROR: Could not determine HOME directory");
+                panic!("Missing Zcash parameters");
+            };
 
             let default_spend = Path::new(&params_dir).join("sapling-spend.params");
             let default_output = Path::new(&params_dir).join("sapling-output.params");
 
             if !default_spend.exists() || !default_output.exists() {
-                eprintln!(
-                    "ERROR: Could not download params and they don't exist in {}",
-                    params_dir
-                );
+                eprintln!("ERROR: Could not download params and they don't exist in {}", params_dir);
                 eprintln!("Please manually download from https://download.z.cash/downloads/");
+                eprintln!("Expected locations:");
+                eprintln!("  - {}", default_spend.display());
+                eprintln!("  - {}", default_output.display());
                 panic!("Missing Zcash parameters");
             }
 
