@@ -58,60 +58,58 @@ fn get_zcash_params() -> Result<(), Box<dyn std::error::Error>> {
     let spend_file = params_dir.join("sapling-spend.params");
     let output_file = params_dir.join("sapling-output.params");
 
-    // Check if params already exist and are accessible
-    if spend_file.exists() && output_file.exists() {
+    // Check if params exist
+    let params_exist = spend_file.exists() && output_file.exists();
+
+    if params_exist {
         println!("✓ Found existing params at {:?}", params_dir);
-        println!("  Spend: {} bytes", std::fs::metadata(&spend_file)?.len());
-        println!("  Output: {} bytes", std::fs::metadata(&output_file)?.len());
 
-        // Use the existing params directly instead of calling download function
-        let params_path = zcash_proofs::SaplingParameterPaths {
-            spend: spend_file.clone(),
-            output: output_file.clone(),
-        };
+        // On macOS, check if we have write permissions before calling download_sapling_parameters
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(e) = check_macos_permissions(&params_dir) {
+                println!("Warning: No write access to params dir, but params exist");
+                println!("  Attempting to use existing params without integrity check...");
+                println!("  {}", e);
 
-        // Copy to internal location
-        let internal_params_path = Path::new("zcash-params");
-        std::fs::create_dir_all(internal_params_path)
-            .map_err(|e| format!("Cannot create {:?}: {}", internal_params_path, e))?;
-
-        std::fs::copy(
-            &params_path.spend,
-            internal_params_path.join("sapling-spend.params"),
-        )
-        .map_err(|e| format!("Cannot copy spend params: {}", e))?;
-
-        std::fs::copy(
-            &params_path.output,
-            internal_params_path.join("sapling-output.params"),
-        )
-        .map_err(|e| format!("Cannot copy output params: {}", e))?;
-
-        println!("✓ Params copied to internal location");
-        return Ok(());
-    }
-
-    // Params don't exist, try to download
-    println!("Params not found, attempting download...");
-
-    if params_dir.exists() {
-        // Check macOS permissions
-        if let Err(e) = check_macos_permissions(&params_dir) {
-            eprintln!("Warning: {}", e);
+                // Try to make params readable at minimum
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&spend_file)?.permissions();
+                perms.set_mode(0o444); // Read-only
+                std::fs::set_permissions(&spend_file, perms.clone()).ok();
+                std::fs::set_permissions(&output_file, perms).ok();
+            }
         }
-
-        std::fs::read_dir(&params_dir)
-            .map_err(|e| format!("Cannot access {:?}: {}", params_dir, e))?;
-        println!("✓ Params directory is accessible");
     }
 
+    // Always call download_sapling_parameters - it will:
+    // 1. Check if params exist
+    // 2. Verify their integrity (SHA256 checksums)
+    // 3. Download if missing or corrupted
+    // 4. Return paths to valid params
     let params_path = zcash_proofs::download_sapling_parameters(Some(400))
-        .map_err(|e| format!("Failed to download params: {}", e))?;
+        .map_err(|e| {
+            let err_msg = format!("Failed to download/verify params: {}", e);
+            // If params exist but we got permission error, provide helpful message
+            if params_exist && e.to_string().contains("Permission denied") {
+                format!(
+                    "{}\n\nThe params exist but cannot be verified due to permissions.\n\
+                    This is a known issue on macOS. Options:\n\
+                    1. Fix permissions: sudo chown -R $USER ~/.zcash-params && chmod -R u+rw ~/.zcash-params\n\
+                    2. Remove and re-download: rm -rf ~/.zcash-params\n\
+                    3. Open an issue at: https://github.com/zingolabs/zingolib/issues",
+                    err_msg
+                )
+            } else {
+                err_msg
+            }
+        })?;
 
-    println!("✓ Params downloaded");
+    println!("✓ Params verified");
     println!("  Spend: {:?}", params_path.spend);
     println!("  Output: {:?}", params_path.output);
 
+    // Copy to internal location
     let internal_params_path = Path::new("zcash-params");
     std::fs::create_dir_all(internal_params_path)
         .map_err(|e| format!("Cannot create {:?}: {}", internal_params_path, e))?;
