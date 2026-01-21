@@ -884,7 +884,7 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // FIXME: assert this is the first non-scanned / non-scanning range
+                // TODO: error if this in not the first non-scanned / non-scanning range
 
                 spend::update_transparent_spends(wallet, Some(&mut outpoints))
                     .map_err(SyncError::WalletError)?;
@@ -950,7 +950,7 @@ where
                 }
                 let mut map_nullifiers = !*nullifier_map_limit_exceeded;
 
-                // map nullifiers if the scanning the lowest range to be scanned for final spend detection.
+                // always map nullifiers if the scanning the lowest range to be scanned for final spend detection.
                 // this will set the range to `Scanned` (as opose to `ScannedWithoutMapping`) and prevent immediate
                 // re-fetching of the nullifiers in this range.
                 // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
@@ -960,19 +960,21 @@ where
                     .map_err(SyncError::WalletError)?
                     .scan_ranges()
                 {
-                    if query_scan_range.priority() != ScanPriority::Scanned
-                        && query_scan_range.priority() != ScanPriority::Scanning
-                        && query_scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                    let scan_priority = query_scan_range.priority();
+                    if scan_priority != ScanPriority::Scanned
+                        && scan_priority != ScanPriority::Scanning
+                        && scan_priority != ScanPriority::ScannedWithoutMapping
                     {
                         break;
                     }
 
-                    if query_scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                        && query_scan_range.block_range().start == scan_range.block_range().start
-                    {
-                        map_nullifiers = true;
-                    } else {
-                        break;
+                    match (
+                        scan_priority == ScanPriority::ScannedWithoutMapping,
+                        query_scan_range.block_range().start == scan_range.block_range().start,
+                    ) {
+                        (true, true) => map_nullifiers = true,
+                        (true, false) => break,
+                        (false, _) => (),
                     }
                 }
 
