@@ -884,20 +884,6 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // TODO: error if this in not the first non-scanned / non-scanning range
-
-                spend::update_transparent_spends(wallet, Some(&mut outpoints))
-                    .map_err(SyncError::WalletError)?;
-                spend::update_shielded_spends(
-                    consensus_parameters,
-                    wallet,
-                    fetch_request_sender.clone(),
-                    ufvks,
-                    &scanned_blocks,
-                    Some(&mut nullifiers),
-                )
-                .await?;
-
                 // add missing block bounds in the case that nullifier batch limit was reached and scan range was split
                 let mut missing_block_bounds = BTreeMap::new();
                 for block_bound in [
@@ -926,6 +912,48 @@ where
                         .map_err(SyncError::WalletError)?;
                 }
 
+                let first_unscanned_range = wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges
+                    .iter()
+                    .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+                    .expect("the scan range being processed is not yet set to scanned so at least one unscanned range must exist");
+                if !(first_unscanned_range
+                    .block_range()
+                    .contains(&scan_range.block_range().start)
+                    && first_unscanned_range
+                        .block_range()
+                        .contains(&(scan_range.block_range().end - 1)))
+                {
+                    // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
+
+                    // reset scan range from `Scanning` to `ScannedWithoutMapping`
+                    state::punch_scan_priority(
+                        wallet
+                            .get_sync_state_mut()
+                            .map_err(SyncError::WalletError)?,
+                        scan_range.block_range().clone(),
+                        ScanPriority::ScannedWithoutMapping,
+                        true,
+                    );
+                    tracing::debug!("Scan results discarded.");
+
+                    return Ok(());
+                }
+
+                spend::update_transparent_spends(wallet, Some(&mut outpoints))
+                    .map_err(SyncError::WalletError)?;
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                    Some(&mut nullifiers),
+                )
+                .await?;
+
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
@@ -933,7 +961,6 @@ where
                     scan_range.block_range().clone(),
                     true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as they are still checked for spends using the `additional_nullifier_map` parameter and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned non-scanning range and therefore always raise the wallet's fully scanned height after processing.
                 );
-                // FIXME: there may be a bug where ScannedWithoutMapping ranges could be processed before a lower range (with `Scanning` priority) is processed, missing spend detection of outputs in the lower scan range. investigate.
             } else {
                 // nullifiers and outpoints are not mapped if nullifier map size limit will be exceeded
                 if !*nullifier_map_limit_exceeded {

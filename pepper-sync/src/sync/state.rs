@@ -262,7 +262,7 @@ fn set_chain_tip_scan_range(
         orchard_incomplete_shard
     };
 
-    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
+    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip, false);
 }
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each scan target with `ScanPriority::FoundNote`.
@@ -304,7 +304,7 @@ pub(super) fn set_found_note_scan_range(
         block_height,
         shielded_protocol,
     );
-    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote);
+    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote, false);
 }
 
 pub(super) fn set_scanned_scan_range(
@@ -367,10 +367,12 @@ pub(super) fn set_scan_priority(
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
 /// Any scan ranges with `Scanning` or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-fn punch_scan_priority(
+/// `split_scanning_ranges` is used for rare cases where a range already scanning needs to be reset back to its original priority and should be used with caution.
+pub(super) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
+    split_scanning_ranges: bool,
 ) {
     let mut scan_ranges_contained_by_block_range = Vec::new();
     let mut scan_ranges_for_splitting = Vec::new();
@@ -378,7 +380,7 @@ fn punch_scan_priority(
     for (index, scan_range) in sync_state.scan_ranges().iter().enumerate() {
         if scan_range.priority() == ScanPriority::Scanned
             || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-            || scan_range.priority() == ScanPriority::Scanning
+            || (scan_range.priority() == ScanPriority::Scanning && !split_scanning_ranges)
             || scan_range.priority() >= scan_priority
         {
             continue;
@@ -569,10 +571,7 @@ fn select_scan_range(
         .scan_ranges
         .iter()
         .enumerate()
-        .find(|(_, scan_range)| {
-            scan_range.priority() != ScanPriority::Scanned
-                && scan_range.priority() != ScanPriority::Scanning
-        })?;
+        .find(|(_, scan_range)| scan_range.priority() != ScanPriority::Scanned)?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
