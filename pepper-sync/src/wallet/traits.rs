@@ -2,17 +2,18 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use tokio::sync::mpsc;
+use zip32::DiversifierIndex;
+
 use orchard::tree::MerkleHashOrchard;
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
-use tokio::sync::mpsc;
-use zcash_client_backend::keys::UnifiedFullViewingKey;
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::AccountId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zip32::DiversifierIndex;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
@@ -233,12 +234,14 @@ pub trait SyncShardTrees: SyncWallet {
     /// Get mutable reference to shard trees
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
 
-    /// Update wallet shard trees with new shard tree data
+    /// Update wallet shard trees with new shard tree data.
+    ///
+    /// `highest_scanned_height` is the height of the highest scanned block in the wallet not including the `scan_range` we are updating.
     fn update_shard_trees(
         &mut self,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
-        wallet_height: BlockHeight,
+        highest_scanned_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ) -> impl std::future::Future<Output = Result<(), SyncError<Self::Error>>> + Send
@@ -248,18 +251,27 @@ pub trait SyncShardTrees: SyncWallet {
         async move {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-            // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
+            // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW scanned blocks for efficiency.
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
-            let verification_window_start =
-                wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
-            let checkpoint_range = match (
-                scan_range.block_range().start >= verification_window_start,
-                scan_range.block_range().end > verification_window_start,
-            ) {
-                (true, _) => scan_range.block_range().clone(),
-                (false, true) => verification_window_start..scan_range.block_range().end,
-                (false, false) => BlockHeight::from_u32(0)..BlockHeight::from_u32(0),
+            let checkpoint_range = if scan_range.block_range().start > highest_scanned_height {
+                let verification_window_start = scan_range
+                    .block_range()
+                    .end
+                    .saturating_sub(MAX_VERIFICATION_WINDOW);
+
+                std::cmp::max(scan_range.block_range().start, verification_window_start)
+                    ..scan_range.block_range().end
+            } else if scan_range.block_range().end
+                > highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1
+            {
+                let verification_window_start =
+                    highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
+
+                std::cmp::max(scan_range.block_range().start, verification_window_start)
+                    ..scan_range.block_range().end
+            } else {
+                BlockHeight::from_u32(0)..BlockHeight::from_u32(0)
             };
 
             // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention

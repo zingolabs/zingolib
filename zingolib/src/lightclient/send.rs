@@ -76,9 +76,14 @@ pub mod send_with_proposal {
         }
 
         /// Creates and transmits transactions from a stored proposal.
-        pub async fn send_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, SendError> {
+        ///
+        /// If sync was running prior to creating a send proposal, sync will have been paused. If `resume_sync` is `true`, sync will be resumed after sending the stored proposal.
+        pub async fn send_stored_proposal(
+            &mut self,
+            resume_sync: bool,
+        ) -> Result<NonEmpty<TxId>, SendError> {
             if let Some(proposal) = self.latest_proposal.clone() {
-                match proposal {
+                let txids = match proposal {
                     ZingoProposal::Send {
                         proposal,
                         sending_account,
@@ -87,26 +92,40 @@ pub mod send_with_proposal {
                         proposal,
                         shielding_account,
                     } => self.shield(&proposal, shielding_account).await,
+                }?;
+
+                if resume_sync {
+                    let _ignore_error = self.resume_sync();
                 }
+
+                Ok(txids)
             } else {
                 Err(SendError::NoStoredProposal)
             }
         }
 
         /// Proposes and transmits transactions from a transaction request skipping proposal confirmation.
+        ///
+        /// If sync is running, sync will be paused before creating the send proposal. If `resume_sync` is `true`, sync will be resumed after send.
         pub async fn quick_send(
             &mut self,
             request: TransactionRequest,
             account_id: zip32::AccountId,
+            resume_sync: bool,
         ) -> Result<NonEmpty<TxId>, QuickSendError> {
+            let _ignore_error = self.pause_sync();
             let proposal = self
                 .wallet
                 .write()
                 .await
                 .create_send_proposal(request, account_id)
                 .await?;
+            let txids = self.send(&proposal, account_id).await?;
+            if resume_sync {
+                let _ignore_error = self.resume_sync();
+            }
 
-            Ok(self.send(&proposal, account_id).await?)
+            Ok(txids)
         }
 
         /// Shields all transparent funds skipping proposal confirmation.

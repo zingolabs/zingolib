@@ -86,7 +86,7 @@ pub mod from_inputs {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender
-            .quick_send(request, zip32::AccountId::ZERO)
+            .quick_send(request, zip32::AccountId::ZERO, true)
             .await
     }
 
@@ -102,7 +102,7 @@ pub mod from_inputs {
                 let amount = crate::utils::conversion::zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
-                    crate::wallet::utils::interpret_memo_string(memo.to_string())
+                    crate::wallet::utils::memo_bytes_from_string(memo.to_string())
                         .expect("should be able to interpret memo")
                 });
 

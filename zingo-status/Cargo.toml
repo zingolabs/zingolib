@@ -2,11 +2,14 @@
 name = "zingo-status"
 description = "A Rust library for representing and working with transaction confirmation status in ZCash."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
+
+[badges]
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 zcash_primitives = { workspace = true }

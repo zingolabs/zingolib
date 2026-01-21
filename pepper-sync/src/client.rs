@@ -31,6 +31,38 @@ use crate::error::{MempoolError, ServerError};
 
 pub(crate) mod fetch;
 
+const MAX_RETRIES: u8 = 3;
+
+const FETCH_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn recv_fetch_reply<T>(
+    rx: oneshot::Receiver<Result<T, tonic::Status>>,
+    what: &'static str,
+) -> Result<T, ServerError> {
+    match tokio::time::timeout(FETCH_REPLY_TIMEOUT, rx).await {
+        Ok(res) => {
+            let inner = res.map_err(|_| ServerError::FetcherDropped)?;
+            inner.map_err(Into::into)
+        }
+        Err(_) => {
+            Err(tonic::Status::deadline_exceeded(format!("fetch {what} reply timeout")).into())
+        }
+    }
+}
+
+async fn next_stream_item<T>(
+    stream: &mut tonic::Streaming<T>,
+    what: &'static str,
+) -> Result<Option<T>, tonic::Status> {
+    match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
+        Ok(res) => res,
+        Err(_) => Err(tonic::Status::deadline_exceeded(format!(
+            "{what} stream message timeout"
+        ))),
+    }
+}
+
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
@@ -91,9 +123,12 @@ pub(crate) async fn get_chain_height(
     fetch_request_sender
         .send(FetchRequest::ChainTip(reply_sender))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let chain_tip = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
+    let chain_tip = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
+        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
+        Err(_) => {
+            return Err(tonic::Status::deadline_exceeded("fetch ChainTip reply timeout").into());
+        }
+    };
 
     Ok(BlockHeight::from_u32(chain_tip.height as u32))
 }
@@ -110,9 +145,16 @@ pub(crate) async fn get_compact_block(
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    Ok(reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??)
+    let block = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
+        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
+        Err(_) => {
+            return Err(
+                tonic::Status::deadline_exceeded("fetch CompactBlock reply timeout").into(),
+            );
+        }
+    };
+
+    Ok(block)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -126,9 +168,15 @@ pub(crate) async fn get_compact_block_range(
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(reply_sender, block_range))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let block_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
+
+    let block_stream = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
+        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
+        Err(_) => {
+            return Err(
+                tonic::Status::deadline_exceeded("fetch CompactBlockRange reply timeout").into(),
+            );
+        }
+    };
 
     Ok(block_stream)
 }
@@ -146,9 +194,15 @@ pub(crate) async fn get_nullifier_range(
     fetch_request_sender
         .send(FetchRequest::NullifierRange(reply_sender, block_range))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let block_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
+
+    let block_stream = match tokio::time::timeout(FETCH_REPLY_TIMEOUT, reply_receiver).await {
+        Ok(res) => res.map_err(|_| ServerError::FetcherDropped)??,
+        Err(_) => {
+            return Err(
+                tonic::Status::deadline_exceeded("fetch NullifierRange reply timeout").into(),
+            );
+        }
+    };
 
     Ok(block_stream)
 }
@@ -160,25 +214,47 @@ pub(crate) async fn get_nullifier_range(
 #[cfg(not(feature = "darkside_test"))]
 pub(crate) async fn get_subtree_roots(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    start_index: u32,
+    mut start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
 ) -> Result<Vec<SubtreeRoot>, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::SubtreeRoots(
-            reply_sender,
-            start_index,
-            shielded_protocol,
-            max_entries,
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-    let mut subtree_root_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
     let mut subtree_roots = Vec::new();
-    while let Some(subtree_root) = subtree_root_stream.message().await? {
-        subtree_roots.push(subtree_root);
+    let mut retry_count = 0;
+
+    'retry: loop {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+
+        fetch_request_sender
+            .send(FetchRequest::SubtreeRoots(
+                reply_sender,
+                start_index,
+                shielded_protocol,
+                max_entries,
+            ))
+            .map_err(|_| ServerError::FetcherDropped)?;
+
+        let mut subtree_root_stream = recv_fetch_reply(reply_receiver, "SubtreeRoots").await?;
+
+        while let Some(subtree_root) =
+            match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
+                Ok(s) => s,
+                Err(e)
+                    if (e.code() == tonic::Code::DeadlineExceeded
+                        || e.message().contains("Unexpected EOF decoding stream."))
+                        && retry_count < MAX_RETRIES =>
+                {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    retry_count += 1;
+                    continue 'retry;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        {
+            subtree_roots.push(subtree_root);
+            start_index += 1;
+        }
+
+        break 'retry;
     }
 
     Ok(subtree_roots)
@@ -195,9 +271,8 @@ pub(crate) async fn get_frontiers(
     fetch_request_sender
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let tree_state = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
+
+    let tree_state = recv_fetch_reply(reply_receiver, "TreeState").await?;
 
     tree_state
         .to_chain_state()
@@ -216,11 +291,12 @@ pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender
         .send(FetchRequest::Transaction(reply_sender, txid))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let raw_transaction = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
+
+    let raw_transaction = recv_fetch_reply(reply_receiver, "Transaction").await?;
+
     let block_height =
         BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
+
     let transaction = Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
@@ -244,17 +320,15 @@ pub(crate) async fn get_utxo_metadata(
     }
 
     let (reply_sender, reply_receiver) = oneshot::channel();
+
     fetch_request_sender
         .send(FetchRequest::UtxoMetadata(
             reply_sender,
             (transparent_addresses, start_height),
         ))
         .map_err(|_| ServerError::FetcherDropped)?;
-    let transparent_output_metadata = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
 
-    Ok(transparent_output_metadata)
+    recv_fetch_reply(reply_receiver, "UtxoMetadata").await
 }
 
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
@@ -266,20 +340,42 @@ pub(crate) async fn get_transparent_address_transactions(
     transparent_address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::TransparentAddressTxs(
-            reply_sender,
-            (transparent_address, block_range),
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-    let mut raw_transaction_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)??;
-
     let mut raw_transactions: Vec<RawTransaction> = Vec::new();
-    while let Some(raw_tx) = raw_transaction_stream.message().await? {
-        raw_transactions.push(raw_tx);
+    let mut retry_count = 0;
+
+    'retry: loop {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+
+        fetch_request_sender
+            .send(FetchRequest::TransparentAddressTxs(
+                reply_sender,
+                (transparent_address.clone(), block_range.clone()),
+            ))
+            .map_err(|_| ServerError::FetcherDropped)?;
+
+        let mut raw_transaction_stream =
+            recv_fetch_reply(reply_receiver, "TransparentAddressTxs").await?;
+
+        while let Some(raw_tx) =
+            match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
+                Ok(s) => s,
+                Err(e)
+                    if (e.code() == tonic::Code::DeadlineExceeded
+                        || e.message().contains("Unexpected EOF decoding stream."))
+                        && retry_count < MAX_RETRIES =>
+                {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    retry_count += 1;
+                    raw_transactions.clear();
+                    continue 'retry;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        {
+            raw_transactions.push(raw_tx);
+        }
+
+        break 'retry;
     }
 
     let transactions = raw_transactions
