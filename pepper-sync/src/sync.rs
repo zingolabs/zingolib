@@ -442,6 +442,7 @@ where
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
+    let mut nullifier_map_limit_exceeded = false;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -457,6 +458,7 @@ where
                     scan_results,
                     initial_verification_height,
                     config.performance_level,
+                    &mut nullifier_map_limit_exceeded,
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
@@ -525,7 +527,7 @@ where
                     },
                 }
 
-                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), config.performance_level).await?;
+                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
@@ -859,6 +861,7 @@ async fn process_scan_results<W>(
     scan_results: Result<ScanResults, ScanError>,
     initial_verification_height: BlockHeight,
     performance_level: PerformanceLevel,
+    nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -878,10 +881,11 @@ where
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-                mut map_nullifiers,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
+                // FIXME: assert this is the first non-scanned / non-scanning range
+
                 spend::update_transparent_spends(wallet, Some(&mut outpoints))
                     .map_err(SyncError::WalletError)?;
                 spend::update_shielded_spends(
@@ -927,21 +931,49 @@ where
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    true,
+                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as they are still checked for spends using the `additional_nullifier_map` parameter and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned non-scanning range and therefore always raise the wallet's fully scanned height after processing.
                 );
+                // FIXME: there may be a bug where ScannedWithoutMapping ranges could be processed before a lower range (with `Scanning` priority) is processed, missing spend detection of outputs in the lower scan range. investigate.
             } else {
                 // nullifiers and outpoints are not mapped if nullifier map size limit will be exceeded
-                let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
-                if map_nullifiers
-                    && max_nullifier_map_size(performance_level).is_some_and(|max| {
+                if !*nullifier_map_limit_exceeded {
+                    let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
+                    if max_nullifier_map_size(performance_level).is_some_and(|max| {
                         nullifier_map.orchard.len()
                             + nullifier_map.sapling.len()
                             + nullifiers.orchard.len()
                             + nullifiers.sapling.len()
                             > max
-                    })
+                    }) {
+                        *nullifier_map_limit_exceeded = true;
+                    }
+                }
+                let mut map_nullifiers = !*nullifier_map_limit_exceeded;
+
+                // map nullifiers if the scanning the lowest range to be scanned for final spend detection.
+                // this will set the range to `Scanned` (as opose to `ScannedWithoutMapping`) and prevent immediate
+                // re-fetching of the nullifiers in this range.
+                // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
+                // scanning.
+                for query_scan_range in wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges()
                 {
-                    map_nullifiers = false;
+                    if query_scan_range.priority() != ScanPriority::Scanned
+                        && query_scan_range.priority() != ScanPriority::Scanning
+                        && query_scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                    {
+                        break;
+                    }
+
+                    if query_scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                        && query_scan_range.block_range().start == scan_range.block_range().start
+                    {
+                        map_nullifiers = true;
+                    } else {
+                        break;
+                    }
                 }
 
                 update_wallet_data(
