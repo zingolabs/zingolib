@@ -562,6 +562,9 @@ fn split_out_scan_range(
 /// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its
 /// initial priority.
 /// Returns `None` if there are no more ranges to scan.
+///
+/// Set `nullifier_map_limit_exceeded` to `true` if the nullifiers are not going to be mapped to the wallet's main
+/// nullifier map due to performance constraints.
 fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,

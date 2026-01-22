@@ -919,12 +919,12 @@ where
                     .iter()
                     .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
                     .expect("the scan range being processed is not yet set to scanned so at least one unscanned range must exist");
-                if !(first_unscanned_range
+                if !first_unscanned_range
                     .block_range()
                     .contains(&scan_range.block_range().start)
-                    && first_unscanned_range
+                    || !first_unscanned_range
                         .block_range()
-                        .contains(&(scan_range.block_range().end - 1)))
+                        .contains(&(scan_range.block_range().end - 1))
                 {
                     // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
 
@@ -937,7 +937,9 @@ where
                         ScanPriority::ScannedWithoutMapping,
                         true,
                     );
-                    tracing::debug!("Scan results discarded.");
+                    tracing::debug!(
+                        "Nullifiers discarded and will be re-fetched to avoid missing spends."
+                    );
 
                     return Ok(());
                 }
@@ -959,7 +961,7 @@ where
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as they are still checked for spends using the `additional_nullifier_map` parameter and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned non-scanning range and therefore always raise the wallet's fully scanned height after processing.
+                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as spends are still updated using the `additional_nullifier_map` and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned range and therefore always raise the wallet's fully scanned height after processing.
                 );
             } else {
                 // nullifiers and outpoints are not mapped if nullifier map size limit will be exceeded
@@ -978,8 +980,9 @@ where
                 let mut map_nullifiers = !*nullifier_map_limit_exceeded;
 
                 // always map nullifiers if the scanning the lowest range to be scanned for final spend detection.
-                // this will set the range to `Scanned` (as opose to `ScannedWithoutMapping`) and prevent immediate
-                // re-fetching of the nullifiers in this range.
+                // this will set the range to `Scanned` (as oppose to `ScannedWithoutMapping`) and prevent immediate
+                // re-fetching of the nullifiers in this range. these will be immediately cleared after cleanup so will not
+                // have an impact on memory or wallet file size.
                 // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
                 // scanning.
                 for query_scan_range in wallet
@@ -990,18 +993,20 @@ where
                     let scan_priority = query_scan_range.priority();
                     if scan_priority != ScanPriority::Scanned
                         && scan_priority != ScanPriority::Scanning
-                        && scan_priority != ScanPriority::ScannedWithoutMapping
                     {
                         break;
                     }
 
-                    match (
-                        scan_priority == ScanPriority::ScannedWithoutMapping,
-                        query_scan_range.block_range().start == scan_range.block_range().start,
-                    ) {
-                        (true, true) => map_nullifiers = true,
-                        (true, false) => break,
-                        (false, _) => (),
+                    if scan_priority == ScanPriority::Scanning
+                        && query_scan_range
+                            .block_range()
+                            .contains(&scan_range.block_range().start)
+                        && query_scan_range
+                            .block_range()
+                            .contains(&(scan_range.block_range().end - 1))
+                    {
+                        map_nullifiers = true;
+                        break;
                     }
                 }
 
@@ -1696,7 +1701,7 @@ where
 fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> {
     match performance_level {
         PerformanceLevel::Low => Some(0),
-        PerformanceLevel::Medium => Some(0),
+        PerformanceLevel::Medium => Some(250_000),
         PerformanceLevel::High => Some(2_000_000),
         PerformanceLevel::Maximum => None,
     }
