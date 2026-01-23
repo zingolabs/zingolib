@@ -625,6 +625,10 @@ fn select_scan_range(
 
     let selected_priority = selected_scan_range.priority();
 
+    if selected_priority == ScanPriority::Scanned || selected_priority == ScanPriority::Scanning {
+        return None;
+    }
+
     // historic scan ranges can be larger than a shard block range so must be split out.
     // otherwise, just set the scan priority of selected range to `Scanning` in sync state.
     let selected_block_range = if selected_priority == ScanPriority::Historic {
