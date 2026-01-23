@@ -574,10 +574,7 @@ fn select_scan_range(
         .scan_ranges
         .iter()
         .enumerate()
-        .find(|(_, scan_range)| {
-            scan_range.priority() != ScanPriority::Scanned
-                && scan_range.priority() != ScanPriority::Scanning
-        })?;
+        .find(|(_, scan_range)| scan_range.priority() != ScanPriority::Scanned)?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
