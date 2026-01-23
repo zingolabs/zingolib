@@ -579,6 +579,7 @@ fn select_scan_range(
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
             // unscanned range.
+            // the `first_unscanned_range` may have `Scanning` priority here as we must select a `ScannedWithoutMapping` range only when all ranges below are `Scanned`. if a `ScannedwithoutMapping` range is selected and completes *before* a lower range that is currently `Scanning`, the nullifiers will need to be discarded and re-fetched afterwards. so this avoids a race condition that results in a sync inefficiency.
             (first_unscanned_index, first_unscanned_range.clone())
         } else {
             // scan ranges are sorted from lowest to highest priority.
