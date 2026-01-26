@@ -1701,7 +1701,7 @@ where
 fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> {
     match performance_level {
         PerformanceLevel::Low => Some(0),
-        PerformanceLevel::Medium => Some(250_000),
+        PerformanceLevel::Medium => Some(125_000),
         PerformanceLevel::High => Some(2_000_000),
         PerformanceLevel::Maximum => None,
     }
