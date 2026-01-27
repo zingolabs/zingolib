@@ -709,6 +709,9 @@ pub trait NoteInterface: OutputInterface {
 
     /// Memo
     fn memo(&self) -> &Memo;
+
+    /// FIXME: add doc comment
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>];
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet.
@@ -800,6 +803,8 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+    /// FIXME: add doc comment and update serialization
+    pub(crate) refetch_nullifier_ranges: Vec<Range<BlockHeight>>,
 }
 
 /// Sapling note.
@@ -865,6 +870,10 @@ impl NoteInterface for SaplingNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
+    }
 }
 
 /// Orchard note.
@@ -929,6 +938,10 @@ impl NoteInterface for OrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
     }
 }
 

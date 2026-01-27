@@ -173,18 +173,23 @@ impl LightWallet {
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 
-    /// Returns the block height at which all blocks equal to and above this height are scanned.
+    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
+    /// `Scanned` or `ScannedWithoutMapping` priority).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
+    // FIXME: check other calls to this method still work correctly with the inclusion on ScannedWithoutMapping ranges
     pub(crate) fn spend_horizon(&self) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .sync_state
             .scan_ranges()
             .iter()
             .rev()
-            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+            .find(|scan_range| {
+                scan_range.priority() != ScanPriority::Scanned
+                    && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+            })
         {
             Some(scan_range.block_range().end)
         } else {

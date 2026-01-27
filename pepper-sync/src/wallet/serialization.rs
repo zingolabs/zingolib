@@ -566,6 +566,7 @@ impl SaplingNote {
             position,
             memo,
             spending_transaction,
+            refetch_nullifier_ranges: Vec::new(), // FIXME: add serialization!
         })
     }
 
@@ -673,6 +674,7 @@ impl OrchardNote {
             position,
             memo,
             spending_transaction,
+            refetch_nullifier_ranges: Vec::new(), // FIXME: add serialization!
         })
     }
 

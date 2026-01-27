@@ -278,7 +278,7 @@ impl LightWallet {
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
     }
 
-    // TODO: check with adjacent scanned and scannedwithoutmapping ranges merged in case shard ranges are scanend across
+    // FIXME: check with adjacent scanned and scannedwithoutmapping ranges merged in case shard ranges are scanend across
     // the two priorities
     pub(crate) fn can_build_witness<N>(
         &self,

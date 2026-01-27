@@ -463,10 +463,10 @@ impl LightWallet {
     /// - not dust (note value larger than `5_000` zats)
     /// - the wallet can build a witness for the note's commitment
     /// - satisfy the number of minimum confirmations set by the wallet
-    /// - the nullifier derived from the note has not yet been found in a transaction input on chain
+    /// - the nullifier derived from the note does not appear in a transaction input (spend) on chain
     ///
     /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
-    /// cannot guarantee the notes are unspent.
+    /// is incomplete and it is unknown if the note has already been spent (the nullifier has not appeared on chain *yet*).
     ///
     /// # Error
     ///
@@ -503,6 +503,7 @@ impl LightWallet {
                         true
                     } else {
                         transaction.status().get_height() >= spend_horizon
+                        // FIXME: add check to notes `refetch_nullifier_ranges` field here
                     }
             },
             account_id,
