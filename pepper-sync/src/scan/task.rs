@@ -69,10 +69,7 @@ pub(crate) struct Scanner<P> {
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
-impl<P> Scanner<P>
-where
-    P: SyncParameters,
-{
+impl<P: SyncParameters> Scanner<P> {
     pub(crate) fn new(
         consensus_parameters: P,
         scan_results_sender: mpsc::UnboundedSender<(ScanRange, Result<ScanResults, ScanError>)>,
@@ -312,10 +309,7 @@ struct Batcher<P> {
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
 }
 
-impl<P> Batcher<P>
-where
-    P: SyncParameters,
-{
+impl<P: SyncParameters> Batcher<P> {
     fn new(
         consensus_parameters: P,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -624,10 +618,7 @@ pub(crate) struct ScanWorker<P> {
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
 }
 
-impl<P> ScanWorker<P>
-where
-    P: SyncParameters,
-{
+impl<P: SyncParameters> ScanWorker<P> {
     fn new(
         id: usize,
         consensus_parameters: P,

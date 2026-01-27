@@ -36,16 +36,13 @@ struct InitialScanData {
 }
 
 impl InitialScanData {
-    async fn new<P>(
+    async fn new<P: SyncParameters>(
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         consensus_parameters: &P,
         first_block: &CompactBlock,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
-    ) -> Result<Self, ServerError>
-    where
-        P: SyncParameters,
-    {
+    ) -> Result<Self, ServerError> {
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
                 (
@@ -112,16 +109,13 @@ impl DecryptedNoteData {
 /// `scan_targets` are the block height and txid of transactions in the `scan_range` that are known to be relevant to the
 /// wallet and are appended to during scanning if trial decryption succeeds. If there are no known relevant transctions
 /// then `scan_targets` will start empty.
-pub(crate) async fn scan<P>(
+pub(crate) async fn scan<P: SyncParameters>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_task: ScanTask,
     max_batch_outputs: usize,
-) -> Result<ScanResults, ScanError>
-where
-    P: SyncParameters,
-{
+) -> Result<ScanResults, ScanError> {
     let ScanTask {
         compact_blocks,
         scan_range,

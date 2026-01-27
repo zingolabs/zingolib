@@ -33,16 +33,13 @@ use super::{DecryptedNoteData, InitialScanData, ScanData, collect_nullifiers};
 
 mod runners;
 
-pub(super) fn scan_compact_blocks<P>(
+pub(super) fn scan_compact_blocks<P: SyncParameters>(
     compact_blocks: Vec<CompactBlock>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
     trial_decrypt_task_size: usize,
-) -> Result<ScanData, ScanError>
-where
-    P: SyncParameters,
-{
+) -> Result<ScanData, ScanError> {
     check_continuity(
         &compact_blocks,
         initial_scan_data.start_seam_block.as_ref(),

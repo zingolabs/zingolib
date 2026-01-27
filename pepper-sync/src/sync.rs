@@ -840,13 +840,10 @@ pub fn reset_spends(
 }
 
 /// Returns true if the scanner and mempool are shutdown.
-fn is_shutdown<P>(
+fn is_shutdown<P: SyncParameters>(
     scanner: &Scanner<P>,
     mempool_unprocessed_transactions_count: Arc<AtomicU8>,
-) -> bool
-where
-    P: SyncParameters,
-{
+) -> bool {
     scanner.worker_poolsize() == 0
         && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0
 }
