@@ -11,9 +11,10 @@ use incrementalmerkletree::Position;
 use zcash_client_backend::proto::compact_formats::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::{transaction::TxId, zip32::AccountId};
-use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_protocol::consensus::BlockHeight;
 
 use crate::{
+    SyncParameters,
     client::FetchRequest,
     error::{ScanError, ServerError},
     sync::ScanPriority,
@@ -43,7 +44,7 @@ impl InitialScanData {
         end_seam_block: Option<WalletBlock>,
     ) -> Result<Self, ServerError>
     where
-        P: consensus::Parameters + Sync + Send + 'static,
+        P: SyncParameters,
     {
         let (sapling_initial_tree_size, orchard_initial_tree_size) =
             if let Some(prev) = &start_seam_block {
@@ -119,7 +120,7 @@ pub(crate) async fn scan<P>(
     max_batch_outputs: usize,
 ) -> Result<ScanResults, ScanError>
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     let ScanTask {
         compact_blocks,

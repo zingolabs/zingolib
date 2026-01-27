@@ -40,6 +40,7 @@ use crate::wallet::{
     SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
+use crate::SyncParameters;
 
 #[cfg(not(feature = "darkside_test"))]
 use crate::witness;
@@ -844,7 +845,7 @@ fn is_shutdown<P>(
     mempool_unprocessed_transactions_count: Arc<AtomicU8>,
 ) -> bool
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     scanner.worker_poolsize() == 0
         && mempool_unprocessed_transactions_count.load(atomic::Ordering::Acquire) == 0

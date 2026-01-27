@@ -21,6 +21,7 @@ use crate::{
     keys::{KeyId, ScanningKeyOps, ScanningKeys},
     wallet::{NullifierMap, OutputId, ScanTarget, TreeBounds, WalletBlock},
     witness::WitnessData,
+    SyncParameters,
 };
 
 #[cfg(not(feature = "darkside_test"))]
@@ -40,7 +41,7 @@ pub(super) fn scan_compact_blocks<P>(
     trial_decrypt_task_size: usize,
 ) -> Result<ScanData, ScanError>
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     check_continuity(
         &compact_blocks,

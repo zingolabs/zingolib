@@ -136,3 +136,9 @@ pub(crate) struct Orchard;
 impl SyncDomain for Orchard {
     const SHIELDED_PROTOCOL: ShieldedProtocol = ShieldedProtocol::Orchard;
 }
+
+use zcash_protocol::consensus;
+
+/// Trait alias for consensus parameters that can be shared across threads.
+trait SyncParameters: consensus::Parameters + Sync + Send + 'static {}
+impl<T: consensus::Parameters + Sync + Send + 'static> SyncParameters for T {}

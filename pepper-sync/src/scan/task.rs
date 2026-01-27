@@ -29,6 +29,7 @@ use crate::{
         ScanTarget, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
+    SyncParameters,
 };
 
 use super::{ScanResults, scan};
@@ -70,7 +71,7 @@ pub(crate) struct Scanner<P> {
 
 impl<P> Scanner<P>
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     pub(crate) fn new(
         consensus_parameters: P,
@@ -313,7 +314,7 @@ struct Batcher<P> {
 
 impl<P> Batcher<P>
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     fn new(
         consensus_parameters: P,
@@ -625,7 +626,7 @@ pub(crate) struct ScanWorker<P> {
 
 impl<P> ScanWorker<P>
 where
-    P: consensus::Parameters + Sync + Send + 'static,
+    P: SyncParameters,
 {
     fn new(
         id: usize,
