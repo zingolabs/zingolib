@@ -172,8 +172,8 @@ pub enum ScanPriority {
     Scanned,
     /// Block ranges that have already been scanned. The nullifiers from this range were not mapped after scanning and
     /// spend detection to reduce memory consumption and/or storage for non-linear scanning. These nullifiers will need
-    /// to be re-fetched for final spend detection when merging this range is the lowest unscanned range in the
-    /// wallet's list of scan ranges.
+    /// to be re-fetched for final spend detection when this range is the lowest unscanned range in the wallet's list
+    /// of scan ranges.
     ScannedWithoutMapping,
     /// Block ranges to be scanned to advance the fully-scanned height.
     Historic,
@@ -957,8 +957,6 @@ where
                     return Ok(());
                 }
 
-                spend::update_transparent_spends(wallet, Some(&mut outpoints))
-                    .map_err(SyncError::WalletError)?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -977,7 +975,7 @@ where
                     true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as spends are still updated using the `additional_nullifier_map` and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned range and therefore always raise the wallet's fully scanned height after processing.
                 );
             } else {
-                // nullifiers and outpoints are not mapped if nullifier map size limit will be exceeded
+                // nullifiers are not mapped if nullifier map size limit will be exceeded
                 if !*nullifier_map_limit_exceeded {
                     let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
                     if max_nullifier_map_size(performance_level).is_some_and(|max| {
@@ -992,7 +990,11 @@ where
                 }
                 let mut map_nullifiers = !*nullifier_map_limit_exceeded;
 
-                // always map nullifiers if the scanning the lowest range to be scanned for final spend detection.
+                // all transparent spend locations are known before scanning so there is no need to map outpoints from untargetted ranges.
+                // outpoints of untargetted ranges will still be checked before being discarded.
+                let map_outpoints = scan_range.priority() >= ScanPriority::FoundNote;
+
+                // always map nullifiers if scanning the lowest range to be scanned for final spend detection.
                 // this will set the range to `Scanned` (as oppose to `ScannedWithoutMapping`) and prevent immediate
                 // re-fetching of the nullifiers in this range. these will be immediately cleared after cleanup so will not
                 // have an impact on memory or wallet file size.
@@ -1034,7 +1036,7 @@ where
                     } else {
                         None
                     },
-                    if map_nullifiers {
+                    if map_outpoints {
                         Some(&mut outpoints)
                     } else {
                         None
@@ -1046,7 +1048,7 @@ where
                 .await?;
                 spend::update_transparent_spends(
                     wallet,
-                    if map_nullifiers {
+                    if map_outpoints {
                         None
                     } else {
                         Some(&mut outpoints)
