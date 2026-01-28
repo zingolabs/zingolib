@@ -179,16 +179,23 @@ impl LightWallet {
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
-    // FIXME: check other calls to this method still work correctly with the inclusion on ScannedWithoutMapping ranges
-    pub(crate) fn spend_horizon(&self) -> Option<BlockHeight> {
+    ///
+    /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
+    /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
+    /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
+    pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .sync_state
             .scan_ranges()
             .iter()
             .rev()
             .find(|scan_range| {
-                scan_range.priority() != ScanPriority::Scanned
-                    && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                if all_spends_known {
+                    scan_range.priority() >= ScanPriority::FoundNote
+                } else {
+                    scan_range.priority() != ScanPriority::Scanned
+                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                }
             })
         {
             Some(scan_range.block_range().end)

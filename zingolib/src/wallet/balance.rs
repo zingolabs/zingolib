@@ -485,7 +485,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(spend_horizon) = self.spend_horizon() else {
+        let Some(spend_horizon) = self.spend_horizon(false) else {
             return Ok(Zatoshis::ZERO);
         };
         let Some((_, anchor_height)) = self
