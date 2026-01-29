@@ -710,7 +710,9 @@ pub trait NoteInterface: OutputInterface {
     /// Memo
     fn memo(&self) -> &Memo;
 
-    /// FIXME: add doc comment
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` priority before this note was scanned, meaning the
+    /// nullifiers were discarded due to memory constraints and will be re-fetched later in the sync process.
     fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>];
 }
 
@@ -803,7 +805,9 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
-    /// FIXME: add doc comment and update serialization
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` priority before this note was scanned, meaning the
+    /// nullifiers were discarded due to memory constraints and will be re-fetched later in the sync process.
     pub(crate) refetch_nullifier_ranges: Vec<Range<BlockHeight>>,
 }
 

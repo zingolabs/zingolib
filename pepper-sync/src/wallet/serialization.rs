@@ -479,14 +479,14 @@ impl TransparentCoin {
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     fn serialized_version() -> u8 {
-        0
+        1
     }
 }
 
 impl SaplingNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = reader.read_u16::<LittleEndian>()?;
@@ -558,6 +558,17 @@ impl SaplingNote {
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
 
+        let refetch_nullifier_ranges = if version >= 1 {
+            Vector::read(&mut reader, |r| {
+                let start = r.read_u32::<LittleEndian>()?;
+                let end = r.read_u32::<LittleEndian>()?;
+
+                Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
+            })?
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
@@ -566,7 +577,7 @@ impl SaplingNote {
             position,
             memo,
             spending_transaction,
-            refetch_nullifier_ranges: Vec::new(), // FIXME: add serialization!
+            refetch_nullifier_ranges,
         })
     }
 
@@ -603,6 +614,11 @@ impl SaplingNote {
 
         Optional::write(&mut writer, self.spending_transaction, |w, txid| {
             txid.write(w)
+        })?;
+
+        Vector::write(&mut writer, &self.refetch_nullifier_ranges, |w, range| {
+            w.write_u32::<LittleEndian>(range.start.into())?;
+            w.write_u32::<LittleEndian>(range.end.into())
         })
     }
 }
@@ -610,7 +626,7 @@ impl SaplingNote {
 impl OrchardNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = reader.read_u16::<LittleEndian>()?;
@@ -665,6 +681,17 @@ impl OrchardNote {
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
 
+        let refetch_nullifier_ranges = if version >= 1 {
+            Vector::read(&mut reader, |r| {
+                let start = r.read_u32::<LittleEndian>()?;
+                let end = r.read_u32::<LittleEndian>()?;
+
+                Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
+            })?
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
             key_id: KeyId::from_parts(account_id, scope),
@@ -674,7 +701,7 @@ impl OrchardNote {
             position,
             memo,
             spending_transaction,
-            refetch_nullifier_ranges: Vec::new(), // FIXME: add serialization!
+            refetch_nullifier_ranges,
         })
     }
 
@@ -704,7 +731,10 @@ impl OrchardNote {
             txid.write(w)
         })?;
 
-        Ok(())
+        Vector::write(&mut writer, &self.refetch_nullifier_ranges, |w, range| {
+            w.write_u32::<LittleEndian>(range.start.into())?;
+            w.write_u32::<LittleEndian>(range.end.into())
+        })
     }
 }
 
