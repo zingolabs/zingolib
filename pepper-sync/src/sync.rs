@@ -1299,12 +1299,6 @@ where
     let highest_scanned_height = sync_state
         .highest_scanned_height()
         .expect("scan ranges should not be empty in this scope");
-    let scanned_without_mapping_ranges: Vec<Range<BlockHeight>> = sync_state
-        .scan_ranges()
-        .iter()
-        .filter(|&scan_range| scan_range.priority() == ScanPriority::ScannedWithoutMapping)
-        .map(|scan_range| scan_range.block_range().clone())
-        .collect();
     for transaction in transactions.values() {
         state::update_found_note_shard_priority(
             consensus_parameters,
@@ -1319,12 +1313,20 @@ where
             transaction,
         );
     }
-    // add all block ranges of scan ranges with `ScanneWithoutMapping` priority above each transactions height to each note to track which ranges need the nullifiers to be re-fetched before the note is known to be unspent (in addition to all other ranges above the notes height being `Scanned` or `ScannedWithoutMapping` priority). this information is necessary as these ranges have been scanned but the nullifiers have been discarded so must be re-fetched. if ranges are scanned but the nullifiers are discarded (set to `ScannedWithoutMapping` priority) *after* this note has been added to the wallet, this is sufficient to know this note has not been spent, even if this range is not set to `Scanned` priority.
+    // add all block ranges of scan ranges with `ScanneWithoutMapping` priority above the current scan range to each note to track which ranges need the nullifiers to be re-fetched before the note is known to be unspent (in addition to all other ranges above the notes height being `Scanned` or `ScannedWithoutMapping` priority). this information is necessary as these ranges have been scanned but the nullifiers have been discarded so must be re-fetched. if ranges are scanned but the nullifiers are discarded (set to `ScannedWithoutMapping` priority) *after* this note has been added to the wallet, this is sufficient to know this note has not been spent, even if this range is not set to `Scanned` priority.
+    let refetch_nullifier_ranges = {
+        let scanned_without_mapping_ranges: Vec<Range<BlockHeight>> = sync_state
+            .scan_ranges()
+            .iter()
+            .filter(|&scan_range| scan_range.priority() == ScanPriority::ScannedWithoutMapping)
+            .map(|scan_range| scan_range.block_range().clone())
+            .collect();
+
+        scanned_without_mapping_ranges[scanned_without_mapping_ranges
+            .partition_point(|range| range.start < scan_range.block_range().end)..]
+            .to_vec()
+    };
     for transaction in transactions.values_mut() {
-        let refetch_nullifier_ranges = scanned_without_mapping_ranges
-            [scanned_without_mapping_ranges
-                .partition_point(|range| range.start <= transaction.status().get_height())..]
-            .to_vec();
         for note in transaction.sapling_notes.as_mut_slice() {
             note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
         }
