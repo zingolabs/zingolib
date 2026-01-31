@@ -26,7 +26,6 @@ pub mod send_with_proposal {
     use crate::data::proposal::ZingoProposal;
     use crate::lightclient::LightClient;
     use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
-    use crate::wallet::error::TransmissionError;
     use crate::wallet::output::OutputRef;
 
     impl LightClient {
@@ -62,17 +61,6 @@ pub mod send_with_proposal {
             Ok(wallet
                 .transmit_transactions(self.server_uri(), calculated_txids)
                 .await?)
-        }
-
-        /// Re-transmits a previously calculated transaction that failed to send.
-        pub async fn resend(&self, txid: TxId) -> Result<(), TransmissionError> {
-            self.wallet
-                .write()
-                .await
-                .transmit_transactions(self.server_uri(), NonEmpty::singleton(txid))
-                .await?;
-
-            Ok(())
         }
 
         /// Creates and transmits transactions from a stored proposal.

@@ -14,4 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Removed
+`resend` command - see zingolib CHANGELOG.md on `LightClient::resend`
+
+## [0.2.0]
 

@@ -1380,44 +1380,6 @@ impl Command for ConfirmCommand {
     }
 }
 
-struct ResendCommand {}
-impl Command for ResendCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Re-transmits a calculated transaction from the wallet with the given txid.
-            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
-            to remove the calculated transaction in the case of send failure.
-
-            usage:
-            resend <txid>
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Re-transmits a calculated transaction from the wallet with the given txid."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
-                .to_string();
-        }
-
-        let txid = match txid_from_hex_encoded_str(args[0]) {
-            Ok(txid) => txid,
-            Err(e) => return format!("Error: {e}"),
-        };
-
-        RT.block_on(async move {
-            match lightclient.resend(txid).await {
-                Ok(()) => "Successfully resent transaction.".to_string(),
-                Err(e) => format!("Error: {e}"),
-            }
-        })
-    }
-}
-
 // TODO: add a decline command which deletes latest proposal?
 
 struct DeleteCommand {}
@@ -2003,7 +1965,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
-        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("settings", Box::new(SettingsCommand {})),

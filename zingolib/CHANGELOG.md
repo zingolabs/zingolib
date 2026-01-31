@@ -12,5 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Removed
+`LightClient::resend` - replaced by automatic retries due to issues with the current `resend` or `remove` user flow.
 
 ## [2.1.0] - 2025-12-18
