@@ -600,6 +600,8 @@ where
 }
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
+/// If there is still nullifiers to be re-fetched when scanning is complete, the percentages will be overrided to 99%
+/// until sync is complete.
 ///
 /// Intended to be called while [`self::sync`] is running in a separate task.
 pub async fn sync_status<W>(wallet: &W) -> Result<SyncStatus, SyncStatusError<W::Error>>
@@ -658,11 +660,11 @@ where
 
     let session_blocks_scanned =
         total_blocks_scanned - sync_state.initial_sync_state.previously_scanned_blocks;
-    let percentage_session_blocks_scanned = ((session_blocks_scanned as f32
+    let mut percentage_session_blocks_scanned = ((session_blocks_scanned as f32
         / (total_blocks - sync_state.initial_sync_state.previously_scanned_blocks) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
-    let percentage_total_blocks_scanned =
+    let mut percentage_total_blocks_scanned =
         ((total_blocks_scanned as f32 / total_blocks as f32) * 100.0).clamp(0.0, 100.0);
 
     let session_sapling_outputs_scanned = total_sapling_outputs_scanned
@@ -680,12 +682,30 @@ where
         + sync_state
             .initial_sync_state
             .previously_scanned_orchard_outputs;
-    let percentage_session_outputs_scanned = ((session_outputs_scanned as f32
+    let mut percentage_session_outputs_scanned = ((session_outputs_scanned as f32
         / (total_outputs - previously_scanned_outputs) as f32)
         * 100.0)
         .clamp(0.0, 100.0);
-    let percentage_total_outputs_scanned =
+    let mut percentage_total_outputs_scanned =
         ((total_outputs_scanned as f32 / total_outputs as f32) * 100.0).clamp(0.0, 100.0);
+
+    if sync_state.scan_ranges().iter().any(|scan_range| {
+        scan_range.priority() == ScanPriority::ScannedWithoutMapping
+            || scan_range.priority() == ScanPriority::RefetchingNullifiers
+    }) {
+        if percentage_session_blocks_scanned == 100.0 {
+            percentage_session_blocks_scanned = 99.0;
+        }
+        if percentage_total_blocks_scanned == 100.0 {
+            percentage_total_blocks_scanned = 99.0;
+        }
+        if percentage_session_outputs_scanned == 100.0 {
+            percentage_session_outputs_scanned = 99.0;
+        }
+        if percentage_total_outputs_scanned == 100.0 {
+            percentage_total_outputs_scanned = 99.0;
+        }
+    }
 
     Ok(SyncStatus {
         scan_ranges: sync_state.scan_ranges.clone(),

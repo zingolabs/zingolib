@@ -846,6 +846,7 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
@@ -864,6 +865,7 @@ where
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .collect::<Result<Vec<_>, _>>()?
