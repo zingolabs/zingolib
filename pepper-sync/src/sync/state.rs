@@ -581,7 +581,7 @@ fn split_out_scan_range(
 ///
 /// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its
 /// initial priority for use in scanning and post-scan processing.
-/// If the selected range if of `ScannedWithoutMapping` priority, the range is set to `RefetchingNullifiers` in the
+/// If the selected range is of `ScannedWithoutMapping` priority, the range is set to `RefetchingNullifiers` in the
 /// wallet `sync_state` but returns the scan range with priority `ScannedWithoutMapping` for use in scanning and
 /// post-scan processing.
 /// Returns `None` if there are no more ranges to scan.

@@ -953,7 +953,7 @@ where
                     .map_err(SyncError::WalletError)?
                     .scan_ranges
                     .iter()
-                    .find(|scan_range| scan_range.priority() != ScanPriority::Scanned && scan_range.priority() != ScanPriority::RefetchingNullifiers)
+                    .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
                     .expect("the scan range being processed is not yet set to scanned so at least one unscanned range must exist");
                 if !first_unscanned_range
                     .block_range()
