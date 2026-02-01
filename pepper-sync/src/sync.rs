@@ -965,13 +965,11 @@ where
                     // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
 
                     // reset scan range from `RefetchingNullifiers` to `ScannedWithoutMapping`
-                    state::punch_scan_priority(
+                    state::reset_refetching_nullifiers_scan_range(
                         wallet
                             .get_sync_state_mut()
                             .map_err(SyncError::WalletError)?,
                         scan_range.block_range().clone(),
-                        ScanPriority::ScannedWithoutMapping,
-                        true,
                     );
                     tracing::debug!(
                         "Nullifiers discarded and will be re-fetched to avoid missing spends."

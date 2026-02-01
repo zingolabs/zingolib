@@ -278,7 +278,7 @@ fn set_chain_tip_scan_range(
         orchard_incomplete_shard
     };
 
-    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip, false);
+    punch_scan_priority(sync_state, chain_tip, ScanPriority::ChainTip);
 }
 
 /// Punches in the `shielded_protocol` shard block ranges surrounding each scan target with `ScanPriority::FoundNote`.
@@ -320,7 +320,7 @@ pub(super) fn set_found_note_scan_range(
         block_height,
         shielded_protocol,
     );
-    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote, false);
+    punch_scan_priority(sync_state, block_range, ScanPriority::FoundNote);
 }
 
 pub(super) fn set_scanned_scan_range(
@@ -349,6 +349,35 @@ pub(super) fn set_scanned_scan_range(
         } else {
             ScanPriority::ScannedWithoutMapping
         },
+    );
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
+}
+
+pub(super) fn reset_refetching_nullifiers_scan_range(
+    sync_state: &mut SyncState,
+    invalid_refetch_range: Range<BlockHeight>,
+) {
+    let Some((index, scan_range)) =
+        sync_state
+            .scan_ranges
+            .iter()
+            .enumerate()
+            .find(|(_, scan_range)| {
+                scan_range
+                    .block_range()
+                    .contains(&invalid_refetch_range.start)
+                    && scan_range
+                        .block_range()
+                        .contains(&(invalid_refetch_range.end - 1))
+            })
+    else {
+        panic!("scan range containing invalid refetch range should exist!");
+    };
+
+    let split_ranges = split_out_scan_range(
+        scan_range.clone(),
+        invalid_refetch_range.clone(),
+        ScanPriority::ScannedWithoutMapping,
     );
     sync_state.scan_ranges.splice(index..=index, split_ranges);
 }
@@ -383,14 +412,10 @@ pub(super) fn set_scan_priority(
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
 /// Any scan ranges with `Scanning`, `RefetchingNullifiers` or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-/// `split_refetching_nullifier_ranges` is used for rare cases where a range is already refetching nullifiers and needs
-/// to be reset back to `ScannedWithoutMapping` priority.
-// TODO: make the `split_refetching_nullifier_ranges` logic a separate fn
 pub(super) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
-    split_refetching_nullifier_ranges: bool,
 ) {
     let mut scan_ranges_contained_by_block_range = Vec::new();
     let mut scan_ranges_for_splitting = Vec::new();
@@ -399,8 +424,7 @@ pub(super) fn punch_scan_priority(
         if scan_range.priority() == ScanPriority::Scanned
             || scan_range.priority() == ScanPriority::ScannedWithoutMapping
             || scan_range.priority() == ScanPriority::Scanning
-            || (scan_range.priority() == ScanPriority::RefetchingNullifiers
-                && !split_refetching_nullifier_ranges)
+            || scan_range.priority() == ScanPriority::RefetchingNullifiers
             || scan_range.priority() >= scan_priority
         {
             continue;
