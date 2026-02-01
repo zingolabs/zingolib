@@ -89,7 +89,7 @@ impl ScanTarget {
 
 impl SyncState {
     fn serialized_version() -> u8 {
-        2
+        3
     }
 
     /// Deserialize into `reader`
@@ -98,8 +98,23 @@ impl SyncState {
         let scan_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let priority = if version >= 2 {
-                match r.read_u8()? {
+            let priority = match version {
+                3.. => match r.read_u8()? {
+                    0 => Ok(ScanPriority::RefetchingNullifiers),
+                    1 => Ok(ScanPriority::Scanning),
+                    2 => Ok(ScanPriority::Scanned),
+                    3 => Ok(ScanPriority::ScannedWithoutMapping),
+                    4 => Ok(ScanPriority::Historic),
+                    5 => Ok(ScanPriority::OpenAdjacent),
+                    6 => Ok(ScanPriority::FoundNote),
+                    7 => Ok(ScanPriority::ChainTip),
+                    8 => Ok(ScanPriority::Verify),
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid scan priority",
+                    )),
+                }?,
+                2 => match r.read_u8()? {
                     0 => Ok(ScanPriority::Scanning),
                     1 => Ok(ScanPriority::Scanned),
                     2 => Ok(ScanPriority::ScannedWithoutMapping),
@@ -112,9 +127,8 @@ impl SyncState {
                         std::io::ErrorKind::InvalidData,
                         "invalid scan priority",
                     )),
-                }?
-            } else {
-                match r.read_u8()? {
+                }?,
+                0 | 1 => match r.read_u8()? {
                     0 => Ok(ScanPriority::Scanning),
                     1 => Ok(ScanPriority::Scanned),
                     2 => Ok(ScanPriority::Historic),
@@ -126,7 +140,7 @@ impl SyncState {
                         std::io::ErrorKind::InvalidData,
                         "invalid scan priority",
                     )),
-                }?
+                }?,
             };
 
             Ok(ScanRange::from_parts(start..end, priority))

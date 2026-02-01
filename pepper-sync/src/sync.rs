@@ -166,6 +166,8 @@ impl From<SyncResult> for json::JsonValue {
 /// Scanning range priority levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScanPriority {
+    /// Block ranges that are currently refetching nullifiers.
+    RefetchingNullifiers,
     /// Block ranges that are currently being scanned.
     Scanning,
     /// Block ranges that have already been scanned will not be re-scanned.
@@ -941,7 +943,7 @@ where
                 {
                     // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
 
-                    // reset scan range from `Scanning` to `ScannedWithoutMapping`
+                    // reset scan range from `RefetchingNullifiers` to `ScannedWithoutMapping`
                     state::punch_scan_priority(
                         wallet
                             .get_sync_state_mut()
@@ -1008,6 +1010,7 @@ where
                     let scan_priority = query_scan_range.priority();
                     if scan_priority != ScanPriority::Scanned
                         && scan_priority != ScanPriority::Scanning
+                        && scan_priority != ScanPriority::RefetchingNullifiers
                     {
                         break;
                     }
@@ -1458,6 +1461,7 @@ where
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
                 || scan_range.priority() == ScanPriority::Scanning
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .flat_map(|scanned_range| {
             vec![

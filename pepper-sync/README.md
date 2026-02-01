@@ -34,7 +34,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
 8. Set the first 10 blocks after the highest previously scanned blocks to "verify" priority to check for re-org.
 
 ## Scanning
-1. If the "batcher" task is idle, set the highest priority scan range to "scanning" priority and send it to the "batcher" task. If the scan priority is "historic", it first splits an orchard shard range off the lower end. If all scan ranges in the wallet's sync state are "scanned", shutdown the sync process.
+1. If the "batcher" task is idle, set the highest priority scan range to "Scanning" priority and send it to the "batcher" task. If the scan priority is "Historic", first split an orchard shard range off the lower end. If the lowest unscanned range is of "ScannedWithoutMapping" priority, prioritize this range and set it to "RefetchingNullifiers" priority. If all scan ranges in the wallet's sync state are "scanned", shutdown the sync process.
 2. Batch the scan range:
   2a. Stream compact blocks from server until a fixed threshold of outputs is reached. If the entire scan range is batched, the "batcher" task goes idle.
   2b. Store the batch and wait until it is taken by an idle "scan worker" before returning to step 2a

@@ -170,6 +170,8 @@ async fn create_scan_range(
 ///
 /// A range that was previously scanning when sync was last interrupted is set to `FoundNote` to be prioritised for
 /// scanning.
+/// A range that was previously refetching nullifiers when sync was last interrupted is set to `ScannedWithoutMapping`
+/// so the nullifiers can be fetched again.
 fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
@@ -182,6 +184,20 @@ fn reset_scan_ranges(sync_state: &mut SyncState) {
             sync_state,
             scan_range.block_range(),
             ScanPriority::FoundNote,
+        );
+    }
+
+    let previously_refetching_nullifiers_scan_ranges = sync_state
+        .scan_ranges
+        .iter()
+        .filter(|&range| range.priority() == ScanPriority::RefetchingNullifiers)
+        .cloned()
+        .collect::<Vec<_>>();
+    for scan_range in previously_refetching_nullifiers_scan_ranges {
+        set_scan_priority(
+            sync_state,
+            scan_range.block_range(),
+            ScanPriority::ScannedWithoutMapping,
         );
     }
 }
@@ -365,14 +381,16 @@ pub(super) fn set_scan_priority(
 /// If any scan ranges in `sync_state` are found to overlap with the given `block_range`, they will be split at the
 /// boundary and the new scan ranges contained by `block_range` will be set to `scan_priority`.
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
-/// Any scan ranges with `Scanning` or `Scanned` priority or with higher (or equal) priority than
+/// Any scan ranges with `Scanning`, `RefetchingNullifiers` or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-/// `split_scanning_ranges` is used for rare cases where a range already scanning needs to be reset back to its original priority and should be used with caution.
+/// `split_refetching_nullifier_ranges` is used for rare cases where a range is already refetching nullifiers and needs
+/// to be reset back to `ScannedWithoutMapping` priority.
+// TODO: make the `split_refetching_nullifier_ranges` logic a separate fn
 pub(super) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
-    split_scanning_ranges: bool,
+    split_refetching_nullifier_ranges: bool,
 ) {
     let mut scan_ranges_contained_by_block_range = Vec::new();
     let mut scan_ranges_for_splitting = Vec::new();
@@ -380,7 +398,9 @@ pub(super) fn punch_scan_priority(
     for (index, scan_range) in sync_state.scan_ranges().iter().enumerate() {
         if scan_range.priority() == ScanPriority::Scanned
             || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-            || (scan_range.priority() == ScanPriority::Scanning && !split_scanning_ranges)
+            || scan_range.priority() == ScanPriority::Scanning
+            || (scan_range.priority() == ScanPriority::RefetchingNullifiers
+                && !split_refetching_nullifier_ranges)
             || scan_range.priority() >= scan_priority
         {
             continue;
@@ -560,7 +580,10 @@ fn split_out_scan_range(
 /// Selects and prepares the next scan range for scanning.
 ///
 /// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its
-/// initial priority.
+/// initial priority for use in scanning and post-scan processing.
+/// If the selected range if of `ScannedWithoutMapping` priority, the range is set to `RefetchingNullifiers` in the
+/// wallet `sync_state` but returns the scan range with priority `ScannedWithoutMapping` for use in scanning and
+/// post-scan processing.
 /// Returns `None` if there are no more ranges to scan.
 ///
 /// Set `nullifier_map_limit_exceeded` to `true` if the nullifiers are not going to be mapped to the wallet's main
@@ -574,7 +597,10 @@ fn select_scan_range(
         .scan_ranges
         .iter()
         .enumerate()
-        .find(|(_, scan_range)| scan_range.priority() != ScanPriority::Scanned)?;
+        .find(|(_, scan_range)| {
+            scan_range.priority() != ScanPriority::Scanned
+                && scan_range.priority() != ScanPriority::RefetchingNullifiers
+        })?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
@@ -625,46 +651,67 @@ fn select_scan_range(
 
     let selected_priority = selected_scan_range.priority();
 
-    if selected_priority == ScanPriority::Scanned || selected_priority == ScanPriority::Scanning {
+    if selected_priority == ScanPriority::Scanned
+        || selected_priority == ScanPriority::Scanning
+        || selected_priority == ScanPriority::RefetchingNullifiers
+    {
         return None;
     }
 
     // historic scan ranges can be larger than a shard block range so must be split out.
     // otherwise, just set the scan priority of selected range to `Scanning` in sync state.
-    let selected_block_range = if selected_priority == ScanPriority::Historic {
-        let shard_block_range = determine_block_range(
-            consensus_parameters,
-            sync_state,
-            selected_scan_range.block_range().start,
-            Some(ShieldedProtocol::Orchard),
-        );
-        let split_ranges = split_out_scan_range(
-            selected_scan_range,
-            shard_block_range,
-            ScanPriority::Scanning,
-        );
-        let selected_block_range = split_ranges
-            .first()
-            .expect("split ranges should always be non-empty")
-            .block_range()
-            .clone();
-        sync_state
-            .scan_ranges
-            .splice(selected_index..=selected_index, split_ranges);
+    // if the selected range is of `ScannedWithoutMapping` priority, set the range to `RefetchingNullifiers` priority
+    // instead of `Scanning`.
+    let selected_block_range = match selected_priority {
+        ScanPriority::Historic => {
+            let shard_block_range = determine_block_range(
+                consensus_parameters,
+                sync_state,
+                selected_scan_range.block_range().start,
+                Some(ShieldedProtocol::Orchard),
+            );
+            let split_ranges = split_out_scan_range(
+                selected_scan_range,
+                shard_block_range,
+                ScanPriority::Scanning,
+            );
+            let selected_block_range = split_ranges
+                .first()
+                .expect("split ranges should always be non-empty")
+                .block_range()
+                .clone();
+            sync_state
+                .scan_ranges
+                .splice(selected_index..=selected_index, split_ranges);
 
-        selected_block_range
-    } else {
-        let selected_scan_range = sync_state
-            .scan_ranges
-            .get_mut(selected_index)
-            .expect("scan range should exist due to previous logic");
+            selected_block_range
+        }
+        ScanPriority::ScannedWithoutMapping => {
+            let selected_scan_range = sync_state
+                .scan_ranges
+                .get_mut(selected_index)
+                .expect("scan range should exist due to previous logic");
 
-        *selected_scan_range = ScanRange::from_parts(
-            selected_scan_range.block_range().clone(),
-            ScanPriority::Scanning,
-        );
+            *selected_scan_range = ScanRange::from_parts(
+                selected_scan_range.block_range().clone(),
+                ScanPriority::RefetchingNullifiers,
+            );
 
-        selected_scan_range.block_range().clone()
+            selected_scan_range.block_range().clone()
+        }
+        _ => {
+            let selected_scan_range = sync_state
+                .scan_ranges
+                .get_mut(selected_index)
+                .expect("scan range should exist due to previous logic");
+
+            *selected_scan_range = ScanRange::from_parts(
+                selected_scan_range.block_range().clone(),
+                ScanPriority::Scanning,
+            );
+
+            selected_scan_range.block_range().clone()
+        }
     };
 
     Some(ScanRange::from_parts(
