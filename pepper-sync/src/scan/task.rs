@@ -225,6 +225,14 @@ where
         self.check_batcher_error()?;
 
         match self.state {
+            ScannerState::Shutdown => {
+                shutdown_mempool.store(true, atomic::Ordering::Release);
+                while let Some(worker) = self.idle_worker() {
+                    self.shutdown_worker(worker.id).await;
+                }
+                self.shutdown_batcher().await?;
+                return Ok(());
+            }
             ScannerState::Verification => {
                 let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
                 if !sync_state
@@ -244,19 +252,10 @@ where
                     self.state.verified();
                     return Ok(());
                 }
-                self.update_store_workers_and_batcher(wallet, nullifier_map_limit_exceeded)?;
             }
-            ScannerState::Scan => {
-                self.update_store_workers_and_batcher(wallet, nullifier_map_limit_exceeded)?;
-            }
-            ScannerState::Shutdown => {
-                shutdown_mempool.store(true, atomic::Ordering::Release);
-                while let Some(worker) = self.idle_worker() {
-                    self.shutdown_worker(worker.id).await;
-                }
-                self.shutdown_batcher().await?;
-            }
+            ScannerState::Scan => (),
         }
+        self.update_store_workers_and_batcher(wallet, nullifier_map_limit_exceeded)?;
 
         Ok(())
     }
