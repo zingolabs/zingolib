@@ -296,10 +296,10 @@ impl ScanRange {
 ///
 /// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
 /// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` at the start of sync.
-/// However, the consumer is required to set the `sync_mode` back to `NotRunning` when sync is succussful or returns an
+/// However, the consumer is required to set the `sync_mode` back to `NotRunning` when sync is successful or returns an
 /// error. This allows more flexibility and safety with sync task handles etc.
 /// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
-/// times in quick sucession without the sync engine interrupting.
+/// times in quick succession without the sync engine interrupting.
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(

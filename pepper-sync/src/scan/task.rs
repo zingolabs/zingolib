@@ -196,6 +196,23 @@ where
     /// worker for scanning.
     /// When verification is still in progress, only scan tasks with `Verify` scan priority are created.
     /// When all ranges are scanned, the batcher, idle workers and mempool are shutdown.
+    fn update_store_workers_and_batcher<W>(
+        &mut self,
+        wallet: &mut W,
+        nullifier_map_limit_exceeded: bool,
+    ) -> Result<(), SyncError<W::Error>>
+    where
+        W: SyncWallet + SyncBlocks + SyncNullifiers,
+    {
+        self.batcher
+            .as_mut()
+            .expect("batcher should be running")
+            .update_batch_store();
+        self.update_workers();
+        // scan ranges with `Verify` priority
+        self.update_batcher(wallet, nullifier_map_limit_exceeded)
+            .map_err(SyncError::WalletError)
+    }
     pub(crate) async fn update<W>(
         &mut self,
         wallet: &mut W,
@@ -209,12 +226,6 @@ where
 
         match self.state {
             ScannerState::Verification => {
-                self.batcher
-                    .as_mut()
-                    .expect("batcher should be running")
-                    .update_batch_store();
-                self.update_workers();
-
                 let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
                 if !sync_state
                     .scan_ranges()
@@ -233,19 +244,10 @@ where
                     self.state.verified();
                     return Ok(());
                 }
-
-                // scan ranges with `Verify` priority
-                self.update_batcher(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
+                self.update_store_workers_and_batcher(wallet, nullifier_map_limit_exceeded)?;
             }
             ScannerState::Scan => {
-                self.batcher
-                    .as_mut()
-                    .expect("batcher should be running")
-                    .update_batch_store();
-                self.update_workers();
-                self.update_batcher(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
+                self.update_store_workers_and_batcher(wallet, nullifier_map_limit_exceeded)?;
             }
             ScannerState::Shutdown => {
                 shutdown_mempool.store(true, atomic::Ordering::Release);
