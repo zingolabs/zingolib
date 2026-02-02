@@ -3566,9 +3566,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.29.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -8595,7 +8595,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#3fba3f291d6c0ca3b59e6a433cf6d7f47b58308b"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#f6e73ad0af0e57d1e6e0e55ded8d69ae920f9c4c"
 dependencies = [
  "getset",
  "hex",
@@ -8762,9 +8762,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "3.1.0"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b4aa7e85afd7bdf159e8c9a973d32bfc410be42ce82c2396690ae1208933bb8"
+checksum = "3b41d733382b3ecbf892f816ab9c1e448c9ae868d2bbb9f12a55b80c4e21fee2"
 dependencies = [
  "bech32",
  "bitflags 2.10.0",
@@ -8823,9 +8823,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-consensus"
-version = "3.1.1"
+version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "770efa97a22262ee80290b0ffa251cddb34d7c50351c4e5255ed80f644d035e0"
+checksum = "11221f1e778bda63ec3e412dc29322a5293e517a24710ec0bc65aea26f1e55c8"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -8862,9 +8862,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-network"
-version = "2.0.2"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3edeb353c33962fb5f9012745ddb44d33ee90acb8c9410669bf54d72488b8cf"
+checksum = "d3a34b04cb134997950b1ad0138aef9a6320f7aec16cab082419652ae3fcac8e"
 dependencies = [
  "bitflags 2.10.0",
  "byteorder",
@@ -8899,9 +8899,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-node-services"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "863ddd987ed6373872b20629a471c535ae2ba114a193415227635840ec570ccd"
+checksum = "30236040805a4ae868e0f3f810ee92db08925307e21ee7d1b6d480cb4b8b5efc"
 dependencies = [
  "color-eyre",
  "jsonrpsee-types",
@@ -8915,9 +8915,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-rpc"
-version = "3.1.0"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c81f52b33b83f5a7f9b0377981843242c2657027053a406f01b06862dddbf747"
+checksum = "8afcfc310a775b123a9f27e32e50b25f2b02b80051bce5e4be3ced786d83e808"
 dependencies = [
  "base64",
  "chrono",
@@ -8932,7 +8932,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
- "nix 0.29.0",
+ "nix 0.30.1",
  "prost",
  "rand 0.8.5",
  "sapling-crypto",
@@ -8965,9 +8965,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-script"
-version = "3.0.1"
+version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11acd2a4f9077e3698bbc51a3f04c247381f7bf7f77aacc408e5760d3246993b"
+checksum = "e3a0327411bde3e0ecd8212ddecfc003d214d3be966229ae675258a402e4ca04"
 dependencies = [
  "libzcash_script",
  "thiserror 2.0.17",
@@ -8978,9 +8978,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-state"
-version = "3.1.1"
+version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b47250eaaa047bebde853a54184ab00ab19f47ed451f35b7c1ae8fe17004d87a"
+checksum = "8a110993e61b6057f20cb4abef92abe811f7d8a8957ee40688a1c30f23e2009a"
 dependencies = [
  "bincode 1.3.3",
  "chrono",
@@ -9207,7 +9207,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#b64dfd6d6a2a597a5456d1cc7b2bc9b649328187"
+source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#7de9f9e8a261f95a632df2c57d2c9cbe68fc0ae8"
 dependencies = [
  "zebra-chain",
 ]
