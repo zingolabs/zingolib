@@ -920,32 +920,57 @@ where
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                // add missing block bounds in the case that nullifier batch limit was reached and scan range was split
-                let mut missing_block_bounds = BTreeMap::new();
-                for block_bound in [
-                    scan_range.block_range().start,
-                    scan_range.block_range().end - 1,
-                ] {
-                    if wallet.get_wallet_block(block_bound).is_err() {
-                        missing_block_bounds.insert(
-                            block_bound,
-                            WalletBlock::from_compact_block(
-                                consensus_parameters,
-                                fetch_request_sender.clone(),
-                                &client::get_compact_block(
+                // add missing block bounds in the case that nullifier batch limit was reached and the fetch nullifier
+                // scan range was split.
+                let full_refetch_nullifier_range = wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges
+                    .iter()
+                    .find(|&wallet_scan_range| {
+                        wallet_scan_range
+                            .block_range()
+                            .contains(&scan_range.block_range().start)
+                            && wallet_scan_range
+                                .block_range()
+                                .contains(&(scan_range.block_range().end - 1))
+                    })
+                    .expect("wallet scan range containing scan range should exist!");
+                if scan_range.block_range().start
+                    != full_refetch_nullifier_range.block_range().start
+                    || scan_range.block_range().end
+                        != full_refetch_nullifier_range.block_range().end
+                {
+                    let mut missing_block_bounds = BTreeMap::new();
+                    for block_bound in [
+                        scan_range.block_range().start,
+                        scan_range.block_range().end - 1,
+                        scan_range.block_range().end,
+                    ] {
+                        if block_bound >= full_refetch_nullifier_range.block_range().end {
+                            continue;
+                        }
+                        if wallet.get_wallet_block(block_bound).is_err() {
+                            missing_block_bounds.insert(
+                                block_bound,
+                                WalletBlock::from_compact_block(
+                                    consensus_parameters,
                                     fetch_request_sender.clone(),
-                                    block_bound,
+                                    &client::get_compact_block(
+                                        fetch_request_sender.clone(),
+                                        block_bound,
+                                    )
+                                    .await?,
                                 )
                                 .await?,
-                            )
-                            .await?,
-                        );
+                            );
+                        }
                     }
-                }
-                if !missing_block_bounds.is_empty() {
-                    wallet
-                        .append_wallet_blocks(missing_block_bounds)
-                        .map_err(SyncError::WalletError)?;
+                    if !missing_block_bounds.is_empty() {
+                        wallet
+                            .append_wallet_blocks(missing_block_bounds)
+                            .map_err(SyncError::WalletError)?;
+                    }
                 }
 
                 let first_unscanned_range = wallet
@@ -1479,7 +1504,6 @@ where
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                || scan_range.priority() == ScanPriority::Scanning
                 || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .flat_map(|scanned_range| {
