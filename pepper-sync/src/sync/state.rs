@@ -39,26 +39,6 @@ pub(super) enum VerifyEnd {
     VerifyLowest,
 }
 
-/// Returns the last known chain height stored in the wallet.
-///
-/// If no chain height is yet known, returns the highest value of the wallet birthday or sapling activation height.
-pub(super) fn get_wallet_height<W>(
-    consensus_parameters: &impl consensus::Parameters,
-    wallet: &W,
-) -> Result<BlockHeight, W::Error>
-where
-    W: SyncWallet,
-{
-    let wallet_height = if let Some(height) = wallet.get_sync_state()?.wallet_height() {
-        height
-    } else {
-        let birthday = checked_birthday(consensus_parameters, wallet)?;
-        birthday - 1
-    };
-
-    Ok(wallet_height)
-}
-
 /// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
 fn find_scan_targets(
     sync_state: &SyncState,
