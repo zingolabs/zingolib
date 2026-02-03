@@ -196,6 +196,7 @@ impl LightWallet {
                 } else {
                     scan_range.priority() != ScanPriority::Scanned
                         && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
                 }
             })
         {
