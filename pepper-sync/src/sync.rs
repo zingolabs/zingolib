@@ -1374,17 +1374,26 @@ where
             transaction,
         );
     }
-    // add all block ranges of scan ranges with `ScannedWithoutMapping` priority above the current scan range to each note to track which ranges need the nullifiers to be re-fetched before the note is known to be unspent (in addition to all other ranges above the notes height being `Scanned` or `ScannedWithoutMapping` priority). this information is necessary as these ranges have been scanned but the nullifiers have been discarded so must be re-fetched. if ranges are scanned but the nullifiers are discarded (set to `ScannedWithoutMapping` priority) *after* this note has been added to the wallet, this is sufficient to know this note has not been spent, even if this range is not set to `Scanned` priority.
+    // add all block ranges of scan ranges with `ScannedWithoutMapping` or `RefetchingNullifiers` priority above the
+    // current scan range to each note to track which ranges need the nullifiers to be re-fetched before the note is
+    // known to be unspent (in addition to all other ranges above the notes height being `Scanned`,
+    // `ScannedWithoutMapping` or `RefetchingNullifiers` priority). this information is necessary as these ranges have been scanned but the
+    // nullifiers have been discarded so must be re-fetched. if ranges are scanned but the nullifiers are discarded
+    // (set to `ScannedWithoutMapping` priority) *after* this note has been added to the wallet, this is sufficient to
+    // know this note has not been spent, even if this range is not set to `Scanned` priority.
     let refetch_nullifier_ranges = {
-        let scanned_without_mapping_ranges: Vec<Range<BlockHeight>> = sync_state
+        let block_ranges: Vec<Range<BlockHeight>> = sync_state
             .scan_ranges()
             .iter()
-            .filter(|&scan_range| scan_range.priority() == ScanPriority::ScannedWithoutMapping)
+            .filter(|&scan_range| {
+                scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
+            })
             .map(|scan_range| scan_range.block_range().clone())
             .collect();
 
-        scanned_without_mapping_ranges[scanned_without_mapping_ranges
-            .partition_point(|range| range.start < scan_range.block_range().end)..]
+        block_ranges
+            [block_ranges.partition_point(|range| range.start < scan_range.block_range().end)..]
             .to_vec()
     };
     for transaction in transactions.values_mut() {
