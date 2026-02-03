@@ -193,7 +193,6 @@ impl LightWallet {
                 if all_spends_known {
                     scan_range.priority() >= ScanPriority::FoundNote
                         || scan_range.priority() == ScanPriority::Scanning
-                        || scan_range.priority() == ScanPriority::RefetchingNullifiers
                 } else {
                     scan_range.priority() != ScanPriority::Scanned
                         && scan_range.priority() != ScanPriority::ScannedWithoutMapping
