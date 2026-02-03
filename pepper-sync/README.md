@@ -84,10 +84,10 @@ After the sync process is initialized, it will be in a state of verification, on
 -- Nullifier map has no maximum size
 
 ## [Sync Diagram](diagrams/sync.mmd)
-## Initialization Diagram
-## Verification Diagram
-## Scan Worker Diagram
-## Process Scan Results Diagram
+## [Initialization Diagram](diagrams/initialization.mmd)
+## [Verification Diagram](diagrams/verification.mmd)
+## [Scan Worker Diagram](diagrams/scan_worker.mmd)
+## [Process Scan Results Diagram](diagrams/process_scan_results.mmd)
 
 <!-- cargo-rdme end -->
 
