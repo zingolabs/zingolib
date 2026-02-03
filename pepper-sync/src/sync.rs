@@ -357,19 +357,33 @@ where
     // pre-scan initialisation
     let mut wallet_guard = wallet.write().await;
 
-    let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
-        .map_err(SyncError::WalletError)?;
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    if wallet_height > chain_height {
-        if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
-            return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+    let wallet_height = if let Some(mut height) = wallet_guard
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+    {
+        if height > chain_height {
+            if height - chain_height >= MAX_VERIFICATION_WINDOW {
+                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            }
+            truncate_wallet_data(&mut *wallet_guard, chain_height)?;
+            height = chain_height;
         }
-        truncate_wallet_data(&mut *wallet_guard, chain_height)?;
-        wallet_height = chain_height;
-    }
+
+        height
+    } else {
+        let birthday = checked_birthday(consensus_parameters, &*wallet_guard)
+            .map_err(SyncError::WalletError)?;
+        if birthday > chain_height {
+            return Err(SyncError::ChainError(birthday - chain_height));
+        }
+
+        birthday - 1
+    };
 
     let ufvks = wallet_guard
         .get_unified_full_viewing_keys()
