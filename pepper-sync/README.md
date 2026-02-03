@@ -7,7 +7,7 @@
 ## Overview
 This is a pure Rust sync library for Zcash lightwallets. It provides the following features:
 - targeted scanning: chain-tip and other high-priority regions are scanned early
-- Spend-before-sync, combines the shard roots with high priority chain tip scanning to enable spending of notes as they are scanned.
+- rapid-spend: notes can be spent as soon as the targeted scans prove they are unspent
 - Speed, trial decryption and tree building are computed in parallel and a multi-task architecture maximizes throughput for fetching and scanning.
 - Scan by shards, uses subtree metadata to create scan ranges that contain all note commitments to each shard to enable faster spending of decrypted outputs.
 - Fixed memory batching, each scan worker receives a batch with a fixed number of outputs for stable memory usage.
