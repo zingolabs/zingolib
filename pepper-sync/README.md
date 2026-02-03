@@ -6,10 +6,10 @@
 
 ## Overview
 This is a pure Rust sync library for Zcash lightwallets. It provides the following features:
-- targeted scanning: chain-tip and other high-priority regions are scanned early
-- rapid-spend: notes can be spent as soon as the targeted scans prove they are unspent
-- efficient sync: operations are parallelized and multi-task architecture maximizes throughput
-- high level control: Pause/resume and stop, the sync engine can be controlled by the consuming application
+- [Targeted Scanning](docs/targeted_scanning.md): chain-tip and other high-priority regions are scanned early
+- [Rapid Spend](docs/rapid_spend.md): notes can be spent as soon as the targeted scans prove they are unspent
+- [Efficient Sync](docs/efficient_sync.md): operations are parallelized and multi-task architecture maximizes throughput
+- [High Level Control](docs/high_level_control.md): Pause/resume and stop, the sync engine can be controlled by the consuming application
 
 ## Terminology
 - Chain height - highest block height of best chain from the server.
