@@ -143,13 +143,14 @@ impl LightWallet {
             match self
                 .wallet_transactions
                 .get(&txid)
-                .expect("transaction should exist in the wallet")
+                .expect("transaction should exist in the wallet") // FIXME: handle re-org cases where tx could be removed from wallet
                 .status()
             {
                 ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(txid),
                 ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
                 ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
                 ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
+                ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
             }
         } else {
             SpendStatus::Unspent

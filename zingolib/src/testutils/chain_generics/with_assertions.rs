@@ -314,6 +314,9 @@ where
                 ConfirmationStatus::Confirmed(confirmed_height) => {
                     assert!(wallet_height_at_confirmation >= confirmed_height);
                 }
+                ConfirmationStatus::Failed(_block_height) => {
+                    panic!("transaction failed")
+                }
             }
         }
         if any_transaction_not_yet_confirmed {

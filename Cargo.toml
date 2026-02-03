@@ -7,6 +7,7 @@ members = [
     "zingo-memo",
     "pepper-sync",
     "zingo-price",
+    "zingo-status",
     "zingolib_testutils",
 ]
 resolver = "2"
@@ -119,8 +120,8 @@ webpki-roots = "0.25"
 # zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
 zingo-memo = "0.1.0"
 zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.1.0"
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+# zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
 

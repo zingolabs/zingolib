@@ -7,21 +7,27 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use zcash_primitives::consensus::BlockHeight;
 
-/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
+/// Transaction confirmation status. As a transaction is created and transmitted to the blockchain, it will move
+/// through each of these states. Received transactions will either be seen in the mempool or scanned from confirmed
+/// blocks.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
-    /// The transaction has been included in at-least one block mined to the zcash blockchain.
-    /// The height of a confirmed block that contains the transaction.
-    Confirmed(BlockHeight),
-    /// The transaction is known to be or have been in the mempool.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
-    Mempool(BlockHeight),
-    /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
-    Transmitted(BlockHeight),
-    /// The transaction has been calculated but not yet broadcast to the chain.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The transaction has been created but not yet transmitted to the blockchain.
+    /// The block height is the chain height when the transaction was created + 1 (target height).
     Calculated(BlockHeight),
+    /// The transaction has been transmitted to the blockchain but has not been seen in the mempool yet.
+    /// The block height is the chain height when the transaction was transmitted + 1 (target height).
+    Transmitted(BlockHeight),
+    /// The transaction is known to be - or has been - in the mempool.
+    /// The block height is the chain height when the transaction was seen in the mempool + 1 (target height).
+    Mempool(BlockHeight),
+    /// The transaction has been included in a confirmed block on the blockchain.
+    /// The block height is the height of the confirmed block that contains the transaction.
+    Confirmed(BlockHeight),
+    /// The transaction has been created but failed to be transmitted, was not accepted into the mempool, was rejected
+    /// from the mempool or expired before it was included in a confirmed block on the block chain.
+    /// The block height is the chain height when the transaction was last updated + 1 (target height).
+    Failed(BlockHeight),
 }
 
 impl ConfirmationStatus {
@@ -221,28 +227,42 @@ impl ConfirmationStatus {
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
             Self::Confirmed(self_height) => *self_height,
+            Self::Failed(self_height) => *self_height,
         }
     }
 
     fn serialized_version() -> u8 {
-        0
+        1
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
         let status = reader.read_u8()?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
 
-        match status {
-            0 => Ok(Self::Calculated(block_height)),
-            1 => Ok(Self::Transmitted(block_height)),
-            2 => Ok(Self::Mempool(block_height)),
-            3 => Ok(Self::Confirmed(block_height)),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "failed to read status",
-            )),
+        match version {
+            0 => match status {
+                0 => Ok(Self::Calculated(block_height)),
+                1 => Ok(Self::Transmitted(block_height)),
+                2 => Ok(Self::Mempool(block_height)),
+                3 => Ok(Self::Confirmed(block_height)),
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read status",
+                )),
+            },
+            1.. => match status {
+                0 => Ok(Self::Calculated(block_height)),
+                1 => Ok(Self::Transmitted(block_height)),
+                2 => Ok(Self::Mempool(block_height)),
+                3 => Ok(Self::Confirmed(block_height)),
+                4 => Ok(Self::Failed(block_height)),
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read status",
+                )),
+            },
         }
     }
 
@@ -254,6 +274,7 @@ impl ConfirmationStatus {
             Self::Transmitted(_) => 1,
             Self::Mempool(_) => 2,
             Self::Confirmed(_) => 3,
+            Self::Failed(_) => 4,
         })?;
         writer.write_u32::<LittleEndian>(self.get_height().into())
     }
@@ -274,6 +295,9 @@ impl std::fmt::Display for ConfirmationStatus {
             }
             Self::Confirmed(_h) => {
                 write!(f, "confirmed")
+            }
+            Self::Failed(_h) => {
+                write!(f, "failed")
             }
         }
     }
@@ -304,6 +328,10 @@ impl std::fmt::Debug for ConfirmationStatus {
             Self::Confirmed(h) => {
                 let hi = u32::from(*h);
                 write!(f, "Confirmed at {hi}")
+            }
+            Self::Failed(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Failed. Last updated at {hi}")
             }
         }
     }
