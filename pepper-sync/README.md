@@ -83,7 +83,7 @@ After the sync process is initialized, it will be in a state of verification, on
 -- Number of outputs per batch is quadrupled
 -- Nullifier map has no maximum size
 
-## Sync Diagram(diagrams/sync.mmd)
+## [Sync Diagram](diagrams/sync.mmd)
 ## Initialization Diagram
 ## Verification Diagram
 ## Scan Worker Diagram
