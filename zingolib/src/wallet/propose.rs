@@ -192,6 +192,7 @@ impl LightWallet {
             .find(|scan_range| {
                 if all_spends_known {
                     scan_range.priority() >= ScanPriority::FoundNote
+                        || scan_range.priority() == ScanPriority::Scanning
                 } else {
                     scan_range.priority() != ScanPriority::Scanned
                         && scan_range.priority() != ScanPriority::ScannedWithoutMapping
