@@ -88,8 +88,3 @@ After the sync process is initialized, it will be in a state of verification, on
 ## [Verification Diagram](diagrams/verification.mmd)
 ## [Scan Worker Diagram](diagrams/scan_worker.mmd)
 ## [Process Scan Results Diagram](diagrams/process_scan_results.mmd)
-
-<!-- cargo-rdme end -->
-
-## Diagrams
-See `diagrams` directory for mermaid diagrams. These diagrams are also embedded into cargo doc (run `cargo doc --open`).
