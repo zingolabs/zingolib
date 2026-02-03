@@ -200,7 +200,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
-        performance_level: PerformanceLevel,
+        nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -235,7 +235,7 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet, performance_level)
+                self.update_batcher(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
@@ -244,7 +244,7 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet, performance_level)
+                self.update_batcher(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
@@ -279,7 +279,7 @@ where
     fn update_batcher<W>(
         &mut self,
         wallet: &mut W,
-        performance_level: PerformanceLevel,
+        nullifier_map_limit_exceeded: bool,
     ) -> Result<(), W::Error>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -289,7 +289,7 @@ where
             if let Some(scan_task) = sync::state::create_scan_task(
                 &self.consensus_parameters,
                 wallet,
-                performance_level,
+                nullifier_map_limit_exceeded,
             )? {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -738,7 +738,6 @@ pub(crate) struct ScanTask {
     pub(crate) end_seam_block: Option<WalletBlock>,
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
-    pub(crate) map_nullifiers: bool,
 }
 
 impl ScanTask {
@@ -748,7 +747,6 @@ impl ScanTask {
         end_seam_block: Option<WalletBlock>,
         scan_targets: BTreeSet<ScanTarget>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
-        map_nullifiers: bool,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -757,7 +755,6 @@ impl ScanTask {
             end_seam_block,
             scan_targets,
             transparent_addresses,
-            map_nullifiers,
         }
     }
 
@@ -829,7 +826,6 @@ impl ScanTask {
                 end_seam_block: upper_task_first_block,
                 scan_targets: lower_task_scan_targets,
                 transparent_addresses: self.transparent_addresses.clone(),
-                map_nullifiers: self.map_nullifiers,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -841,7 +837,6 @@ impl ScanTask {
                 end_seam_block: self.end_seam_block,
                 scan_targets: upper_task_scan_targets,
                 transparent_addresses: self.transparent_addresses,
-                map_nullifiers: self.map_nullifiers,
             },
         ))
     }
