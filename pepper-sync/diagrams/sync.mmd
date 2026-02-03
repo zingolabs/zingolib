@@ -5,7 +5,7 @@ flowchart LR
   INIT --> S0
   S0{Batcher idle?}
   S0 -- No --> S6
-  S0 -- Yes --> S1{All ranges in wallet state are 'scanned'?}
+  S0 -- Yes --> S1{All ranges in wallet state<br>are 'scanned'?}
   S1 -- Yes --> SHUTDOWN([Shutdown sync])
   S1 -- No --> S2["Pick highest-priority scan range"]
   S2 --> S3{Priority is 'historic'?}
