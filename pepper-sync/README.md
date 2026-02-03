@@ -5,7 +5,7 @@
 # Pepper Sync
 
 ## Overview
-Pepper-sync is a rust-based sync engine library for wallets operating on the zcash network and provides the following features:
+Pepper-sync is a pure Rust sync library for Zcash lightwallets. It provides the following features:
 - Non-linear scanning, allowing chain tip and targetted scanning.
 - Spend-before-sync, combines the shard roots with high priority chain tip scanning to enable spending of notes as they are scanned.
 - Speed, trial decryption and tree building are computed in parallel and a multi-task architecture maximizes throughput for fetching and scanning.
