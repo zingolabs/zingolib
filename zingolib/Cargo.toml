@@ -116,7 +116,7 @@ rust-embed = { workspace = true, features = ["debug-embed"] }
 concat-idents = { workspace = true }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zcash_local_net.workspace = true
 zingolib = { workspace = true, features = ["testutils"] }
 
 [build-dependencies]
