@@ -119,6 +119,9 @@ pub use sync::scan_pending_transaction;
 pub use sync::sync;
 pub use sync::sync_status;
 
+#[cfg(test)]
+mod mocks;
+
 use zcash_protocol::ShieldedProtocol;
 
 pub(crate) trait SyncDomain {
