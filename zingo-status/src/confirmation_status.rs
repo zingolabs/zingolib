@@ -190,6 +190,12 @@ impl ConfirmationStatus {
         }
     }
 
+    /// Check if transaction has `Failed` status.
+    #[must_use]
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed(_))
+    }
+
     /// Returns none if transaction is not confirmed, otherwise returns the height it was confirmed at.
     /// # Examples
     ///

@@ -40,10 +40,11 @@ pub mod send_with_proposal {
                 .await
                 .map_err(SendError::CalculateSendError)?;
             self.latest_proposal = None;
-
-            Ok(wallet
+            let transmitted_txids = wallet
                 .transmit_transactions(self.server_uri(), calculated_txids)
-                .await?)
+                .await?;
+
+            Ok(transmitted_txids)
         }
 
         async fn shield(

@@ -565,6 +565,18 @@ impl WalletTransaction {
                     .collect::<Vec<_>>()
             })
     }
+
+    /// Updates transaction status if `status` is greater than the current transaction status.
+    /// For example, if `status` is `Mempool` but the current transaction status is `Confirmed`, the status will remain
+    /// unchanged.
+    /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
+    /// to `Confirmed` status.
+    pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
+        if status > self.status {
+            self.status = status;
+        }
+        self.datetime = datetime;
+    }
 }
 
 #[cfg(feature = "wallet_essentials")]

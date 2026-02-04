@@ -29,6 +29,12 @@ pub enum WalletError {
     /// Failed to write transaction.
     #[error("Failed to write transaction. {0:?}")]
     TransactionWrite(#[from] std::io::Error),
+    /// Transaction has not failed. Only failed transaction may be removed from the wallet.
+    #[error("transaction has not failed. only failed transaction may be removed from the wallet.")]
+    TransactionNotFailed,
+    /// Transaction is already confirmed.
+    #[error("transaction not found in wallet.")]
+    TransactionNotFound,
     /// Wallet block not found in the wallet.
     #[error("Wallet block at height {0} not found in the wallet.")]
     BlockNotFound(BlockHeight),
@@ -67,17 +73,6 @@ pub enum PriceError {
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
-}
-
-/// Removal error
-#[derive(Debug, thiserror::Error)]
-pub enum RemovalError {
-    /// Transaction is already confirmed.
-    #[error("transaction is already confirmed.")]
-    TransactionAlreadyConfirmed,
-    /// Transaction is already confirmed.
-    #[error("transaction not found in wallet.")]
-    TransactionNotFound,
 }
 
 /// Summary error

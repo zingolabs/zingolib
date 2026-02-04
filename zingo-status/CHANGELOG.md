@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+`confirmation_status::ConfirmationStatus::is_failed`
 
 ### Changed
+`confirmation_status::ConfirmationStatus` - added `Failed` variant.
 
 ### Removed
 

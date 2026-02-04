@@ -1817,11 +1817,9 @@ struct RemoveTransactionCommand {}
 impl Command for RemoveTransactionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Removes an unconfirmed transaction from the wallet with the given txid.
-            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
-            the "resend" command to attempt to re-transmit.
+            Removes a failed transaction from the wallet with the given txid.
             This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them or resend.
+            until the user decides to remove them.
 
             usage:
             remove_transaction <txid>
@@ -1830,7 +1828,7 @@ impl Command for RemoveTransactionCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Removes an unconfirmed transaction from the wallet with the given txid."
+        "Removes a failed transaction from the wallet with the given txid."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1849,9 +1847,9 @@ impl Command for RemoveTransactionCommand {
                 .wallet
                 .write()
                 .await
-                .remove_unconfirmed_transaction(txid)
+                .remove_failed_transaction(txid)
             {
-                Ok(()) => "Successfully removed transaction.".to_string(),
+                Ok(()) => "Successfully removed failed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
