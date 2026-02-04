@@ -597,6 +597,7 @@ where
     })
 }
 
+/// Ensure that the chain height provided by the client is sane.
 fn constrained_height<W, P>(
     wallet: &mut W,
     chain_height: BlockHeight,
@@ -631,7 +632,9 @@ where
 mod test {
 
     #[tokio::test]
-    async fn my_first_test() {}
+    async fn my_first_test() {
+        assert_eq!(2, 2);
+    }
 }
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
