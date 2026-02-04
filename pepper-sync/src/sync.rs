@@ -597,6 +597,36 @@ where
     })
 }
 
+fn constrained_height<W, P>(
+    wallet: &mut W,
+    chain_height: BlockHeight,
+    consensus_parameters: &P,
+) -> Result<BlockHeight, SyncError<W::Error>>
+where
+    W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    P: zcash_protocol::consensus::Parameters,
+{
+    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    if let Some(mut wallet_height) = sync_state.wallet_height() {
+        if wallet_height > chain_height {
+            if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
+                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            }
+            truncate_wallet_data(wallet, chain_height)?;
+            wallet_height = chain_height;
+        }
+
+        Ok(wallet_height)
+    } else {
+        let birthday =
+            checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
+        if birthday > chain_height {
+            return Err(SyncError::ChainError(birthday - chain_height));
+        }
+
+        Ok(birthday - 1)
+    }
+}
 #[cfg(test)]
 mod test {
 
