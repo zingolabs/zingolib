@@ -597,6 +597,13 @@ where
     })
 }
 
+#[cfg(test)]
+mod test {
+
+    #[tokio::test]
+    async fn my_first_test() {}
+}
+
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 ///
 /// Intended to be called while [`self::sync`] is running in a separate task.
