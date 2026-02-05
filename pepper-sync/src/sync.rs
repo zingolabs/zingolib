@@ -631,13 +631,26 @@ where
 #[cfg(test)]
 mod test {
     use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::local_consensus::LocalNetwork;
 
-    use crate::wallet::traits::SyncWallet;
+    use crate::{sync::constrained_height, wallet::traits::SyncWallet};
     #[tokio::test]
     async fn my_first_test() {
-        let test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
+        let local_network = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(1)),
+            blossom: Some(BlockHeight::from_u32(1)),
+            heartwood: Some(BlockHeight::from_u32(1)),
+            canopy: Some(BlockHeight::from_u32(1)),
+            nu5: Some(BlockHeight::from_u32(1)),
+            nu6: Some(BlockHeight::from_u32(1)),
+            nu6_1: Some(BlockHeight::from_u32(1)),
+        };
+        let input_height = BlockHeight::from_u32(1);
+        let mut test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
         dbg!(&test_wallet);
         dbg!(test_wallet.get_birthday().unwrap());
+        let valid_height = constrained_height(&mut test_wallet, input_height, &local_network);
         //let test_wallet = create_test_wallet();
         assert_eq!(2, 2);
     }
