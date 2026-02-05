@@ -601,7 +601,7 @@ where
 /// Ensure that the chain height provided by the client is sane.
 fn constrained_height<W, P>(
     wallet: &mut W,
-    chain_height: BlockHeight,
+    proxy_reported_chain_height: BlockHeight,
     consensus_parameters: &P,
 ) -> Result<BlockHeight, SyncError<W::Error>>
 where
@@ -611,20 +611,22 @@ where
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
     dbg!(&sync_state.wallet_height());
     if let Some(mut wallet_height) = sync_state.wallet_height() {
-        if wallet_height > chain_height {
-            if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
+        if wallet_height > proxy_reported_chain_height {
+            if wallet_height - proxy_reported_chain_height >= MAX_VERIFICATION_WINDOW {
                 return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
             }
-            truncate_wallet_data(wallet, chain_height)?;
-            wallet_height = chain_height;
+            truncate_wallet_data(wallet, proxy_reported_chain_height)?;
+            wallet_height = proxy_reported_chain_height;
         }
 
         Ok(wallet_height)
     } else {
         let birthday =
             checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
-        if birthday > chain_height {
-            return Err(SyncError::ChainError(birthday - chain_height));
+        if birthday > proxy_reported_chain_height {
+            return Err(SyncError::ChainError(
+                birthday - proxy_reported_chain_height,
+            ));
         }
 
         Ok(birthday - 1)
