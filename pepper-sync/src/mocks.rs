@@ -1,20 +1,45 @@
 use crate::{
     config::{self, TransparentAddressDiscovery},
-    wallet::traits::{
-        SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+    wallet::{
+        NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+        traits::{
+            SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+        },
     },
 };
-use std::num::NonZeroU32;
-use zcash_protocol::consensus::BlockHeight;
+use std::collections::{BTreeMap, HashMap};
+use zcash_protocol::{TxId, consensus::BlockHeight};
 
 #[derive(Debug, thiserror::Error)]
-enum MockWalletError {}
-struct MockWallet {}
+pub(crate) enum MockWalletError {}
+#[derive(Debug)]
+pub(crate) struct MockWallet {
+    birthday: BlockHeight,
+    sync_state: SyncState,
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    nullifier_map: NullifierMap,
+    outpoint_map: BTreeMap<OutputId, ScanTarget>,
+    shard_trees: ShardTrees,
+}
+impl MockWallet {
+    pub(crate) fn new(birthday: BlockHeight) -> MockWallet {
+        MockWallet {
+            birthday,
+            sync_state: SyncState::new(),
+            wallet_blocks: BTreeMap::new(),
+            wallet_transactions: HashMap::new(),
+            nullifier_map: NullifierMap::new(),
+            outpoint_map: BTreeMap::new(),
+            shard_trees: ShardTrees::new(),
+        }
+    }
+}
 impl SyncWallet for MockWallet {
     type Error = MockWalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
-        todo!()
+        Ok(self.birthday)
     }
 
     fn get_sync_state(&self) -> Result<&crate::wallet::SyncState, Self::Error> {

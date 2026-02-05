@@ -630,9 +630,14 @@ where
 }
 #[cfg(test)]
 mod test {
-    use crate::mocks;
+    use zcash_protocol::consensus::BlockHeight;
+
+    use crate::wallet::traits::SyncWallet;
     #[tokio::test]
     async fn my_first_test() {
+        let test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
+        dbg!(&test_wallet);
+        dbg!(test_wallet.get_birthday().unwrap());
         //let test_wallet = create_test_wallet();
         assert_eq!(2, 2);
     }
