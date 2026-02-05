@@ -1,7 +1,82 @@
+use crate::{
+    config::{self, TransparentAddressDiscovery},
+    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
+};
 use std::num::NonZeroU32;
-
-use crate::config::{self, TransparentAddressDiscovery};
 use zcash_protocol::consensus::BlockHeight;
+
+struct MockWallet {}
+impl SyncBlocks for MockWallet {
+    fn get_wallet_block(
+        &self,
+        block_height: BlockHeight,
+    ) -> Result<crate::wallet::WalletBlock, Self::Error> {
+        todo!()
+    }
+
+    fn get_wallet_blocks_mut(
+        &mut self,
+    ) -> Result<&mut std::collections::BTreeMap<BlockHeight, crate::wallet::WalletBlock>, Self::Error>
+    {
+        todo!()
+    }
+}
+impl SyncTransactions for MockWallet {
+    fn get_wallet_transactions(
+        &self,
+    ) -> Result<
+        &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_wallet_transactions_mut(
+        &mut self,
+    ) -> Result<
+        &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        Self::Error,
+    > {
+        todo!()
+    }
+}
+impl SyncNullifiers for MockWallet {
+    fn get_nullifiers(&self) -> Result<&crate::wallet::NullifierMap, Self::Error> {
+        todo!()
+    }
+
+    fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {
+        todo!()
+    }
+}
+impl SyncOutPoints for MockWallet {
+    fn get_outpoints(
+        &self,
+    ) -> Result<
+        &std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_outpoints_mut(
+        &mut self,
+    ) -> Result<
+        &mut std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
+        Self::Error,
+    > {
+        todo!()
+    }
+}
+impl SyncShardTrees for MockWallet {
+    fn get_shard_trees(&self) -> Result<&crate::wallet::ShardTrees, Self::Error> {
+        todo!()
+    }
+
+    fn get_shard_trees_mut(&mut self) -> Result<&mut crate::wallet::ShardTrees, Self::Error> {
+        todo!()
+    }
+}
 //libuse zingolib::config::zingoconfigbuilder;
 //use zingolib::wallet::{lightwallet, walletbase::freshentropy, walletsettings};
 /*
