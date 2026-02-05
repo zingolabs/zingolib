@@ -1,11 +1,73 @@
 use crate::{
     config::{self, TransparentAddressDiscovery},
-    wallet::traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
+    wallet::traits::{
+        SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
+    },
 };
 use std::num::NonZeroU32;
 use zcash_protocol::consensus::BlockHeight;
 
 struct MockWallet {}
+impl SyncWallet for MockWallet {
+    type Error;
+
+    fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
+        todo!()
+    }
+
+    fn get_sync_state(&self) -> Result<&crate::wallet::SyncState, Self::Error> {
+        todo!()
+    }
+
+    fn get_sync_state_mut(&mut self) -> Result<&mut crate::wallet::SyncState, Self::Error> {
+        todo!()
+    }
+
+    fn get_unified_full_viewing_keys(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<zip32::AccountId, zcash_keys::keys::UnifiedFullViewingKey>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn add_orchard_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: orchard::Address,
+        diversifier_index: zip32::DiversifierIndex,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn add_sapling_address(
+        &mut self,
+        account_id: zip32::AccountId,
+        address: sapling_crypto::PaymentAddress,
+        diversifier_index: zip32::DiversifierIndex,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn get_transparent_addresses(
+        &self,
+    ) -> Result<
+        &std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
+        Self::Error,
+    > {
+        todo!()
+    }
+
+    fn get_transparent_addresses_mut(
+        &mut self,
+    ) -> Result<
+        &mut std::collections::BTreeMap<crate::keys::transparent::TransparentAddressId, String>,
+        Self::Error,
+    > {
+        todo!()
+    }
+}
 impl SyncBlocks for MockWallet {
     fn get_wallet_block(
         &self,
