@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum MockWalletError {}
+pub(super) enum MockWalletError {}
 #[derive(Debug)]
-pub(crate) struct MockWallet {
+pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
