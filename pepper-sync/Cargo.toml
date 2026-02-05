@@ -78,6 +78,3 @@ byteorder = { workspace = true, optional = true }
 
 # Documentation
 simple-mermaid.workspace = true
-
-[dev-dependencies]
-zingolib.workspace = true
