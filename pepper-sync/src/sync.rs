@@ -598,8 +598,24 @@ where
     })
 }
 
-/// Ensure that the chain height provided by the client is sane.
-fn constrained_height<W, P>(
+/// This ensures that the height to be used to calibrate the targeting ranges meets
+/// certain constraints.
+/// The comparison takes two heights, uses several constant bounds to select the best height
+/// to calibrate the new scan to.
+/// The parameter heights are:
+///
+///   (1) proxy_reported_chain_height:
+///       * the best block-height reported by the proxy (zainod or lwd)
+///   (2) last_max_targeted_height
+///       * the last max height the wallet recorded from earlier scans
+///
+/// The constants are:
+///   (1) MAX_REORG_ALLOWANCE:
+///       * the number of blocks AHEAD of prox_reported_chain_height allowed
+///   (2) Sapling Epoch Height:
+///       * the lower bound on the wallet birthday
+///
+fn generate_scan_calibrated_height<W, P>(
     wallet: &mut W,
     proxy_reported_chain_height: BlockHeight,
     consensus_parameters: &P,
@@ -636,7 +652,7 @@ mod test {
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::local_consensus::LocalNetwork;
 
-    use crate::{sync::constrained_height, wallet::traits::SyncWallet};
+    use crate::{sync::generate_scan_calibrated_height, wallet::traits::SyncWallet};
     #[tokio::test]
     async fn my_first_test() {
         let local_network = LocalNetwork {
@@ -653,7 +669,8 @@ mod test {
         let mut test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
         //dbg!(&test_wallet);
         //dbg!(test_wallet.get_birthday().unwrap());
-        let valid_height = constrained_height(&mut test_wallet, input_height, &local_network);
+        let valid_height =
+            generate_scan_calibrated_height(&mut test_wallet, input_height, &local_network);
         //let test_wallet = create_test_wallet();
         assert_eq!(2, 2);
     }
