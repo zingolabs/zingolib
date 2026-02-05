@@ -600,9 +600,9 @@ where
 
 /// This ensures that the height to be used to calibrate the targeting ranges meets
 /// certain constraints.
-/// The comparison takes two heights, uses several constant bounds to select the best height
-/// to calibrate the new scan to.
-/// The parameter heights are:
+/// The comparison takes two input heights and uses several constant bounds to select the best height
+/// to calibrate the new scan.
+/// The input parameter heights are:
 ///
 ///   (1) proxy_reported_chain_height:
 ///       * the best block-height reported by the proxy (zainod or lwd)
@@ -611,7 +611,7 @@ where
 ///
 /// The constants are:
 ///   (1) MAX_REORG_ALLOWANCE:
-///       * the number of blocks AHEAD of prox_reported_chain_height allowed
+///       * the number of blocks AHEAD of proxy_reported_chain_height allowed
 ///   (2) Sapling Epoch Height:
 ///       * the lower bound on the wallet birthday
 ///
@@ -625,13 +625,13 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    if let Some(mut last_max_targeted_height) = sync_state.last_max_targeted_height() {
+    if let Some(last_max_targeted_height) = sync_state.last_max_targeted_height() {
         if last_max_targeted_height > proxy_reported_chain_height {
             if last_max_targeted_height - proxy_reported_chain_height >= MAX_REORG_ALLOWANCE {
                 return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
             }
             truncate_wallet_data(wallet, proxy_reported_chain_height)?;
-            last_max_targeted_height = proxy_reported_chain_height;
+            return Ok(proxy_reported_chain_height);
         }
 
         Ok(last_max_targeted_height)
