@@ -636,15 +636,13 @@ where
 
         Ok(last_max_targeted_height)
     } else {
-        let birthday =
-            sapling_floored_bday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
-        if birthday > proxy_reported_chain_height {
+        let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+        if raw_bday > proxy_reported_chain_height {
             return Err(SyncError::ChainError(
-                birthday - proxy_reported_chain_height,
+                raw_bday - proxy_reported_chain_height,
             ));
         }
-
-        Ok(birthday - 1)
+        Ok(sapling_floored_bday(consensus_parameters, raw_bday) - 1)
     }
 }
 #[cfg(test)]
@@ -1637,8 +1635,8 @@ async fn add_initial_frontier<W>(
 where
     W: SyncWallet + SyncShardTrees,
 {
-    let birthday =
-        sapling_floored_bday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
+    let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+    let birthday = sapling_floored_bday(consensus_parameters, raw_bday);
     if birthday
         == consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Sapling)
@@ -1686,18 +1684,17 @@ where
 }
 
 /// Compares the wallet birthday to sapling activation height and returns the highest block height.
-fn sapling_floored_bday<W: SyncWallet>(
+fn sapling_floored_bday(
     consensus_parameters: &impl consensus::Parameters,
-    wallet: &W,
-) -> Result<BlockHeight, W::Error> {
-    let wallet_birthday = wallet.get_birthday()?;
+    raw_birthday: BlockHeight,
+) -> BlockHeight {
     let sapling_activation_height = consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Sapling)
         .expect("sapling activation height should always return Some");
 
-    match wallet_birthday.cmp(&sapling_activation_height) {
-        cmp::Ordering::Greater | cmp::Ordering::Equal => Ok(wallet_birthday),
-        cmp::Ordering::Less => Ok(sapling_activation_height),
+    match raw_birthday.cmp(&sapling_activation_height) {
+        cmp::Ordering::Greater | cmp::Ordering::Equal => raw_birthday,
+        cmp::Ordering::Less => sapling_activation_height,
     }
 }
 
