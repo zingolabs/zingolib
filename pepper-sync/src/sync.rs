@@ -621,7 +621,7 @@ where
         Ok(last_max_targeted_height)
     } else {
         let birthday =
-            checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
+            sapling_floored_bday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
         if birthday > proxy_reported_chain_height {
             return Err(SyncError::ChainError(
                 birthday - proxy_reported_chain_height,
@@ -1621,7 +1621,7 @@ where
     W: SyncWallet + SyncShardTrees,
 {
     let birthday =
-        checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
+        sapling_floored_bday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
     if birthday
         == consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Sapling)
@@ -1669,7 +1669,7 @@ where
 }
 
 /// Compares the wallet birthday to sapling activation height and returns the highest block height.
-fn checked_birthday<W: SyncWallet>(
+fn sapling_floored_bday<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &W,
 ) -> Result<BlockHeight, W::Error> {
