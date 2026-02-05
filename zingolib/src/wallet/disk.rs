@@ -330,6 +330,7 @@ impl LightWallet {
             transparent_addresses,
             unified_addresses,
             network,
+            latest_proposal: None,
             save_required: false,
             wallet_settings: WalletSettings {
                 sync_config: SyncConfig {
@@ -559,6 +560,7 @@ impl LightWallet {
             wallet_settings,
             price_list,
             send_progress: SendProgress::new(0),
+            latest_proposal: None,
             save_required: false,
         })
     }

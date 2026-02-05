@@ -25,43 +25,42 @@ pub mod send_with_proposal {
 
     use crate::data::proposal::ZingoProposal;
     use crate::lightclient::LightClient;
-    use crate::lightclient::error::{QuickSendError, QuickShieldError, SendError};
+    use crate::lightclient::error::{LightClientError, SendError};
     use crate::wallet::output::OutputRef;
 
     impl LightClient {
         async fn send(
             &mut self,
-            proposal: &Proposal<zip317::FeeRule, OutputRef>,
+            proposal: Proposal<zip317::FeeRule, OutputRef>,
             sending_account: zip32::AccountId,
-        ) -> Result<NonEmpty<TxId>, SendError> {
+        ) -> Result<NonEmpty<TxId>, LightClientError> {
             let mut wallet = self.wallet.write().await;
             let calculated_txids = wallet
                 .calculate_transactions(proposal, sending_account)
                 .await
                 .map_err(SendError::CalculateSendError)?;
-            self.latest_proposal = None;
-            let transmitted_txids = wallet
-                .transmit_transactions(self.server_uri(), calculated_txids)
-                .await?;
+            wallet.clear_proposal();
 
-            Ok(transmitted_txids)
+            wallet
+                .transmit_transactions(self.server_uri(), calculated_txids)
+                .await
         }
 
         async fn shield(
             &mut self,
-            proposal: &Proposal<zip317::FeeRule, Infallible>,
+            proposal: Proposal<zip317::FeeRule, Infallible>,
             shielding_account: zip32::AccountId,
-        ) -> Result<NonEmpty<TxId>, SendError> {
+        ) -> Result<NonEmpty<TxId>, LightClientError> {
             let mut wallet = self.wallet.write().await;
             let calculated_txids = wallet
                 .calculate_transactions(proposal, shielding_account)
                 .await
                 .map_err(SendError::CalculateShieldError)?;
-            self.latest_proposal = None;
+            wallet.clear_proposal();
 
-            Ok(wallet
+            wallet
                 .transmit_transactions(self.server_uri(), calculated_txids)
-                .await?)
+                .await
         }
 
         /// Creates and transmits transactions from a stored proposal.
@@ -70,17 +69,18 @@ pub mod send_with_proposal {
         pub async fn send_stored_proposal(
             &mut self,
             resume_sync: bool,
-        ) -> Result<NonEmpty<TxId>, SendError> {
-            if let Some(proposal) = self.latest_proposal.clone() {
+        ) -> Result<NonEmpty<TxId>, LightClientError> {
+            let opt_proposal = self.wallet.read().await.latest_proposal().cloned();
+            if let Some(proposal) = opt_proposal {
                 let txids = match proposal {
                     ZingoProposal::Send {
                         proposal,
                         sending_account,
-                    } => self.send(&proposal, sending_account).await,
+                    } => self.send(proposal, sending_account).await,
                     ZingoProposal::Shield {
                         proposal,
                         shielding_account,
-                    } => self.shield(&proposal, shielding_account).await,
+                    } => self.shield(proposal, shielding_account).await,
                 }?;
 
                 if resume_sync {
@@ -89,7 +89,7 @@ pub mod send_with_proposal {
 
                 Ok(txids)
             } else {
-                Err(SendError::NoStoredProposal)
+                Err(SendError::NoStoredProposal.into())
             }
         }
 
@@ -101,15 +101,15 @@ pub mod send_with_proposal {
             request: TransactionRequest,
             account_id: zip32::AccountId,
             resume_sync: bool,
-        ) -> Result<NonEmpty<TxId>, QuickSendError> {
+        ) -> Result<NonEmpty<TxId>, LightClientError> {
             let _ignore_error = self.pause_sync();
             let proposal = self
                 .wallet
                 .write()
                 .await
                 .create_send_proposal(request, account_id)
-                .await?;
-            let txids = self.send(&proposal, account_id).await?;
+                .map_err(SendError::ProposeSendError)?;
+            let txids = self.send(proposal, account_id).await?;
             if resume_sync {
                 let _ignore_error = self.resume_sync();
             }
@@ -121,15 +121,15 @@ pub mod send_with_proposal {
         pub async fn quick_shield(
             &mut self,
             account_id: zip32::AccountId,
-        ) -> Result<NonEmpty<TxId>, QuickShieldError> {
+        ) -> Result<NonEmpty<TxId>, LightClientError> {
             let proposal = self
                 .wallet
                 .write()
                 .await
                 .create_shield_proposal(account_id)
-                .await?;
+                .map_err(SendError::ProposeShieldError)?;
 
-            Ok(self.shield(&proposal, account_id).await?)
+            self.shield(proposal, account_id).await
         }
     }
 
@@ -183,9 +183,7 @@ pub mod send_with_proposal {
             )
             .unwrap();
             let proposal = ProposalBuilder::default().build();
-            lc.send(&proposal, zip32::AccountId::ZERO)
-                .await
-                .unwrap_err();
+            lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
             // TODO: match on specific error
         }
 

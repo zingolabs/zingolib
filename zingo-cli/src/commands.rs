@@ -1339,7 +1339,7 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Confirms the latest proposal, completing and broadcasting the transaction(s) and resuming the sync task.
+            Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
@@ -1353,7 +1353,7 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
+        "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {

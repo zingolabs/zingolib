@@ -19,6 +19,7 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::ChainType;
+use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 use send::SendProgress;
@@ -138,7 +139,10 @@ pub struct LightWallet {
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
     /// Progress of an outgoing transaction
+    // TODO: move to LightClient
     pub send_progress: SendProgress,
+    /// Latest proposal
+    latest_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
 }
@@ -253,6 +257,7 @@ impl LightWallet {
             wallet_settings,
             price_list: PriceList::new(),
             save_required: true,
+            latest_proposal: None,
             send_progress: SendProgress::new(0),
         })
     }
@@ -330,6 +335,10 @@ impl LightWallet {
                 })
                 .collect::<Vec<_>>(),
         )
+    }
+
+    pub(crate) fn latest_proposal(&self) -> Option<&ZingoProposal> {
+        self.latest_proposal.as_ref()
     }
 
     #[must_use]

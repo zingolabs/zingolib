@@ -1458,7 +1458,7 @@ mod slow {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::ChainType;
-    use zingolib::lightclient::error::{QuickSendError, SendError};
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1910,7 +1910,7 @@ mod slow {
                     vec![(zingo_test_vectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
-                Err(QuickSendError::SendError(SendError::CalculateSendError(
+                Err(LightClientError::SendError(SendError::CalculateSendError(
                     CalculateTransactionError::NoSpendingKey(_)
                 )))
             ));
@@ -1963,12 +1963,12 @@ mod slow {
         .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
-            QuickSendError::ProposalError(ProposeSendError::Proposal(
+            LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
                     available: _,
                     required: _
                 }
-            ))
+            )))
         ));
     }
 
@@ -3606,7 +3606,7 @@ TransactionSummary {
         // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => match e {
                 ProposeSendError::Proposal(insufficient) => {
                     if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
@@ -3635,9 +3635,9 @@ TransactionSummary {
         //  t -> z
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => {
-                if let ProposeSendError::Proposal(insufficient) = proposesenderror {
-                    match insufficient {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
+                if let ProposeSendError::Proposal(insufficient_funds) = e {
+                    match insufficient_funds {
                         zcash_client_backend::data_api::error::Error::InsufficientFunds {
                             available,
                             required,

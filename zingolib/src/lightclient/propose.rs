@@ -26,12 +26,6 @@ impl LightClient {
         receivers.push(dev_donation_receiver);
     }
 
-    /// Stores a proposal in the `latest_proposal` field of the `LightClient`.
-    /// This field must be populated in order to then create and transmit a transaction.
-    async fn store_proposal(&mut self, proposal: ZingoProposal) {
-        self.latest_proposal = Some(proposal);
-    }
-
     /// Creates and stores a proposal from a transaction request.
     pub async fn propose_send(
         &mut self,
@@ -39,17 +33,12 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
-        let proposal = self
-            .wallet
-            .write()
-            .await
-            .create_send_proposal(request, account_id)
-            .await?;
-        self.store_proposal(ZingoProposal::Send {
+        let mut wallet = self.wallet.write().await;
+        let proposal = wallet.create_send_proposal(request, account_id)?;
+        wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
-        })
-        .await;
+        });
 
         Ok(proposal)
     }
@@ -75,17 +64,12 @@ impl LightClient {
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
-        let proposal = self
-            .wallet
-            .write()
-            .await
-            .create_send_proposal(request, account_id)
-            .await?;
-        self.store_proposal(ZingoProposal::Send {
+        let mut wallet = self.wallet.write().await;
+        let proposal = wallet.create_send_proposal(request, account_id)?;
+        wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
             sending_account: account_id,
-        })
-        .await;
+        });
 
         Ok(proposal)
     }
@@ -95,17 +79,12 @@ impl LightClient {
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let proposal = self
-            .wallet
-            .write()
-            .await
-            .create_shield_proposal(account_id)
-            .await?;
-        self.store_proposal(ZingoProposal::Shield {
+        let mut wallet = self.wallet.write().await;
+        let proposal = wallet.create_shield_proposal(account_id)?;
+        wallet.store_proposal(ZingoProposal::Shield {
             proposal: proposal.clone(),
             shielding_account: account_id,
-        })
-        .await;
+        });
 
         Ok(proposal)
     }
@@ -139,7 +118,7 @@ impl LightClient {
                 self.append_zingo_zenny_receiver(&mut receivers);
             }
             let request = transaction_request_from_receivers(receivers)?;
-            let trial_proposal = wallet.create_send_proposal(request, account_id).await;
+            let trial_proposal = wallet.create_send_proposal(request, account_id);
 
             match trial_proposal {
                 Err(ProposeSendError::Proposal(
@@ -235,8 +214,7 @@ mod shielding {
             .wallet
             .write()
             .await
-            .create_shield_proposal(zip32::AccountId::ZERO)
-            .await;
+            .create_shield_proposal(zip32::AccountId::ZERO);
         match propose_shield_result {
             Err(ProposeShieldError::Component(
                 zcash_client_backend::data_api::error::Error::ScanRequired,

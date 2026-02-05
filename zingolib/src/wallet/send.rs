@@ -10,23 +10,25 @@ use pepper_sync::wallet::NoteInterface;
 use zcash_client_backend::data_api::wallet::SpendingKeys;
 use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::Transaction;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus::Parameters;
 
-use pepper_sync::wallet::traits::SyncWallet;
 use zcash_protocol::ShieldedProtocol;
 use zingo_status::confirmation_status::ConfirmationStatus;
+
+use crate::lightclient::error::LightClientError;
+use crate::lightclient::error::SendError;
+use crate::lightclient::error::TransmissionError;
+use crate::wallet::error::WalletError;
 
 use super::LightWallet;
 use super::error::CalculateTransactionError;
 use super::error::KeyError;
-use super::error::TransmissionError;
 
 /// TODO: Add Doc Comment Here!
-// TODO: revisit send progress to separate json and handle errors properly
+// TODO: revisit send progress to separate json and handle errors properly. move to lightclient.
 #[derive(Debug, Clone)]
 pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
@@ -67,6 +69,7 @@ impl From<SendProgress> for json::JsonValue {
     }
 }
 
+// TODO: move to lightclient
 impl LightWallet {
     // Reset the send progress status to blank
     pub(crate) async fn reset_send_progress(&mut self) {
@@ -79,7 +82,7 @@ impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
     pub(crate) async fn calculate_transactions<NoteRef>(
         &mut self,
-        proposal: &Proposal<zip317::FeeRule, NoteRef>,
+        proposal: Proposal<zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         // Reset the progress to start. Any errors will get recorded here
@@ -127,7 +130,7 @@ impl LightWallet {
     async fn create_proposed_transactions<NoteRef>(
         &mut self,
         sapling_prover: LocalTxProver,
-        proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
+        proposal: Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
         let network = self.network;
@@ -144,7 +147,7 @@ impl LightWallet {
             &sapling_prover,
             &SpendingKeys::new(usk),
             zcash_client_backend::wallet::OvkPolicy::Sender,
-            proposal,
+            &proposal,
         )
         .map_err(CalculateTransactionError::Calculation)
     }
@@ -152,30 +155,29 @@ impl LightWallet {
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
     /// Returns list of txids successfully transmitted.
     ///
-    /// Rescans each transaction with an updated confirmation status of `Transmitted`, updating spent statuses of all
-    /// outputs in the wallet.
     /// Updates `self.send_progress.last_result` with JSON string of successfully transmitted txids or error message in
     /// case of failure.
+    // TODO: move to lightclient
     pub(crate) async fn transmit_transactions(
         &mut self,
         server_uri: http::Uri,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<NonEmpty<TxId>, TransmissionError> {
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
         match self
-            .transmit_transactions_inner(server_uri, calculated_txids)
+            .transmit_transactions_inner(server_uri, calculated_txids.clone())
             .await
         {
-            Ok(txids) => {
+            Ok(()) => {
                 self.set_send_result(
                     serde_json::Value::Array(
-                        txids
+                        calculated_txids
                             .iter()
                             .map(|txid| serde_json::Value::String(txid.to_string()))
                             .collect(),
                     )
                     .to_string(),
                 );
-                Ok(txids)
+                Ok(calculated_txids.clone())
             }
             Err(e) => {
                 self.set_send_result(format!("error: {e}"));
@@ -184,98 +186,66 @@ impl LightWallet {
         }
     }
 
+    // TODO: move to lightclient
     async fn transmit_transactions_inner(
         &mut self,
         server_uri: http::Uri,
         calculated_txids: NonEmpty<TxId>,
-    ) -> Result<NonEmpty<TxId>, TransmissionError> {
-        struct SentTransaction {
-            txid: TxId,
-            height: BlockHeight,
-            transaction: Transaction,
-        }
-
-        let network = self.network;
-        let mut sent_transactions = Vec::new();
+    ) -> Result<(), LightClientError> {
         for txid in calculated_txids {
             let calculated_transaction = self
                 .wallet_transactions
                 .get_mut(&txid)
-                .ok_or(TransmissionError::TransactionNotFound(txid))?;
+                .ok_or(WalletError::TransactionNotFound(txid))?;
+            let height = calculated_transaction.status().get_height();
 
             if !matches!(
                 calculated_transaction.status(),
                 ConfirmationStatus::Calculated(_)
             ) {
-                return Err(TransmissionError::IncorrectTransactionStatus(txid));
+                return Err(SendError::TransmissionError(
+                    TransmissionError::IncorrectTransactionStatus(txid),
+                )
+                .into());
             }
 
-            let height = calculated_transaction.status().get_height();
-
-            let lrz_transaction = calculated_transaction.transaction();
-            let consensus_branch_id = lrz_transaction.consensus_branch_id();
-            tracing::debug!(
-                "Sending transaction with the following consensus BranchId: {consensus_branch_id:?}, at height {height}."
-            );
-
             let mut transaction_bytes = vec![];
-            lrz_transaction
+            calculated_transaction
+                .transaction()
                 .write(&mut transaction_bytes)
-                .map_err(|_| TransmissionError::TransactionWrite)?;
-
-            // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
-            let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
-                .map_err(|_| TransmissionError::TransactionRead)?;
-            //
+                .map_err(|e| {
+                    // TODO: set tx to failed
+                    WalletError::TransactionWrite(e)
+                })?;
 
             let txid_from_server = crate::grpc_connector::send_transaction(
                 server_uri.clone(),
                 transaction_bytes.into_boxed_slice(),
             )
             .await
-            .map_err(TransmissionError::TransmissionFailed)?;
+            .map_err(|e| {
+                // TODO: set tx to failed
+                SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
+            })?;
+            calculated_transaction
+                .update_status(ConfirmationStatus::Transmitted(height), crate::utils::now());
+            self.save_required = true;
 
             let txid_from_server =
-                crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())?;
-
+                crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
+                    .map_err(WalletError::ConversionFailed)?;
             if txid_from_server != txid {
                 // during darkside tests, the server may report a different txid to the one calculated.
                 #[cfg(not(feature = "darkside_tests"))]
                 {
-                    return Err(TransmissionError::IncorrectTxidFromServer(
-                        txid,
-                        txid_from_server,
-                    ));
+                    return Err(
+                        TransmissionError::IncorrectTxidFromServer(txid, txid_from_server).into(),
+                    );
                 }
             }
-
-            sent_transactions.push(SentTransaction {
-                txid,
-                height,
-                transaction,
-            });
         }
 
-        let txids = sent_transactions
-            .into_iter()
-            .map(|sent_transaction| {
-                pepper_sync::scan_pending_transaction(
-                    &network,
-                    &self
-                        .get_unified_full_viewing_keys()
-                        .map_err(|_| TransmissionError::NoViewCapability)?,
-                    self,
-                    sent_transaction.transaction,
-                    ConfirmationStatus::Transmitted(sent_transaction.height),
-                    crate::utils::now(),
-                )?;
-
-                Ok(sent_transaction.txid)
-            })
-            .collect::<Result<Vec<TxId>, TransmissionError>>()?;
-        self.save_required = true;
-
-        Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
+        Ok(())
     }
 
     pub(crate) fn can_build_witness<N>(

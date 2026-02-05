@@ -26,15 +26,20 @@ pub enum WalletError {
     /// Value outside the valid range of zatoshis
     #[error("Value outside valid range of zatoshis. {0:?}")]
     InvalidValue(#[from] zcash_protocol::value::BalanceError),
+    /// Failed to read transaction.
+    #[error("Failed to read transaction. {0:?}")]
+    TransactionRead(std::io::Error),
     /// Failed to write transaction.
     #[error("Failed to write transaction. {0:?}")]
-    TransactionWrite(#[from] std::io::Error),
-    /// Transaction has not failed. Only failed transaction may be removed from the wallet.
-    #[error("transaction has not failed. only failed transaction may be removed from the wallet.")]
-    TransactionNotFailed,
-    /// Transaction is already confirmed.
-    #[error("transaction not found in wallet.")]
-    TransactionNotFound,
+    TransactionWrite(std::io::Error),
+    /// Removal error. Transaction has not failed. Only failed transactions may be removed from the wallet.
+    #[error(
+        "Removal error. Transaction has not failed. Only failed transactions may be removed from the wallet."
+    )]
+    RemovalError,
+    /// Transaction not found in the wallet.
+    #[error("Transaction not found in the wallet: {0}")]
+    TransactionNotFound(TxId),
     /// Wallet block not found in the wallet.
     #[error("Wallet block at height {0} not found in the wallet.")]
     BlockNotFound(BlockHeight),
@@ -42,7 +47,7 @@ pub enum WalletError {
     #[error("Minimum confirmations must be non-zero.")]
     MinimumConfirmationError,
     /// Failed to scan calculated transaction.
-    #[error("Failed to scan calculated transaction.")]
+    #[error("Failed to scan calculated transaction. {0}")]
     CalculatedTxScanError(#[from] ScanError),
     /// Address parse error
     #[error("Address parse error. {0}")]
@@ -60,8 +65,12 @@ pub enum WalletError {
         height: BlockHeight,
     },
     /// Shard tree error.
-    #[error("shard tree error. {0}")]
+    #[error("Shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// Conversion failed
+    // TODO: move to lightclient?
+    #[error("Conversion failed. {0}")]
+    ConversionFailed(#[from] crate::utils::error::ConversionError),
 }
 
 /// Price error
@@ -205,39 +214,6 @@ impl From<bip32::Error> for KeyError {
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum TransmissionError {
-    #[error("Transmission failed. {0}")]
-    TransmissionFailed(String),
-    #[error("Transaction not found in the wallet: {0}")]
-    TransactionNotFound(TxId),
-    #[error(
-        "Transaction associated with given txid to transmit does not have `Calculated` status: {0}"
-    )]
-    IncorrectTransactionStatus(TxId),
-    /// Failed to read transaction.
-    #[error("Failed to read transaction.")]
-    TransactionRead,
-    /// Failed to write transaction.
-    #[error("Failed to write transaction.")]
-    TransactionWrite,
-    /// Conversion failed
-    #[error("Conversion failed. {0}")]
-    ConversionFailed(#[from] crate::utils::error::ConversionError),
-    /// No view capability
-    #[error("No view capability")]
-    NoViewCapability,
-    /// Txid reported by server does not match calculated txid.
-    #[error(
-        "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
-    )]
-    IncorrectTxidFromServer(TxId, TxId),
-    /// Failed to scan transmitted transaction..
-    #[error("Failed to scan transmitted transaction. {0}")]
-    SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
-}
-
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
 pub enum CalculateTransactionError<NoteRef> {
     #[error("No unified spending key found for this account. {0}")]
     NoSpendingKey(#[from] crate::wallet::error::KeyError),
@@ -258,7 +234,7 @@ pub enum CalculateTransactionError<NoteRef> {
     NonTexMultiStep,
 }
 
-/// Errors that can result from `do_propose`
+/// Errors that can result from constructing send proposals.
 #[derive(Debug, thiserror::Error)]
 pub enum ProposeSendError {
     /// error in using trait to create spend proposal
@@ -284,13 +260,9 @@ pub enum ProposeSendError {
     BalanceError(#[from] crate::wallet::error::BalanceError),
 }
 
-/// Errors that can result from `do_propose`
-#[allow(missing_docs)] // error types document themselves
+/// Errors that can result from constructing shield proposals.
 #[derive(Debug, thiserror::Error)]
 pub enum ProposeShieldError {
-    /// error in parsed addresses
-    #[error("{0}")]
-    Receiver(zcash_client_backend::zip321::Zip321Error),
     /// error in using trait to create shielding proposal
     #[error("{0}")]
     Component(
@@ -303,8 +275,9 @@ pub enum ProposeShieldError {
             Infallible,
         >,
     ),
-    #[error("not enough transparent funds to shield.")]
-    Insufficient,
+    /// Insufficient transparent funds to shield.
+    #[error("insufficient transparent funds to shield.")]
+    InsufficientFunds,
     /// Address parse error.
     #[error("address parse error. {0}")]
     AddressParseError(#[from] zcash_address::ParseError),

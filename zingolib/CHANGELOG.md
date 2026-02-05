@@ -18,5 +18,6 @@ transactions with the new `Failed` status to be removed. Also returns `WalletErr
 ### Removed
 `LightClient::resend` - replaced by automatic retries due to issues with the current `resend` or `remove` user flow.
 `wallet::error::RemovalError` - variants added to `WalletError`
+`error` module - unused
 
 ## [2.1.0] - 2025-12-18

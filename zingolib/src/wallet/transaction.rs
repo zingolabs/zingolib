@@ -107,7 +107,7 @@ impl LightWallet {
             pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
             self.save_required = true;
         } else {
-            return Err(WalletError::TransactionNotFound);
+            return Err(WalletError::TransactionNotFound(txid));
         }
 
         Ok(())
@@ -121,10 +121,10 @@ impl LightWallet {
     pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
         if let Some(transaction) = self.wallet_transactions.get(&txid) {
             if !transaction.status().is_failed() {
-                return Err(WalletError::TransactionNotFailed);
+                return Err(WalletError::RemovalError);
             }
         } else {
-            return Err(WalletError::TransactionNotFound);
+            return Err(WalletError::TransactionNotFound(txid));
         }
 
         self.wallet_transactions.remove(&txid);
