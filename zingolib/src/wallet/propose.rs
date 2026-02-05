@@ -132,15 +132,15 @@ impl LightWallet {
         Ok(proposed_shield)
     }
 
-    /// Stores a proposal in the `latest_proposal` field.
+    /// Stores a proposal in the `send_proposal` field.
     /// This field must be populated in order to then construct and transmit transactions.
     pub(crate) fn store_proposal(&mut self, proposal: ZingoProposal) {
-        self.latest_proposal = Some(proposal);
+        self.send_proposal = Some(proposal);
     }
 
-    /// Clears the proposal in the `latest_proposal` field.
-    pub fn clear_proposal(&mut self) {
-        self.latest_proposal = None;
+    /// Takes the proposal from the `send_proposal` field, leaving the field empty.
+    pub(crate) fn take_proposal(&mut self) -> Option<ZingoProposal> {
+        self.send_proposal.take()
     }
 
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
