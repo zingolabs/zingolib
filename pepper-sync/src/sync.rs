@@ -609,11 +609,10 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    dbg!(&sync_state.last_max_targeted_height());
     if let Some(mut last_max_targeted_height) = sync_state.last_max_targeted_height() {
         if last_max_targeted_height > proxy_reported_chain_height {
-            if last_max_targeted_height - proxy_reported_chain_height >= MAX_VERIFICATION_WINDOW {
-                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            if last_max_targeted_height - proxy_reported_chain_height >= MAX_REORG_ALLOWANCE {
+                return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
             }
             truncate_wallet_data(wallet, proxy_reported_chain_height)?;
             last_max_targeted_height = proxy_reported_chain_height;
