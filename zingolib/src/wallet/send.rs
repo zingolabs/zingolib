@@ -18,7 +18,7 @@ use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
 
 /// TODO: Add Doc Comment Here!
-// TODO: revisit send progress to separate json and handle errors properly. move to lightclient.
+// TODO: revisit send progress to separate json and handle errors properly. move to lightclient or remove?.
 #[derive(Debug, Clone)]
 pub struct SendProgress {
     /// TODO: Add Doc Comment Here!
