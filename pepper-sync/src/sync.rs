@@ -23,7 +23,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
-use crate::config::SyncConfig;
+use crate::config::{PerformanceLevel, SyncConfig};
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
     SyncStatusError,
@@ -172,8 +172,8 @@ pub enum ScanPriority {
     Scanned,
     /// Block ranges that have already been scanned. The nullifiers from this range were not mapped after scanning and
     /// spend detection to reduce memory consumption and/or storage for non-linear scanning. These nullifiers will need
-    /// to be re-fetched for final spend detection when merging this range is the lowest unscanned range in the
-    /// wallet's list of scan ranges.
+    /// to be re-fetched for final spend detection when this range is the lowest unscanned range in the wallet's list
+    /// of scan ranges.
     ScannedWithoutMapping,
     /// Block ranges to be scanned to advance the fully-scanned height.
     Historic,
@@ -357,19 +357,33 @@ where
     // pre-scan initialisation
     let mut wallet_guard = wallet.write().await;
 
-    let mut wallet_height = state::get_wallet_height(consensus_parameters, &*wallet_guard)
-        .map_err(SyncError::WalletError)?;
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    if wallet_height > chain_height {
-        if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
-            return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+    let wallet_height = if let Some(mut height) = wallet_guard
+        .get_sync_state()
+        .map_err(SyncError::WalletError)?
+        .wallet_height()
+    {
+        if height > chain_height {
+            if height - chain_height >= MAX_VERIFICATION_WINDOW {
+                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            }
+            truncate_wallet_data(&mut *wallet_guard, chain_height)?;
+            height = chain_height;
         }
-        truncate_wallet_data(&mut *wallet_guard, chain_height)?;
-        wallet_height = chain_height;
-    }
+
+        height
+    } else {
+        let birthday = checked_birthday(consensus_parameters, &*wallet_guard)
+            .map_err(SyncError::WalletError)?;
+        if birthday > chain_height {
+            return Err(SyncError::ChainError(birthday - chain_height));
+        }
+
+        birthday - 1
+    };
 
     let ufvks = wallet_guard
         .get_unified_full_viewing_keys()
@@ -442,6 +456,7 @@ where
 
     // TODO: implement an option for continuous scanning where it doesnt exit when complete
 
+    let mut nullifier_map_limit_exceeded = false;
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -456,6 +471,8 @@ where
                     scan_range,
                     scan_results,
                     initial_verification_height,
+                    config.performance_level,
+                    &mut nullifier_map_limit_exceeded,
                 )
                 .await?;
                 wallet_guard.set_save_flag().map_err(SyncError::WalletError)?;
@@ -524,7 +541,7 @@ where
                     },
                 }
 
-                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), config.performance_level).await?;
+                scanner.update(&mut *wallet.write().await, shutdown_mempool.clone(), nullifier_map_limit_exceeded).await?;
 
                 if matches!(scanner.state, ScannerState::Shutdown) {
                     // wait for mempool monitor to receive mempool transactions
@@ -848,6 +865,7 @@ where
 }
 
 /// Scan post-processing
+#[allow(clippy::too_many_arguments)]
 async fn process_scan_results<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
@@ -856,6 +874,8 @@ async fn process_scan_results<W>(
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
     initial_verification_height: BlockHeight,
+    performance_level: PerformanceLevel,
+    nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet
@@ -870,25 +890,14 @@ where
         Ok(results) => {
             let ScanResults {
                 mut nullifiers,
-                outpoints,
+                mut outpoints,
                 scanned_blocks,
                 wallet_transactions,
                 sapling_located_trees,
                 orchard_located_trees,
-                map_nullifiers,
             } = results;
 
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
-                spend::update_shielded_spends(
-                    consensus_parameters,
-                    wallet,
-                    fetch_request_sender.clone(),
-                    ufvks,
-                    &scanned_blocks,
-                    Some(&mut nullifiers),
-                )
-                .await?;
-
                 // add missing block bounds in the case that nullifier batch limit was reached and scan range was split
                 let mut missing_block_bounds = BTreeMap::new();
                 for block_bound in [
@@ -917,14 +926,106 @@ where
                         .map_err(SyncError::WalletError)?;
                 }
 
+                let first_unscanned_range = wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges
+                    .iter()
+                    .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+                    .expect("the scan range being processed is not yet set to scanned so at least one unscanned range must exist");
+                if !first_unscanned_range
+                    .block_range()
+                    .contains(&scan_range.block_range().start)
+                    || !first_unscanned_range
+                        .block_range()
+                        .contains(&(scan_range.block_range().end - 1))
+                {
+                    // in this rare edge case, a scanned `ScannedWithoutMapping` range was the highest priority yet it was not the first unscanned range so it must be discarded to avoid missing spends
+
+                    // reset scan range from `Scanning` to `ScannedWithoutMapping`
+                    state::punch_scan_priority(
+                        wallet
+                            .get_sync_state_mut()
+                            .map_err(SyncError::WalletError)?,
+                        scan_range.block_range().clone(),
+                        ScanPriority::ScannedWithoutMapping,
+                        true,
+                    );
+                    tracing::debug!(
+                        "Nullifiers discarded and will be re-fetched to avoid missing spends."
+                    );
+
+                    return Ok(());
+                }
+
+                spend::update_shielded_spends(
+                    consensus_parameters,
+                    wallet,
+                    fetch_request_sender.clone(),
+                    ufvks,
+                    &scanned_blocks,
+                    Some(&mut nullifiers),
+                )
+                .await?;
+
                 state::set_scanned_scan_range(
                     wallet
                         .get_sync_state_mut()
                         .map_err(SyncError::WalletError)?,
                     scan_range.block_range().clone(),
-                    true,
+                    true, // NOTE: although nullifiers are not actually added to the wallet's nullifier map for efficiency, there is effectively no difference as spends are still updated using the `additional_nullifier_map` and would be removed on the following cleanup (`remove_irrelevant_data`) due to `ScannedWithoutMapping` ranges always being the first non-scanned range and therefore always raise the wallet's fully scanned height after processing.
                 );
             } else {
+                // nullifiers are not mapped if nullifier map size limit will be exceeded
+                if !*nullifier_map_limit_exceeded {
+                    let nullifier_map = wallet.get_nullifiers().map_err(SyncError::WalletError)?;
+                    if max_nullifier_map_size(performance_level).is_some_and(|max| {
+                        nullifier_map.orchard.len()
+                            + nullifier_map.sapling.len()
+                            + nullifiers.orchard.len()
+                            + nullifiers.sapling.len()
+                            > max
+                    }) {
+                        *nullifier_map_limit_exceeded = true;
+                    }
+                }
+                let mut map_nullifiers = !*nullifier_map_limit_exceeded;
+
+                // all transparent spend locations are known before scanning so there is no need to map outpoints from untargetted ranges.
+                // outpoints of untargetted ranges will still be checked before being discarded.
+                let map_outpoints = scan_range.priority() >= ScanPriority::FoundNote;
+
+                // always map nullifiers if scanning the lowest range to be scanned for final spend detection.
+                // this will set the range to `Scanned` (as oppose to `ScannedWithoutMapping`) and prevent immediate
+                // re-fetching of the nullifiers in this range. these will be immediately cleared after cleanup so will not
+                // have an impact on memory or wallet file size.
+                // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
+                // scanning.
+                for query_scan_range in wallet
+                    .get_sync_state()
+                    .map_err(SyncError::WalletError)?
+                    .scan_ranges()
+                {
+                    let scan_priority = query_scan_range.priority();
+                    if scan_priority != ScanPriority::Scanned
+                        && scan_priority != ScanPriority::Scanning
+                    {
+                        break;
+                    }
+
+                    if scan_priority == ScanPriority::Scanning
+                        && query_scan_range
+                            .block_range()
+                            .contains(&scan_range.block_range().start)
+                        && query_scan_range
+                            .block_range()
+                            .contains(&(scan_range.block_range().end - 1))
+                    {
+                        map_nullifiers = true;
+                        break;
+                    }
+                }
+
                 update_wallet_data(
                     consensus_parameters,
                     wallet,
@@ -936,13 +1037,25 @@ where
                     } else {
                         None
                     },
-                    outpoints,
+                    if map_outpoints {
+                        Some(&mut outpoints)
+                    } else {
+                        None
+                    },
                     wallet_transactions,
                     sapling_located_trees,
                     orchard_located_trees,
                 )
                 .await?;
-                spend::update_transparent_spends(wallet).map_err(SyncError::WalletError)?;
+                spend::update_transparent_spends(
+                    wallet,
+                    if map_outpoints {
+                        None
+                    } else {
+                        Some(&mut outpoints)
+                    },
+                )
+                .map_err(SyncError::WalletError)?;
                 spend::update_shielded_spends(
                     consensus_parameters,
                     wallet,
@@ -1173,7 +1286,7 @@ async fn update_wallet_data<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: &ScanRange,
     nullifiers: Option<&mut NullifierMap>,
-    mut outpoints: BTreeMap<OutputId, ScanTarget>,
+    outpoints: Option<&mut BTreeMap<OutputId, ScanTarget>>,
     transactions: HashMap<TxId, WalletTransaction>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -1213,9 +1326,11 @@ where
             .append_nullifiers(nullifiers)
             .map_err(SyncError::WalletError)?;
     }
-    wallet
-        .append_outpoints(&mut outpoints)
-        .map_err(SyncError::WalletError)?;
+    if let Some(outpoints) = outpoints {
+        wallet
+            .append_outpoints(outpoints)
+            .map_err(SyncError::WalletError)?;
+    }
     wallet
         .update_shard_trees(
             fetch_request_sender,
@@ -1597,4 +1712,13 @@ where
     reset_spends(wallet_transactions, invalid_txids);
 
     Ok(())
+}
+
+fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> {
+    match performance_level {
+        PerformanceLevel::Low => Some(0),
+        PerformanceLevel::Medium => Some(125_000),
+        PerformanceLevel::High => Some(2_000_000),
+        PerformanceLevel::Maximum => None,
+    }
 }
