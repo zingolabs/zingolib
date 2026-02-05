@@ -608,6 +608,7 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    dbg!(&sync_state.wallet_height());
     if let Some(mut wallet_height) = sync_state.wallet_height() {
         if wallet_height > chain_height {
             if wallet_height - chain_height >= MAX_VERIFICATION_WINDOW {
@@ -648,8 +649,8 @@ mod test {
         };
         let input_height = BlockHeight::from_u32(1);
         let mut test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
-        dbg!(&test_wallet);
-        dbg!(test_wallet.get_birthday().unwrap());
+        //dbg!(&test_wallet);
+        //dbg!(test_wallet.get_birthday().unwrap());
         let valid_height = constrained_height(&mut test_wallet, input_height, &local_network);
         //let test_wallet = create_test_wallet();
         assert_eq!(2, 2);
