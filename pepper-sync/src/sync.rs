@@ -609,17 +609,17 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    dbg!(&sync_state.wallet_height());
-    if let Some(mut wallet_height) = sync_state.wallet_height() {
-        if wallet_height > proxy_reported_chain_height {
-            if wallet_height - proxy_reported_chain_height >= MAX_VERIFICATION_WINDOW {
+    dbg!(&sync_state.last_max_targeted_height());
+    if let Some(mut last_max_targeted_height) = sync_state.last_max_targeted_height() {
+        if last_max_targeted_height > proxy_reported_chain_height {
+            if last_max_targeted_height - proxy_reported_chain_height >= MAX_VERIFICATION_WINDOW {
                 return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
             }
             truncate_wallet_data(wallet, proxy_reported_chain_height)?;
-            wallet_height = proxy_reported_chain_height;
+            last_max_targeted_height = proxy_reported_chain_height;
         }
 
-        Ok(wallet_height)
+        Ok(last_max_targeted_height)
     } else {
         let birthday =
             checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
