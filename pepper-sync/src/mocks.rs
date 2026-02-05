@@ -7,9 +7,11 @@ use crate::{
 use std::num::NonZeroU32;
 use zcash_protocol::consensus::BlockHeight;
 
+#[derive(Debug, thiserror::Error)]
+enum MockWalletError {}
 struct MockWallet {}
 impl SyncWallet for MockWallet {
-    type Error;
+    type Error = MockWalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
         todo!()
@@ -66,6 +68,10 @@ impl SyncWallet for MockWallet {
         Self::Error,
     > {
         todo!()
+    }
+
+    fn set_save_flag(&mut self) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 impl SyncBlocks for MockWallet {
