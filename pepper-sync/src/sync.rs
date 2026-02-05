@@ -434,7 +434,7 @@ where
     )
     .await?;
 
-    let initial_verification_height = wallet_guard
+    let lowest_unscanned_height = wallet_guard
         .get_sync_state()
         .map_err(SyncError::WalletError)?
         .highest_scanned_height()
@@ -471,7 +471,7 @@ where
                     &ufvks,
                     scan_range,
                     scan_results,
-                    initial_verification_height,
+                    lowest_unscanned_height,
                     config.performance_level,
                     &mut nullifier_map_limit_exceeded,
                 )
