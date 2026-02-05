@@ -129,7 +129,7 @@ impl LightClient {
     ///
     /// Updates `self.send_progress.last_result` with JSON string of successfully transmitted txids or error message in
     /// case of failure.
-    pub(crate) async fn transmit_transactions(
+    async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {

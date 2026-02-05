@@ -16,7 +16,7 @@ use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
-    pub(super) fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
+    fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
         let zfz_address = get_donation_address_for_chain(&self.config().chain);
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
