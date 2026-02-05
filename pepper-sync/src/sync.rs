@@ -633,7 +633,6 @@ where
             truncate_wallet_data(wallet, proxy_reported_chain_height)?;
             return Ok(proxy_reported_chain_height);
         }
-
         Ok(last_max_targeted_height)
     } else {
         let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
