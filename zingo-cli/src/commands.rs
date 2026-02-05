@@ -468,8 +468,7 @@ impl Command for RescanCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
-        birthday."
+        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet birthday."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1384,7 +1383,7 @@ struct ResendCommand {}
 impl Command for ResendCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Re-transmits a calculated transaction from the wallet with the given txid.
+            Re_transmits a calculated transaction from the wallet with the given txid.
             This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
             to remove the calculated transaction in the case of send failure.
 
@@ -1395,7 +1394,7 @@ impl Command for ResendCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Re-transmits a calculated transaction from the wallet with the given txid."
+        "Re_transmits a calculated transaction from the wallet with the given txid."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
