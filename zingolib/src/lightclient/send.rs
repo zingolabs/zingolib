@@ -128,7 +128,7 @@ impl LightClient {
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
                 .wallet_transactions
-                .get_mut(txid)
+                .get(txid)
                 .ok_or(WalletError::TransactionNotFound(*txid))?;
             let height = calculated_transaction.status().get_height();
 
@@ -147,7 +147,7 @@ impl LightClient {
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|e| {
-                    // TODO: set tx to failed
+                    let _ignore_error = wallet.set_transaction_failed(*txid);
                     WalletError::TransactionWrite(e)
                 })?;
 
@@ -157,10 +157,13 @@ impl LightClient {
             )
             .await
             .map_err(|e| {
-                // TODO: set tx to failed
+                let _ignore_error = wallet.set_transaction_failed(*txid);
                 SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
             })?;
-            calculated_transaction
+            wallet
+                .wallet_transactions
+                .get_mut(txid)
+                .ok_or(WalletError::TransactionNotFound(*txid))?
                 .update_status(ConfirmationStatus::Transmitted(height), crate::utils::now());
             wallet.save_required = true;
 
