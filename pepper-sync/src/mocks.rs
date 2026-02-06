@@ -22,16 +22,83 @@ pub(super) struct MockWallet {
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
 }
-impl MockWallet {
-    pub(crate) fn new(birthday: BlockHeight) -> MockWallet {
-        MockWallet {
-            birthday,
+impl Default for MockWalletBuilder {
+    fn default() -> Self {
+        MockWalletBuilder {
+            birthday: BlockHeight::from_u32(0),
             sync_state: SyncState::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
             outpoint_map: BTreeMap::new(),
             shard_trees: ShardTrees::new(),
+        }
+    }
+}
+
+pub(super) struct MockWalletBuilder {
+    birthday: BlockHeight,
+    sync_state: SyncState,
+    wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    nullifier_map: NullifierMap,
+    outpoint_map: BTreeMap<OutputId, ScanTarget>,
+    shard_trees: ShardTrees,
+}
+
+impl MockWalletBuilder {
+    pub(crate) fn birthday(mut self, birthday: BlockHeight) -> Self {
+        self.birthday = birthday;
+        self
+    }
+
+    pub(crate) fn sync_state(mut self, sync_state: SyncState) -> Self {
+        self.sync_state = sync_state;
+        self
+    }
+
+    pub(crate) fn wallet_blocks(
+        mut self,
+        wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    ) -> Self {
+        self.wallet_blocks = wallet_blocks;
+        self
+    }
+
+    pub(crate) fn wallet_transactions(
+        mut self,
+        wallet_transactions: HashMap<TxId, WalletTransaction>,
+    ) -> Self {
+        self.wallet_transactions = wallet_transactions;
+        self
+    }
+
+    pub(crate) fn nullifier_map(mut self, nullifier_map: NullifierMap) -> Self {
+        self.nullifier_map = nullifier_map;
+        self
+    }
+
+    pub(crate) fn outpoint_map(mut self, outpoint_map: BTreeMap<OutputId, ScanTarget>) -> Self {
+        self.outpoint_map = outpoint_map;
+        self
+    }
+
+    pub(crate) fn shard_trees(mut self, shard_trees: ShardTrees) -> Self {
+        self.shard_trees = shard_trees;
+        self
+    }
+    pub(crate) fn new() -> MockWalletBuilder {
+        MockWalletBuilder::default()
+    }
+    pub(crate) fn create_mock_wallet(self) -> MockWallet {
+        MockWallet {
+            birthday: self.birthday,
+            sync_state: self.sync_state,
+            wallet_blocks: self.wallet_blocks,
+            wallet_transactions: self.wallet_transactions,
+            nullifier_map: self.nullifier_map,
+            outpoint_map: self.outpoint_map,
+            shard_trees: self.shard_trees,
         }
     }
 }

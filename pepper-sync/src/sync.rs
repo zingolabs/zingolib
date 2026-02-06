@@ -680,14 +680,17 @@ mod test {
                 nu6_1: Some(BlockHeight::from_u32(1)),
             };
             let input_height = BlockHeight::from_u32(1);
-            let mut test_wallet = crate::mocks::MockWallet::new(BlockHeight::from_u32(1));
+            let mut test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
             //dbg!(&test_wallet);
             //dbg!(test_wallet.get_birthday().unwrap());
             let valid_height =
                 generate_scan_calibrated_height(&mut test_wallet, input_height, &local_network);
             //let test_wallet = create_test_wallet();
+            // */
             assert_eq!(2, 2);
         }
+        #[tokio::test]
+        async fn foo() {}
     }
 }
 
