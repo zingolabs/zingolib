@@ -17,57 +17,6 @@ use pepper_sync::wallet::NoteInterface;
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
 
-/// TODO: Add Doc Comment Here!
-// TODO: revisit send progress to separate json and handle errors properly. move to lightclient or remove?.
-#[derive(Debug, Clone)]
-pub struct SendProgress {
-    /// TODO: Add Doc Comment Here!
-    pub id: u32,
-    /// TODO: Add Doc Comment Here!
-    pub is_send_in_progress: bool,
-    /// TODO: Add Doc Comment Here!
-    pub progress: u32,
-    /// TODO: Add Doc Comment Here!
-    pub total: u32,
-    /// TODO: Add Doc Comment Here!
-    pub last_result: Option<String>,
-}
-
-impl SendProgress {
-    /// TODO: Add Doc Comment Here!
-    #[must_use]
-    pub fn new(id: u32) -> Self {
-        SendProgress {
-            id,
-            is_send_in_progress: false,
-            progress: 0,
-            total: 0,
-            last_result: None,
-        }
-    }
-}
-
-impl From<SendProgress> for json::JsonValue {
-    fn from(value: SendProgress) -> Self {
-        json::object! {
-            "id" => value.id,
-            "sending" => value.is_send_in_progress,
-            "progress" => value.progress,
-            "total" => value.total,
-            "last_result" => value.last_result,
-        }
-    }
-}
-
-// TODO: move to lightclient
-impl LightWallet {
-    // Reset the send progress status to blank
-    pub(crate) async fn reset_send_progress(&mut self) {
-        let next_id = self.send_progress.id + 1;
-        self.send_progress = SendProgress::new(next_id);
-    }
-}
-
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
     pub(crate) async fn calculate_transactions<NoteRef>(
@@ -75,9 +24,6 @@ impl LightWallet {
         proposal: Proposal<zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
-
         let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
             crate::wallet::utils::read_sapling_params()
                 .map_err(CalculateTransactionError::SaplingParams)?;

@@ -15,14 +15,8 @@ use crate::lightclient::LightClient;
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
-use crate::wallet::send::SendProgress;
 
 impl LightClient {
-    /// Wrapper for [`crate::wallet::LightWallet::send_progress`].
-    pub async fn send_progress(&self) -> SendProgress {
-        self.wallet.read().await.send_progress.clone()
-    }
-
     async fn send(
         &mut self,
         proposal: Proposal<zip317::FeeRule, OutputRef>,
@@ -125,50 +119,17 @@ impl LightClient {
     }
 
     /// Tranmits calculated transactions stored in the wallet matching txids of `calculated_txids` in the given order.
-    /// Returns list of txids successfully transmitted.
-    ///
-    /// Updates `self.send_progress.last_result` with JSON string of successfully transmitted txids or error message in
-    /// case of failure.
+    /// Returns list of txids for successfully transmitted transactions.
     async fn transmit_transactions(
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        match self
-            .transmit_transactions_inner(calculated_txids.clone())
-            .await
-        {
-            Ok(()) => {
-                self.wallet.write().await.set_send_result(
-                    serde_json::Value::Array(
-                        calculated_txids
-                            .iter()
-                            .map(|txid| serde_json::Value::String(txid.to_string()))
-                            .collect(),
-                    )
-                    .to_string(),
-                );
-                Ok(calculated_txids.clone())
-            }
-            Err(e) => {
-                self.wallet
-                    .write()
-                    .await
-                    .set_send_result(format!("error: {e}"));
-                Err(e)
-            }
-        }
-    }
-
-    async fn transmit_transactions_inner(
-        &mut self,
-        calculated_txids: NonEmpty<TxId>,
-    ) -> Result<(), LightClientError> {
         let mut wallet = self.wallet.write().await;
-        for txid in calculated_txids {
+        for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
                 .wallet_transactions
-                .get_mut(&txid)
-                .ok_or(WalletError::TransactionNotFound(txid))?;
+                .get_mut(txid)
+                .ok_or(WalletError::TransactionNotFound(*txid))?;
             let height = calculated_transaction.status().get_height();
 
             if !matches!(
@@ -176,7 +137,7 @@ impl LightClient {
                 ConfirmationStatus::Calculated(_)
             ) {
                 return Err(SendError::TransmissionError(
-                    TransmissionError::IncorrectTransactionStatus(txid),
+                    TransmissionError::IncorrectTransactionStatus(*txid),
                 )
                 .into());
             }
@@ -206,7 +167,7 @@ impl LightClient {
             let txid_from_server =
                 crate::utils::conversion::txid_from_hex_encoded_str(txid_from_server.as_str())
                     .map_err(WalletError::ConversionFailed)?;
-            if txid_from_server != txid {
+            if txid_from_server != *txid {
                 // during darkside tests, the server may report a different txid to the one calculated.
                 #[cfg(not(feature = "darkside_tests"))]
                 {
@@ -217,7 +178,7 @@ impl LightClient {
             }
         }
 
-        Ok(())
+        Ok(calculated_txids)
     }
 }
 

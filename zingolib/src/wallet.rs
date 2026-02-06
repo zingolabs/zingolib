@@ -22,7 +22,6 @@ use crate::config::ChainType;
 use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use send::SendProgress;
 
 pub mod error;
 pub(crate) mod legacy;
@@ -138,9 +137,6 @@ pub struct LightWallet {
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
-    /// Progress of an outgoing transaction
-    // TODO: move to LightClient
-    pub send_progress: SendProgress,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
@@ -258,7 +254,6 @@ impl LightWallet {
             price_list: PriceList::new(),
             save_required: true,
             send_proposal: None,
-            send_progress: SendProgress::new(0),
         })
     }
 
@@ -369,12 +364,6 @@ impl LightWallet {
         );
 
         Ok(())
-    }
-
-    // Set the previous send's result as a JSON string.
-    pub(super) fn set_send_result(&mut self, result: String) {
-        self.send_progress.is_send_in_progress = false;
-        self.send_progress.last_result = Some(result);
     }
 
     /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
