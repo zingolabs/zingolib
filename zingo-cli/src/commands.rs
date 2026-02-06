@@ -433,28 +433,6 @@ impl Command for SyncCommand {
     }
 }
 
-struct SendProgressCommand {}
-impl Command for SendProgressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r"
-            Get the progress of any send transactions that are currently computing
-
-            Usage:
-            send_progress
-        "}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Get the progress of any send transactions that are currently computing"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(
-            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
-        )
-    }
-}
-
 struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
@@ -1949,7 +1927,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("send_progress", Box::new(SendProgressCommand {})),
         ("value_transfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
