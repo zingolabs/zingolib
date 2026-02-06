@@ -615,7 +615,7 @@ where
 ///   (2) Sapling Epoch Height:
 ///       * the lower bound on the wallet birthday
 ///
-fn generate_scan_calibrated_height<W, P>(
+fn checked_wallet_height<W, P>(
     wallet: &mut W,
     proxy_reported_chain_height: BlockHeight,
     consensus_parameters: &P,
@@ -666,7 +666,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::local_consensus::LocalNetwork;
 
-        use crate::{sync::generate_scan_calibrated_height, wallet::traits::SyncWallet};
+        use crate::{sync::checked_wallet_height, wallet::traits::SyncWallet};
         #[tokio::test]
         async fn my_first_test() {
             let local_network = LocalNetwork {
@@ -684,7 +684,7 @@ mod test {
             //dbg!(&test_wallet);
             //dbg!(test_wallet.get_birthday().unwrap());
             let valid_height =
-                generate_scan_calibrated_height(&mut test_wallet, input_height, &local_network);
+                checked_wallet_height(&mut test_wallet, input_height, &local_network);
             //let test_wallet = create_test_wallet();
             // */
             assert_eq!(2, 2);
