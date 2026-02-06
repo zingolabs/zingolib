@@ -598,15 +598,14 @@ where
     })
 }
 
-/// This ensures that the height to be used to calibrate the targeting ranges meets
-/// certain constraints.
+/// This ensures that the height used as the lower bound of the sync is valid.
 /// The comparison takes two input heights and uses several constant bounds to select the best height
-/// to calibrate the new scan.
+/// to bound the sync.
 /// The input parameter heights are:
 ///
-///   (1) proxy_reported_chain_height:
+///   (1) chain_height:
 ///       * the best block-height reported by the proxy (zainod or lwd)
-///   (2) last_max_targeted_height
+///   (2) last_known_chain_height
 ///       * the last max height the wallet recorded from earlier scans
 ///
 /// The constants are:
@@ -617,7 +616,7 @@ where
 ///
 fn checked_wallet_height<W, P>(
     wallet: &mut W,
-    proxy_reported_chain_height: BlockHeight,
+    chain_height: BlockHeight,
     consensus_parameters: &P,
 ) -> Result<BlockHeight, SyncError<W::Error>>
 where
@@ -625,18 +624,18 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    if let Some(last_max_targeted_height) = sync_state.last_known_chain_height() {
-        if last_max_targeted_height > proxy_reported_chain_height {
-            if last_max_targeted_height - proxy_reported_chain_height >= MAX_REORG_ALLOWANCE {
+    if let Some(last_known_chain_height) = sync_state.last_known_chain_height() {
+        if last_known_chain_height > chain_height {
+            if last_known_chain_height - chain_height >= MAX_REORG_ALLOWANCE {
                 // There's a human attention requiring problem, the wallet supplied
-                // last_max_targeted_height is more than MAX_REORG_ALLOWANCE **above**
+                // last_known_chain_height is more than MAX_REORG_ALLOWANCE **above**
                 // the proxy's reported height.
                 return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
             }
-            truncate_wallet_data(wallet, proxy_reported_chain_height)?;
+            truncate_wallet_data(wallet, chain_height)?;
             // The wallet reported height is above the current proxy height
             // reset to the proxy height.
-            return Ok(proxy_reported_chain_height);
+            return Ok(chain_height);
         }
         // The last wallet reported height is equal or below the proxy height
         // since it was derived from a bday in an earlier scan, we don't check its
@@ -644,15 +643,13 @@ where
         // TODO:  Think through the possibilty of syncing to a short side chain,
         // this logic doesn't explicitly handle the scan, but the overlap of range
         // bounds may handle it elsewhere.
-        Ok(last_max_targeted_height)
+        Ok(last_known_chain_height)
     } else {
         let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
-        if raw_bday > proxy_reported_chain_height {
+        if raw_bday > chain_height {
             // Human attention requiring error, a bday *above* the proxy reported
             // chain tipe has been provided
-            return Err(SyncError::ChainError(
-                raw_bday - proxy_reported_chain_height,
-            ));
+            return Err(SyncError::ChainError(raw_bday - chain_height));
         }
         // The bday is set with a floor of the Sapling Epoch -1
         // TODO:  Confirm that the Sapling Epoch -1 is the correct floor
