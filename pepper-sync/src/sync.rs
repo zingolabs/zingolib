@@ -625,7 +625,7 @@ where
     P: zcash_protocol::consensus::Parameters,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    if let Some(last_max_targeted_height) = sync_state.wallet_height() {
+    if let Some(last_max_targeted_height) = sync_state.last_known_chain_height() {
         if last_max_targeted_height > proxy_reported_chain_height {
             if last_max_targeted_height - proxy_reported_chain_height >= MAX_REORG_ALLOWANCE {
                 // There's a human attention requiring problem, the wallet supplied
