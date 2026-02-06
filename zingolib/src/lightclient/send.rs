@@ -16,6 +16,8 @@ use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::wallet::error::WalletError;
 use crate::wallet::output::OutputRef;
 
+const MAX_RETRIES: u8 = 3;
+
 impl LightClient {
     async fn send(
         &mut self,
@@ -151,15 +153,33 @@ impl LightClient {
                     WalletError::TransactionWrite(e)
                 })?;
 
-            let txid_from_server = crate::grpc_connector::send_transaction(
-                self.server_uri(),
-                transaction_bytes.into_boxed_slice(),
-            )
-            .await
-            .map_err(|e| {
-                let _ignore_error = wallet.set_transaction_failed(*txid);
-                SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
-            })?;
+            let mut retry_count = 0;
+            let txid_from_server = loop {
+                let transmission_result = crate::grpc_connector::send_transaction(
+                    self.server_uri(),
+                    transaction_bytes.clone().into_boxed_slice(),
+                )
+                .await
+                .map_err(|e| {
+                    SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
+                });
+
+                match transmission_result {
+                    Ok(txid) => {
+                        break Ok(txid);
+                    }
+                    Err(e) => {
+                        if retry_count >= MAX_RETRIES {
+                            let _ignore_error = wallet.set_transaction_failed(*txid);
+                            break Err(e);
+                        } else {
+                            retry_count += 1;
+                            continue;
+                        }
+                    }
+                }
+            }?;
+
             wallet
                 .wallet_transactions
                 .get_mut(txid)
