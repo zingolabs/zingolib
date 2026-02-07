@@ -1,8 +1,8 @@
 {
-    "recommendations": [
-        "EditorConfig.EditorConfig",
-        "github.vscode-github-actions",
-        "Swellaby.rust-pack",
-        "pflannery.vscode-versionlens"
-    ]
+  "recommendations": [
+    "EditorConfig.EditorConfig",
+    "github.vscode-github-actions",
+    "Swellaby.rust-pack",
+    "legalfina.npm-version-lens"
+  ]
 }
