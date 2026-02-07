@@ -673,29 +673,23 @@ mod test {
             nu6_1: Some(BlockHeight::from_u32(1)),
         };
         use crate::{
-            mocks::MockWalletError,
-            sync::checked_wallet_height,
-            wallet::{SyncState, traits::SyncWallet},
+            error::SyncError, mocks::MockWalletError, sync::checked_wallet_height,
+            wallet::WalletBlock,
         };
         #[tokio::test]
-        async fn my_first_test() {
-            let input_height = BlockHeight::from_u32(1);
-            let mut test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
-            //dbg!(&test_wallet);
-            //dbg!(test_wallet.get_birthday().unwrap());
-            let valid_height =
-                checked_wallet_height(&mut test_wallet, input_height, &LOCAL_NETWORK);
-            //let test_wallet = create_test_wallet();
-            // */
-            assert_eq!(2, 2);
-        }
-        #[tokio::test]
         async fn get_sync_state_error() {
-            let get_sync_state_patch = |_: &SyncState| -> Result<&SyncState, MockWalletError> {
-                Err(MockWalletError::AnErrorVariant)
-            };
-            let mut test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
-            todo!();
+            let builder = crate::mocks::MockWalletBuilder::new();
+            let mut test_wallet = builder
+                .get_sync_state_patch(Box::new(|_| Err(MockWalletError::AnErrorVariant)))
+                .create_mock_wallet();
+            let res =
+                checked_wallet_height(&mut test_wallet, BlockHeight::from_u32(1), &LOCAL_NETWORK);
+            assert!(matches!(
+                res,
+                Err(SyncError::WalletError(
+                    crate::mocks::MockWalletError::AnErrorVariant
+                ))
+            ));
         }
     }
 }
