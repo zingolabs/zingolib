@@ -38,7 +38,7 @@ to release the funds, restoring balance and allowing funds to be spent in anothe
 
 ### Removed
 `lightclient::LightClient::resend` - replaced by automatic retries due to issues with the current `resend` or `remove` user flow.
-`lightclient::LightClient::send_progress`  
+`lightclient::LightClient::send_progress`
 `lightclient::error::QuickSendError`
 `lightclient::error::QuickShieldError`
 `lightclient::send_with_proposal` module - contents moved to `send` (parent) module.
