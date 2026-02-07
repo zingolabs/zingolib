@@ -1367,8 +1367,13 @@ where
         .map_err(SyncError::WalletError)?;
     *sync_state = SyncState::new();
     add_scan_targets(sync_state, &scan_targets);
+    truncate_wallet_data(wallet, consensus::H0)?;
+    wallet
+        .get_wallet_transactions_mut()
+        .map_err(SyncError::WalletError)?
+        .clear();
 
-    truncate_wallet_data(wallet, consensus::H0)
+    Ok(())
 }
 
 /// Updates the wallet with data from `scan_results`

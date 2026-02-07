@@ -179,7 +179,6 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
     /// ```
-    // TODO remove 'pending' and fix spend status.
     #[must_use]
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {

@@ -430,7 +430,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| !transaction.status().is_confirmed(),
+            |_, transaction: &WalletTransaction| transaction.status().is_pending(),
             account_id,
         )
     }
@@ -453,7 +453,7 @@ impl LightWallet {
     {
         self.get_filtered_balance::<Op, _>(
             |note, transaction: &WalletTransaction| {
-                Op::value(note) > MARGINAL_FEE.into_u64() && !transaction.status().is_confirmed()
+                Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_pending()
             },
             account_id,
         )
