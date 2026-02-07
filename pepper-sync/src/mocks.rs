@@ -120,7 +120,7 @@ impl SyncWallet for MockWallet {
 
     fn get_sync_state(&self) -> Result<&crate::wallet::SyncState, Self::Error> {
         if self.get_sync_state_patch.is_some() {
-            return (self.get_sync_state_patch.as_ref().unwrap())(&self.sync_state);
+            return self.get_sync_state_patch.as_ref().unwrap()(&self.sync_state);
         }
         Ok(&self.sync_state)
     }
