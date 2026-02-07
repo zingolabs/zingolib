@@ -10,9 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 `confirmation_status::ConfirmationStatus::is_failed`
+`confirmation_status::ConfirmationStatus::is_pending`
 
 ### Changed
-`confirmation_status::ConfirmationStatus` - added `Failed` variant.
+`confirmation_status::ConfirmationStatus`:
+- added `Failed` variant
+- re-ordered variants to match serialization and the actual status flow calculate -> transmit -> mempool -> confirmed
 
 ### Removed
 

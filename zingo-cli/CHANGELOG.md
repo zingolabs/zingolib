@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+`remove_transaction` command - now only allows transactions with the new `Failed` status to be removed.
 
 ### Removed
 `resend` command - see zingolib CHANGELOG.md on `LightClient::resend`
+`send_progress` command
 
 ## [0.2.0]
 
