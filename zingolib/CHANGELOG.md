@@ -18,12 +18,11 @@ to transmission.
 - `SendError` variant added
 - `FileError` removed From impl for std::io::error
 `lightclient::error::SendError` - now includes all error types related to sending such as transmission and proposal errors.
-`wallet::LightWallet::remove_unconfirmed_transaction` - renamed to `remove_failed_transaction` and now only allows
-transactions with the new `Failed` status to be removed. Also returns `WalletError` error type instead of `RemovalError`.
 `wallet::LightWallet`:
+- removed `send_progress` field
 - `remove_unconfirmed_transactions` method - renamed to `remove_failed_transactions` and now only removes transactions with the
 new `Failed` status. Also now returns `wallet::error::WalletError`. No longer resets spends as spends are now reset when
-a transaction is updated to `Failed` status. Transactions are automatically updated to `Failed` if transmission fails 3 times or
+a transaction is updated to `Failed` status. Transactions are automatically updated to `Failed` if transmission fails 4 times or
 if the transaction expires before it is confirmed. Spends locked up in unconfirmed transactions for 3 blocks will also be reset
 to release the funds, restoring balance and allowing funds to be spent in another transaction.
 - added `clear_proposal` method for removing an unconfirmed proposal from the wallet.

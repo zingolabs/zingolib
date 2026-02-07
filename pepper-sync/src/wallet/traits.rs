@@ -22,7 +22,7 @@ use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, reset_spends};
+use crate::{Orchard, Sapling, SyncDomain, client, reset_spends, set_transactions_failed};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -142,8 +142,9 @@ pub trait SyncTransactions: SyncWallet {
         Ok(())
     }
 
-    /// Removes all confirmed wallet transactions above the given `block_height`.
-    /// Also sets any output's `spending_transaction` field to `None` if it's spending transaction was removed.
+    /// Sets all confirmed wallet transactions above the given `block_height` to `Failed` status.
+    /// Also sets any output's `spending_transaction` field to `None` if it's spending transaction was set to `Failed`
+    /// status.
     fn truncate_wallet_transactions(
         &mut self,
         truncate_height: BlockHeight,
@@ -155,11 +156,7 @@ pub trait SyncTransactions: SyncWallet {
             .map(|tx| tx.transaction().txid())
             .collect();
 
-        let wallet_transactions = self.get_wallet_transactions_mut()?;
-        reset_spends(wallet_transactions, invalid_txids.clone());
-        for invalid_txid in &invalid_txids {
-            wallet_transactions.remove(invalid_txid);
-        }
+        set_transactions_failed(self.get_wallet_transactions_mut()?, invalid_txids);
 
         Ok(())
     }
