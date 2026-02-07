@@ -116,6 +116,7 @@ pub(crate) mod witness;
 pub use sync::add_scan_targets;
 pub use sync::reset_spends;
 pub use sync::scan_pending_transaction;
+pub use sync::set_transactions_failed;
 pub use sync::sync;
 pub use sync::sync_status;
 

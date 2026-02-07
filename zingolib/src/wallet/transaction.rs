@@ -5,7 +5,6 @@ use pepper_sync::wallet::{
     OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface, SaplingNote, TransparentCoin,
     WalletTransaction,
 };
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 use super::LightWallet;
 use super::error::{FeeError, SpendError};
@@ -91,26 +90,6 @@ impl LightWallet {
                 ))
             })?
             .expect("fee should not be negative"))
-    }
-
-    /// Sets a wallet transaction to `Failed` status.
-    ///
-    /// Sets the `spending_transaction` fields of any outputs spent in this transaction to `None` restoring the
-    /// wallet balance and allowing these outputs to be re-selected for spending in future sends.
-    pub(crate) fn set_transaction_failed(&mut self, txid: TxId) -> Result<(), WalletError> {
-        if let Some(transaction) = self.wallet_transactions.get_mut(&txid) {
-            if transaction.status().is_failed() {
-                return Ok(());
-            }
-            let height = transaction.status().get_height();
-            transaction.update_status(ConfirmationStatus::Failed(height), crate::utils::now());
-            pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
-            self.save_required = true;
-        } else {
-            return Err(WalletError::TransactionNotFound(txid));
-        }
-
-        Ok(())
     }
 
     /// Removes failed transaction with the given `txid` from the wallet.

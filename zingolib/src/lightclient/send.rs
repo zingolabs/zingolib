@@ -149,7 +149,11 @@ impl LightClient {
                 .transaction()
                 .write(&mut transaction_bytes)
                 .map_err(|e| {
-                    let _ignore_error = wallet.set_transaction_failed(*txid);
+                    pepper_sync::set_transactions_failed(
+                        &mut wallet.wallet_transactions,
+                        vec![*txid],
+                    );
+                    wallet.save_required = true;
                     WalletError::TransactionWrite(e)
                 })?;
 
@@ -170,7 +174,11 @@ impl LightClient {
                     }
                     Err(e) => {
                         if retry_count >= MAX_RETRIES {
-                            let _ignore_error = wallet.set_transaction_failed(*txid);
+                            pepper_sync::set_transactions_failed(
+                                &mut wallet.wallet_transactions,
+                                vec![*txid],
+                            );
+                            wallet.save_required = true;
                             break Err(e);
                         } else {
                             retry_count += 1;

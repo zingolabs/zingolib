@@ -190,7 +190,38 @@ impl ConfirmationStatus {
         }
     }
 
+    /// Check if transaction has `Calculated`, `Transmitted` or `Mempool` status.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// assert!(ConfirmationStatus::Calculated(1.into()).is_pending());
+    /// assert!(ConfirmationStatus::Transmitted(1.into()).is_pending());
+    /// assert!(ConfirmationStatus::Mempool(1.into()).is_pending());
+    /// assert!(!ConfirmationStatus::Confirmed(1.into()).is_pending());
+    /// assert!(!ConfirmationStatus::Failed(1.into()).is_pending());
+    /// ```
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        *self < Self::Confirmed(zcash_primitives::consensus::H0)
+    }
+
     /// Check if transaction has `Failed` status.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// assert!(!ConfirmationStatus::Calculated(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Transmitted(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Mempool(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Confirmed(1.into()).is_failed());
+    /// assert!(ConfirmationStatus::Failed(1.into()).is_failed());
+    /// ```
     #[must_use]
     pub fn is_failed(&self) -> bool {
         matches!(self, Self::Failed(_))
