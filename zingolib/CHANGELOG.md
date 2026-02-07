@@ -22,9 +22,11 @@ to transmission.
 transactions with the new `Failed` status to be removed. Also returns `WalletError` error type instead of `RemovalError`.
 `wallet::LightWallet`:
 - `remove_unconfirmed_transactions` method - renamed to `remove_failed_transactions` and now only removes transactions with the
-- added `clear_proposal` method for removing an unconfirmed proposal from the wallet.
 new `Failed` status. Also now returns `wallet::error::WalletError`. No longer resets spends as spends are now reset when
-a transaction is updated to `Failed` status. 
+a transaction is updated to `Failed` status. Transactions are automatically updated to `Failed` if transmission fails 3 times or
+if the transaction expires before it is confirmed. Spends locked up in unconfirmed transactions for 3 blocks will also be reset
+to release the funds, restoring balance and allowing funds to be spent in another transaction.
+- added `clear_proposal` method for removing an unconfirmed proposal from the wallet.
 `wallet::error::WalletError`:
 - added `ConversionFailed` variant
 - added `RemovalError` variant
