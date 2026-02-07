@@ -1267,7 +1267,6 @@ where
                     .as_secs() as u32,
             );
         }
-        // TODO: check mempool dont re-appear after setting to failed and then removing
 
         return Ok(());
     }
