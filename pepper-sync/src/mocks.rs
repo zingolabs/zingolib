@@ -12,21 +12,24 @@ use zcash_protocol::{TxId, consensus::BlockHeight};
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum MockWalletError {}
-#[derive(Debug)]
+type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
+    get_sync_state_patch: Option<SyncStatePatch>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     wallet_transactions: HashMap<TxId, WalletTransaction>,
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
 }
+
 impl Default for MockWalletBuilder {
     fn default() -> Self {
         MockWalletBuilder {
             birthday: BlockHeight::from_u32(0),
             sync_state: SyncState::new(),
+            get_sync_state_patch: None,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -38,6 +41,7 @@ impl Default for MockWalletBuilder {
 
 pub(super) struct MockWalletBuilder {
     birthday: BlockHeight,
+    get_sync_state_patch: Option<Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>>,
     sync_state: SyncState,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     wallet_transactions: HashMap<TxId, WalletTransaction>,
@@ -52,6 +56,10 @@ impl MockWalletBuilder {
         self
     }
 
+    pub(crate) fn get_sync_state_patch(mut self, patch_fn: SyncStatePatch) -> Self {
+        self.get_sync_state_patch = Some(patch_fn);
+        self
+    }
     pub(crate) fn sync_state(mut self, sync_state: SyncState) -> Self {
         self.sync_state = sync_state;
         self
@@ -93,6 +101,7 @@ impl MockWalletBuilder {
     pub(crate) fn create_mock_wallet(self) -> MockWallet {
         MockWallet {
             birthday: self.birthday,
+            get_sync_state_patch: self.get_sync_state_patch,
             sync_state: self.sync_state,
             wallet_blocks: self.wallet_blocks,
             wallet_transactions: self.wallet_transactions,
@@ -110,6 +119,9 @@ impl SyncWallet for MockWallet {
     }
 
     fn get_sync_state(&self) -> Result<&crate::wallet::SyncState, Self::Error> {
+        if self.get_sync_state_patch.is_some() {
+            return (self.get_sync_state_patch.as_ref().unwrap())(&self.sync_state);
+        }
         Ok(&self.sync_state)
     }
 
@@ -237,22 +249,3 @@ impl SyncShardTrees for MockWallet {
         todo!()
     }
 }
-//libuse zingolib::config::zingoconfigbuilder;
-//use zingolib::wallet::{lightwallet, walletbase::freshentropy, walletsettings};
-/*
-fn create_bday_confirm_wallet(bday: blockheight, min_confirmations: nonzerou32) -> lightwallet {
-    let chain = zingoconfigbuilder::default().create().chain;
-    let sync_config = config::syncconfig {
-        transparent_address_discovery: transparentaddressdiscovery::minimal(),
-        performance_level: config::performancelevel::low,
-    };
-    let entropy = freshentropy {
-        no_of_accounts: nonzerou32::try_from(1).expect("1 is non-zero u32"),
-    };
-    let wallet_settings = walletsettings {
-        sync_config,
-        min_confirmations,
-    };
-    todo!()
-}
-*/
