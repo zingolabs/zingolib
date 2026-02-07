@@ -22,7 +22,7 @@ use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, reset_spends, set_transactions_failed};
+use crate::{Orchard, Sapling, SyncDomain, client, set_transactions_failed};
 
 use super::{FetchRequest, ScanTarget, witness};
 
