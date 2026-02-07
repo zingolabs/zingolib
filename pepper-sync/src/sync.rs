@@ -672,7 +672,11 @@ mod test {
             nu6: Some(BlockHeight::from_u32(1)),
             nu6_1: Some(BlockHeight::from_u32(1)),
         };
-        use crate::{sync::checked_wallet_height, wallet::traits::SyncWallet};
+        use crate::{
+            mocks::MockWalletError,
+            sync::checked_wallet_height,
+            wallet::{SyncState, traits::SyncWallet},
+        };
         #[tokio::test]
         async fn my_first_test() {
             let input_height = BlockHeight::from_u32(1);
@@ -686,7 +690,13 @@ mod test {
             assert_eq!(2, 2);
         }
         #[tokio::test]
-        async fn foo() {}
+        async fn get_sync_state_error() {
+            let get_sync_state_patch = |_: &SyncState| -> Result<&SyncState, MockWalletError> {
+                Err(MockWalletError::AnErrorVariant)
+            };
+            let mut test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
+            todo!();
+        }
     }
 }
 

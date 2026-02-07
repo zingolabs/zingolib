@@ -11,7 +11,12 @@ use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum MockWalletError {}
+pub(super) enum MockWalletError {
+    #[error("mock error")]
+    AnErrorVariant,
+}
+
+impl MockWalletError {}
 type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
