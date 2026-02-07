@@ -140,6 +140,7 @@ fn check_note_shards_are_scanned(
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .cloned()
         .collect::<Vec<_>>();
