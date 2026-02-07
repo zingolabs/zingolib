@@ -104,7 +104,7 @@ pub mod from_inputs {
                 let amount = crate::utils::conversion::zatoshis_from_u64(amount)
                     .expect("should be inside the range of valid zatoshis");
                 let memo = memo.map(|memo| {
-                    crate::wallet::utils::interpret_memo_string(memo.to_string())
+                    crate::wallet::utils::memo_bytes_from_string(memo.to_string())
                         .expect("should be able to interpret memo")
                 });
 

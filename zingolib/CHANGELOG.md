@@ -36,6 +36,8 @@ to release the funds, restoring balance and allowing funds to be spent in anothe
 - `ShardTreeError` fmt display altered
 `wallet::error::ProposeShieldError` - renamed `Insufficient` variant to `InsufficientFunds`
 
+- `wallet::utils::interpret_memo_string`: changed name to `memo_bytes_from_string`. No longer decodes hex. Memo text will be displayed as inputted by the user.
+
 ### Removed
 `lightclient::LightClient::resend` - replaced by automatic retries due to issues with the current `resend` or `remove` user flow.
 `lightclient::LightClient::send_progress`
@@ -47,4 +49,4 @@ to release the funds, restoring balance and allowing funds to be spent in anothe
 `wallet::error::TransmissionError` - moved to `lightclient::error` module
 `error` module - unused
 
-## [2.1.0] - 2025-12-18
+## [2.1.2] - 2026-01-14
