@@ -690,6 +690,7 @@ mod test {
                 ))
             ));
         }
+        // If there are know scan_ranges in the SyncState t
         #[tokio::test]
         async fn no_last_known_chain_height() {
             let test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
