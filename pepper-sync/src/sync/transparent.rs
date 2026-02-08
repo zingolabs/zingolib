@@ -17,17 +17,17 @@ use crate::keys::transparent::{TransparentAddressId, TransparentScope};
 use crate::wallet::traits::SyncWallet;
 use crate::wallet::{KeyIdInterface, ScanTarget};
 
-use super::MAX_VERIFICATION_WINDOW;
+use super::MAX_REORG_ALLOWANCE;
 
 /// Discovers all addresses in use by the wallet and returns `scan_targets` for any new relevant transactions to scan transparent
 /// bundles.
-/// `wallet_height` should be the value before updating to latest chain height.
+/// `last_known_chain_height` should be the value before updating to latest chain height.
 pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     config: TransparentAddressDiscovery,
 ) -> Result<(), SyncError<W::Error>> {
@@ -42,7 +42,7 @@ pub(crate) async fn update_addresses_and_scan_targets<W: SyncWallet>(
     let sapling_activation_height = consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Sapling)
         .expect("sapling activation height should always return Some");
-    let block_range_start = wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
+    let block_range_start = last_known_chain_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
     let checked_block_range_start = match block_range_start.cmp(&sapling_activation_height) {
         cmp::Ordering::Greater | cmp::Ordering::Equal => block_range_start,
         cmp::Ordering::Less => sapling_activation_height,

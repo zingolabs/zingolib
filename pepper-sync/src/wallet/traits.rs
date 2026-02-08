@@ -17,7 +17,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::sync::{MAX_VERIFICATION_WINDOW, ScanRange};
+use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
@@ -258,15 +258,15 @@ pub trait SyncShardTrees: SyncWallet {
                 let verification_window_start = scan_range
                     .block_range()
                     .end
-                    .saturating_sub(MAX_VERIFICATION_WINDOW);
+                    .saturating_sub(MAX_REORG_ALLOWANCE);
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
             } else if scan_range.block_range().end
-                > highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1
+                > highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1
             {
                 let verification_window_start =
-                    highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW) + 1;
+                    highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
 
                 std::cmp::max(scan_range.block_range().start, verification_window_start)
                     ..scan_range.block_range().end
@@ -333,9 +333,9 @@ pub trait SyncShardTrees: SyncWallet {
         if truncate_height == zcash_protocol::consensus::H0 {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
             shard_trees.sapling =
-                ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
             shard_trees.orchard =
-                ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
         } else {
             if !self
                 .get_shard_trees_mut()
