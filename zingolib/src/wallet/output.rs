@@ -329,7 +329,10 @@ impl LightWallet {
                     .status()
                     .get_confirmed_height()
                     .expect("transaction must be confirmed in this scope")
-                    > self.sync_state.wallet_height().unwrap_or(self.birthday)
+                    > self
+                        .sync_state
+                        .last_known_chain_height()
+                        .unwrap_or(self.birthday)
                 {
                     return Vec::new();
                 }
