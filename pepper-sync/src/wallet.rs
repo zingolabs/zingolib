@@ -40,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     witness,
 };
 
@@ -1144,10 +1144,8 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
-        let mut orchard =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
             .checkpoint(BlockHeight::from_u32(0))

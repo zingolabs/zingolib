@@ -49,7 +49,7 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 const MEMPOOL_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
-pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -367,8 +367,8 @@ where
         .wallet_height()
     {
         if height > chain_height {
-            if height - chain_height >= MAX_VERIFICATION_WINDOW {
-                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            if height - chain_height >= MAX_REORG_ALLOWANCE {
+                return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
             }
             truncate_wallet_data(&mut *wallet_guard, chain_height)?;
             height = chain_height;
@@ -1125,7 +1125,7 @@ where
                 .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
+                if initial_verification_height - verification_start > MAX_REORG_ALLOWANCE {
                     clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
@@ -1453,7 +1453,7 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
@@ -1481,7 +1481,7 @@ where
         .collect::<Vec<_>>();
 
     scanned_blocks.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || *height == scan_range.block_range().start
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
