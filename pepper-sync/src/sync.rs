@@ -672,10 +672,9 @@ mod test {
             nu6: Some(BlockHeight::from_u32(1)),
             nu6_1: Some(BlockHeight::from_u32(1)),
         };
-        use crate::{
-            error::SyncError, mocks::MockWalletError, sync::checked_wallet_height,
-            wallet::WalletBlock,
-        };
+        use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
+        // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
+        // this test shows that such an error is raies wrapped in a WalletError and return as the Err variant
         #[tokio::test]
         async fn get_sync_state_error() {
             let builder = crate::mocks::MockWalletBuilder::new();
@@ -690,6 +689,10 @@ mod test {
                     crate::mocks::MockWalletError::AnErrorVariant
                 ))
             ));
+        }
+        #[tokio::test]
+        async fn no_last_known_chain_height() {
+            let test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
         }
     }
 }
