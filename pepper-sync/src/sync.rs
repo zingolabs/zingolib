@@ -357,9 +357,8 @@ where
     // pre-sync initialisation
     let mut wallet_guard = wallet.write().await;
 
-    let proxy_reported_chain_height =
-        client::get_chain_height(fetch_request_sender.clone()).await?;
-    if proxy_reported_chain_height == 0.into() {
+    let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
+    if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
     let last_known_chain_height = if let Some(mut height) = wallet_guard
@@ -430,7 +429,7 @@ where
         consensus_parameters,
         fetch_request_sender.clone(),
         &mut *wallet_guard,
-        proxy_reported_chain_height,
+        chain_height,
     )
     .await?;
 
