@@ -705,10 +705,13 @@ mod test {
                 ))
             ));
         }
-        // If there are know scan_ranges in the SyncState t
-        #[tokio::test]
-        async fn no_last_known_chain_height() {
-            let _test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
+
+        mod no_last_known_chain_height {
+            // If there are know scan_ranges in the SyncState t
+            #[tokio::test]
+            async fn get_bday_error() {
+                let _test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
+            }
         }
     }
 }
