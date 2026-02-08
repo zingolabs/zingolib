@@ -18,10 +18,12 @@ pub(super) enum MockWalletError {
 
 impl MockWalletError {}
 type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
+type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
 pub(super) struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
     get_sync_state_patch: Option<SyncStatePatch>,
+    get_birthday_patch: Option<GetBirthdayPatch>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     wallet_transactions: HashMap<TxId, WalletTransaction>,
     nullifier_map: NullifierMap,
@@ -35,6 +37,7 @@ impl Default for MockWalletBuilder {
             birthday: BlockHeight::from_u32(0),
             sync_state: SyncState::new(),
             get_sync_state_patch: None,
+            get_birthday_patch: None,
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
             nullifier_map: NullifierMap::new(),
@@ -46,7 +49,8 @@ impl Default for MockWalletBuilder {
 
 pub(super) struct MockWalletBuilder {
     birthday: BlockHeight,
-    get_sync_state_patch: Option<Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>>,
+    get_sync_state_patch: Option<SyncStatePatch>,
+    get_birthday_patch: Option<GetBirthdayPatch>,
     sync_state: SyncState,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     wallet_transactions: HashMap<TxId, WalletTransaction>,
@@ -63,6 +67,10 @@ impl MockWalletBuilder {
 
     pub(crate) fn get_sync_state_patch(mut self, patch_fn: SyncStatePatch) -> Self {
         self.get_sync_state_patch = Some(patch_fn);
+        self
+    }
+    pub(crate) fn get_birthday_patch(mut self, patch_fn: GetBirthdayPatch) -> Self {
+        self.get_birthday_patch = Some(patch_fn);
         self
     }
     pub(crate) fn sync_state(mut self, sync_state: SyncState) -> Self {
@@ -107,6 +115,7 @@ impl MockWalletBuilder {
         MockWallet {
             birthday: self.birthday,
             get_sync_state_patch: self.get_sync_state_patch,
+            get_birthday_patch: self.get_birthday_patch,
             sync_state: self.sync_state,
             wallet_blocks: self.wallet_blocks,
             wallet_transactions: self.wallet_transactions,
@@ -120,12 +129,15 @@ impl SyncWallet for MockWallet {
     type Error = MockWalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
+        if let Some(patch) = &self.get_birthday_patch {
+            return patch(&self.birthday);
+        }
         Ok(self.birthday)
     }
 
     fn get_sync_state(&self) -> Result<&crate::wallet::SyncState, Self::Error> {
-        if self.get_sync_state_patch.is_some() {
-            return self.get_sync_state_patch.as_ref().unwrap()(&self.sync_state);
+        if let Some(patch) = &self.get_sync_state_patch {
+            return patch(&self.sync_state);
         }
         Ok(&self.sync_state)
     }
