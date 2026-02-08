@@ -356,7 +356,7 @@ where
         .await
     });
 
-    // pre-scan initialisation
+    // pre-sync initialisation
     let mut wallet_guard = wallet.write().await;
 
     let chain_height = client::get_chain_height(fetch_request_sender.clone()).await?;
