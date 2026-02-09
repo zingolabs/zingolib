@@ -202,9 +202,10 @@ impl LightClient {
                 // during darkside tests, the server may report a different txid to the one calculated.
                 #[cfg(not(feature = "darkside_tests"))]
                 {
-                    return Err(
-                        TransmissionError::IncorrectTxidFromServer(txid, txid_from_server).into(),
-                    );
+                    return Err(SendError::TransmissionError(
+                        TransmissionError::IncorrectTxidFromServer(*txid, txid_from_server),
+                    )
+                    .into());
                 }
             }
         }
