@@ -897,9 +897,6 @@ pub fn set_transactions_failed(
 ) {
     for failed_txid in failed_txids.iter() {
         if let Some(transaction) = wallet_transactions.get_mut(failed_txid) {
-            if transaction.status().is_failed() {
-                continue;
-            }
             let height = transaction.status().get_height();
             transaction.update_status(
                 ConfirmationStatus::Failed(height),
@@ -1272,15 +1269,13 @@ where
         .map_err(SyncError::WalletError)?
         .get_mut(&transaction.txid())
     {
-        if tx.status() < ConfirmationStatus::Mempool(consensus::H0) {
-            tx.update_status(
-                ConfirmationStatus::Mempool(mempool_height),
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("infalliable for such long time periods")
-                    .as_secs() as u32,
-            );
-        }
+        tx.update_status(
+            ConfirmationStatus::Mempool(mempool_height),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("infalliable for such long time periods")
+                .as_secs() as u32,
+        );
 
         return Ok(());
     }

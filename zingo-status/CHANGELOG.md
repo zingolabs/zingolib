@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - re-ordered variants to match serialization and the actual status flow calculate -> transmit -> mempool -> confirmed
 
 ### Removed
+`confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool`
 
 ## [0.1.0] - 2026-01-09
 

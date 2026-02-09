@@ -567,16 +567,48 @@ impl WalletTransaction {
             })
     }
 
-    /// Updates transaction status if `status` is greater than the current transaction status.
+    /// Updates transaction status if `status` is a valid update for the current transaction status.
     /// For example, if `status` is `Mempool` but the current transaction status is `Confirmed`, the status will remain
     /// unchanged.
     /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
     /// to `Confirmed` status.
     pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
-        if status > self.status {
-            self.status = status;
+        match status {
+            ConfirmationStatus::Transmitted(_)
+                if matches!(self.status(), ConfirmationStatus::Calculated(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Mempool(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Confirmed(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_)
+                        | ConfirmationStatus::Transmitted(_)
+                        | ConfirmationStatus::Mempool(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+
+            ConfirmationStatus::Failed(_)
+                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            _ => (),
         }
-        self.datetime = datetime;
     }
 }
 

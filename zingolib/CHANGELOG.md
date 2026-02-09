@@ -8,7 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-`wallet::LightWallet::set_transaction_failed`
 `lightclient::error::TransmissionError` - moved from `wallet::error` and simplified to much fewer variants more specific
 to transmission.
 

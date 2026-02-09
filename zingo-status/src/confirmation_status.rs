@@ -9,21 +9,21 @@ use zcash_primitives::consensus::BlockHeight;
 
 /// Transaction confirmation status. As a transaction is created and transmitted to the blockchain, it will move
 /// through each of these states. Received transactions will either be seen in the mempool or scanned from confirmed
-/// blocks.
+/// blocks. Variant order is logical display order for efficient sorting instead of the order of logical status flow.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
-    /// The transaction has been created but not yet transmitted to the blockchain.
-    /// The block height is the chain height when the transaction was created + 1 (target height).
-    Calculated(BlockHeight),
-    /// The transaction has been transmitted to the blockchain but has not been seen in the mempool yet.
-    /// The block height is the chain height when the transaction was transmitted + 1 (target height).
-    Transmitted(BlockHeight),
-    /// The transaction is known to be - or has been - in the mempool.
-    /// The block height is the chain height when the transaction was seen in the mempool + 1 (target height).
-    Mempool(BlockHeight),
     /// The transaction has been included in a confirmed block on the blockchain.
     /// The block height is the height of the confirmed block that contains the transaction.
     Confirmed(BlockHeight),
+    /// The transaction is known to be - or has been - in the mempool.
+    /// The block height is the chain height when the transaction was seen in the mempool + 1 (target height).
+    Mempool(BlockHeight),
+    /// The transaction has been transmitted to the blockchain but has not been seen in the mempool yet.
+    /// The block height is the chain height when the transaction was transmitted + 1 (target height).
+    Transmitted(BlockHeight),
+    /// The transaction has been created but not yet transmitted to the blockchain.
+    /// The block height is the chain height when the transaction was created + 1 (target height).
+    Calculated(BlockHeight),
     /// The transaction has been created but failed to be transmitted, was not accepted into the mempool, was rejected
     /// from the mempool or expired before it was included in a confirmed block on the block chain.
     /// The block height is the chain height when the transaction was last updated + 1 (target height).
@@ -31,16 +31,6 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
-    /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
-    #[must_use]
-    pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
-        if pending {
-            Self::Transmitted(blockheight)
-        } else {
-            Self::Confirmed(blockheight)
-        }
-    }
-
     /// A wrapper matching the Confirmed case.
     /// # Examples
     ///
@@ -205,7 +195,10 @@ impl ConfirmationStatus {
     /// ```
     #[must_use]
     pub fn is_pending(&self) -> bool {
-        *self < Self::Confirmed(zcash_primitives::consensus::H0)
+        matches!(
+            self,
+            Self::Calculated(_) | Self::Transmitted(_) | Self::Mempool(_)
+        )
     }
 
     /// Check if transaction has `Failed` status.
@@ -259,10 +252,10 @@ impl ConfirmationStatus {
     #[must_use]
     pub fn get_height(&self) -> BlockHeight {
         match self {
-            Self::Calculated(self_height) => *self_height,
+            Self::Confirmed(self_height) => *self_height,
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
-            Self::Confirmed(self_height) => *self_height,
+            Self::Calculated(self_height) => *self_height,
             Self::Failed(self_height) => *self_height,
         }
     }
@@ -289,10 +282,10 @@ impl ConfirmationStatus {
                 )),
             },
             1.. => match status {
-                0 => Ok(Self::Calculated(block_height)),
-                1 => Ok(Self::Transmitted(block_height)),
-                2 => Ok(Self::Mempool(block_height)),
-                3 => Ok(Self::Confirmed(block_height)),
+                0 => Ok(Self::Confirmed(block_height)),
+                1 => Ok(Self::Mempool(block_height)),
+                2 => Ok(Self::Transmitted(block_height)),
+                3 => Ok(Self::Calculated(block_height)),
                 4 => Ok(Self::Failed(block_height)),
                 _ => Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -306,10 +299,10 @@ impl ConfirmationStatus {
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
         writer.write_u8(match self {
-            Self::Calculated(_) => 0,
-            Self::Transmitted(_) => 1,
-            Self::Mempool(_) => 2,
-            Self::Confirmed(_) => 3,
+            Self::Confirmed(_) => 0,
+            Self::Mempool(_) => 1,
+            Self::Transmitted(_) => 2,
+            Self::Calculated(_) => 3,
             Self::Failed(_) => 4,
         })?;
         writer.write_u32::<LittleEndian>(self.get_height().into())
@@ -320,17 +313,17 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Calculated(_h) => {
-                write!(f, "calculated")
-            }
-            Self::Transmitted(_h) => {
-                write!(f, "transmitted")
+            Self::Confirmed(_h) => {
+                write!(f, "confirmed")
             }
             Self::Mempool(_h) => {
                 write!(f, "mempool")
             }
-            Self::Confirmed(_h) => {
-                write!(f, "confirmed")
+            Self::Transmitted(_h) => {
+                write!(f, "transmitted")
+            }
+            Self::Calculated(_h) => {
+                write!(f, "calculated")
             }
             Self::Failed(_h) => {
                 write!(f, "failed")
@@ -349,21 +342,21 @@ fn stringify_display() {
 impl std::fmt::Debug for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Calculated(h) => {
+            Self::Confirmed(h) => {
                 let hi = u32::from(*h);
-                write!(f, "Calculated for {hi}")
-            }
-            Self::Transmitted(h) => {
-                let hi = u32::from(*h);
-                write!(f, "Transmitted for {hi}")
+                write!(f, "Confirmed at {hi}")
             }
             Self::Mempool(h) => {
                 let hi = u32::from(*h);
                 write!(f, "Mempool for {hi}")
             }
-            Self::Confirmed(h) => {
+            Self::Transmitted(h) => {
                 let hi = u32::from(*h);
-                write!(f, "Confirmed at {hi}")
+                write!(f, "Transmitted for {hi}")
+            }
+            Self::Calculated(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Calculated for {hi}")
             }
             Self::Failed(h) => {
                 let hi = u32::from(*h);
