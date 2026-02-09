@@ -222,7 +222,6 @@ impl LightWallet {
             })
             .collect::<Result<Vec<_>, SummaryError>>()?;
 
-        // FIXME: order has changed, sorting needs fixing
         transaction_summaries.sort_by(|summary_a, summary_b| {
             match summary_a.status.cmp(&summary_b.status) {
                 Ordering::Equal => {
