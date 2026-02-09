@@ -936,7 +936,7 @@ where
             if scan_range.priority() == ScanPriority::ScannedWithoutMapping {
                 // add missing block bounds in the case that nullifier batch limit was reached and the fetch nullifier
                 // scan range was split.
-                let full_refetch_nullifier_range = wallet
+                let full_refetching_nullifiers_range = wallet
                     .get_sync_state()
                     .map_err(SyncError::WalletError)?
                     .scan_ranges
@@ -951,17 +951,20 @@ where
                     })
                     .expect("wallet scan range containing scan range should exist!");
                 if scan_range.block_range().start
-                    != full_refetch_nullifier_range.block_range().start
+                    != full_refetching_nullifiers_range.block_range().start
                     || scan_range.block_range().end
-                        != full_refetch_nullifier_range.block_range().end
+                        != full_refetching_nullifiers_range.block_range().end
                 {
                     let mut missing_block_bounds = BTreeMap::new();
                     for block_bound in [
+                        scan_range.block_range().start - 1,
                         scan_range.block_range().start,
                         scan_range.block_range().end - 1,
                         scan_range.block_range().end,
                     ] {
-                        if block_bound >= full_refetch_nullifier_range.block_range().end {
+                        if block_bound < full_refetching_nullifiers_range.block_range().start
+                            || block_bound >= full_refetching_nullifiers_range.block_range().end
+                        {
                             continue;
                         }
                         if wallet.get_wallet_block(block_bound).is_err() {
