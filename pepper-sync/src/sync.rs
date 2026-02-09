@@ -710,7 +710,13 @@ mod test {
             // If there are know scan_ranges in the SyncState t
             #[tokio::test]
             async fn get_bday_error() {
-                let _test_wallet = crate::mocks::MockWalletBuilder::new().create_mock_wallet();
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let test_wallet = builder
+                    .get_birthday_patch(Box::new(|_| {
+                        Err(crate::mocks::MockWalletError::AnErrorVariant)
+                    }))
+                    .create_mock_wallet();
+                //let res =
             }
         }
     }
