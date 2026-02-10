@@ -710,6 +710,8 @@ mod test {
         }
 
         mod no_last_known_chain_height {
+            use crate::{sync::ScanRange, wallet::SyncState};
+
             use super::*;
             // If there are know scan_ranges in the SyncState t
             #[tokio::test]
@@ -734,6 +736,14 @@ mod test {
                         crate::mocks::MockWalletError::AnErrorVariant(ref s)
                     )) if s == test_error
                 ));
+            }
+            #[tokio::test]
+            async fn raw_bday_above_chain_height() {
+                let scan_ranges = ScanRange::from_parts(
+                    BlockHeight::from_u32(0)..BlockHeight::from_u32(3),
+                    crate::sync::ScanPriority::Scanned,
+                );
+                let builder = crate::mocks::MockWalletBuilder::new();
             }
         }
     }
