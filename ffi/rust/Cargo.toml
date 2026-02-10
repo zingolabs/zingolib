@@ -1,0 +1,21 @@
+[package]
+name = "ffi"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "sync"] }
+uniffi = { version = "0.31", features = ["cli"] }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
+
+
+[lib]
+crate-type = ["cdylib"]
+name = "ffi"
+
+[[bin]]
+name = "generate-bindings"
+path = "generate-bindings.rs"

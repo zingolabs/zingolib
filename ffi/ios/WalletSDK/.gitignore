@@ -1,0 +1,3 @@
+.build
+.swiftpm
+Binaries/WalletFFI.xcframework/ios-*

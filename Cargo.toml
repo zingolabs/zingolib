@@ -8,6 +8,7 @@ members = [
     "pepper-sync",
     "zingo-price",
     "zingolib_testutils",
+    "ffi/rust",
 ]
 resolver = "2"
 
