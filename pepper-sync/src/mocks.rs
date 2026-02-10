@@ -143,7 +143,7 @@ impl SyncWallet for MockWallet {
     }
 
     fn get_sync_state_mut(&mut self) -> Result<&mut crate::wallet::SyncState, Self::Error> {
-        todo!()
+        Ok(&mut self.sync_state)
     }
 
     fn get_unified_full_viewing_keys(
