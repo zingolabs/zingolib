@@ -2137,9 +2137,15 @@ dependencies = [
 name = "ffi"
 version = "0.0.0"
 dependencies = [
+ "bip0039",
+ "http",
+ "pepper-sync",
  "thiserror 2.0.17",
  "tokio",
  "uniffi",
+ "zcash_primitives",
+ "zingo_common_components",
+ "zingolib",
 ]
 
 [[package]]

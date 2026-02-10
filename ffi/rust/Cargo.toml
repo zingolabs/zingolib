@@ -4,9 +4,16 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+bip0039.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "sync"] }
 uniffi = { version = "0.31", features = ["cli"] }
+zcash_primitives.workspace = true
+
+zingolib.workspace = true
+pepper-sync.workspace = true
+zingo_common_components = { workspace = true, features = ["for_test"] }
+http.workspace = true
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }
