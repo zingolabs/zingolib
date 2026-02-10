@@ -693,30 +693,47 @@ mod test {
         #[tokio::test]
         async fn get_sync_state_error() {
             let builder = crate::mocks::MockWalletBuilder::new();
+            let test_error = "get_sync_state_error";
             let mut test_wallet = builder
-                .get_sync_state_patch(Box::new(|_| Err(MockWalletError::AnErrorVariant)))
+                .get_sync_state_patch(Box::new(|_| {
+                    Err(MockWalletError::AnErrorVariant(test_error.to_string()))
+                }))
                 .create_mock_wallet();
             let res =
                 checked_wallet_height(&mut test_wallet, BlockHeight::from_u32(1), &LOCAL_NETWORK);
             assert!(matches!(
                 res,
                 Err(SyncError::WalletError(
-                    crate::mocks::MockWalletError::AnErrorVariant
-                ))
+                    crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                )) if s == test_error
             ));
         }
 
         mod no_last_known_chain_height {
+            use super::*;
             // If there are know scan_ranges in the SyncState t
             #[tokio::test]
             async fn get_bday_error() {
+                let test_error = "get_bday_error";
                 let builder = crate::mocks::MockWalletBuilder::new();
-                let test_wallet = builder
+                let mut test_wallet = builder
                     .get_birthday_patch(Box::new(|_| {
-                        Err(crate::mocks::MockWalletError::AnErrorVariant)
+                        Err(crate::mocks::MockWalletError::AnErrorVariant(
+                            test_error.to_string(),
+                        ))
                     }))
                     .create_mock_wallet();
-                //let res =
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                assert!(matches!(
+                    res,
+                    Err(SyncError::WalletError(
+                        crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                    )) if s == test_error
+                ));
             }
         }
     }
