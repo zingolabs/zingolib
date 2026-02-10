@@ -715,8 +715,6 @@ mod test {
         }
 
         mod no_last_known_chain_height {
-            use crate::{sync::ScanRange, wallet::SyncState};
-
             use super::*;
             // If there are know scan_ranges in the SyncState t
             #[tokio::test]
@@ -767,9 +765,6 @@ mod test {
             }
             mod sapling_height {
                 use super::*;
-                const SAPLING_ACTIVATION_HEIGHT: BlockHeight = LOCAL_NETWORK
-                    .sapling
-                    .expect("Sapling is part of consensus heights.");
                 #[tokio::test]
                 async fn raw_bday_above() {
                     let builder = crate::mocks::MockWalletBuilder::new();
@@ -800,13 +795,14 @@ mod test {
                 async fn raw_bday_below() {
                     let builder = crate::mocks::MockWalletBuilder::new();
                     let mut test_wallet = builder
-                        .birthday(BlockHeight::from_u32(15))
+                        .birthday(BlockHeight::from_u32(1))
                         .create_mock_wallet();
                     let res = checked_wallet_height(
                         &mut test_wallet,
-                        BlockHeight::from_u32(1),
+                        BlockHeight::from_u32(5),
                         &LOCAL_NETWORK,
                     );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
                 }
             }
         }
