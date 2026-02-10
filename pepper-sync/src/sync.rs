@@ -645,7 +645,9 @@ where
                 // There's a human attention requiring problem, the wallet supplied
                 // last_known_chain_height is more than MAX_REORG_ALLOWANCE **above**
                 // the proxy's reported height.
-                return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
+                return Err(SyncError::LastWalletKnownHeightAboveAllowance(
+                    MAX_REORG_ALLOWANCE,
+                ));
             }
             truncate_wallet_data(wallet, chain_height)?;
             // The wallet reported height is above the current proxy height
@@ -660,11 +662,14 @@ where
         // bounds may handle it elsewhere.
         Ok(last_known_chain_height)
     } else {
+        dbg!("There was a syncstate, but no last_known_chain_height!!");
         let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
         if raw_bday > chain_height {
             // Human attention requiring error, a bday *above* the proxy reported
             // chain tipe has been provided
-            return Err(SyncError::ChainError(raw_bday - chain_height));
+            return Err(SyncError::LastWalletKnownHeightAboveAllowance(
+                raw_bday - chain_height,
+            ));
         }
         // The bday is set with a floor of the Sapling Epoch -1
         // TODO:  Confirm that the Sapling Epoch -1 is the correct floor
@@ -739,11 +744,26 @@ mod test {
             }
             #[tokio::test]
             async fn raw_bday_above_chain_height() {
-                let scan_ranges = ScanRange::from_parts(
-                    BlockHeight::from_u32(0)..BlockHeight::from_u32(3),
-                    crate::sync::ScanPriority::Scanned,
-                );
                 let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder
+                    .birthday(BlockHeight::from_u32(15))
+                    .create_mock_wallet();
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                if let Err(e) = res {
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "wallet height is more than {} blocks ahead of best chain height",
+                            15 - 1
+                        )
+                    );
+                } else {
+                    panic!()
+                }
             }
         }
     }
