@@ -640,12 +640,13 @@ where
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
     if let Some(last_known_chain_height) = sync_state.last_known_chain_height() {
+        dbg!(&last_known_chain_height);
         if last_known_chain_height > chain_height {
             if last_known_chain_height - chain_height >= MAX_REORG_ALLOWANCE {
                 // There's a human attention requiring problem, the wallet supplied
                 // last_known_chain_height is more than MAX_REORG_ALLOWANCE **above**
                 // the proxy's reported height.
-                return Err(SyncError::LastWalletKnownHeightAboveAllowance(
+                return Err(SyncError::LastLocalKnownHeightAboveAllowance(
                     MAX_REORG_ALLOWANCE,
                 ));
             }
@@ -667,7 +668,7 @@ where
         if raw_bday > chain_height {
             // Human attention requiring error, a bday *above* the proxy reported
             // chain tipe has been provided
-            return Err(SyncError::LastWalletKnownHeightAboveAllowance(
+            return Err(SyncError::LastLocalKnownHeightAboveAllowance(
                 raw_bday - chain_height,
             ));
         }
@@ -714,6 +715,17 @@ mod test {
             ));
         }
 
+        mod last_known_chain_height {
+            use super::*;
+            #[tokio::test]
+            async fn above_allowance() {}
+            #[tokio::test]
+            async fn between_chain_height_and_allowance() {}
+            #[tokio::test]
+            async fn equal_or_below_chain_height() {}
+            #[tokio::test]
+            async fn below_sapling() {}
+        }
         mod no_last_known_chain_height {
             use super::*;
             // If there are know scan_ranges in the SyncState t
