@@ -217,7 +217,7 @@ impl SyncTransactions for MockWallet {
         &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
         Self::Error,
     > {
-        todo!()
+        Ok(&self.wallet_transactions)
     }
 
     fn get_wallet_transactions_mut(
@@ -226,7 +226,7 @@ impl SyncTransactions for MockWallet {
         &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.wallet_transactions)
     }
 }
 impl SyncNullifiers for MockWallet {
@@ -235,7 +235,7 @@ impl SyncNullifiers for MockWallet {
     }
 
     fn get_nullifiers_mut(&mut self) -> Result<&mut crate::wallet::NullifierMap, Self::Error> {
-        todo!()
+        Ok(&mut self.nullifier_map)
     }
 }
 impl SyncOutPoints for MockWallet {
@@ -254,7 +254,7 @@ impl SyncOutPoints for MockWallet {
         &mut std::collections::BTreeMap<crate::wallet::OutputId, crate::wallet::ScanTarget>,
         Self::Error,
     > {
-        todo!()
+        Ok(&mut self.outpoint_map)
     }
 }
 impl SyncShardTrees for MockWallet {
@@ -263,6 +263,6 @@ impl SyncShardTrees for MockWallet {
     }
 
     fn get_shard_trees_mut(&mut self) -> Result<&mut crate::wallet::ShardTrees, Self::Error> {
-        todo!()
+        Ok(&mut self.shard_trees)
     }
 }
