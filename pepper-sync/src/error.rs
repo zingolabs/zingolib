@@ -27,8 +27,8 @@ where
     #[error("sync mode error. {0}")]
     SyncModeError(#[from] SyncModeError),
     /// Chain error.
-    #[error("wallet height is more than {0} blocks ahead of best chain height")]
-    LastLocalKnownHeightAboveAllowance(u32),
+    #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
+    LastLocalKnownHeightAboveAllowance(BlockHeight, u32, BlockHeight),
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),

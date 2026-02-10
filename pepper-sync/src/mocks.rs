@@ -207,7 +207,7 @@ impl SyncBlocks for MockWallet {
         &mut self,
     ) -> Result<&mut std::collections::BTreeMap<BlockHeight, crate::wallet::WalletBlock>, Self::Error>
     {
-        todo!()
+        Ok(&mut self.wallet_blocks)
     }
 }
 impl SyncTransactions for MockWallet {
