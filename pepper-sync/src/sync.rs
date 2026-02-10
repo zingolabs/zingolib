@@ -1865,8 +1865,8 @@ fn sapling_floored_bday(
         .expect("sapling activation height should always return Some");
 
     match raw_birthday.cmp(&sapling_activation_height) {
-        cmp::Ordering::Greater | cmp::Ordering::Equal => raw_birthday,
-        cmp::Ordering::Less => sapling_activation_height,
+        cmp::Ordering::Greater => raw_birthday,
+        cmp::Ordering::Less | cmp::Ordering::Equal => sapling_activation_height,
     }
 }
 
