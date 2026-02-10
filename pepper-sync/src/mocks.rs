@@ -16,7 +16,6 @@ pub(super) enum MockWalletError {
     AnErrorVariant(String),
 }
 
-impl MockWalletError {}
 type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
 type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
 pub(super) struct MockWallet {
@@ -30,22 +29,7 @@ pub(super) struct MockWallet {
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
 }
-
-impl Default for MockWalletBuilder {
-    fn default() -> Self {
-        MockWalletBuilder {
-            birthday: BlockHeight::from_u32(0),
-            sync_state: SyncState::new(),
-            get_sync_state_patch: None,
-            get_birthday_patch: None,
-            wallet_blocks: BTreeMap::new(),
-            wallet_transactions: HashMap::new(),
-            nullifier_map: NullifierMap::new(),
-            outpoint_map: BTreeMap::new(),
-            shard_trees: ShardTrees::new(),
-        }
-    }
-}
+impl MockWalletError {}
 
 pub(super) struct MockWalletBuilder {
     birthday: BlockHeight,
@@ -125,6 +109,22 @@ impl MockWalletBuilder {
         }
     }
 }
+impl Default for MockWalletBuilder {
+    fn default() -> Self {
+        MockWalletBuilder {
+            birthday: BlockHeight::from_u32(0),
+            sync_state: SyncState::new(),
+            get_sync_state_patch: None,
+            get_birthday_patch: None,
+            wallet_blocks: BTreeMap::new(),
+            wallet_transactions: HashMap::new(),
+            nullifier_map: NullifierMap::new(),
+            outpoint_map: BTreeMap::new(),
+            shard_trees: ShardTrees::new(),
+        }
+    }
+}
+
 impl SyncWallet for MockWallet {
     type Error = MockWalletError;
 
