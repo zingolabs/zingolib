@@ -13,7 +13,7 @@ use zcash_protocol::{TxId, consensus::BlockHeight};
 #[derive(Debug, thiserror::Error)]
 pub(super) enum MockWalletError {
     #[error("mock error")]
-    AnErrorVariant,
+    AnErrorVariant(String),
 }
 
 impl MockWalletError {}
