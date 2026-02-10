@@ -684,13 +684,13 @@ mod test {
         use zcash_protocol::local_consensus::LocalNetwork;
         const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
             overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(1)),
-            blossom: Some(BlockHeight::from_u32(1)),
-            heartwood: Some(BlockHeight::from_u32(1)),
-            canopy: Some(BlockHeight::from_u32(1)),
-            nu5: Some(BlockHeight::from_u32(1)),
-            nu6: Some(BlockHeight::from_u32(1)),
-            nu6_1: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(3)),
+            blossom: Some(BlockHeight::from_u32(3)),
+            heartwood: Some(BlockHeight::from_u32(3)),
+            canopy: Some(BlockHeight::from_u32(3)),
+            nu5: Some(BlockHeight::from_u32(3)),
+            nu6: Some(BlockHeight::from_u32(3)),
+            nu6_1: Some(BlockHeight::from_u32(3)),
         };
         use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
         // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
@@ -763,6 +763,50 @@ mod test {
                     );
                 } else {
                     panic!()
+                }
+            }
+            mod sapling_height {
+                use super::*;
+                const SAPLING_ACTIVATION_HEIGHT: BlockHeight = LOCAL_NETWORK
+                    .sapling
+                    .expect("Sapling is part of consensus heights.");
+                #[tokio::test]
+                async fn raw_bday_above() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(4))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(4 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_equal() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(3))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_below() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(15))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(1),
+                        &LOCAL_NETWORK,
+                    );
                 }
             }
         }
