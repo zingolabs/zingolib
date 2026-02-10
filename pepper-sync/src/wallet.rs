@@ -222,7 +222,7 @@ impl SyncState {
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
     #[must_use]
-    pub fn wallet_height(&self) -> Option<BlockHeight> {
+    pub fn last_known_chain_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
