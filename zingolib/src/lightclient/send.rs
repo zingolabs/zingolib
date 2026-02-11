@@ -182,6 +182,8 @@ impl LightClient {
                             break Err(e);
                         } else {
                             retry_count += 1;
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
                             continue;
                         }
                     }
