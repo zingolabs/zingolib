@@ -27,7 +27,7 @@ use crate::{
     sync::{self, ScanPriority, ScanRange},
     wallet::{
         ScanTarget, WalletBlock,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
     },
 };
 
@@ -203,7 +203,7 @@ where
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         self.check_batcher_error()?;
 
@@ -282,7 +282,7 @@ where
         nullifier_map_limit_exceeded: bool,
     ) -> Result<(), W::Error>
     where
-        W: SyncWallet + SyncBlocks + SyncNullifiers,
+        W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         let batcher = self.batcher.as_ref().expect("batcher should be running");
         if !batcher.is_batching() {

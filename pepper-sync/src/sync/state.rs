@@ -23,7 +23,7 @@ use crate::{
     wallet::{
         InitialSyncState, NoteInterface, OrchardNote, SaplingNote, ScanTarget, SyncState,
         TreeBounds, WalletTransaction,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
     },
 };
 
@@ -538,39 +538,51 @@ fn split_out_scan_range(
     split_ranges
 }
 
-/// Returns `true` if any unspent note of type `N` has a `refetch_nullifier_ranges` entry overlapping `range`.
-fn any_note_requires_refetch<N: NoteInterface>(
+/// Collects all `refetch_nullifier_ranges` from unspent notes of type `N` across all wallet transactions.
+fn collect_active_refetch_ranges<N: NoteInterface>(
     wallet_transactions: &HashMap<TxId, WalletTransaction>,
-    scanned_wo_map_range: &Range<BlockHeight>,
-) -> bool {
-    wallet_transactions.values().any(|tx| {
-        N::transaction_outputs(tx).iter().any(|note| {
-            note.spending_transaction().is_none()
-                && note
-                    .refetch_nullifier_ranges()
-                    .iter()
-                    // a note depends on this range if any of its refetch ranges overlap:
-                    // partial overlap from below, partial overlap from above,
-                    // full containment in either direction, or exact match.
-                    .any(|refetch_range| {
-                        refetch_range.start < scanned_wo_map_range.end
-                            && scanned_wo_map_range.start < refetch_range.end
-                    })
+) -> Vec<Range<BlockHeight>> {
+    wallet_transactions
+        .values()
+        .flat_map(|tx| {
+            N::transaction_outputs(tx)
+                .iter()
+                .filter(|note| note.spending_transaction().is_none())
+                .flat_map(|note| note.refetch_nullifier_ranges().iter().cloned())
         })
-    })
+        .collect()
 }
 
-/// Returns `true` if any unspent shielded note has a `refetch_nullifier_ranges` entry overlapping `range`,
+/// Collects all `refetch_nullifier_ranges` from unspent shielded notes.
+///
+/// The result is owned data that can be passed into [`select_scan_range`] without holding an
+/// immutable borrow on the wallet, avoiding a borrow conflict with `&mut SyncState`.
+fn active_refetch_ranges(
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+) -> Vec<Range<BlockHeight>> {
+    let mut ranges = collect_active_refetch_ranges::<SaplingNote>(wallet_transactions);
+    ranges.extend(collect_active_refetch_ranges::<OrchardNote>(
+        wallet_transactions,
+    ));
+    ranges
+}
+
+/// Returns `true` if any active refetch range overlaps `scanned_wo_map_range`,
 /// meaning nullifiers from that range must be re-fetched for final spend detection.
 ///
 /// Returns `false` if no notes depend on this range, allowing it to be promoted directly from
 /// `ScannedWithoutMapping` to `Scanned` without a network fetch.
-fn notes_require_nullifier_refetch(
-    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+fn any_refetch_range_overlaps(
+    active_refetch_ranges: &[Range<BlockHeight>],
     scanned_wo_map_range: &Range<BlockHeight>,
 ) -> bool {
-    any_note_requires_refetch::<SaplingNote>(wallet_transactions, scanned_wo_map_range)
-        || any_note_requires_refetch::<OrchardNote>(wallet_transactions, scanned_wo_map_range)
+    active_refetch_ranges.iter().any(|refetch_range| {
+        // a note depends on this range if any of its refetch ranges overlap:
+        // partial overlap from below, partial overlap from above,
+        // full containment in either direction, or exact match.
+        refetch_range.start < scanned_wo_map_range.end
+            && scanned_wo_map_range.start < refetch_range.end
+    })
 }
 
 /// Selects and prepares the next scan range for scanning.
@@ -585,7 +597,7 @@ fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     nullifier_map_limit_exceeded: bool,
-    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+    active_refetch_ranges: &[Range<BlockHeight>],
 ) -> Option<ScanRange> {
     let (first_unscanned_index, first_unscanned_range) = sync_state
         .scan_ranges
@@ -596,7 +608,7 @@ fn select_scan_range(
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // if no unspent notes depend on this range, promote directly to Scanned and re-select.
             // this cascades through consecutive no-op ScannedWithoutMapping ranges without any network fetch.
-            if !notes_require_nullifier_refetch(wallet_transactions, first_unscanned_range.block_range()) {
+            if !any_refetch_range_overlaps(active_refetch_ranges, first_unscanned_range.block_range()) {
                 sync_state.scan_ranges[first_unscanned_index] = ScanRange::from_parts(
                     first_unscanned_range.block_range().clone(),
                     ScanPriority::Scanned,
@@ -605,7 +617,7 @@ fn select_scan_range(
                     consensus_parameters,
                     sync_state,
                     nullifier_map_limit_exceeded,
-                    wallet_transactions,
+                    active_refetch_ranges,
                 );
             }
 
@@ -712,12 +724,14 @@ pub(crate) fn create_scan_task<W>(
     nullifier_map_limit_exceeded: bool,
 ) -> Result<Option<ScanTask>, W::Error>
 where
-    W: SyncWallet + SyncBlocks + SyncNullifiers,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
+    let active_refetch_ranges = active_refetch_ranges(wallet.get_wallet_transactions()?);
     if let Some(selected_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,
         nullifier_map_limit_exceeded,
+        &active_refetch_ranges,
     ) {
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
