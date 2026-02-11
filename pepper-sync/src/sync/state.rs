@@ -585,6 +585,7 @@ fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     nullifier_map_limit_exceeded: bool,
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
 ) -> Option<ScanRange> {
     let (first_unscanned_index, first_unscanned_range) = sync_state
         .scan_ranges
@@ -593,6 +594,21 @@ fn select_scan_range(
         .find(|(_, scan_range)| scan_range.priority() != ScanPriority::Scanned)?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
+            // if no unspent notes depend on this range, promote directly to Scanned and re-select.
+            // this cascades through consecutive no-op ScannedWithoutMapping ranges without any network fetch.
+            if !notes_require_nullifier_refetch(wallet_transactions, first_unscanned_range.block_range()) {
+                sync_state.scan_ranges[first_unscanned_index] = ScanRange::from_parts(
+                    first_unscanned_range.block_range().clone(),
+                    ScanPriority::Scanned,
+                );
+                return select_scan_range(
+                    consensus_parameters,
+                    sync_state,
+                    nullifier_map_limit_exceeded,
+                    wallet_transactions,
+                );
+            }
+
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
             // unscanned range.
             // the `first_unscanned_range` may have `Scanning` priority here as we must select a `ScannedWithoutMapping` range only when all ranges below are `Scanned`. if a `ScannedwithoutMapping` range is selected and completes *before* a lower range that is currently `Scanning`, the nullifiers will need to be discarded and re-fetched afterwards. so this avoids a race condition that results in a sync inefficiency.
