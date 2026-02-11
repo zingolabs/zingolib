@@ -21,7 +21,8 @@ use crate::{
     scan::task::ScanTask,
     sync::ScanRange,
     wallet::{
-        InitialSyncState, ScanTarget, SyncState, TreeBounds, WalletTransaction,
+        InitialSyncState, NoteInterface, OrchardNote, SaplingNote, ScanTarget, SyncState,
+        TreeBounds, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
@@ -535,6 +536,35 @@ fn split_out_scan_range(
     }
 
     split_ranges
+}
+
+/// Returns `true` if any unspent note of type `N` has a `refetch_nullifier_ranges` entry overlapping `range`.
+fn any_note_requires_refetch<N: NoteInterface>(
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+    range: &Range<BlockHeight>,
+) -> bool {
+    wallet_transactions.values().any(|tx| {
+        N::transaction_outputs(tx).iter().any(|note| {
+            note.spending_transaction().is_none()
+                && note
+                    .refetch_nullifier_ranges()
+                    .iter()
+                    .any(|r| r.start < range.end && range.start < r.end)
+        })
+    })
+}
+
+/// Returns `true` if any unspent shielded note has a `refetch_nullifier_ranges` entry overlapping `range`,
+/// meaning nullifiers from that range must be re-fetched for final spend detection.
+///
+/// Returns `false` if no notes depend on this range, allowing it to be promoted directly from
+/// `ScannedWithoutMapping` to `Scanned` without a network fetch.
+fn notes_require_nullifier_refetch(
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+    range: &Range<BlockHeight>,
+) -> bool {
+    any_note_requires_refetch::<SaplingNote>(wallet_transactions, range)
+        || any_note_requires_refetch::<OrchardNote>(wallet_transactions, range)
 }
 
 /// Selects and prepares the next scan range for scanning.
