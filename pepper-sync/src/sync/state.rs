@@ -541,7 +541,7 @@ fn split_out_scan_range(
 /// Returns `true` if any unspent note of type `N` has a `refetch_nullifier_ranges` entry overlapping `range`.
 fn any_note_requires_refetch<N: NoteInterface>(
     wallet_transactions: &HashMap<TxId, WalletTransaction>,
-    range: &Range<BlockHeight>,
+    scanned_wo_map_range: &Range<BlockHeight>,
 ) -> bool {
     wallet_transactions.values().any(|tx| {
         N::transaction_outputs(tx).iter().any(|note| {
@@ -549,7 +549,13 @@ fn any_note_requires_refetch<N: NoteInterface>(
                 && note
                     .refetch_nullifier_ranges()
                     .iter()
-                    .any(|r| r.start < range.end && range.start < r.end)
+                    // a note depends on this range if any of its refetch ranges overlap:
+                    // partial overlap from below, partial overlap from above,
+                    // full containment in either direction, or exact match.
+                    .any(|refetch_range| {
+                        refetch_range.start < scanned_wo_map_range.end
+                            && scanned_wo_map_range.start < refetch_range.end
+                    })
         })
     })
 }
@@ -561,10 +567,10 @@ fn any_note_requires_refetch<N: NoteInterface>(
 /// `ScannedWithoutMapping` to `Scanned` without a network fetch.
 fn notes_require_nullifier_refetch(
     wallet_transactions: &HashMap<TxId, WalletTransaction>,
-    range: &Range<BlockHeight>,
+    scanned_wo_map_range: &Range<BlockHeight>,
 ) -> bool {
-    any_note_requires_refetch::<SaplingNote>(wallet_transactions, range)
-        || any_note_requires_refetch::<OrchardNote>(wallet_transactions, range)
+    any_note_requires_refetch::<SaplingNote>(wallet_transactions, scanned_wo_map_range)
+        || any_note_requires_refetch::<OrchardNote>(wallet_transactions, scanned_wo_map_range)
 }
 
 /// Selects and prepares the next scan range for scanning.
