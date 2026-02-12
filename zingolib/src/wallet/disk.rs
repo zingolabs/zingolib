@@ -53,14 +53,19 @@ impl LightWallet {
         mut writer: W,
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
+        eprintln!("w1");
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+        eprintln!("w2");
         utils::write_string(&mut writer, &self.network.to_string())?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),
             None => vec![],
         };
+        eprintln!("w3");
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
+        eprintln!("w4");
         writer.write_u32::<LittleEndian>(self.birthday.into())?;
+        eprintln!("w5");
         Vector::write(
             &mut writer,
             &self.unified_key_store.iter().collect::<Vec<_>>(),
@@ -70,6 +75,7 @@ impl LightWallet {
             },
         )?;
         // TODO: also store receiver selections in encoded memos.
+        eprintln!("w6");
         Vector::write(
             &mut writer,
             &self.unified_addresses.iter().collect::<Vec<_>>(),
@@ -83,6 +89,7 @@ impl LightWallet {
                 .write(w, ())
             },
         )?;
+        eprintln!("w7");
         Vector::write(
             &mut writer,
             &self.transparent_addresses.keys().collect::<Vec<_>>(),
@@ -92,17 +99,21 @@ impl LightWallet {
                 w.write_u32::<LittleEndian>(address_id.address_index().index())
             },
         )?;
+        eprintln!("w8");
         Vector::write(
             &mut writer,
             &self.wallet_blocks.values().collect::<Vec<_>>(),
             |w, &block| block.write(w),
         )?;
+        eprintln!("w9");
         Vector::write(
             &mut writer,
             &self.wallet_transactions.values().collect::<Vec<_>>(),
             |w, &transaction| transaction.write(w, consensus_parameters),
         )?;
+        eprintln!("w10");
         self.nullifier_map.write(&mut writer)?;
+        eprintln!("w11");
         Vector::write(
             &mut writer,
             &self.outpoint_map.iter().collect::<Vec<_>>(),
@@ -112,10 +123,14 @@ impl LightWallet {
                 scan_target.write(w)
             },
         )?;
+        eprintln!("w12");
         self.shard_trees.write(&mut writer)?;
+        eprintln!("w13");
         self.sync_state.write(&mut writer)?;
+        eprintln!("w14");
         self.wallet_settings.sync_config.write(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.wallet_settings.min_confirmations.into())?;
+        eprintln!("w15");
         self.price_list.write(&mut writer)
     }
 
@@ -123,7 +138,9 @@ impl LightWallet {
     // TODO: update to return WalletError
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
+        eprintln!("r1");
         info!("Reading wallet version {version}");
+        eprintln!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, network, version),
             32..=39 => Self::read_v32(reader, network, version),
@@ -344,6 +361,7 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
+        eprintln!("r2");
         let saved_network = utils::read_string(&mut reader)?;
         if saved_network != network.to_string() {
             return Err(Error::new(
@@ -352,6 +370,7 @@ impl LightWallet {
             ));
         }
 
+        eprintln!("r3");
         let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
         let mnemonic = if seed_bytes.is_empty() {
             None
@@ -364,8 +383,10 @@ impl LightWallet {
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
             )
         };
+        eprintln!("r4");
         let birthday = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
 
+        eprintln!("r5");
         let unified_key_store = if version >= 35 {
             Vector::read(&mut reader, |r| {
                 Ok((
@@ -385,6 +406,7 @@ impl LightWallet {
             keys
         };
 
+        eprintln!("r6");
         let mut unified_addresses = Vector::read(&mut reader, |r| {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
@@ -411,6 +433,7 @@ impl LightWallet {
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+        eprintln!("r7");
         let mut transparent_addresses = Vector::read(&mut reader, |r| {
             let account_id = zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                 .expect("only valid account ids are stored");
@@ -482,16 +505,20 @@ impl LightWallet {
             }
         }
 
+        eprintln!("r8");
         let wallet_blocks = Vector::read(&mut reader, |r| WalletBlock::read(r))?
             .into_iter()
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
+        eprintln!("r9");
         let wallet_transactions =
             Vector::read(&mut reader, |r| WalletTransaction::read(r, &network))?
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect::<HashMap<_, _>>();
+        eprintln!("r10");
         let nullifier_map = NullifierMap::read(&mut reader)?;
+        eprintln!("r11");
         let outpoint_map = Vector::read(&mut reader, |mut r| {
             let outpoint_txid = TxId::read(&mut r)?;
             let output_index = r.read_u16::<LittleEndian>()?;
@@ -512,9 +539,12 @@ impl LightWallet {
         })?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+        eprintln!("r12");
         let shard_trees = ShardTrees::read(&mut reader)?;
+        eprintln!("r13");
         let sync_state = SyncState::read(&mut reader)?;
 
+        eprintln!("r14");
         let wallet_settings = if version >= 33 {
             WalletSettings {
                 sync_config: SyncConfig::read(&mut reader)?,
@@ -535,6 +565,7 @@ impl LightWallet {
             }
         };
 
+        eprintln!("r15");
         let price_list = if version >= 34 {
             PriceList::read(&mut reader)?
         } else {
