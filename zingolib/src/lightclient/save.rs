@@ -6,8 +6,34 @@ use log::error;
 use std::{borrow::BorrowMut as _, fs::remove_file, sync::atomic};
 
 use super::LightClient;
-use crate::{data::PollReport, utils};
+use crate::data::PollReport;
 
+/// Writes `bytes` to file at `wallet_path`.
+fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let temp_wallet_path: std::path::PathBuf = wallet_path.with_extension(
+        wallet_path
+            .extension()
+            .map(|e| format!("{}.tmp", e.to_string_lossy()))
+            .unwrap_or_else(|| "tmp".to_string()),
+    );
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temp_wallet_path)?;
+    let mut writer = std::io::BufWriter::new(file);
+    std::io::Write::write_all(&mut writer, bytes)?;
+
+    let file = writer.into_inner().map_err(|e| e.into_error())?;
+    file.sync_all()?;
+    std::fs::rename(&temp_wallet_path, wallet_path)?;
+    if let Some(parent) = wallet_path.parent() {
+        let wallet_dir = std::fs::File::open(parent)?;
+        let _ignore_error = wallet_dir.sync_all(); // NOTE: error is ignored as syncing dirs on windows OS may return an error
+    }
+
+    Ok(())
+}
 impl LightClient {
     /// Launches a task for saving the wallet data to persistance when the wallet's `save_required` flag is set.
     pub async fn save_task(&mut self) {
@@ -25,7 +51,7 @@ impl LightClient {
             loop {
                 interval.tick().await;
                 if let Some(wallet_bytes) = wallet.write().await.save()? {
-                    utils::write_to_path(&wallet_path, &wallet_bytes)?;
+                    write_to_path(&wallet_path, &wallet_bytes)?;
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());
