@@ -136,7 +136,6 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        eprintln!("PRE WALLET READ");
         Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
     }
 

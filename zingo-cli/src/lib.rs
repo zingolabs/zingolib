@@ -435,7 +435,6 @@ pub fn startup(
         )
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if config.wallet_path_exists() {
-        eprintln!("PRE READ FROM PATH");
         // Open existing wallet from path
         LightClient::create_from_wallet_path(config.clone())
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
@@ -457,7 +456,6 @@ pub fn startup(
         LightClient::new(config.clone(), chain_height - 100, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
-    eprintln!("POST READ");
 
     if filled_template.command.is_none() {
         // Print startup Messages

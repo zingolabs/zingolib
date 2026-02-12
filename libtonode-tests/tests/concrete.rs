@@ -4626,7 +4626,7 @@ mod testnet_test {
             lightclient.await_sync().await.unwrap();
             lightclient.shutdown_save_task().await.unwrap();
 
-            // will fail if there were any reload errors
+            // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
             LightClient::create_from_wallet_path(config).unwrap();
 
             test_count += 1;

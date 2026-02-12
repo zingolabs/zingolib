@@ -124,7 +124,6 @@ impl LightWallet {
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
-        eprintln!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, network, version),
             32..=39 => Self::read_v32(reader, network, version),
