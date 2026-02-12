@@ -709,6 +709,11 @@ pub trait NoteInterface: OutputInterface {
 
     /// Memo
     fn memo(&self) -> &Memo;
+
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` priority before this note was scanned, meaning the
+    /// nullifiers were discarded due to memory constraints and will be re-fetched later in the sync process.
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>];
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet.
@@ -800,6 +805,10 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` priority before this note was scanned, meaning the
+    /// nullifiers were discarded due to memory constraints and will be re-fetched later in the sync process.
+    pub(crate) refetch_nullifier_ranges: Vec<Range<BlockHeight>>,
 }
 
 /// Sapling note.
@@ -865,6 +874,10 @@ impl NoteInterface for SaplingNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
+    }
 }
 
 /// Orchard note.
@@ -929,6 +942,10 @@ impl NoteInterface for OrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
     }
 }
 

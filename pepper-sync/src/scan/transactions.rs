@@ -389,6 +389,7 @@ where
                 position,
                 memo: Memo::from_bytes(memo_bytes.as_ref())?,
                 spending_transaction: None,
+                refetch_nullifier_ranges: Vec::new(),
             });
         }
     }
