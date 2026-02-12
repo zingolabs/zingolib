@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "EditorConfig.EditorConfig",
+        "github.vscode-github-actions",
+        "Swellaby.rust-pack",
+        "pflannery.vscode-versionlens"
+    ]
+}
