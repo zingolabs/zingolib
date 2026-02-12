@@ -4570,3 +4570,66 @@ mod send_all {
         ));
     }
 }
+
+mod testnet_test {
+    use bip0039::Mnemonic;
+    use pepper_sync::sync_status;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::{
+        config::{ChainType, ZingoConfig},
+        lightclient::LightClient,
+        testutils::tempfile::TempDir,
+        wallet::{LightWallet, WalletBase},
+    };
+
+    #[ignore = "testnet cannot be run offline"]
+    #[tokio::test]
+    async fn reload_wallet_after_short_sync() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .unwrap();
+
+        const NUM_TESTS: u8 = 20;
+        let mut test_count = 0;
+
+        while test_count < NUM_TESTS {
+            let wallet_dir = TempDir::new().unwrap();
+            let mut config = ZingoConfig::create_testnet();
+            config.wallet_dir = Some(wallet_dir.path().to_path_buf());
+            let wallet = LightWallet::new(
+                ChainType::Testnet,
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
+                2_000_000.into(),
+                config.wallet_settings.clone(),
+            )
+            .unwrap();
+
+            let mut lightclient =
+                LightClient::create_from_wallet(wallet, config.clone(), true).unwrap();
+            lightclient.save_task().await;
+            lightclient.sync().await.unwrap();
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await;
+            while sync_status(&*lightclient.wallet.read().await)
+                .await
+                .unwrap()
+                .percentage_total_outputs_scanned
+                > 1.0
+            {
+                interval.tick().await;
+            }
+            lightclient.stop_sync().unwrap();
+            lightclient.await_sync().await.unwrap();
+            lightclient.shutdown_save_task().await.unwrap();
+
+            // will fail if there were any reload errors
+            LightClient::create_from_wallet_path(config).unwrap();
+
+            test_count += 1;
+        }
+    }
+}
