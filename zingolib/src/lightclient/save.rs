@@ -23,7 +23,6 @@ fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result
         .open(&temp_wallet_path)?;
     let mut writer = std::io::BufWriter::new(file);
     std::io::Write::write_all(&mut writer, bytes)?;
-    std::io::Write::flush(&mut writer)?;
 
     let file = writer.into_inner().map_err(|e| e.into_error())?;
     file.sync_all()?;
