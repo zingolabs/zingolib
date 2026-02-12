@@ -25,9 +25,7 @@ impl LightClient {
             loop {
                 interval.tick().await;
                 if let Some(wallet_bytes) = wallet.write().await.save()? {
-                    eprintln!("PREWRITETOPATH");
                     utils::write_to_path(&wallet_path, &wallet_bytes)?;
-                    eprintln!("POSTWRITETOPATH");
                 }
                 if !save_active.load(atomic::Ordering::Acquire) {
                     return Ok(());

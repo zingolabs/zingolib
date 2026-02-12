@@ -10,11 +10,8 @@ use std::{
 pub mod conversion;
 pub mod error;
 
-/// Writes `bytes` to file at `path`.
+/// Writes `bytes` to file at `wallet_path`.
 pub(crate) fn write_to_path(wallet_path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // let mut file = tokio::fs::File::create(path).await?;
-    // file.write_all(&bytes).await
-
     let temp_wallet_path: PathBuf = wallet_path.with_extension(
         wallet_path
             .extension()
