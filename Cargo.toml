@@ -47,7 +47,7 @@ zebra-chain = "3.0"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "bec229a0bcc47b1d1430649f316be79dcc51a956" }
 
 # Parallel processing
 crossbeam-channel = "0.5"
