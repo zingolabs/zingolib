@@ -1614,7 +1614,7 @@ fn checked_birthday<W: SyncWallet>(
     let wallet_birthday = wallet.get_birthday()?;
     let sapling_activation_height = consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Sapling)
-        .expect("sapling activation height should always return Some");
+        .unwrap_or(BlockHeight::from_u32(1));
 
     match wallet_birthday.cmp(&sapling_activation_height) {
         cmp::Ordering::Greater | cmp::Ordering::Equal => Ok(wallet_birthday),
