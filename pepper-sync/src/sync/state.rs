@@ -71,7 +71,7 @@ pub(super) async fn update_scan_ranges(
     sync_state: &mut SyncState,
 ) {
     reset_sync_interrupted_scan_ranges(sync_state);
-    create_scan_range(wallet_height, chain_height, sync_state).await;
+    create_historic_scan_range(wallet_height, chain_height, sync_state).await;
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
@@ -131,7 +131,7 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 /// Create scan range between the last height known to the wallet
 /// and the chain height from the server. This is the Historic
 /// priority!
-async fn create_scan_range(
+async fn create_historic_scan_range(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
