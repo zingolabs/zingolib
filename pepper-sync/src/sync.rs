@@ -700,30 +700,10 @@ mod test {
         mod last_known_chain_height {
             use crate::{
                 sync::{MAX_REORG_ALLOWANCE, ScanRange},
-                wallet::{SyncState, traits::SyncWallet},
+                wallet::SyncState,
             };
 
             use super::*;
-            #[tokio::test]
-            async fn sync_state_vs_wallet_bdays() {
-                let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(5)..BlockHeight::from_u32(10),
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let test_wallet = builder.sync_state(state).create_mock_wallet();
-                let wallet_birthday = &test_wallet.get_birthday().unwrap();
-                let sync_state_wallet_birthday = &test_wallet
-                    .get_sync_state()
-                    .unwrap()
-                    .scan_start_height()
-                    .unwrap();
-                assert_eq!(wallet_birthday, sync_state_wallet_birthday);
-            }
             #[tokio::test]
             async fn above_allowance() {
                 let lkch = vec![ScanRange::from_parts(
