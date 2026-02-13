@@ -370,7 +370,11 @@ where
     {
         if height > chain_height {
             if height - chain_height >= MAX_REORG_ALLOWANCE {
-                return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
+                return Err(SyncError::ChainError(
+                    height,
+                    MAX_REORG_ALLOWANCE,
+                    chain_height,
+                ));
             }
             // TODO: also truncate the scan ranges in the wallet's sync state
             truncate_wallet_data(&mut *wallet_guard, chain_height)?;
@@ -379,10 +383,16 @@ where
 
         height
     } else {
-        let birthday = checked_birthday(consensus_parameters, &*wallet_guard)
+        let raw_bday = wallet_guard
+            .get_birthday()
             .map_err(SyncError::WalletError)?;
+        let birthday = sapling_floored_bday(consensus_parameters, raw_bday);
         if birthday > chain_height {
-            return Err(SyncError::ChainError(birthday - chain_height));
+            return Err(SyncError::ChainError(
+                birthday,
+                MAX_REORG_ALLOWANCE,
+                chain_height,
+            ));
         }
 
         birthday - 1
