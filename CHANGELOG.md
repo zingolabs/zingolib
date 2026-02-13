@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes corresponding to a workspace level to this project 
+All notable changes corresponding to a workspace level to this project
 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
