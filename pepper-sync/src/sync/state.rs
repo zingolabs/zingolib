@@ -128,7 +128,9 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
     }
 }
 
-/// Create scan range between the last height known to the wallet and the chain height from the server.
+/// Create scan range between the last height known to the wallet
+/// and the chain height from the server. This is the Historic
+/// priority!
 async fn create_scan_range(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
