@@ -1,11 +1,8 @@
 //! Balance methods and types for `crate::wallet::LightWallet`.
 
-use pepper_sync::{
-    sync::ScanPriority,
-    wallet::{
-        KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
-        WalletTransaction,
-    },
+use pepper_sync::wallet::{
+    KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote, TransparentCoin,
+    WalletTransaction,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -502,26 +499,12 @@ impl LightWallet {
                     && transaction.status().get_height() <= anchor_height
                     && note.position().is_some()
                     && self.can_build_witness::<N>(transaction.status().get_height(), anchor_height)
-                    && if include_potentially_spent_notes {
-                        true
-                    } else {
-                        // checks all ranges above the note height are scanned and that the nullifiers were re-fetched
-                        // if any of these ranges discarded the nullifiers *before* the note was scanned (due to memory constraints).
-                        transaction.status().get_height() >= spend_horizon
-                            && note.refetch_nullifier_ranges().iter().all(
-                                |refetch_nullifier_range| {
-                                    self.sync_state.scan_ranges().iter().any(|scan_range| {
-                                        scan_range.priority() == ScanPriority::Scanned
-                                            && scan_range
-                                                .block_range()
-                                                .contains(&refetch_nullifier_range.start)
-                                            && scan_range
-                                                .block_range()
-                                                .contains(&(refetch_nullifier_range.end - 1))
-                                    })
-                                },
-                            )
-                    }
+                    && (include_potentially_spent_notes
+                        || self.note_spends_confirmed(
+                            transaction.status().get_height(),
+                            spend_horizon,
+                            note.refetch_nullifier_ranges(),
+                        ))
             },
             account_id,
         )?;

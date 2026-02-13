@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
+    ops::Range,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -497,6 +498,31 @@ impl<N, Nf: Copy> WalletNote<N, Nf> {
     }
 }
 
+fn read_refetch_nullifier_ranges(
+    reader: &mut impl Read,
+    version: u8,
+) -> std::io::Result<Vec<Range<BlockHeight>>> {
+    if version >= 1 {
+        Vector::read(reader, |r| {
+            let start = r.read_u32::<LittleEndian>()?;
+            let end = r.read_u32::<LittleEndian>()?;
+            Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
+        })
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+fn write_refetch_nullifier_ranges(
+    writer: &mut impl Write,
+    ranges: &[Range<BlockHeight>],
+) -> std::io::Result<()> {
+    Vector::write(writer, ranges, |w, range| {
+        w.write_u32::<LittleEndian>(range.start.into())?;
+        w.write_u32::<LittleEndian>(range.end.into())
+    })
+}
+
 impl SaplingNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
@@ -571,17 +597,7 @@ impl SaplingNote {
         })?;
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
-
-        let refetch_nullifier_ranges = if version >= 1 {
-            Vector::read(&mut reader, |r| {
-                let start = r.read_u32::<LittleEndian>()?;
-                let end = r.read_u32::<LittleEndian>()?;
-
-                Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
-            })?
-        } else {
-            Vec::new()
-        };
+        let refetch_nullifier_ranges = read_refetch_nullifier_ranges(&mut reader, version)?;
 
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
@@ -630,10 +646,7 @@ impl SaplingNote {
             txid.write(w)
         })?;
 
-        Vector::write(&mut writer, &self.refetch_nullifier_ranges, |w, range| {
-            w.write_u32::<LittleEndian>(range.start.into())?;
-            w.write_u32::<LittleEndian>(range.end.into())
-        })
+        write_refetch_nullifier_ranges(&mut writer, &self.refetch_nullifier_ranges)
     }
 }
 
@@ -694,17 +707,7 @@ impl OrchardNote {
         })?;
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
-
-        let refetch_nullifier_ranges = if version >= 1 {
-            Vector::read(&mut reader, |r| {
-                let start = r.read_u32::<LittleEndian>()?;
-                let end = r.read_u32::<LittleEndian>()?;
-
-                Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
-            })?
-        } else {
-            Vec::new()
-        };
+        let refetch_nullifier_ranges = read_refetch_nullifier_ranges(&mut reader, version)?;
 
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
@@ -745,10 +748,7 @@ impl OrchardNote {
             txid.write(w)
         })?;
 
-        Vector::write(&mut writer, &self.refetch_nullifier_ranges, |w, range| {
-            w.write_u32::<LittleEndian>(range.start.into())?;
-            w.write_u32::<LittleEndian>(range.end.into())
-        })
+        write_refetch_nullifier_ranges(&mut writer, &self.refetch_nullifier_ranges)
     }
 }
 
