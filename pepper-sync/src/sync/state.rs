@@ -68,7 +68,7 @@ pub(super) async fn update_scan_ranges(
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    reset_scan_ranges(sync_state);
+    reset_sync_interrupted_scan_ranges(sync_state);
     create_scan_range(wallet_height, chain_height, sync_state).await;
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
@@ -152,7 +152,7 @@ async fn create_scan_range(
 /// scanning.
 /// A range that was previously refetching nullifiers when sync was last interrupted is set to `ScannedWithoutMapping`
 /// so the nullifiers can be fetched again.
-fn reset_scan_ranges(sync_state: &mut SyncState) {
+fn reset_sync_interrupted_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
         .iter()
