@@ -286,7 +286,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(birthday) = self.sync_state.scan_range_start() else {
+        let Some(start_height) = self.sync_state.scan_start_height() else {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();
@@ -295,14 +295,14 @@ impl LightWallet {
             ShieldedProtocol::Orchard => check_note_shards_are_scanned(
                 note_height,
                 anchor_height,
-                birthday,
+                start_height,
                 scan_ranges,
                 self.sync_state.orchard_shard_ranges(),
             ),
             ShieldedProtocol::Sapling => check_note_shards_are_scanned(
                 note_height,
                 anchor_height,
-                birthday,
+                start_height,
                 scan_ranges,
                 self.sync_state.sapling_shard_ranges(),
             ),
