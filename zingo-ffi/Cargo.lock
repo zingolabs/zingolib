@@ -4000,7 +4000,7 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v2.1.2#f99e25f1813350dc604b425bcedd58a6c2f3ce8a"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#b3ffc4264977bc0176b357afa0af7d3481856579"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9167,7 +9167,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v2.1.2#f99e25f1813350dc604b425bcedd58a6c2f3ce8a"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#b3ffc4264977bc0176b357afa0af7d3481856579"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -9208,7 +9208,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "2.1.2"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v2.1.2#f99e25f1813350dc604b425bcedd58a6c2f3ce8a"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#b3ffc4264977bc0176b357afa0af7d3481856579"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9274,7 +9274,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?tag=zingolib_v2.1.2#f99e25f1813350dc604b425bcedd58a6c2f3ce8a"
+source = "git+https://github.com/zingolabs/zingolib?branch=stable#b3ffc4264977bc0176b357afa0af7d3481856579"
 dependencies = [
  "bip0039",
  "http",
