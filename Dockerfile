@@ -16,7 +16,6 @@ FROM stagex/pallet-rust@sha256:4062550919db682ebaeea07661551b5b89b3921e3f3a2b0bc
 FROM stagex/user-protobuf@sha256:b399bb058216a55130d83abcba4e5271d8630fff55abbb02ed40818b0d96ced1 AS protobuf
 FROM stagex/user-abseil-cpp@sha256:926f69e9cd112dfe3450a0af56d1560dc0a62589e61047e8c92c3b7edf8dd71e AS abseil-cpp
 
-# the old way : FROM stagex/core-user-runtime
 FROM stagex/core-llvm-runtime@sha256:11323894375bc44bc7da121345eb88a26c32edc63d0b07fdf8c08906c283751c AS llvm-runtime
 
 ############################
@@ -57,7 +56,6 @@ RUN --network=none \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/src/app/target \
-    # Q: just `install` here
     cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zaino-cli
 
 ############################
@@ -68,7 +66,6 @@ COPY --from=builder /usr/local/bin/zingo-cli /zingo-cli
 
 ############################
 # Runtime stage
-# (slim, non-root)?
 ############################
 FROM llvm-runtime AS runtime
 
