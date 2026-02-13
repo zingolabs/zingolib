@@ -174,7 +174,7 @@ impl LightWallet {
     }
 
     /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
-    /// `Scanned` or `ScannedWithoutMapping` priority).
+    /// `Scanned`, `ScannedWithoutMapping` or `RefetchingNullifiers` priority).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
@@ -196,6 +196,7 @@ impl LightWallet {
                 } else {
                     scan_range.priority() != ScanPriority::Scanned
                         && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
                 }
             })
         {
