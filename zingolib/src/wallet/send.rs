@@ -286,7 +286,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(birthday) = self.sync_state.wallet_birthday() else {
+        let Some(birthday) = self.sync_state.scan_range_start() else {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();

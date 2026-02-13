@@ -493,7 +493,7 @@ fn determine_block_range(
                 range.end - 1
             } else {
                 sync_state
-                    .wallet_birthday()
+                    .scan_range_start()
                     .expect("scan range should not be empty")
             };
             let end = sync_state
@@ -789,7 +789,7 @@ where
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
     let birthday = sync_state
-        .wallet_birthday()
+        .scan_range_start()
         .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
