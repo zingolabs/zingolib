@@ -697,11 +697,13 @@ impl InputSource for LightWallet {
                 (selected_sapling_notes, selected_orchard_notes)
             }
             TargetValue::AllFunds(max_spend_mode) => {
+                // FIXME: this is not the criteria for `MaxSpendMode::Everything`. this should return an error if sync is not complete in this case.
                 let include_potentially_spent_notes = matches!(
                     max_spend_mode,
                     zcash_client_backend::data_api::MaxSpendMode::Everything
                 );
                 (
+                    // FIXME: note filters implemented in `spendable_notes_by_pool` have been missed here such as filtering dust
                     self.spendable_notes::<SaplingNote>(
                         anchor_height,
                         &exclude_sapling,
@@ -832,6 +834,7 @@ impl InputSource for LightWallet {
             .spendable_transparent_coins(
                 target_height.into(),
                 confirmations_policy.allow_zero_conf_shielding(),
+                false,
             )
             .into_iter()
             .filter(|&output| output.address() == address)
