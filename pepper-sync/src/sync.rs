@@ -720,7 +720,7 @@ mod test {
                 let sync_state_wallet_birthday = &test_wallet
                     .get_sync_state()
                     .unwrap()
-                    .scan_range_start()
+                    .scan_start_height()
                     .unwrap();
                 assert_eq!(wallet_birthday, sync_state_wallet_birthday);
             }
@@ -926,13 +926,13 @@ where
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
-    let birthday = sync_state
-        .scan_range_start()
+    let start_height = sync_state
+        .scan_start_height()
         .ok_or(SyncStatusError::NoSyncData)?;
     let last_known_chain_height = sync_state
         .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = last_known_chain_height - birthday + 1;
+    let total_blocks = last_known_chain_height - start_height + 1;
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
@@ -1556,12 +1556,12 @@ fn truncate_wallet_data<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    let birthday = wallet
+    let start_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .scan_range_start()
+        .scan_start_height()
         .expect("should be non-empty in this scope");
-    let checked_truncate_height = match truncate_height.cmp(&birthday) {
+    let checked_truncate_height = match truncate_height.cmp(&start_height) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
         std::cmp::Ordering::Less => consensus::H0,
     };

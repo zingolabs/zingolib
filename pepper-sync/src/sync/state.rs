@@ -493,7 +493,7 @@ fn determine_block_range(
                 range.end - 1
             } else {
                 sync_state
-                    .scan_range_start()
+                    .scan_start_height()
                     .expect("scan range should not be empty")
             };
             let end = sync_state
@@ -788,8 +788,8 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .scan_range_start()
+    let start_height = sync_state
+        .scan_start_height()
         .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
@@ -798,7 +798,7 @@ where
     let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
         calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
     let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
-        if let Ok(block) = wallet.get_wallet_block(birthday) {
+        if let Ok(block) = wallet.get_wallet_block(start_height) {
             (
                 block.tree_bounds.sapling_initial_tree_size,
                 block.tree_bounds.orchard_initial_tree_size,
@@ -808,7 +808,7 @@ where
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
-                birthday - 1,
+                start_height - 1,
             )
             .await?
         };

@@ -415,10 +415,10 @@ impl LightWallet {
             .time_historical_prices_last_updated()
             .is_none()
         {
-            let Some(birthday) = self.sync_state.scan_range_start() else {
+            let Some(start_height) = self.sync_state.scan_start_height() else {
                 return Err(PriceError::NotInitialised);
             };
-            let birthday_block = match self.wallet_blocks.get(&birthday) {
+            let birthday_block = match self.wallet_blocks.get(&start_height) {
                 Some(block) => block.clone(),
                 None => {
                     return Err(PriceError::NotInitialised);
