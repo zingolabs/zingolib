@@ -363,40 +363,8 @@ where
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    let last_known_chain_height = if let Some(mut height) = wallet_guard
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .last_known_chain_height()
-    {
-        if height > chain_height {
-            if height - chain_height >= MAX_REORG_ALLOWANCE {
-                return Err(SyncError::ChainError(
-                    height,
-                    MAX_REORG_ALLOWANCE,
-                    chain_height,
-                ));
-            }
-            // TODO: also truncate the scan ranges in the wallet's sync state
-            truncate_wallet_data(&mut *wallet_guard, chain_height)?;
-            height = chain_height;
-        }
-
-        height
-    } else {
-        let raw_bday = wallet_guard
-            .get_birthday()
-            .map_err(SyncError::WalletError)?;
-        let birthday = sapling_floored_bday(consensus_parameters, raw_bday);
-        if birthday > chain_height {
-            return Err(SyncError::ChainError(
-                birthday,
-                MAX_REORG_ALLOWANCE,
-                chain_height,
-            ));
-        }
-
-        birthday - 1
-    };
+    let last_known_chain_height =
+        checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
 
     let ufvks = wallet_guard
         .get_unified_full_viewing_keys()
@@ -752,7 +720,7 @@ mod test {
                 let sync_state_wallet_birthday = &test_wallet
                     .get_sync_state()
                     .unwrap()
-                    .wallet_birthday()
+                    .scan_range_start()
                     .unwrap();
                 assert_eq!(wallet_birthday, sync_state_wallet_birthday);
             }
@@ -959,7 +927,7 @@ where
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
     let birthday = sync_state
-        .wallet_birthday()
+        .scan_range_start()
         .ok_or(SyncStatusError::NoSyncData)?;
     let last_known_chain_height = sync_state
         .last_known_chain_height()
@@ -1591,7 +1559,7 @@ where
     let birthday = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_birthday()
+        .scan_range_start()
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&birthday) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,

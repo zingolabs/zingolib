@@ -207,15 +207,14 @@ impl SyncState {
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday().map(|birthday| birthday - 1)
+            self.scan_range_start().map(|birthday| birthday - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
-    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     #[must_use]
-    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
+    pub fn scan_range_start(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
