@@ -62,6 +62,8 @@ fn find_scan_targets(
 }
 
 /// Update scan ranges for scanning.
+/// This is uniquely called before scan initiation
+/// in the main sync function.
 pub(super) async fn update_scan_ranges(
     consensus_parameters: &impl consensus::Parameters,
     wallet_height: BlockHeight,
@@ -126,19 +128,19 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
     }
 }
 
-/// Create scan range between the wallet height and the chain height from the server.
+/// Create scan range between the last height known to the wallet and the chain height from the server.
 async fn create_scan_range(
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    if wallet_height == chain_height {
+    if last_known_chain_height == chain_height {
         return;
     }
 
     let new_scan_range = ScanRange::from_parts(
         Range {
-            start: wallet_height + 1,
+            start: last_known_chain_height + 1,
             end: chain_height + 1,
         },
         ScanPriority::Historic,
