@@ -3568,9 +3568,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.29.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -8611,7 +8611,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#15a160df0949713c64c5917c881211ac709628c4"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#f6e73ad0af0e57d1e6e0e55ded8d69ae920f9c4c"
 dependencies = [
  "getset",
  "hex",
@@ -8778,9 +8778,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "3.1.0"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b4aa7e85afd7bdf159e8c9a973d32bfc410be42ce82c2396690ae1208933bb8"
+checksum = "3b41d733382b3ecbf892f816ab9c1e448c9ae868d2bbb9f12a55b80c4e21fee2"
 dependencies = [
  "bech32",
  "bitflags 2.10.0",
@@ -8938,9 +8938,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-network"
-version = "2.0.2"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3edeb353c33962fb5f9012745ddb44d33ee90acb8c9410669bf54d72488b8cf"
+checksum = "d3a34b04cb134997950b1ad0138aef9a6320f7aec16cab082419652ae3fcac8e"
 dependencies = [
  "bitflags 2.10.0",
  "byteorder",
@@ -8991,9 +8991,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-rpc"
-version = "3.1.0"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c81f52b33b83f5a7f9b0377981843242c2657027053a406f01b06862dddbf747"
+checksum = "8afcfc310a775b123a9f27e32e50b25f2b02b80051bce5e4be3ced786d83e808"
 dependencies = [
  "base64",
  "chrono",
@@ -9008,7 +9008,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
- "nix 0.29.0",
+ "nix 0.30.1",
  "prost",
  "rand 0.8.5",
  "sapling-crypto",
@@ -9283,7 +9283,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#bec229a0bcc47b1d1430649f316be79dcc51a956"
+source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#7de9f9e8a261f95a632df2c57d2c9cbe68fc0ae8"
 dependencies = [
  "zebra-chain 3.1.0",
 ]
