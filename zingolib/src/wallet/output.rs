@@ -1,6 +1,5 @@
 //! All things needed to create, manaage, and use notes
 
-use pepper_sync::sync::ScanPriority;
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
 use zcash_primitives::consensus::BlockHeight;
@@ -295,29 +294,12 @@ impl LightWallet {
                                 )
                                 && !exclude.contains(&note.output_id())
                                 && note.key_id().account_id() == account
-                                && if include_potentially_spent_notes {
-                                    true
-                                } else {
-                                    // checks all ranges above the note height are scanned and that the nullifiers were re-fetched
-                                    // if any of these ranges discarded the nullifiers *before* the note was scanned (due to memory constraints).
-                                    transaction.status().get_height() >= spend_horizon
-                                        && note.refetch_nullifier_ranges().iter().all(
-                                            |refetch_nullifier_range| {
-                                                self.sync_state.scan_ranges().iter().any(
-                                                    |scan_range| {
-                                                        scan_range.priority()
-                                                            == ScanPriority::Scanned
-                                                            && scan_range.block_range().contains(
-                                                                &refetch_nullifier_range.start,
-                                                            )
-                                                            && scan_range.block_range().contains(
-                                                                &(refetch_nullifier_range.end - 1),
-                                                            )
-                                                    },
-                                                )
-                                            },
-                                        )
-                                }
+                                && (include_potentially_spent_notes
+                                    || self.note_spends_confirmed(
+                                        transaction.status().get_height(),
+                                        spend_horizon,
+                                        note.refetch_nullifier_ranges(),
+                                    ))
                         })
                         .collect::<Vec<_>>()
                 } else {

@@ -222,6 +222,27 @@ impl LightWallet {
                 .map(|range| range.block_range().start)
         }
     }
+
+    /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
+    ///
+    /// Requires that `note_height >= spend_horizon` (all ranges above the note are scanned) and that every
+    /// `refetch_nullifier_range` recorded on the note is fully contained within a `Scanned` scan range
+    /// (nullifiers that were discarded due to memory constraints have since been re-fetched).
+    pub(crate) fn note_spends_confirmed(
+        &self,
+        note_height: BlockHeight,
+        spend_horizon: BlockHeight,
+        refetch_nullifier_ranges: &[std::ops::Range<BlockHeight>],
+    ) -> bool {
+        note_height >= spend_horizon
+            && refetch_nullifier_ranges.iter().all(|refetch_range| {
+                self.sync_state.scan_ranges().iter().any(|scan_range| {
+                    scan_range.priority() == ScanPriority::Scanned
+                        && scan_range.block_range().contains(&refetch_range.start)
+                        && scan_range.block_range().contains(&(refetch_range.end - 1))
+                })
+            })
+    }
 }
 
 #[cfg(test)]
