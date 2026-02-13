@@ -730,11 +730,13 @@ mod test {
                     panic!()
                 }
             }
-            #[ignore = "in progress"]
             #[tokio::test]
-            async fn between_chain_height_and_allowance() {
+            async fn above_chain_height_below_allowance() {
+                // The hain_height is received from the proxy
+                // truncate uses the wallet scan start height
+                // as a
                 let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
                     crate::sync::ScanPriority::Scanned,
                 )];
                 let state = SyncState {
@@ -744,6 +746,10 @@ mod test {
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
                 let chain_height = BlockHeight::from_u32(4);
+                // This will trigger a call to truncate_wallet_data with
+                // chain_height and start_height inferred from the wallet.
+                // chain must be greater than by this time which hits the Greater cmp
+                // match
                 let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
                 assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
             }
