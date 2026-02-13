@@ -1,3 +1,5 @@
+pub mod error;
+
 use std::{
     num::NonZeroU32,
     panic::{self, AssertUnwindSafe},
@@ -20,19 +22,9 @@ use zingolib::{
     wallet::{LightWallet, WalletBase, WalletSettings, balance::AccountBalance},
 };
 
-uniffi::setup_scaffolding!();
+use crate::error::WalletError;
 
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum WalletError {
-    #[error("Command queue closed")]
-    CommandQueueClosed,
-    #[error("Listener lock poisoned")]
-    ListenerLockPoisoned,
-    #[error("Wallet not initialized")]
-    NotInitialized,
-    #[error("Internal error: {0}")]
-    Internal(String),
-}
+uniffi::setup_scaffolding!();
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum Chain {
@@ -120,12 +112,12 @@ fn balance_snapshot_from_balance(b: &AccountBalance) -> BalanceSnapshot {
 }
 
 fn construct_config(
-    server_uri: String,
+    indexer_uri: String,
     chain: Chain,
     perf: Performance,
     min_confirmations: u32,
 ) -> Result<(ZingoConfig, http::Uri), WalletError> {
-    let lightwalletd_uri = construct_lightwalletd_uri(Some(server_uri));
+    let lightwalletd_uri = construct_lightwalletd_uri(Some(indexer_uri));
 
     let min_conf = NonZeroU32::try_from(min_confirmations)
         .map_err(|_| WalletError::Internal("min_confirmations must be >= 1".into()))?;
@@ -165,7 +157,7 @@ fn emit(inner: &EngineInner, event: WalletEvent) {
 
 enum Command {
     InitNew {
-        server_uri: String,
+        indexer_uri: String,
         chain: Chain,
         perf: Performance,
         minconf: u32,
@@ -174,7 +166,7 @@ enum Command {
     InitFromSeed {
         seed_phrase: String,
         birthday: u32,
-        server_uri: String,
+        indexer_uri: String,
         chain: Chain,
         perf: Performance,
         minconf: u32,
@@ -203,6 +195,19 @@ fn create_engine_runtime() -> tokio::runtime::Runtime {
 
 #[uniffi::export]
 impl WalletEngine {
+    /// Creates a new [`WalletEngine`] and starts the internal engine thread.
+    ///
+    /// This constructor:
+    /// - Allocates a command queue used to communicate with the engine thread.
+    /// - Spawns a dedicated OS thread that owns a Tokio runtime and all async wallet state, through the [`LightClient`].
+    /// - Emits [`WalletEvent::EngineReady`] once the engine thread is running.
+    ///
+    /// ## Threading / FFI design
+    /// All UniFFI-exposed methods on [`WalletEngine`] are *synchronous* and safe to call from
+    /// Swift/Kotlin. Any async work is executed on the engine thread.
+    ///
+    /// ## Errors
+    /// Returns [`WalletError`] if the engine cannot be created.
     #[uniffi::constructor]
     pub fn new() -> Result<Self, WalletError> {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<Command>(64);
@@ -219,11 +224,10 @@ impl WalletEngine {
             rt.block_on(async move {
                 emit(&inner_for_task, WalletEvent::EngineReady);
 
-                // Engine-owned state
+                // TODO: THIS NEEDS TO BE BEHIND AN ASYNC LOCK. With the current setup, sync will block the thread.
                 let mut lightclient: Option<LightClient> = None;
-                let mut server_uri: Option<http::Uri> = None;
+                let mut indexer_uri: Option<http::Uri> = None;
 
-                // Keep last emitted balance snapshot
                 let mut last_balance: Option<BalanceSnapshot> = None;
                 let mut syncing = false;
 
@@ -233,7 +237,7 @@ impl WalletEngine {
                             todo!()
                         }
                         Command::InitNew {
-                            server_uri: srv,
+                            indexer_uri: srv,
                             chain,
                             perf,
                             minconf,
@@ -258,7 +262,7 @@ impl WalletEngine {
                                     })?;
 
                                 lightclient = Some(lc);
-                                server_uri = Some(lw_uri);
+                                indexer_uri = Some(lw_uri);
                                 last_balance = None;
                                 Ok(())
                             })
@@ -270,7 +274,7 @@ impl WalletEngine {
                         Command::InitFromSeed {
                             seed_phrase,
                             birthday,
-                            server_uri: srv,
+                            indexer_uri: srv,
                             chain,
                             perf,
                             minconf,
@@ -301,7 +305,7 @@ impl WalletEngine {
                                     })?;
 
                                 lightclient = Some(lc);
-                                server_uri = Some(lw_uri);
+                                indexer_uri = Some(lw_uri);
                                 last_balance = None;
                                 Ok(())
                             })
@@ -398,8 +402,8 @@ impl WalletEngine {
                                         .unwrap_or(0)
                                 };
 
-                                // Compute network height (best effort from last known server_uri)
-                                let nh = match server_uri.as_ref() {
+                                // Compute network height (best effort from last known indexer_uri)
+                                let nh = match indexer_uri.as_ref() {
                                     Some(uri) if *uri != http::Uri::default() => {
                                         match zingolib::grpc_connector::get_latest_block(
                                             uri.clone(),
@@ -511,6 +515,18 @@ impl WalletEngine {
         Ok(Self { inner })
     }
 
+    /// Installs a listener that receives asynchronous [`WalletEvent`] callbacks.
+    ///
+    /// The listener is invoked from the engine thread. Implementations must be:
+    /// - thread-safe (`Send + Sync`)
+    /// - fast / non-blocking (heavy work should be offloaded by the caller)
+    ///
+    /// If the listener panics, the engine catches the panic to avoid crashing the engine thread.
+    ///
+    /// Replaces any previously installed listener.
+    ///
+    /// ## Errors
+    /// Returns [`WalletError::ListenerLockPoisoned`] if the listener mutex is poisoned.
     pub fn set_listener(&self, listener: Box<dyn WalletListener>) -> Result<(), WalletError> {
         let mut guard = self
             .inner
@@ -521,6 +537,13 @@ impl WalletEngine {
         Ok(())
     }
 
+    /// Clears the currently installed listener, if any.
+    ///
+    /// After calling this, no further [`WalletEvent`] callbacks will be delivered until a new
+    /// listener is set via [`WalletEngine::set_listener`].
+    ///
+    /// ## Errors
+    /// Returns [`WalletError::ListenerLockPoisoned`] if the listener mutex is poisoned.
     pub fn clear_listener(&self) -> Result<(), WalletError> {
         let mut guard = self
             .inner
@@ -531,9 +554,31 @@ impl WalletEngine {
         Ok(())
     }
 
+    /// Initializes a brand-new wallet on the engine thread.
+    ///
+    /// This is the entrypoint for new wallets. It:
+    /// - Builds a [`ZingoConfig`] from the provided parameters.
+    /// - Queries the indexer for the latest block height to derive a conservative birthday.
+    /// - Constructs a new [`LightClient`], replacing any previously loaded wallet.
+    ///
+    /// This method is **blocking** by design. The async work is performed on the
+    /// engine thread and the result is returned via a oneshot reply channel.
+    ///
+    /// ## Parameters
+    /// - `indexer_uri`: zainod/lightwalletd URI, e.g. `http://localhost:9067`
+    /// - `chain`: chain selection (mainnet/testnet/regtest)
+    /// - `perf`: sync performance preset
+    /// - `minconf`: minimum confirmations for spendable funds. Must be >= 1.
+    ///
+    /// ## Events
+    /// Does not automatically start syncing. Call [`WalletEngine::start_sync`] to begin a sync round.
+    ///
+    /// ## Errors
+    /// - [`WalletError::CommandQueueClosed`] if the engine thread has exited.
+    /// - [`WalletError::Internal`] on config/build errors or indexer gRPC failures.
     pub fn init_new(
         &self,
-        server_uri: String,
+        indexer_uri: String,
         chain: Chain,
         perf: Performance,
         minconf: u32,
@@ -542,7 +587,7 @@ impl WalletEngine {
         self.inner
             .cmd_tx
             .blocking_send(Command::InitNew {
-                server_uri,
+                indexer_uri,
                 chain,
                 perf,
                 minconf,
@@ -555,11 +600,36 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)?
     }
 
+    /// Initializes a wallet from a seed phrase and explicit birthday height.
+    ///
+    /// This is the entrypoint for restoring from seed. It:
+    /// - Builds a [`ZingoConfig`] from the provided parameters.
+    /// - Parses the BIP39 mnemonic from `seed_phrase`.
+    /// - Constructs a [`LightWallet`] using the provided `birthday`.
+    /// - Creates a [`LightClient`] from that wallet, replacing any previously loaded wallet.
+    ///
+    /// This method is **blocking** by design (FFI-friendly). The async work is performed on the
+    /// engine thread and the result is returned via a oneshot reply channel.
+    ///
+    /// ## Parameters
+    /// - `seed_phrase`: BIP39 mnemonic words separated by spaces
+    /// - `birthday`: wallet birthday (starting scan height)
+    /// - `indexer_uri`: lightwalletd URI
+    /// - `chain`: chain selection (mainnet/testnet/regtest)
+    /// - `perf`: sync performance preset
+    /// - `minconf`: minimum confirmations for spendable funds. Must be >= 1.
+    ///
+    /// ## Events
+    /// Does not automatically start syncing. Call [`WalletEngine::start_sync`] to begin a sync round.
+    ///
+    /// ## Errors
+    /// - [`WalletError::CommandQueueClosed`] if the engine thread has exited.
+    /// - [`WalletError::Internal`] on config/mnemonic/wallet construction errors.
     pub fn init_from_seed(
         &self,
         seed_phrase: String,
         birthday: u32,
-        server_uri: String,
+        indexer_uri: String,
         chain: Chain,
         perf: Performance,
         minconf: u32,
@@ -570,7 +640,7 @@ impl WalletEngine {
             .blocking_send(Command::InitFromSeed {
                 seed_phrase,
                 birthday,
-                server_uri,
+                indexer_uri,
                 chain,
                 perf,
                 minconf,
@@ -583,6 +653,18 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)?
     }
 
+    /// Returns a snapshot of the wallet balance for Account 0.
+    ///
+    /// The returned [`BalanceSnapshot`] is a simplified, FFI-stable view derived from the
+    /// underlying zingolib [`AccountBalance`] type.
+    ///
+    /// This method is **blocking**. The balance query runs on the engine thread and the result
+    /// is returned via a oneshot reply channel.
+    ///
+    /// ## Errors
+    /// - [`WalletError::NotInitialized`] if no wallet has been initialized.
+    /// - [`WalletError::CommandQueueClosed`] if the engine thread has exited.
+    /// - [`WalletError::Internal`] if the underlying balance query fails.
     pub fn get_balance_snapshot(&self) -> Result<BalanceSnapshot, WalletError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.inner
@@ -595,6 +677,19 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)?
     }
 
+    /// Returns the latest known network height from the configured indexer.
+    ///
+    /// This is a gRPC call to the indexer (`get_latest_block`) and is useful for:
+    /// - UI display (“current tip”)
+    /// - tests that need to observe tip movement independently of sync progress
+    ///
+    /// This method is **blocking**. The gRPC call runs on the engine thread and the result is returned
+    /// via a oneshot reply channel.
+    ///
+    /// ## Errors
+    /// - [`WalletError::NotInitialized`] if no indexer has been configured yet.
+    /// - [`WalletError::CommandQueueClosed`] if the engine thread has exited.
+    /// - [`WalletError::Internal`] if the indexer gRPC fails.
     pub fn get_network_height(&self) -> Result<u32, WalletError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.inner
@@ -607,6 +702,26 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)?
     }
 
+    /// Starts a **single manual sync round**.
+    ///
+    /// The sync round runs on the engine thread and emits events:
+    /// - [`WalletEvent::SyncStarted`] immediately when accepted
+    /// - repeated [`WalletEvent::SyncProgress`] updates while syncing
+    /// - optional [`WalletEvent::BalanceChanged`] updates when balance changes
+    /// - [`WalletEvent::SyncFinished`] once the sync completes successfully
+    /// - [`WalletEvent::Error`] if the sync fails
+    ///
+    /// ## Manual model
+    /// This method performs **one** round per invocation. It does not “follow” the chain forever.
+    /// If the network tip advances later and you want to catch up again, call `start_sync()` again.
+    ///
+    /// ## Reentrancy
+    /// If a sync is already running, additional `start_sync()` calls are ignored.
+    ///
+    /// ## Errors
+    /// Returns [`WalletError::CommandQueueClosed`] if the engine thread has exited.
+    /// If the wallet is not initialized, an async [`WalletEvent::Error`] is emitted with
+    /// `code="start_sync_failed"`.
     pub fn start_sync(&self) -> Result<(), WalletError> {
         self.inner
             .cmd_tx
@@ -614,6 +729,16 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)
     }
 
+    /// Requests that an in-progress sync pause.
+    ///
+    /// This calls into zingolib's pause mechanism. If successful, the engine emits
+    /// [`WalletEvent::SyncPaused`].
+    ///
+    /// Note: pausing is best-effort. If no wallet exists, an async [`WalletEvent::Error`] is emitted
+    /// with `code="pause_sync_failed"`.
+    ///
+    /// ## Errors
+    /// Returns [`WalletError::CommandQueueClosed`] if the engine thread has exited.
     pub fn pause_sync(&self) -> Result<(), WalletError> {
         self.inner
             .cmd_tx
@@ -621,6 +746,17 @@ impl WalletEngine {
             .map_err(|_| WalletError::CommandQueueClosed)
     }
 
+    /// Shuts down the engine thread.
+    ///
+    /// This sends a shutdown command to the engine loop. After shutdown:
+    /// - all subsequent method calls that require the engine thread will typically fail with
+    ///   [`WalletError::CommandQueueClosed`]
+    /// - no further [`WalletEvent`] callbacks will be delivered
+    ///
+    /// Shutdown is best-effort; the command is queued if possible.
+    ///
+    /// ## Errors
+    /// Returns [`WalletError::CommandQueueClosed`] if the command queue is already closed.
     pub fn shutdown(&self) -> Result<(), WalletError> {
         self.inner
             .cmd_tx
@@ -745,7 +881,7 @@ mod tests {
     /// Requires network up
     #[test]
     fn real_sync_smoke() {
-        let server_uri = "http://localhost:20956".to_string();
+        let indexer_uri = "http://localhost:20956".to_string();
         let chain = Chain::Regtest;
         let perf = Performance::High;
         let minconf: u32 = 1;
@@ -761,7 +897,7 @@ mod tests {
         let _ = recv_timeout(&rx, Duration::from_secs(2));
 
         engine
-            .init_new(server_uri, chain, perf, minconf)
+            .init_new(indexer_uri, chain, perf, minconf)
             .expect("init_new");
 
         engine.start_sync().expect("start_sync");
@@ -791,7 +927,7 @@ mod tests {
     ///   cargo test -p ffi real_sync_progress_smoke -- --ignored --nocapture
     #[test]
     fn real_sync_progress_smoke() {
-        let server_uri = "http://localhost:20956".to_string();
+        let indexer_uri = "http://localhost:20956".to_string();
         let chain = Chain::Regtest;
         let perf = Performance::High;
         let minconf: u32 = 1;
@@ -807,7 +943,7 @@ mod tests {
         let _ = recv_timeout(&rx, Duration::from_secs(2));
 
         engine
-            .init_new(server_uri, chain, perf, minconf)
+            .init_new(indexer_uri, chain, perf, minconf)
             .expect("init_new");
 
         engine.start_sync().expect("start_sync");
@@ -894,7 +1030,7 @@ mod tests {
         use std::sync::mpsc as std_mpsc;
         use std::time::{Duration, Instant};
 
-        let server_uri = "http://localhost:18892".to_string();
+        let indexer_uri = "http://localhost:18892".to_string();
         let chain = Chain::Regtest;
         let perf = Performance::High;
         let minconf: u32 = 1;
@@ -910,7 +1046,7 @@ mod tests {
         let _ = recv_timeout(&rx, Duration::from_secs(2));
 
         engine
-            .init_new(server_uri, chain, perf, minconf)
+            .init_new(indexer_uri, chain, perf, minconf)
             .expect("init_new");
 
         // TODO: refactor. run a sync to SyncFinished and return the last seen (wh, nh) from progress.
