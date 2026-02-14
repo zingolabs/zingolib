@@ -1,28 +1,25 @@
+pub mod config;
 pub mod error;
+pub mod state;
 
 use std::{
-    num::NonZeroU32,
     panic::{self, AssertUnwindSafe},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
     time::Duration,
 };
 
 use bip0039::Mnemonic;
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::wallet::SyncMode;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
-use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::{
-    config::{ChainType, ZingoConfig, construct_lightwalletd_uri},
     data::PollReport,
-    lightclient::LightClient,
-    wallet::{LightWallet, WalletBase, WalletSettings, balance::AccountBalance},
+    wallet::{LightWallet, WalletBase, balance::AccountBalance},
 };
 
-use crate::error::WalletError;
+use crate::{config::construct_config, error::WalletError, state::EngineState};
 
 uniffi::setup_scaffolding!();
 
@@ -39,23 +36,6 @@ pub enum Performance {
     High,
     Medium,
     Low,
-}
-
-fn chain_to_chaintype(chain: Chain) -> ChainType {
-    match chain {
-        Chain::Mainnet => ChainType::Mainnet,
-        Chain::Testnet => ChainType::Testnet,
-        Chain::Regtest => ChainType::Regtest(for_test::all_height_one_nus()),
-    }
-}
-
-fn perf_to_level(p: Performance) -> PerformanceLevel {
-    match p {
-        Performance::Maximum => PerformanceLevel::Maximum,
-        Performance::High => PerformanceLevel::High,
-        Performance::Medium => PerformanceLevel::Medium,
-        Performance::Low => PerformanceLevel::Low,
-    }
 }
 
 #[derive(Clone, Debug, uniffi::Record, PartialEq, Eq)]
@@ -111,39 +91,312 @@ fn balance_snapshot_from_balance(b: &AccountBalance) -> BalanceSnapshot {
     }
 }
 
-fn construct_config(
-    indexer_uri: String,
-    chain: Chain,
-    perf: Performance,
-    min_confirmations: u32,
-) -> Result<(ZingoConfig, http::Uri), WalletError> {
-    let lightwalletd_uri = construct_lightwalletd_uri(Some(indexer_uri));
-
-    let min_conf = NonZeroU32::try_from(min_confirmations)
-        .map_err(|_| WalletError::Internal("min_confirmations must be >= 1".into()))?;
-
-    let config = zingolib::config::load_clientconfig(
-        lightwalletd_uri.clone(),
-        None,
-        chain_to_chaintype(chain),
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: perf_to_level(perf),
-            },
-            min_confirmations: min_conf,
-        },
-        NonZeroU32::try_from(1).expect("hard-coded integer"),
-        "".to_string(),
-    )
-    .map_err(|e| WalletError::Internal(format!("Config load error: {e}")))?;
-
-    Ok((config, lightwalletd_uri))
-}
-
 struct EngineInner {
     cmd_tx: mpsc::Sender<Command>,
-    listener: Mutex<Option<Arc<dyn WalletListener>>>,
+    listener: std::sync::Mutex<Option<Arc<dyn WalletListener>>>,
+}
+
+impl EngineInner {
+    pub(crate) async fn handle_start_sync_spawn(self: Arc<Self>, st: Arc<Mutex<EngineState>>) {
+        let (lc, indexer_uri) = {
+            let mut s = st.lock().await;
+
+            if s.syncing {
+                return;
+            }
+
+            let Some(lc) = s.lightclient.as_ref().cloned() else {
+                emit(
+                    &self,
+                    WalletEvent::Error {
+                        code: "start_sync_failed".into(),
+                        message: WalletError::NotInitialized.to_string(),
+                    },
+                );
+                return;
+            };
+
+            s.syncing = true;
+            let indexer_uri = s.indexer_uri.clone();
+
+            (lc, indexer_uri)
+        };
+
+        emit(&self, WalletEvent::SyncStarted);
+
+        // Spawn the sync loop so the command loop stays responsive.
+        let inner = self.clone();
+        let st_for_task = st.clone();
+
+        let task = tokio::spawn(async move {
+            // Kick off sync/resume with a short write-lock section.
+            {
+                let mut guard = lc.write().await;
+
+                if guard.sync_mode() == SyncMode::Paused {
+                    // TODO: Replace with resume_sync() when available.
+                    if let Err(e) = guard.pause_sync() {
+                        emit(
+                            &inner,
+                            WalletEvent::Error {
+                                code: "start_sync_failed".into(),
+                                message: format!("resume_sync: {e}"),
+                            },
+                        );
+                        let mut s = st_for_task.lock().await;
+                        s.syncing = false;
+                        return;
+                    }
+                } else {
+                    // TODO: Thisassumes sync() starts the background sync and returns reasonably quickly.
+                    if let Err(e) = guard.sync().await {
+                        emit(
+                            &inner,
+                            WalletEvent::Error {
+                                code: "sync_failed".into(),
+                                message: e.to_string(),
+                            },
+                        );
+                        let mut s = st_for_task.lock().await;
+                        s.syncing = false;
+                        return;
+                    }
+                }
+            }
+
+            let mut last_balance_emitted: Option<BalanceSnapshot> = None;
+
+            loop {
+                // Read-only stuff
+                let (wh, poll, bal_opt) = {
+                    let mut guard = lc.write().await;
+
+                    let wh = {
+                        let w = guard.wallet.read().await;
+                        w.sync_state
+                            .highest_scanned_height()
+                            .map(u32::from)
+                            .unwrap_or(0)
+                    };
+
+                    let poll = guard.poll_sync();
+
+                    let bal_opt = match guard.account_balance(AccountId::ZERO).await {
+                        Ok(bal) => Some(balance_snapshot_from_balance(&bal)),
+                        Err(_) => None,
+                    };
+
+                    (wh, poll, bal_opt)
+                };
+
+                // network height is independent of LightClient lock
+                let nh = match indexer_uri.as_ref() {
+                    Some(uri) if *uri != http::Uri::default() => {
+                        match zingolib::grpc_connector::get_latest_block(uri.clone()).await {
+                            Ok(b) => b.height as u32,
+                            Err(_) => 0,
+                        }
+                    }
+                    _ => 0,
+                };
+
+                let percent = if nh > 0 {
+                    (wh as f32 / nh as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                emit(
+                    &inner,
+                    WalletEvent::SyncProgress {
+                        wallet_height: wh,
+                        network_height: nh,
+                        percent,
+                    },
+                );
+
+                if let Some(snap) = bal_opt {
+                    if last_balance_emitted.as_ref() != Some(&snap) {
+                        last_balance_emitted = Some(snap.clone());
+                        emit(&inner, WalletEvent::BalanceChanged(snap));
+                    }
+                }
+
+                match poll {
+                    PollReport::Ready(Ok(_)) => {
+                        emit(&inner, WalletEvent::SyncFinished);
+                        let mut s = st_for_task.lock().await;
+                        s.syncing = false;
+                        break;
+                    }
+                    PollReport::Ready(Err(e)) => {
+                        emit(
+                            &inner,
+                            WalletEvent::Error {
+                                code: "sync_failed".into(),
+                                message: e.to_string(),
+                            },
+                        );
+                        let mut s = st_for_task.lock().await;
+                        s.syncing = false;
+                        break;
+                    }
+                    PollReport::NotReady | PollReport::NoHandle => {
+                        // still running
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        });
+
+        let mut s = st.lock().await;
+        s.sync_task = Some(task);
+    }
+
+    pub(crate) async fn handle_init_new(
+        &self,
+        st: &mut EngineState,
+        indexer_uri: String,
+        chain: Chain,
+        perf: Performance,
+        minconf: u32,
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    ) {
+        let res: Result<(), WalletError> = (async {
+            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+
+            let chain_height = zingolib::grpc_connector::get_latest_block(lw_uri.clone())
+                .await
+                .map(|b| BlockHeight::from_u32(b.height as u32))
+                .map_err(|e| WalletError::Internal(format!("get_latest_block: {e}")))?;
+
+            let birthday = chain_height.saturating_sub(100);
+
+            let lc = zingolib::lightclient::LightClient::new(config, birthday, false)
+                .map_err(|e| WalletError::Internal(format!("LightClient::new: {e}")))?;
+
+            st.lightclient = Some(Arc::new(RwLock::new(lc)));
+            st.indexer_uri = Some(lw_uri);
+            st.last_balance = None;
+            st.syncing = false;
+            st.sync_task = None;
+            Ok(())
+        })
+        .await;
+
+        let _ = reply.send(res);
+    }
+
+    pub(crate) async fn handle_init_from_seed(
+        &self,
+        st: &mut EngineState,
+        seed_phrase: String,
+        birthday: u32,
+        indexer_uri: String,
+        chain: Chain,
+        perf: Performance,
+        minconf: u32,
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    ) {
+        let res: Result<(), WalletError> = (async {
+            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+
+            let mnemonic = Mnemonic::from_phrase(seed_phrase)
+                .map_err(|e| WalletError::Internal(format!("Mnemonic: {e}")))?;
+
+            let wallet = LightWallet::new(
+                config.chain,
+                WalletBase::Mnemonic {
+                    mnemonic,
+                    no_of_accounts: config.no_of_accounts,
+                },
+                BlockHeight::from_u32(birthday),
+                config.wallet_settings.clone(),
+            )
+            .map_err(|e| WalletError::Internal(format!("LightWallet::new: {e}")))?;
+
+            let lc = zingolib::lightclient::LightClient::create_from_wallet(wallet, config, false)
+                .map_err(|e| WalletError::Internal(format!("create_from_wallet: {e}")))?;
+
+            st.lightclient = Some(Arc::new(RwLock::new(lc)));
+            st.indexer_uri = Some(lw_uri);
+            st.last_balance = None;
+            st.syncing = false;
+            st.sync_task = None;
+            Ok(())
+        })
+        .await;
+
+        let _ = reply.send(res);
+    }
+
+    pub(crate) async fn handle_get_balance(
+        &self,
+        st: &mut EngineState,
+        reply: oneshot::Sender<Result<BalanceSnapshot, WalletError>>,
+    ) {
+        let res: Result<BalanceSnapshot, WalletError> = (async {
+            let lc = st
+                .lightclient
+                .as_ref()
+                .ok_or(WalletError::NotInitialized)?
+                .clone();
+
+            let guard = lc.read().await;
+            let bal = guard
+                .account_balance(AccountId::ZERO)
+                .await
+                .map_err(|e| WalletError::Internal(format!("account_balance: {e}")))?;
+
+            Ok(balance_snapshot_from_balance(&bal))
+        })
+        .await;
+
+        let _ = reply.send(res);
+    }
+
+    pub(crate) async fn handle_get_network_height(
+        &self,
+        st: &mut EngineState,
+        reply: oneshot::Sender<Result<u32, WalletError>>,
+    ) {
+        let res: Result<u32, WalletError> = (async {
+            let uri = st.indexer_uri.clone().ok_or(WalletError::NotInitialized)?;
+            let b = zingolib::grpc_connector::get_latest_block(uri)
+                .await
+                .map_err(|e| WalletError::Internal(format!("get_latest_block: {e}")))?;
+            Ok(b.height as u32)
+        })
+        .await;
+
+        let _ = reply.send(res);
+    }
+
+    pub(crate) async fn handle_pause_sync(&self, st: &mut EngineState) {
+        let Some(lc) = st.lightclient.as_ref().cloned() else {
+            emit(
+                self,
+                WalletEvent::Error {
+                    code: "pause_sync_failed".into(),
+                    message: WalletError::NotInitialized.to_string(),
+                },
+            );
+            return;
+        };
+
+        let guard = lc.write().await;
+        match guard.pause_sync() {
+            Ok(_) => emit(self, WalletEvent::SyncPaused),
+            Err(e) => emit(
+                self,
+                WalletEvent::Error {
+                    code: "pause_sync_failed".into(),
+                    message: e.to_string(),
+                },
+            ),
+        }
+    }
 }
 
 fn emit(inner: &EngineInner, event: WalletEvent) {
@@ -193,6 +446,7 @@ fn create_engine_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().expect("tokio runtime")
 }
 
+// TODO: THIS NEEDS TO BE BEHIND AN ASYNC LOCK. With the current setup, sync will block the thread.
 #[uniffi::export]
 impl WalletEngine {
     /// Creates a new [`WalletEngine`] and starts the internal engine thread.
@@ -214,7 +468,7 @@ impl WalletEngine {
 
         let inner = Arc::new(EngineInner {
             cmd_tx,
-            listener: Mutex::new(None),
+            listener: std::sync::Mutex::new(None),
         });
 
         let inner_for_task = inner.clone();
@@ -224,286 +478,76 @@ impl WalletEngine {
             rt.block_on(async move {
                 emit(&inner_for_task, WalletEvent::EngineReady);
 
-                // TODO: THIS NEEDS TO BE BEHIND AN ASYNC LOCK. With the current setup, sync will block the thread.
-                let mut lightclient: Option<LightClient> = None;
-                let mut indexer_uri: Option<http::Uri> = None;
-
-                let mut last_balance: Option<BalanceSnapshot> = None;
-                let mut syncing = false;
+                let st = Arc::new(Mutex::new(EngineState::new()));
 
                 while let Some(cmd) = cmd_rx.recv().await {
                     match cmd {
-                        Command::GetNetworkHeight { reply } => {
-                            todo!()
-                        }
                         Command::InitNew {
-                            indexer_uri: srv,
+                            indexer_uri,
                             chain,
                             perf,
                             minconf,
                             reply,
                         } => {
-                            let res: Result<(), WalletError> = (async {
-                                let (config, lw_uri) = construct_config(srv, chain, perf, minconf)?;
-
-                                let chain_height =
-                                    zingolib::grpc_connector::get_latest_block(lw_uri.clone())
-                                        .await
-                                        .map(|b| BlockHeight::from_u32(b.height as u32))
-                                        .map_err(|e| {
-                                            WalletError::Internal(format!("get_latest_block: {e}"))
-                                        })?;
-
-                                let birthday = chain_height.saturating_sub(100);
-
-                                let lc =
-                                    LightClient::new(config, birthday, false).map_err(|e| {
-                                        WalletError::Internal(format!("LightClient::new: {e}"))
-                                    })?;
-
-                                lightclient = Some(lc);
-                                indexer_uri = Some(lw_uri);
-                                last_balance = None;
-                                Ok(())
-                            })
-                            .await;
-
-                            let _ = reply.send(res);
+                            let mut guard = st.lock().await;
+                            inner_for_task
+                                .handle_init_new(
+                                    &mut guard,
+                                    indexer_uri,
+                                    chain,
+                                    perf,
+                                    minconf,
+                                    reply,
+                                )
+                                .await;
                         }
 
                         Command::InitFromSeed {
                             seed_phrase,
                             birthday,
-                            indexer_uri: srv,
+                            indexer_uri,
                             chain,
                             perf,
                             minconf,
                             reply,
                         } => {
-                            let res: Result<(), WalletError> = (async {
-                                let (config, lw_uri) = construct_config(srv, chain, perf, minconf)?;
-
-                                let mnemonic = Mnemonic::from_phrase(seed_phrase)
-                                    .map_err(|e| WalletError::Internal(format!("Mnemonic: {e}")))?;
-
-                                let wallet = LightWallet::new(
-                                    config.chain,
-                                    WalletBase::Mnemonic {
-                                        mnemonic,
-                                        no_of_accounts: config.no_of_accounts,
-                                    },
-                                    BlockHeight::from_u32(birthday),
-                                    config.wallet_settings.clone(),
+                            let mut guard = st.lock().await;
+                            inner_for_task
+                                .handle_init_from_seed(
+                                    &mut guard,
+                                    seed_phrase,
+                                    birthday,
+                                    indexer_uri,
+                                    chain,
+                                    perf,
+                                    minconf,
+                                    reply,
                                 )
-                                .map_err(|e| {
-                                    WalletError::Internal(format!("LightWallet::new: {e}"))
-                                })?;
-
-                                let lc = LightClient::create_from_wallet(wallet, config, false)
-                                    .map_err(|e| {
-                                        WalletError::Internal(format!("create_from_wallet: {e}"))
-                                    })?;
-
-                                lightclient = Some(lc);
-                                indexer_uri = Some(lw_uri);
-                                last_balance = None;
-                                Ok(())
-                            })
-                            .await;
-
-                            let _ = reply.send(res);
+                                .await;
                         }
 
                         Command::GetBalance { reply } => {
-                            let res: Result<BalanceSnapshot, WalletError> = (async {
-                                let lc = lightclient.as_mut().ok_or(WalletError::NotInitialized)?;
-                                let bal =
-                                    lc.account_balance(AccountId::ZERO).await.map_err(|e| {
-                                        WalletError::Internal(format!("account_balance: {e}"))
-                                    })?;
-                                Ok(balance_snapshot_from_balance(&bal))
-                            })
-                            .await;
+                            let mut guard = st.lock().await;
+                            inner_for_task.handle_get_balance(&mut guard, reply).await;
+                        }
 
-                            let _ = reply.send(res);
+                        Command::GetNetworkHeight { reply } => {
+                            let mut guard = st.lock().await;
+                            inner_for_task
+                                .handle_get_network_height(&mut guard, reply)
+                                .await;
                         }
 
                         Command::StartSync => {
-                            // manual model: one round per StartSync
-                            if syncing {
-                                // ignore repeated StartSync while running
-                                continue;
-                            }
-
-                            let Some(lc) = lightclient.as_mut() else {
-                                emit(
-                                    &inner_for_task,
-                                    WalletEvent::Error {
-                                        code: "start_sync_failed".into(),
-                                        message: WalletError::NotInitialized.to_string(),
-                                    },
-                                );
-                                continue;
-                            };
-
-                            syncing = true;
-                            emit(&inner_for_task, WalletEvent::SyncStarted);
-
-                            // If sync was paused previously, resume; otherwise start a new sync task.
-                            // This mirrors old behavior: resume if paused else sync().
-                            if lc.sync_mode() == SyncMode::Paused {
-                                if let Err(e) = lc.pause_sync() {
-                                    // NOTE: if zingolib has resume_sync() use that instead;
-                                    // you showed resume_sync() in the older file.
-                                    // Replace this with lc.resume_sync().
-                                    emit(
-                                        &inner_for_task,
-                                        WalletEvent::Error {
-                                            code: "start_sync_failed".into(),
-                                            message: format!("resume_sync: {e}"),
-                                        },
-                                    );
-                                    syncing = false;
-                                    break; // or continue; depending on your loop structure
-                                }
-                            } else {
-                                // Start the sync task once.
-                                if let Err(e) = lc.sync().await {
-                                    emit(
-                                        &inner_for_task,
-                                        WalletEvent::Error {
-                                            code: "sync_failed".into(),
-                                            message: e.to_string(),
-                                        },
-                                    );
-                                    syncing = false;
-                                    continue;
-                                }
-                            }
-
-                            // Progress loop: keep reporting while the sync task is running.
-                            // We stop when poll_sync() becomes Ready(_).
-                            let mut last_balance_emitted: Option<BalanceSnapshot> = None;
-
-                            loop {
-                                // If user paused, stop reporting and exit this round.
-                                if lc.sync_mode() == SyncMode::Paused {
-                                    emit(&inner_for_task, WalletEvent::SyncPaused);
-                                    syncing = false;
-                                    break;
-                                }
-
-                                // Compute wallet height (local)
-                                let wh = {
-                                    let w = lc.wallet.read().await;
-                                    w.sync_state
-                                        .highest_scanned_height()
-                                        .map(u32::from)
-                                        .unwrap_or(0)
-                                };
-
-                                // Compute network height (best effort from last known indexer_uri)
-                                let nh = match indexer_uri.as_ref() {
-                                    Some(uri) if *uri != http::Uri::default() => {
-                                        match zingolib::grpc_connector::get_latest_block(
-                                            uri.clone(),
-                                        )
-                                        .await
-                                        {
-                                            Ok(b) => b.height as u32,
-                                            Err(_) => 0,
-                                        }
-                                    }
-                                    _ => 0,
-                                };
-
-                                let percent = if nh > 0 {
-                                    (wh as f32 / nh as f32).clamp(0.0, 1.0)
-                                } else {
-                                    0.0
-                                };
-
-                                emit(
-                                    &inner_for_task,
-                                    WalletEvent::SyncProgress {
-                                        wallet_height: wh,
-                                        network_height: nh,
-                                        percent,
-                                    },
-                                );
-
-                                // Emit balance changes
-                                match lc.account_balance(AccountId::ZERO).await {
-                                    Ok(bal) => {
-                                        let snap = balance_snapshot_from_balance(&bal);
-                                        if last_balance_emitted.as_ref() != Some(&snap) {
-                                            last_balance_emitted = Some(snap.clone());
-                                            emit(
-                                                &inner_for_task,
-                                                WalletEvent::BalanceChanged(snap),
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        emit(
-                                            &inner_for_task,
-                                            WalletEvent::Error {
-                                                code: "balance_failed".into(),
-                                                message: e.to_string(),
-                                            },
-                                        );
-                                    }
-                                }
-
-                                // Completion check
-                                match lc.poll_sync() {
-                                    PollReport::Ready(Ok(_sync_result)) => {
-                                        emit(&inner_for_task, WalletEvent::SyncFinished);
-                                        syncing = false;
-                                        break;
-                                    }
-                                    PollReport::Ready(Err(e)) => {
-                                        emit(
-                                            &inner_for_task,
-                                            WalletEvent::Error {
-                                                code: "sync_failed".into(),
-                                                message: e.to_string(),
-                                            },
-                                        );
-                                        syncing = false;
-                                        break;
-                                    }
-                                    PollReport::NotReady | PollReport::NoHandle => {
-                                        // Still running, keep looping
-                                    }
-                                }
-
-                                tokio::time::sleep(Duration::from_millis(250)).await;
-                            }
+                            inner_for_task
+                                .clone()
+                                .handle_start_sync_spawn(st.clone())
+                                .await;
                         }
 
                         Command::PauseSync => {
-                            let Some(lc) = lightclient.as_mut() else {
-                                emit(
-                                    &inner_for_task,
-                                    WalletEvent::Error {
-                                        code: "pause_sync_failed".into(),
-                                        message: WalletError::NotInitialized.to_string(),
-                                    },
-                                );
-                                continue;
-                            };
-
-                            match lc.pause_sync() {
-                                Ok(_) => emit(&inner_for_task, WalletEvent::SyncPaused),
-                                Err(e) => emit(
-                                    &inner_for_task,
-                                    WalletEvent::Error {
-                                        code: "pause_sync_failed".into(),
-                                        message: e.to_string(),
-                                    },
-                                ),
-                            }
+                            let mut guard = st.lock().await;
+                            inner_for_task.handle_pause_sync(&mut guard).await;
                         }
 
                         Command::Shutdown => break,
