@@ -74,7 +74,7 @@ pub struct ExtendedPrivKey {
 
 // Uses type inference from return to get 32 byte chunk size
 // the argument MUST be 32 bytes or this is unsafe
-fn get_32_byte_key_chunk_and_cc(signature: hmac::Tag) -> ([u8; 32], Vec<u8>) {
+fn get_32_byte_key_chunk_and_cc(signature: ring::hmac::Tag) -> ([u8; 32], Vec<u8>) {
     let (k, cc) = signature
         .as_ref()
         .split_first_chunk()
