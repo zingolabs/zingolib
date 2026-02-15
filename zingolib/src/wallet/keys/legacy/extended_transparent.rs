@@ -74,7 +74,7 @@ pub struct ExtendedPrivKey {
 
 // Uses type inference from return to get 32 byte chunk size
 // the argument MUST be 32 bytes or this is unsafe
-fn extract_32byte_key_and_code(signature: hmac::Tag) -> ([u8; 32], Vec<u8>) {
+fn get_32_byte_key_chunk_and_cc(signature: hmac::Tag) -> ([u8; 32], Vec<u8>) {
     let (k, cc) = signature
         .as_ref()
         .split_first_chunk()
@@ -90,7 +90,7 @@ impl ExtendedPrivKey {
             h.update(seed);
             h.sign()
         };
-        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
         let private_key = SecretKey::from_byte_array(key)?;
         Ok(ExtendedPrivKey {
             private_key,
@@ -148,7 +148,7 @@ impl ExtendedPrivKey {
             KeyIndex::Hardened(index) => self.sign_hardened_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
         let private_key = SecretKey::from_byte_array(key)?;
         let tweak = secp256k1::Scalar::from(self.private_key);
         let tweaked_private_key = private_key.add_tweak(&tweak)?;
@@ -218,7 +218,7 @@ impl ExtendedPubKey {
             KeyIndex::Hardened(_) => return Err(Error::InvalidTweak),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
         let new_sk = SecretKey::from_byte_array(key)?;
         let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
         Ok(Self {
