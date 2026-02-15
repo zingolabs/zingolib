@@ -758,6 +758,7 @@ mod test {
                 let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
                 assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
             }
+            #[ignore = "in progress"]
             #[tokio::test]
             async fn equal_or_below_chain_height_and_above_sapling() {
                 let lkch = vec![ScanRange::from_parts(
@@ -769,8 +770,9 @@ mod test {
                     ..Default::default()
                 };
                 let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
+            #[ignore = "in progress"]
             #[tokio::test]
             async fn equal_or_below_chain_height_and_below_sapling() {
                 // This case requires that the wallet have a scan_start_below sapling
@@ -784,7 +786,7 @@ mod test {
                     ..Default::default()
                 };
                 let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
             #[ignore = "in progress"]
             #[tokio::test]
@@ -798,7 +800,7 @@ mod test {
                     ..Default::default()
                 };
                 let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
             }
         }
         mod no_last_known_chain_height {
