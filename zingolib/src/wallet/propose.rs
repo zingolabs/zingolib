@@ -26,12 +26,7 @@ impl LightWallet {
         request: TransactionRequest,
         account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
-        let refund_address_count = self
-            .transparent_addresses
-            .keys()
-            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
-            .count() as u32;
-        let memo = self.change_memo_from_transaction_request(&request, refund_address_count);
+        let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
             zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
@@ -134,13 +129,14 @@ impl LightWallet {
         Ok(proposed_shield)
     }
 
-    fn change_memo_from_transaction_request(
-        &self,
-        request: &TransactionRequest,
-        mut refund_address_count: u32,
-    ) -> MemoBytes {
+    fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
         let mut recipient_uas = Vec::new();
         let mut refund_address_indexes = Vec::new();
+        let mut refund_address_count = self
+            .transparent_addresses
+            .keys()
+            .filter(|&address_id| address_id.scope() == TransparentScope::Refund)
+            .count() as u32;
         for payment in request.payments().values() {
             if let Ok(address) = payment
                 .recipient_address()
@@ -152,7 +148,6 @@ impl LightWallet {
                         recipient_uas.push(unified_address);
                     }
                     zcash_keys::address::Address::Tex(_) => {
-                        // TODO: rework: only need to encode highest used refund address index, not all of them
                         refund_address_indexes.push(refund_address_count);
                         refund_address_count += 1;
                     }
@@ -161,6 +156,7 @@ impl LightWallet {
             }
         }
         let uas_bytes = match zingo_memo::create_wallet_internal_memo_version_1(
+            &self.network,
             recipient_uas.as_slice(),
             refund_address_indexes.as_slice(),
         ) {
@@ -177,18 +173,32 @@ impl LightWallet {
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 
-    /// Returns the block height at which all blocks equal to and above this height are scanned.
+    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges set to
+    /// `Scanned`, `ScannedWithoutMapping` or `RefetchingNullifiers` priority).
     /// Returns `None` if `self.scan_ranges` is empty.
     ///
     /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
     /// unspent.
-    pub(crate) fn spend_horizon(&self) -> Option<BlockHeight> {
+    ///
+    /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
+    /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
+    /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
+    pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
         if let Some(scan_range) = self
             .sync_state
             .scan_ranges()
             .iter()
             .rev()
-            .find(|scan_range| scan_range.priority() != ScanPriority::Scanned)
+            .find(|scan_range| {
+                if all_spends_known {
+                    scan_range.priority() >= ScanPriority::FoundNote
+                        || scan_range.priority() == ScanPriority::Scanning
+                } else {
+                    scan_range.priority() != ScanPriority::Scanned
+                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
+                        && scan_range.priority() != ScanPriority::RefetchingNullifiers
+                }
+            })
         {
             Some(scan_range.block_range().end)
         } else {
@@ -197,6 +207,27 @@ impl LightWallet {
                 .first()
                 .map(|range| range.block_range().start)
         }
+    }
+
+    /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
+    ///
+    /// Requires that `note_height >= spend_horizon` (all ranges above the note are scanned) and that every
+    /// `refetch_nullifier_range` recorded on the note is fully contained within a `Scanned` scan range
+    /// (nullifiers that were discarded due to memory constraints have since been re-fetched).
+    pub(crate) fn note_spends_confirmed(
+        &self,
+        note_height: BlockHeight,
+        spend_horizon: BlockHeight,
+        refetch_nullifier_ranges: &[std::ops::Range<BlockHeight>],
+    ) -> bool {
+        note_height >= spend_horizon
+            && refetch_nullifier_ranges.iter().all(|refetch_range| {
+                self.sync_state.scan_ranges().iter().any(|scan_range| {
+                    scan_range.priority() == ScanPriority::Scanned
+                        && scan_range.block_range().contains(&refetch_range.start)
+                        && scan_range.block_range().contains(&(refetch_range.end - 1))
+                })
+            })
     }
 }
 

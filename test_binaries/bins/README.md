@@ -1,1 +1,1 @@
-This repo exists to stash test binaries in.
+This directory exists to stash test binaries in.

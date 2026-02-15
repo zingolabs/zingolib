@@ -5,6 +5,7 @@ use std::{
         Arc,
         atomic::{self, AtomicBool},
     },
+    time::Duration,
 };
 
 use futures::FutureExt;
@@ -34,6 +35,11 @@ use super::{ScanResults, scan};
 
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_BATCH_NULLIFIERS: usize = 2usize.pow(14);
+
+const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
+const SCAN_TASK_TIMEOUT: Duration = Duration::from_secs(120);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) enum ScannerState {
     Verification,
@@ -194,7 +200,7 @@ where
         &mut self,
         wallet: &mut W,
         shutdown_mempool: Arc<AtomicBool>,
-        performance_level: PerformanceLevel,
+        nullifier_map_limit_exceeded: bool,
     ) -> Result<(), SyncError<W::Error>>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -229,7 +235,7 @@ where
                 }
 
                 // scan ranges with `Verify` priority
-                self.update_batcher(wallet, performance_level)
+                self.update_batcher(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Scan => {
@@ -238,7 +244,7 @@ where
                     .expect("batcher should be running")
                     .update_batch_store();
                 self.update_workers();
-                self.update_batcher(wallet, performance_level)
+                self.update_batcher(wallet, nullifier_map_limit_exceeded)
                     .map_err(SyncError::WalletError)?;
             }
             ScannerState::Shutdown => {
@@ -273,7 +279,7 @@ where
     fn update_batcher<W>(
         &mut self,
         wallet: &mut W,
-        performance_level: PerformanceLevel,
+        nullifier_map_limit_exceeded: bool,
     ) -> Result<(), W::Error>
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers,
@@ -283,7 +289,7 @@ where
             if let Some(scan_task) = sync::state::create_scan_task(
                 &self.consensus_parameters,
                 wallet,
-                performance_level,
+                nullifier_map_limit_exceeded,
             )? {
                 batcher.add_scan_task(scan_task);
             } else if wallet.get_sync_state()?.scan_complete() {
@@ -353,47 +359,98 @@ where
                 let mut orchard_nullifier_count = 0;
                 let mut first_batch = true;
 
-                let mut block_stream = if fetch_nullifiers_only {
-                    client::get_nullifier_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                } else {
-                    client::get_compact_block_range(
-                        fetch_request_sender.clone(),
-                        scan_task.scan_range.block_range().clone(),
-                    )
-                    .await?
-                };
-                while let Some(compact_block) = match block_stream.message().await {
-                    Ok(b) => b,
-                    Err(e)
-                        if e.code() == tonic::Code::DeadlineExceeded
-                            || e.message().contains("Unexpected EOF decoding stream.") =>
-                    {
-                        // wait and retry once in case of network weather or low bandwidth
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        block_stream = if fetch_nullifiers_only {
-                            client::get_nullifier_range(
-                                fetch_request_sender.clone(),
-                                retry_height..scan_task.scan_range.block_range().end,
-                            )
-                            .await?
+                let mut block_stream = {
+                    let range = scan_task.scan_range.block_range().clone();
+                    let frs = fetch_request_sender.clone();
+
+                    let open_fut = async move {
+                        if fetch_nullifiers_only {
+                            client::get_nullifier_range(frs, range).await
                         } else {
-                            client::get_compact_block_range(
-                                fetch_request_sender.clone(),
-                                retry_height..scan_task.scan_range.block_range().end,
-                            )
-                            .await?
+                            client::get_compact_block_range(frs, range).await
+                        }
+                    };
+
+                    match tokio::time::timeout(STREAM_OPEN_TIMEOUT, open_fut).await {
+                        Ok(res) => res?,
+                        Err(_) => {
+                            return Err(
+                                tonic::Status::deadline_exceeded("open stream timeout").into()
+                            );
+                        }
+                    }
+                };
+
+                loop {
+                    let msg_res: Result<Option<CompactBlock>, tonic::Status> =
+                        match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
+                        {
+                            Ok(res) => res,
+                            Err(_) => {
+                                Err(tonic::Status::deadline_exceeded("stream message timeout"))
+                            }
                         };
 
-                        block_stream.message().await?
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                } {
+                    let maybe_block = match msg_res {
+                        Ok(b) => b,
+                        Err(e)
+                            if e.code() == tonic::Code::DeadlineExceeded
+                                || e.message().contains("Unexpected EOF decoding stream.") =>
+                        {
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+
+                            let retry_range = retry_height..scan_task.scan_range.block_range().end;
+
+                            let reopen_fut = {
+                                let frs = fetch_request_sender.clone();
+
+                                async move {
+                                    if fetch_nullifiers_only {
+                                        client::get_nullifier_range(frs, retry_range).await
+                                    } else {
+                                        client::get_compact_block_range(frs, retry_range).await
+                                    }
+                                }
+                            };
+
+                            block_stream =
+                                match tokio::time::timeout(STREAM_OPEN_TIMEOUT, reopen_fut).await {
+                                    Ok(res) => res?,
+                                    Err(_) => {
+                                        return Err(tonic::Status::deadline_exceeded(
+                                            "open stream timeout (retry)",
+                                        )
+                                        .into());
+                                    }
+                                };
+
+                            let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
+                                match tokio::time::timeout(
+                                    STREAM_MSG_TIMEOUT,
+                                    block_stream.message(),
+                                )
+                                .await
+                                {
+                                    Ok(res) => res,
+                                    Err(_) => Err(tonic::Status::deadline_exceeded(
+                                        "stream message timeout after retry",
+                                    )),
+                                };
+
+                            match first_msg_res {
+                                Ok(b) => b,
+                                Err(e) => return Err(e.into()),
+                            }
+                        }
+                        Err(e) => {
+                            return Err(e.into());
+                        }
+                    };
+
+                    let Some(compact_block) = maybe_block else {
+                        break;
+                    };
+
                     if fetch_nullifiers_only {
                         sapling_nullifier_count += compact_block
                             .vtx
@@ -536,12 +593,22 @@ where
         if let Some(receiver) = self.batch_receiver.take() {
             drop(receiver);
         }
-        let handle = self
+
+        let mut handle = self
             .handle
             .take()
             .expect("batcher should always have a handle to take!");
 
-        handle.await.expect("task panicked")
+        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+            Ok(join_res) => join_res.expect("task panicked")?,
+            Err(_) => {
+                handle.abort();
+                let _ = handle.await;
+                return Err(tonic::Status::deadline_exceeded("batcher shutdown timeout").into());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -594,14 +661,25 @@ where
         let handle = tokio::spawn(async move {
             while let Some(scan_task) = scan_task_receiver.recv().await {
                 let scan_range = scan_task.scan_range.clone();
-                let scan_results = scan(
+
+                let scan_fut = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
                     &ufvks,
                     scan_task,
                     max_batch_outputs,
-                )
-                .await;
+                );
+
+                let scan_results = match tokio::time::timeout(SCAN_TASK_TIMEOUT, scan_fut).await {
+                    Ok(res) => res,
+                    Err(_) => {
+                        // Best-effort: maps timeout into existing error types.
+                        Err(ServerError::from(tonic::Status::deadline_exceeded(
+                            "scan task timeout",
+                        ))
+                        .into())
+                    }
+                };
 
                 let _ignore_error = scan_results_sender.send((scan_range, scan_results));
 
@@ -635,12 +713,20 @@ where
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
         }
-        let handle = self
+
+        let mut handle = self
             .handle
             .take()
             .expect("worker should always have a handle to take!");
 
-        handle.await
+        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+            Ok(res) => res,
+            Err(_) => {
+                handle.abort();
+                let _ = handle.await; // ignore join error after abort
+                Ok(())
+            }
+        }
     }
 }
 
@@ -652,7 +738,6 @@ pub(crate) struct ScanTask {
     pub(crate) end_seam_block: Option<WalletBlock>,
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_addresses: HashMap<String, TransparentAddressId>,
-    pub(crate) map_nullifiers: bool,
 }
 
 impl ScanTask {
@@ -662,7 +747,6 @@ impl ScanTask {
         end_seam_block: Option<WalletBlock>,
         scan_targets: BTreeSet<ScanTarget>,
         transparent_addresses: HashMap<String, TransparentAddressId>,
-        map_nullifiers: bool,
     ) -> Self {
         Self {
             compact_blocks: Vec::new(),
@@ -671,7 +755,6 @@ impl ScanTask {
             end_seam_block,
             scan_targets,
             transparent_addresses,
-            map_nullifiers,
         }
     }
 
@@ -743,7 +826,6 @@ impl ScanTask {
                 end_seam_block: upper_task_first_block,
                 scan_targets: lower_task_scan_targets,
                 transparent_addresses: self.transparent_addresses.clone(),
-                map_nullifiers: self.map_nullifiers,
             },
             ScanTask {
                 compact_blocks: upper_compact_blocks,
@@ -755,7 +837,6 @@ impl ScanTask {
                 end_seam_block: self.end_seam_block,
                 scan_targets: upper_task_scan_targets,
                 transparent_addresses: self.transparent_addresses,
-                map_nullifiers: self.map_nullifiers,
             },
         ))
     }

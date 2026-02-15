@@ -6,6 +6,8 @@ use json::JsonValue;
 use zcash_address::unified::Fvk;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
+use pepper_sync::wallet::TransparentCoin;
+use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 use zebra_chain::parameters::testnet;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
@@ -158,6 +160,7 @@ mod fast {
         },
     };
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
+    use zip32::AccountId;
 
     use super::*;
     use libtonode_tests::chain_generics::LibtonodeEnvironment;
@@ -1300,6 +1303,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
         check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0);
     }
 
+    /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
         let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
@@ -1308,11 +1312,29 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             None,
         )
         .await;
-        check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
+
+        let unconfirmed_balance = faucet
+            .wallet
+            .read()
+            .await
+            .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+            .unwrap();
+
+        assert_eq!(unconfirmed_balance, Zatoshis::const_from_u64(1_875_000_000));
+
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
             .unwrap();
-        check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000u64);
+
+        assert_eq!(
+            faucet
+                .wallet
+                .read()
+                .await
+                .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
+                .unwrap(),
+            Zatoshis::const_from_u64(2_500_000_000u64)
+        );
     }
 
     // test fails to exit when syncing pre-sapling
@@ -4314,6 +4336,44 @@ mod basic_transactions {
     // }
 }
 
+/// Tests that transparent coinbases are matured after 100 blocks.
+#[tokio::test]
+async fn mine_to_transparent_coinbase_maturity() {
+    let (local_net, mut faucet, _recipient) =
+        scenarios::faucet_recipient(PoolType::Transparent, for_test::all_height_one_nus(), None)
+            .await;
+
+    // After 3 blocks...
+    check_client_balances!(faucet, o: 0 s: 0 t: 0);
+
+    // Balance should be 0 because coinbase needs 100 confirmations
+    assert_eq!(
+        faucet
+            .wallet
+            .read()
+            .await
+            .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
+            .unwrap()
+            .into_u64(),
+        0
+    );
+
+    increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
+        .await
+        .unwrap();
+
+    let mature_balance = faucet
+        .wallet
+        .read()
+        .await
+        .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
+        .unwrap()
+        .into_u64();
+
+    // Should have 3 blocks worth of rewards
+    assert_eq!(mature_balance, 1_875_000_000);
+}
+
 // FIXME: does not assert dust was included in the proposal
 #[tokio::test]
 async fn propose_orchard_dust_to_sapling() {
@@ -4508,5 +4568,68 @@ mod send_all {
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
         ));
+    }
+}
+
+mod testnet_test {
+    use bip0039::Mnemonic;
+    use pepper_sync::sync_status;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::{
+        config::{ChainType, ZingoConfig},
+        lightclient::LightClient,
+        testutils::tempfile::TempDir,
+        wallet::{LightWallet, WalletBase},
+    };
+
+    #[ignore = "testnet cannot be run offline"]
+    #[tokio::test]
+    async fn reload_wallet_after_short_sync() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .unwrap();
+
+        const NUM_TESTS: u8 = 20;
+        let mut test_count = 0;
+
+        while test_count < NUM_TESTS {
+            let wallet_dir = TempDir::new().unwrap();
+            let mut config = ZingoConfig::create_testnet();
+            config.wallet_dir = Some(wallet_dir.path().to_path_buf());
+            let wallet = LightWallet::new(
+                ChainType::Testnet,
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
+                2_000_000.into(),
+                config.wallet_settings.clone(),
+            )
+            .unwrap();
+
+            let mut lightclient =
+                LightClient::create_from_wallet(wallet, config.clone(), true).unwrap();
+            lightclient.save_task().await;
+            lightclient.sync().await.unwrap();
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await;
+            while sync_status(&*lightclient.wallet.read().await)
+                .await
+                .unwrap()
+                .percentage_total_outputs_scanned
+                > 1.0
+            {
+                interval.tick().await;
+            }
+            lightclient.stop_sync().unwrap();
+            lightclient.await_sync().await.unwrap();
+            lightclient.shutdown_save_task().await.unwrap();
+
+            // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
+            LightClient::create_from_wallet_path(config).unwrap();
+
+            test_count += 1;
+        }
     }
 }
