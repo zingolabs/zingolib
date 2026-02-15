@@ -45,9 +45,9 @@ cargo build --release --package zingo-cli
 
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
-## Reproducable builds via StageX
+## Reproducible builds via StageX
 
-A bootstrapped and reproducable build pipeline using StageX is included in this repo.
+A bootstrapped and reproducible build pipeline using StageX is included in this repo.
 If you meet all the compatibility requirements, to create `zingo-cli`, you can run
 `make` in the root directory. The resulting binary will be found in the
 `/build/` directory.
