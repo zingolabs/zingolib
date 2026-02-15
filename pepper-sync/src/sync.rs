@@ -591,8 +591,8 @@ where
     })
 }
 
-/// This ensures that the height used as the lower bound of the sync is valid.
-/// The comparison takes two input heights and uses several constant bounds to select the best height
+/// This ensures that the height used as the initial bound of the sync is valid.
+/// The comparison takes two input heights and uses several constants to select the best height
 /// to bound the sync.
 /// The input parameter heights are:
 ///
