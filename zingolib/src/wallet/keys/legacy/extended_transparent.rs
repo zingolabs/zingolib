@@ -154,7 +154,7 @@ impl ExtendedPrivKey {
         let tweaked_private_key = private_key.add_tweak(&tweak)?;
         Ok(ExtendedPrivKey {
             private_key: tweaked_private_key,
-            chain_code: chain_code,
+            chain_code,
         })
     }
 }
@@ -223,7 +223,7 @@ impl ExtendedPubKey {
         let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
         Ok(Self {
             public_key: new_pk.combine(&self.public_key)?,
-            chain_code: chain_code,
+            chain_code,
         })
     }
 }
