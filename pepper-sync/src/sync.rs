@@ -702,16 +702,16 @@ mod test {
                 sync::{MAX_REORG_ALLOWANCE, ScanRange},
                 wallet::SyncState,
             };
-            const START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
-            const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
-            const CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
+            const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
+            const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
+            const DEFAULT_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
 
             use super::*;
             #[tokio::test]
             async fn above_allowance() {
                 const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(211);
                 let lkch = vec![ScanRange::from_parts(
-                    START_HEIGHT..LAST_KNOWN_HEIGHT,
+                    DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
                     crate::sync::ScanPriority::Scanned,
                 )];
                 let state = SyncState {
@@ -720,7 +720,8 @@ mod test {
                 };
                 let builder = crate::mocks::MockWalletBuilder::new();
                 let mut test_wallet = builder.sync_state(state).create_mock_wallet();
-                let res = checked_wallet_height(&mut test_wallet, CHAIN_HEIGHT, &LOCAL_NETWORK);
+                let res =
+                    checked_wallet_height(&mut test_wallet, DEFAULT_CHAIN_HEIGHT, &LOCAL_NETWORK);
                 if let Err(e) = res {
                     assert_eq!(
                         e.to_string(),
@@ -728,7 +729,7 @@ mod test {
                             "wallet height {} is more than {} blocks ahead of best chain height {}",
                             LAST_KNOWN_HEIGHT - 1,
                             MAX_REORG_ALLOWANCE,
-                            CHAIN_HEIGHT
+                            DEFAULT_CHAIN_HEIGHT
                         )
                     );
                 } else {
