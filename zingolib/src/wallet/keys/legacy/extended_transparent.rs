@@ -72,6 +72,15 @@ pub struct ExtendedPrivKey {
     pub chain_code: ChainCode,
 }
 
+// Uses type inference from return to get 32 byte chunk size
+// the argument MUST be 32 bytes or this is unsafe
+fn extract_32byte_key_and_code(signature: hmac::Tag) -> ([u8; 32], Vec<u8>) {
+    let (k, cc) = signature
+        .as_ref()
+        .split_first_chunk()
+        .expect("signature.len >= 32");
+    (*k, cc.to_vec())
+}
 impl ExtendedPrivKey {
     /// Generate an `ExtendedPrivKey` from seed
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
@@ -81,12 +90,11 @@ impl ExtendedPrivKey {
             h.update(seed);
             h.sign()
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let private_key = SecretKey::from_slice(key)?;
+        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let private_key = SecretKey::from_byte_array(key)?;
         Ok(ExtendedPrivKey {
             private_key,
-            chain_code: chain_code.to_vec(),
+            chain_code,
         })
     }
 
@@ -140,14 +148,13 @@ impl ExtendedPrivKey {
             KeyIndex::Hardened(index) => self.sign_hardened_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let private_key = SecretKey::from_slice(key)?;
+        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let private_key = SecretKey::from_byte_array(key)?;
         let tweak = secp256k1::Scalar::from(self.private_key);
         let tweaked_private_key = private_key.add_tweak(&tweak)?;
         Ok(ExtendedPrivKey {
             private_key: tweaked_private_key,
-            chain_code: chain_code.to_vec(),
+            chain_code: chain_code,
         })
     }
 }
@@ -157,7 +164,7 @@ impl ReadableWriteable for SecretKey {
     fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
         reader.read_exact(&mut secret_key_bytes)?;
-        SecretKey::from_slice(&secret_key_bytes)
+        SecretKey::from_byte_array(secret_key_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
@@ -211,13 +218,12 @@ impl ExtendedPubKey {
             KeyIndex::Hardened(_) => return Err(Error::InvalidTweak),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let new_sk = SecretKey::from_slice(key)?;
+        let (key, chain_code) = extract_32byte_key_and_code(signature);
+        let new_sk = SecretKey::from_byte_array(key)?;
         let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
         Ok(Self {
             public_key: new_pk.combine(&self.public_key)?,
-            chain_code: chain_code.to_vec(),
+            chain_code: chain_code,
         })
     }
 }
