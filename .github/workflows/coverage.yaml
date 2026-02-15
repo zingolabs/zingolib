@@ -18,21 +18,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.78
+
+      - name: Install system deps
+        run: |
+          apt-get update
+          apt-get install -y libsqlite3-dev pkg-config
+
+      - name: create binaries dir
+        run: mkdir -p ./test_binaries/bins
+
       - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./libtonode-tests/regtest/bin/
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./test_binaries/bins/
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
       - name: Generate code coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: tarpaulin
-          args: --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --release --timeout 3000 --out xml
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cobertura.xml
+          files: ./lcov.info
           fail_ci_if_error: true
