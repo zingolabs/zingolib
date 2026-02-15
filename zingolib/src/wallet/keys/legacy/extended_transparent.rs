@@ -311,14 +311,14 @@ fn test_sign_and_verify_with_derived_key() {
     let mut digest = [0u8; 32];
     digest[..11].copy_from_slice(b"Hello World");
     let msg = secp256k1::Message::from_digest(digest);
-    let sig = secp.sign_ecdsa(&msg, &sk_i.private_key);
+    let sig = secp.sign_ecdsa(msg, &sk_i.private_key);
 
     // verify succeeds with the correct public key
-    assert!(secp.verify_ecdsa(&msg, &sig, &pk_i.public_key).is_ok());
+    assert!(secp.verify_ecdsa(msg, &sig, &pk_i.public_key).is_ok());
 
     // verify fails with a different key
     // 0xef = 11101111: distinct bit pattern to produce an unrelated key pair
     let other_sk = ExtendedPrivKey::with_seed(&[0xef; 64]).unwrap();
     let other_pk = ExtendedPubKey::from(&other_sk);
-    assert!(secp.verify_ecdsa(&msg, &sig, &other_pk.public_key).is_err());
+    assert!(secp.verify_ecdsa(msg, &sig, &other_pk.public_key).is_err());
 }
