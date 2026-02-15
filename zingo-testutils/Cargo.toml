@@ -11,7 +11,7 @@ default = ["grpc-proxy"]
 
 [dependencies]
 zingolib = { workspace = true, features = ["testutils"] }
-zingo_netutils = { workspace = true, features = ["test-features"] }
+zingo-netutils = { workspace = true, features = ["test-features"] }
 zingo-testvectors = { workspace = true }
 zingo-status = { workspace = true }
 

@@ -278,8 +278,6 @@ impl LightWallet {
         Ok(NonEmpty::from_vec(txids).expect("should be non-empty"))
     }
 
-    // TODO: check with adjacent scanned and scannedwithoutmapping ranges merged in case shard ranges are scanend across
-    // the two priorities
     pub(crate) fn can_build_witness<N>(
         &self,
         note_height: BlockHeight,
@@ -327,18 +325,50 @@ fn check_note_shards_are_scanned(
     let mut shard_ranges = shard_ranges.to_vec();
     shard_ranges.push(incomplete_shard_range);
 
+    let mut scanned_ranges = scan_ranges
+        .iter()
+        .filter(|scan_range| {
+            scan_range.priority() == ScanPriority::Scanned
+                || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    'main: loop {
+        if scanned_ranges.is_empty() {
+            break;
+        }
+        let mut peekable_ranges = scanned_ranges.iter().enumerate().peekable();
+        while let Some((index, range)) = peekable_ranges.next() {
+            if let Some((next_index, next_range)) = peekable_ranges.peek() {
+                if range.block_range().end == next_range.block_range().start {
+                    assert!(*next_index == index + 1);
+                    scanned_ranges.splice(
+                        index..=*next_index,
+                        vec![ScanRange::from_parts(
+                            Range {
+                                start: range.block_range().start,
+                                end: next_range.block_range().end,
+                            },
+                            ScanPriority::Scanned,
+                        )],
+                    );
+                    continue 'main;
+                }
+            } else {
+                break 'main;
+            }
+        }
+    }
+
     // a single block may contain two shards at the boundary so we check both are scanned in this case
     shard_ranges
         .iter()
         .filter(|&shard_range| shard_range.contains(&note_height))
         .all(|note_shard_range| {
-            scan_ranges
+            scanned_ranges
                 .iter()
-                .filter(|&scan_range| {
-                    scan_range.priority() == ScanPriority::Scanned
-                        || scan_range.priority() == ScanPriority::ScannedWithoutMapping
-                })
-                .map(pepper_sync::sync::ScanRange::block_range)
+                .map(ScanRange::block_range)
                 .any(|block_range| {
                     block_range.contains(&(note_shard_range.end - 1))
                         && (block_range.contains(&note_shard_range.start)
@@ -403,11 +433,11 @@ mod tests {
         fn birthday_within_note_shard_range() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(20);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -429,11 +459,11 @@ mod tests {
         fn note_within_complete_shard() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(70);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -455,11 +485,11 @@ mod tests {
         fn note_within_incomplete_shard() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(170);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -481,11 +511,11 @@ mod tests {
         fn note_height_on_shard_boundary() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(100);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
