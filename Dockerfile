@@ -81,5 +81,5 @@ COPY --from=export /zingo-cli /zingo-cli
 RUN /zingo-cli --version
 
 # TODO : add HEALTHCHECK ?
-ENTRYPOINT ["/zingo-cli"]
+ENTRYPOINT ["/utils/entrypoint.sh"]
 CMD /zingo-cli --version >/dev/null 2>&1 || exit 1
