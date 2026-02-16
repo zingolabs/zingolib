@@ -49,7 +49,7 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
-pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -363,14 +363,14 @@ where
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    let wallet_height = if let Some(mut height) = wallet_guard
+    let last_known_chain_height = if let Some(mut height) = wallet_guard
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_height()
+        .last_known_chain_height()
     {
         if height > chain_height {
-            if height - chain_height >= MAX_VERIFICATION_WINDOW {
-                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
+            if height - chain_height >= MAX_REORG_ALLOWANCE {
+                return Err(SyncError::ChainError(MAX_REORG_ALLOWANCE));
             }
             // TODO: also truncate the scan ranges in the wallet's sync state
             truncate_wallet_data(&mut *wallet_guard, chain_height)?;
@@ -397,7 +397,7 @@ where
         &mut *wallet_guard,
         fetch_request_sender.clone(),
         &ufvks,
-        wallet_height,
+        last_known_chain_height,
         chain_height,
         config.transparent_address_discovery,
     )
@@ -420,7 +420,7 @@ where
 
     state::update_scan_ranges(
         consensus_parameters,
-        wallet_height,
+        last_known_chain_height,
         chain_height,
         wallet_guard
             .get_sync_state_mut()
@@ -650,10 +650,10 @@ where
     let birthday = sync_state
         .wallet_birthday()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let wallet_height = sync_state
-        .wallet_height()
+    let last_known_chain_height = sync_state
+        .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = wallet_height - birthday + 1;
+    let total_blocks = last_known_chain_height - birthday + 1;
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
@@ -1189,8 +1189,8 @@ where
                 let sync_state = wallet
                     .get_sync_state_mut()
                     .map_err(SyncError::WalletError)?;
-                let wallet_height = sync_state
-                    .wallet_height()
+                let last_known_chain_height = sync_state
+                    .last_known_chain_height()
                     .expect("scan ranges should be non-empty in this scope");
 
                 // reset scan range from `Scanning` to `Verify`
@@ -1210,7 +1210,7 @@ where
                 .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
+                if initial_verification_height - verification_start > MAX_REORG_ALLOWANCE {
                     clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
@@ -1222,7 +1222,7 @@ where
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     wallet,
-                    wallet_height,
+                    last_known_chain_height,
                 )
                 .await?;
             } else {
@@ -1251,7 +1251,7 @@ where
     let mempool_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_height()
+        .last_known_chain_height()
         .expect("wallet height must exist after sync is initialised")
         + 1;
 
@@ -1580,7 +1580,7 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
@@ -1608,7 +1608,7 @@ where
         .collect::<Vec<_>>();
 
     scanned_blocks.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || *height == scan_range.block_range().start
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
@@ -1812,10 +1812,10 @@ fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
-    let wallet_height = wallet
+    let last_known_chain_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_height()
+        .last_known_chain_height()
         .expect("wallet height must exist after scan ranges have been updated");
     let wallet_transactions = wallet
         .get_wallet_transactions_mut()
@@ -1825,7 +1825,7 @@ where
         .values()
         .filter(|transaction| {
             transaction.status().is_pending()
-                && wallet_height >= transaction.transaction().expiry_height()
+                && last_known_chain_height >= transaction.transaction().expiry_height()
         })
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
@@ -1835,7 +1835,7 @@ where
         .values()
         .filter(|transaction| {
             transaction.status().is_pending()
-                && wallet_height
+                && last_known_chain_height
                     >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
         })
         .map(super::wallet::WalletTransaction::txid)

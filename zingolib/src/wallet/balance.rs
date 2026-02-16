@@ -157,7 +157,10 @@ impl LightWallet {
             .is_some_and(|bundle| bundle.is_coinbase());
 
         if is_coinbase {
-            let current_height = self.sync_state.wallet_height().unwrap_or(self.birthday);
+            let current_height = self
+                .sync_state
+                .last_known_chain_height()
+                .unwrap_or(self.birthday);
             let tx_height = transaction.status().get_height();
 
             // Work with u32 values

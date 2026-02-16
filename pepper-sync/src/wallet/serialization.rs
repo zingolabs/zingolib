@@ -35,7 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
-    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     wallet::ScanTarget,
 };
 
@@ -1047,7 +1047,7 @@ impl ShardTrees {
 
         Ok(shardtree::ShardTree::new(
             store,
-            MAX_VERIFICATION_WINDOW as usize,
+            MAX_REORG_ALLOWANCE as usize,
         ))
     }
 
@@ -1128,7 +1128,7 @@ impl ShardTrees {
         macro_rules! write_with_error_handling {
             ($writer: ident, $from: ident) => {
                 if let Err(e) = $writer(&mut writer, &$from) {
-                    *shardtree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+                    *shardtree = shardtree::ShardTree::new(store, MAX_REORG_ALLOWANCE as usize);
                     return Err(e);
                 }
             };
@@ -1140,13 +1140,10 @@ impl ShardTrees {
         // Write checkpoints
         let mut checkpoints = Vec::new();
         store
-            .with_checkpoints(
-                MAX_VERIFICATION_WINDOW as usize,
-                |checkpoint_id, checkpoint| {
-                    checkpoints.push((*checkpoint_id, checkpoint.clone()));
-                    Ok(())
-                },
-            )
+            .with_checkpoints(MAX_REORG_ALLOWANCE as usize, |checkpoint_id, checkpoint| {
+                checkpoints.push((*checkpoint_id, checkpoint.clone()));
+                Ok(())
+            })
             .expect("Infallible");
         write_with_error_handling!(write_checkpoints, checkpoints);
 
@@ -1154,7 +1151,7 @@ impl ShardTrees {
         let cap = store.get_cap().expect("Infallible");
         write_with_error_handling!(write_shard, cap);
 
-        *shardtree = shardtree::ShardTree::new(store, MAX_VERIFICATION_WINDOW as usize);
+        *shardtree = shardtree::ShardTree::new(store, MAX_REORG_ALLOWANCE as usize);
 
         Ok(())
     }

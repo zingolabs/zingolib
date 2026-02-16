@@ -243,11 +243,11 @@ mod tests {
         fn birthday_within_note_shard_range() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(20);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -269,11 +269,11 @@ mod tests {
         fn note_within_complete_shard() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(70);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -295,11 +295,11 @@ mod tests {
         fn note_within_incomplete_shard() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(170);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![
@@ -321,11 +321,11 @@ mod tests {
         fn note_height_on_shard_boundary() {
             let min_confirmations = 3;
             let wallet_birthday = BlockHeight::from_u32(10);
-            let wallet_height = BlockHeight::from_u32(202);
+            let last_known_chain_height = BlockHeight::from_u32(202);
             let note_height = BlockHeight::from_u32(100);
-            let anchor_height = wallet_height + 1 - min_confirmations;
+            let anchor_height = last_known_chain_height + 1 - min_confirmations;
             let scan_ranges = vec![ScanRange::from_parts(
-                wallet_birthday..wallet_height + 1,
+                wallet_birthday..last_known_chain_height + 1,
                 ScanPriority::Scanned,
             )];
             let shard_ranges = vec![

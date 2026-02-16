@@ -151,7 +151,7 @@ impl WalletRead for LightWallet {
     }
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        Ok(self.sync_state.wallet_height())
+        Ok(self.sync_state.last_known_chain_height())
     }
 
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
@@ -184,7 +184,7 @@ impl WalletRead for LightWallet {
         &self,
         min_confirmations: NonZeroU32,
     ) -> Result<Option<(TargetHeight, BlockHeight)>, Self::Error> {
-        let target_height = if let Some(height) = self.sync_state.wallet_height() {
+        let target_height = if let Some(height) = self.sync_state.last_known_chain_height() {
             height + 1
         } else {
             return Ok(None);

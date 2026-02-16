@@ -15,7 +15,7 @@ resolver = "2"
 [workspace.dependencies]
 
 # Protocol
-bip0039 = { version = "0.12", features = ["rand"] }
+bip0039 = { version = "0.13", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
@@ -44,11 +44,11 @@ zcash_protocol = "0.7"
 zcash_transparent = "0.6"
 
 # Zebra
-zebra-chain = "3.0"
+zebra-chain = "5.0.0"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", version = "0.2" }
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -98,7 +98,7 @@ rust-embed = "8"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 rustyline = "11"
-secp256k1 = "0.29.1"
+secp256k1 = "0.31.1"
 secrecy = "0.8"
 serde = "1"
 serde_json = "1"
@@ -124,6 +124,9 @@ zingo-status = { path = "zingo-status" } # NOTE: for development between release
 # zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
 
 [profile.test]
 opt-level = 3
+

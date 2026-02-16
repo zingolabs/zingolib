@@ -446,8 +446,7 @@ impl Command for RescanCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
-        birthday."
+        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet birthday."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1695,7 +1694,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.wallet_height().map_or(0, u32::from))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
         })
     }
 }
