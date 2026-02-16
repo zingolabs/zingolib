@@ -54,7 +54,6 @@ function process-well-known-text-files
       -type f \
       \( \
         -name '*.rs' \
-        -o -name '*.md' \
         -o -name '*.toml' \
         -o -name '*.yaml' \
       \) \
