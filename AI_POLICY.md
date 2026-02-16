@@ -8,15 +8,15 @@ The Zingolib project has strict rules for AI usage:
 
 - **The human-in-the-loop must fully understand all code.** If you
   can't explain what your changes do and how they interact with the
-  greater system without the aid of AI tools, do not contribute
-  to this project.
+  greater system without the aid of AI tools, please focus on that
+  understanding instead of opening a PR.
 
 - **Issues and discussions can use AI assistance but must have a full
   human-in-the-loop.** This means that any content generated with AI
   must have been reviewed _and edited_ by a human before submission.
-  AI is very good at being overly verbose and including noise that
-  distracts from the main point. Humans must do their research and
-  trim this down.
+  AI is very good at including noise that
+  detracts from the intention. Humans must do their research and
+  create a succinct submission.
 
 - **No AI-generated media is allowed (art, images, videos, audio, etc.).**
   Text and code are the only acceptable AI-generated content, per the
@@ -26,13 +26,7 @@ The Zingolib project has strict rules for AI usage:
   that are clearly AI (slop) will be added to our public denouncement list.
   This list will block all future contributions. Additionally, the list
   is public and may be used by other projects to be aware of bad actors.
-  We love to help junior developers learn and grow, but
-  if you're interested in that then don't use AI, and we'll help you.
-  I'm sorry that bad AI drivers have ruined this for you.
-
-These rules apply only to outside contributions to Zingolib. Maintainers
-are exempt from these rules and may use AI tools at their discretion;
-they've proven themselves trustworthy to apply good judgment.
+  We love to help junior developers learn and grow, use AI to augment your learning.
 
 ## When We Close PRs
 
@@ -40,7 +34,6 @@ Any team member may close a PR. We'll leave a comment explaining why and invite 
 
 - No linked issue, or issue exists but no team member has responded to it
 - Feature or refactor nobody requested
-- Low-effort changes (typo fixes, minor formatting) not requested by the team
 - Missing test evidence or inability to explain the changes
 - Out of scope for Zingolib (see above)
 
@@ -50,26 +43,17 @@ Please remember that Zingolib is maintained by humans.
 
 Every discussion, issue, and pull request is read and reviewed by
 humans (and sometimes machines, too). It is a boundary point at which
-people interact with each other and the work done. It is rude and
-disrespectful to approach this boundary with low-effort, unqualified
+people interact with each other and the work done. It is unhelpful
+to approach this boundary with low-effort, unqualified
 work, since it puts the burden of validation on the maintainer.
 
 In a perfect world, AI would produce high-quality, accurate work
 every time. But today, that reality depends on the driver of the AI.
-And today, most drivers of AI are just not good enough. So, until either
-the people get better, the AI gets better, or both, we have to have
-strict rules to protect maintainers.
+So, until either the people get better, the AI gets better, or both,
+we have to have strict rules to protect maintainers.
 
 ## AI is Welcome Here
 
 Zingolib is written with plenty of AI assistance, and many maintainers embrace
 AI tools as a productive tool in their workflow. As a project, we welcome
 AI as a tool!
-
-**Our reason for the strict AI policy is not due to an anti-AI stance**, but
-instead due to the number of highly unqualified people using AI. It's the
-people, not the tools, that are the problem.
-
-I include this section to be transparent about the project's usage about
-AI for people who may disagree with it, and to address the misconception
-that this policy is anti-AI in nature.
