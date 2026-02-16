@@ -120,8 +120,8 @@ pub use sync::set_transactions_failed;
 pub use sync::sync;
 pub use sync::sync_status;
 
-#[cfg(test)]
-mod mocks;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mocks;
 
 use zcash_protocol::ShieldedProtocol;
 

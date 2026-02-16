@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+//! The pepper-sync traits define the public interface.  This mod provides a stable API
+//! for testing those traits with implementation on mock objects.
+//!
+//! The standard pattern is to invoke scenario functions that use private builders
+//! under the hood to back traits with appropriate mocks implementors.
 
 use crate::wallet::{
     NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock, WalletTransaction,
@@ -10,15 +15,19 @@ use crate::wallet::{
 use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
 
+/// Mock Errors
 #[derive(Debug, thiserror::Error)]
-pub(super) enum MockWalletError {
+pub enum MockWalletError {
+    /// Basic variant
     #[error("mock error")]
     AnErrorVariant(String),
 }
 
 type SyncStatePatch = Box<dyn Fn(&SyncState) -> Result<&SyncState, MockWalletError>>;
 type GetBirthdayPatch = Box<dyn Fn(&BlockHeight) -> Result<BlockHeight, MockWalletError>>;
-pub(super) struct MockWallet {
+
+/// An implementor of traits to be injected into pepper-sync in test.
+pub struct MockWallet {
     birthday: BlockHeight,
     sync_state: SyncState,
     get_sync_state_patch: Option<SyncStatePatch>,
