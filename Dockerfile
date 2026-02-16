@@ -78,10 +78,8 @@ WORKDIR ${HOME}
 
 # Copy the installed binary from builder
 COPY --from=export /zingo-cli /zingo-cli
-
 RUN /zingo-cli --version
 
 # TODO : add HEALTHCHECK ?
-CMD /zingo-cli --version >/dev/null 2>&1 || exit 1
-
 ENTRYPOINT ["/zingo-cli"]
+CMD /zingo-cli --version >/dev/null 2>&1 || exit 1
