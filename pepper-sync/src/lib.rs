@@ -120,6 +120,9 @@ pub use sync::set_transactions_failed;
 pub use sync::sync;
 pub use sync::sync_status;
 
+#[cfg(test)]
+mod mocks;
+
 use zcash_protocol::ShieldedProtocol;
 
 pub(crate) trait SyncDomain {
