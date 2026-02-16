@@ -1,6 +1,6 @@
 //! Errors for [`crate::wallet`] and sub-modules
 
-use std::convert::Infallible;
+use std::{convert::Infallible, io};
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
 use shardtree::error::ShardTreeError;
@@ -220,11 +220,11 @@ pub enum TransmissionError {
     )]
     IncorrectTransactionStatus(TxId),
     /// Failed to read transaction.
-    #[error("Failed to read transaction.")]
-    TransactionRead,
+    #[error("Failed to read transaction: {0}.")]
+    TransactionRead(io::Error),
     /// Failed to write transaction.
-    #[error("Failed to write transaction.")]
-    TransactionWrite,
+    #[error("Failed to write transaction: {0}")]
+    TransactionWrite(io::Error),
     /// Conversion failed
     #[error("Conversion failed. {0}")]
     ConversionFailed(#[from] crate::utils::error::ConversionError),

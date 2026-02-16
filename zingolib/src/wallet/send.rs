@@ -221,11 +221,11 @@ impl LightWallet {
             let mut transaction_bytes = vec![];
             lrz_transaction
                 .write(&mut transaction_bytes)
-                .map_err(|_| TransmissionError::TransactionWrite)?;
+                .map_err(TransmissionError::TransactionWrite)?;
 
             // this block serves to save the transactions to the wallet. This consensus branch is not baked into the sent transaction right here. because only transaction_bytes will be sent.
             let transaction = Transaction::read(transaction_bytes.as_slice(), consensus_branch_id)
-                .map_err(|_| TransmissionError::TransactionRead)?;
+                .map_err(TransmissionError::TransactionRead)?;
             //
 
             let txid_from_server = crate::grpc_connector::send_transaction(
