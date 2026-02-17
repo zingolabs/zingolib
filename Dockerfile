@@ -1,13 +1,15 @@
 # syntax=docker/dockerfile:1
+# check=skip=UndefinedVar,UserExist # We use `runuser` in the entrypoint instead of USER directive
+
 
 ############################
 # Global build args
 ############################
 ARG RUST_VERSION=1.91.1
-ARG UID=1000
-ARG GID=1000
-ARG USER=container_user
-ARG HOME=/home/container_user
+ARG UID=10901
+ARG GID=${UID}
+ARG USER=user
+ARG HOME=/home/user
 
 ############################
 # Dependencies
@@ -71,15 +73,57 @@ COPY --from=builder /usr/local/bin/zingo-cli /zingo-cli
 ############################
 FROM busybox AS runtime
 
+# Create a non-privileged user for running `zingo-cli`.
+#
+# We use a high UID/GID (10901) to avoid overlap with host system users.
+# This reduces the risk of container user namespace conflicts with host accounts,
+# which could potentially lead to privilege escalation if a container escape occurs.
+#
+# We do not use the `--system` flag for user creation since:
+# 1. System user ranges (100-999) can collide with host system users
+#   (see: https://github.com/nginxinc/docker-nginx/issues/490)
+# 2. There's no value added and warning messages can be raised at build time
+#   (see: https://github.com/dotnet/dotnet-docker/issues/4624)
+#
+# The high UID/GID values provide an additional security boundary in containers
+# where user namespaces are shared with the host.
+ARG UID
+ENV UID=${UID}
+ARG GID
+ENV GID=${GID}
+ARG USER
+ENV USER=${USER}
 ARG HOME
+ENV HOME=${HOME}
 
-WORKDIR ${HOME}
+
+COPY --chmod=644 <<-EOF /etc/passwd
+	root:x:0:0:root:/root:/bin/sh
+	user:x:${UID}:${GID}::${HOME}:/bin/sh
+EOF
+
+COPY --chmod=644 <<-EOF /etc/group
+	root:x:0:
+	user:x:${GID}:
+EOF
+
+# USER ${UID}:${GID}
+
+
+# WORKDIR ${HOME}
 
 # Copy the installed binary from builder
-COPY --from=export /zingo-cli /zingo-cli
-COPY --from=builder /usr/src/app/utils/entrypoint.sh /entrypoint.sh
-RUN /zingo-cli --version
+COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
+COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN /usr/local/bin/zingo-cli --version
 
 # TODO : add HEALTHCHECK ?
-ENTRYPOINT ["/entrypoint.sh"]
-CMD [ "/zingo-cli --version >/dev/null 2>&1 || exit 1" ]
+
+# We run as root initially and use setpriv in the entrypoint.sh
+# to step down to the non-privileged user. This allows us to change permissions
+# on directories before running the application as a non-root user.
+# User with UID=${UID} is created above and used via setpriv in entrypoint.sh.
+
+USER root
+ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
+CMD [ "/usr/local/bin/zingo-cli --version >/dev/null 2>&1 || exit 1" ]
