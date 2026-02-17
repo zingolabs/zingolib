@@ -685,7 +685,7 @@ mod fast {
             && vt.recipient_address == Some(ZENNIES_FOR_ZINGO_REGTEST_ADDRESS.to_string())));
     }
 
-    /// This tests checks thatRegtestEnvironmentg` returns an empty vector when empty memos are included.
+    /// This tests checks that `messages_containing` returns an empty vector when empty memos are included.
     #[tokio::test]
     async fn filter_empty_messages() {
         let mut environment = RegtestEnvironment::setup().await;
@@ -917,7 +917,7 @@ mod fast {
     }
 
     /// Tests that value transfers are properly sorted by block height and index.
-    /// It also tests that retRegtestEnvironmentansfers multiple times in a row returns the same results.
+    /// It also tests that retrieving the value transfers multiple times in a row returns the same results.
     #[tokio::test]
     async fn value_transfers() {
         let mut environment = RegtestEnvironment::setup().await;
