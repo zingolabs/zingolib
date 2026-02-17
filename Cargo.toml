@@ -14,7 +14,7 @@ resolver = "2"
 [workspace.dependencies]
 
 # Protocol
-bip0039 = { version = "0.12", features = ["rand"] }
+bip0039 = { version = "0.13", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
@@ -97,7 +97,7 @@ rust-embed = "8"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 rustyline = "11"
-secp256k1 = "0.29.1"
+secp256k1 = "0.31.1"
 secrecy = "0.8"
 serde = "1"
 serde_json = "1"
