@@ -19,7 +19,7 @@ use zcash_local_net::{
     network::localhost_uri,
     process::Process as _,
 };
-use zcash_primitives::consensus::BranchId;
+use zcash_protocol::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 
 use super::{
@@ -128,7 +128,7 @@ pub async fn update_tree_states_for_transaction(
         read_commitment_tree(hex::decode(trees.orchard_tree).unwrap().as_slice()).unwrap();
     let transaction = zcash_primitives::transaction::Transaction::read(
         raw_tx.data.as_slice(),
-        zcash_primitives::consensus::BranchId::Nu5,
+        zcash_protocol::consensus::BranchId::Nu5,
     )
     .unwrap();
     for output in transaction
@@ -327,7 +327,7 @@ pub mod scenarios {
     use std::ops::Add;
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
-    use zcash_primitives::consensus::{BlockHeight, BranchId};
+    use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zebra_chain::parameters::testnet;
     use zingo_common_components::protocol::activation_heights::for_test;

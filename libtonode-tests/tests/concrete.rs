@@ -1450,7 +1450,7 @@ mod slow {
         TransparentCoin,
     };
     use zcash_local_net::validator::Validator;
-    use zcash_primitives::consensus::BlockHeight;
+    use zcash_protocol::consensus::BlockHeight;
     use zcash_primitives::memo::Memo;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::value::Zatoshis;

@@ -11,7 +11,7 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{NetworkConstants, Parameters};
+use zcash_protocol::consensus::{NetworkConstants, Parameters};
 use zcash_primitives::legacy::{
     TransparentAddress,
     keys::{IncomingViewingKey, NonHardenedChildIndex},

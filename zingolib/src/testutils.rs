@@ -11,7 +11,7 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
@@ -606,7 +606,7 @@ pub(crate) use build_push_list;
 /// Take a P2PKH taddr and interpret it as a tex addr
 pub fn interpret_taddr_as_tex_addr(
     taddr_bytes: [u8; 20],
-    p: &impl zcash_primitives::consensus::Parameters,
+    p: &impl zcash_protocol::consensus::Parameters,
 ) -> String {
     bech32::encode::<bech32::Bech32m>(
         bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),

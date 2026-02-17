@@ -3,7 +3,7 @@
 use nonempty::NonEmpty;
 
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;

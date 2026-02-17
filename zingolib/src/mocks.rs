@@ -387,7 +387,7 @@ pub mod proposal {
     use zcash_client_backend::proposal::{Proposal, ShieldedInputs, Step, StepOutput};
     use zcash_client_backend::wallet::{ReceivedNote, WalletTransparentOutput};
     use zcash_client_backend::zip321::{Payment, TransactionRequest};
-    use zcash_primitives::consensus::BlockHeight;
+    use zcash_protocol::consensus::BlockHeight;
     use zcash_primitives::transaction::fees::zip317::FeeRule;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
