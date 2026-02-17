@@ -17,7 +17,7 @@ maintenance = { status = "actively-developed" }
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test", "pepper-sync/test-utils"]
 regtest = [ "zingo_common_components/for_test" ]
 
 [dependencies]
