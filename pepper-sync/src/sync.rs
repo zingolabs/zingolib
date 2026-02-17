@@ -625,9 +625,9 @@ where
                 // last_known_chain_height is more than MAX_REORG_ALLOWANCE **above**
                 // the proxy's reported height.
                 return Err(SyncError::ChainError(
-                    last_known_chain_height,
+                    u32::from(last_known_chain_height),
                     MAX_REORG_ALLOWANCE,
-                    chain_height,
+                    u32::from(chain_height),
                 ));
             }
             truncate_wallet_data(wallet, chain_height)?;
@@ -649,9 +649,9 @@ where
             // Human attention requiring error, a bday *above* the proxy reported
             // chain tipe has been provided
             return Err(SyncError::ChainError(
-                raw_bday,
+                u32::from(raw_bday),
                 MAX_REORG_ALLOWANCE,
-                chain_height,
+                u32::from(chain_height),
             ));
         }
         // The bday is set with a floor of the Sapling Epoch -1
