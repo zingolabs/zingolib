@@ -1,15 +1,11 @@
 //! Transparent keys and addresses
 
 use zcash_address::{ToAddress as _, ZcashAddress};
-use zcash_primitives::{
-    legacy::{
-        TransparentAddress,
-        keys::{
-            AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
-        },
-    },
-    zip32::AccountId,
+use zcash_transparent::address::TransparentAddress;
+use zcash_transparent::keys::{
+    AccountPubKey, IncomingViewingKey as _, NonHardenedChildIndex, TransparentKeyScope,
 };
+use zip32::AccountId;
 use zcash_protocol::consensus;
 
 use crate::wallet::KeyIdInterface;

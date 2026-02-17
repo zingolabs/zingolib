@@ -17,10 +17,11 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::{TransparentAddress, keys::TransparentKeyScope},
     memo::Memo,
     transaction::{Transaction, TxId},
 };
+use zcash_transparent::address::TransparentAddress;
+use zcash_transparent::keys::TransparentKeyScope;
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},

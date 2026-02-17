@@ -41,7 +41,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
         unified_keystore.try_into().unwrap();
-    let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
+    let transparent_vk: zcash_transparent::keys::AccountPubKey =
         unified_keystore.try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];

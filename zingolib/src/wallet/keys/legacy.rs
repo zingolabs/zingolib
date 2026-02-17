@@ -15,7 +15,7 @@ use zcash_keys::{
     address::UnifiedAddress,
     keys::{Era, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
-use zcash_primitives::legacy::TransparentAddress;
+use zcash_transparent::address::TransparentAddress;
 
 use super::unified::{
     KEY_TYPE_EMPTY, KEY_TYPE_SPEND, KEY_TYPE_VIEW, ReceiverSelection, UnifiedKeyStore,
