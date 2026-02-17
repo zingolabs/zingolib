@@ -5,7 +5,7 @@ use std::ops::Range;
 use tokio::sync::mpsc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::zip32::AccountId;
+use zip32::AccountId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 

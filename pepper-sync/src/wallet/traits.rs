@@ -12,7 +12,7 @@ use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::AccountId;
+use zip32::AccountId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::error::{ServerError, SyncError};

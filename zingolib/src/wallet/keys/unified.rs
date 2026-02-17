@@ -16,7 +16,7 @@ use zcash_primitives::legacy::{
     TransparentAddress,
     keys::{IncomingViewingKey, NonHardenedChildIndex},
 };
-use zcash_primitives::zip32::{AccountId, DiversifierIndex};
+use zip32::{AccountId, DiversifierIndex};
 
 use crate::config::ChainType;
 use crate::wallet::error::KeyError;

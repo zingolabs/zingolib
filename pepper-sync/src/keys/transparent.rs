@@ -26,7 +26,7 @@ impl TransparentAddressId {
     /// Construct from parts
     #[must_use]
     pub fn new(
-        account_id: zcash_primitives::zip32::AccountId,
+        account_id: zip32::AccountId,
         scope: TransparentScope,
         address_index: NonHardenedChildIndex,
     ) -> Self {
