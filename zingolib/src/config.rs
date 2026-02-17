@@ -26,6 +26,8 @@ use zcash_primitives::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
+use zingo_common_components::protocol::ActivationHeights;
+
 use crate::wallet::WalletSettings;
 
 /// TODO: Add Doc Comment Here!
