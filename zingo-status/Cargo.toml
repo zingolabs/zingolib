@@ -12,5 +12,5 @@ license = "MIT"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
 byteorder = { workspace = true }

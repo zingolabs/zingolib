@@ -2,8 +2,8 @@
 
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;

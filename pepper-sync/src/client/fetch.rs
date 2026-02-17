@@ -13,7 +13,8 @@ use zcash_client_backend::proto::{
         compact_tx_streamer_client::CompactTxStreamerClient,
     },
 };
-use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::UnderlyingService;
 
 use crate::client::FetchRequest;
