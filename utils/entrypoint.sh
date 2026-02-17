@@ -21,7 +21,8 @@ set -eo pipefail
 exec_as_user() {
   user=$(id -u)
   if [[ ${user} == '0' ]]; then
-    setpriv --reuid="${UID}" --regid="${GID}" --init-groups "$@"
+    setpriv -d
+    setpriv --reuid "${UID}" --regid "${GID}" --init-groups "$@"
   else
     exec "$@"
   fi
@@ -49,10 +50,22 @@ create_owned_directory() {
 
   # Set ownership for the created directory
   chown -R "${UID}:${GID}" "${dir}" || exit_error "Failed to secure directory: ${dir}"
+
+  ls -la /usr/local/bin
+  ls -la /usr/local/bin/wallets
+
+  # Set ownership for parent directory (but not if it's root or home)
+  local parent_dir
+  parent_dir="$(dirname "${dir}")"
+  if [[ "${parent_dir}" != "/" && "${parent_dir}" != "${HOME}" ]]; then
+    chown "${UID}:${GID}" "${parent_dir}"
+  fi
+
 }
 
-Create and own wallet directory
-[[ -n /wallets ]] && create_owned_directory "/wallets"
+whoami
+# Create and own wallet directory
+[[ -n /usr/local/bin/wallets ]] && create_owned_directory "/usr/local/bin/wallets"
 
 # Main Script Logic
 #
