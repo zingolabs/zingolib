@@ -9379,10 +9379,8 @@ version = "0.1.0"
 dependencies = [
  "rand 0.8.5",
  "zcash_address",
- "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys",
- "zcash_primitives",
  "zcash_protocol",
 ]
 
