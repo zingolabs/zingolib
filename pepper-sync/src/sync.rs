@@ -935,7 +935,7 @@ where
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
     let start_height = sync_state
-        .scan_start_height()
+        .get_initial_scan_height()
         .ok_or(SyncStatusError::NoSyncData)?;
     let last_known_chain_height = sync_state
         .last_known_chain_height()
@@ -1196,7 +1196,7 @@ async fn process_scan_results<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
-    lowest_unscanned_height: BlockHeight,
+    initial_unscanned_height: BlockHeight,
     performance_level: PerformanceLevel,
     nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<(), SyncError<W::Error>>
@@ -1475,7 +1475,7 @@ where
                 .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                if lowest_unscanned_height - verification_start > MAX_REORG_ALLOWANCE {
+                if initial_unscanned_height - verification_start > MAX_REORG_ALLOWANCE {
                     clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
@@ -1567,7 +1567,7 @@ where
     let start_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .scan_start_height()
+        .get_initial_scan_height()
         .expect("should be non-empty in this scope");
     let checked_truncate_height = match truncate_height.cmp(&start_height) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
