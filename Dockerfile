@@ -34,7 +34,6 @@ WORKDIR /usr/src/app
 
 # Set environment variables
 ENV SOURCE_DATE_EPOCH=1
-#ENV CXXFLAGS="-include cstdint"
 ENV CARGO_HOME=/usr/local/cargo
 
 ENV RUST_BACKTRACE=1
@@ -78,8 +77,9 @@ WORKDIR ${HOME}
 
 # Copy the installed binary from builder
 COPY --from=export /zingo-cli /zingo-cli
+COPY --from=builder /usr/src/app/utils/entrypoint.sh /entrypoint.sh
 RUN /zingo-cli --version
 
 # TODO : add HEALTHCHECK ?
-ENTRYPOINT ["/utils/entrypoint.sh"]
-CMD /zingo-cli --version >/dev/null 2>&1 || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
+CMD [ "/zingo-cli --version >/dev/null 2>&1 || exit 1" ]
