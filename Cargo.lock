@@ -9367,7 +9367,6 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_keys",
- "zcash_primitives",
  "zcash_protocol",
  "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
  "zingolib",
