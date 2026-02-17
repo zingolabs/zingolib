@@ -286,7 +286,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(start_height) = self.sync_state.scan_start_height() else {
+        let Some(start_height) = self.sync_state.get_initial_scan_height() else {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();
