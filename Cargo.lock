@@ -3354,8 +3354,8 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
+ "zcash_transparent",
  "zebra-chain",
- "zingo-netutils",
  "zingo-status",
  "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
@@ -9384,6 +9384,7 @@ dependencies = [
  "zcash_encoding",
  "zcash_keys",
  "zcash_primitives",
+ "zcash_protocol",
 ]
 
 [[package]]

@@ -17,6 +17,7 @@ zcash_client_backend.workspace = true
 zcash_encoding.workspace = true
 zcash_keys.workspace = true
 zcash_primitives.workspace = true
+zcash_protocol.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
