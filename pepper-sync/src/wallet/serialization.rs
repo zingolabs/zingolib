@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
+    ops::Range,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -89,7 +90,7 @@ impl ScanTarget {
 
 impl SyncState {
     fn serialized_version() -> u8 {
-        2
+        3
     }
 
     /// Deserialize into `reader`
@@ -98,8 +99,23 @@ impl SyncState {
         let scan_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
-            let priority = if version >= 2 {
-                match r.read_u8()? {
+            let priority = match version {
+                3.. => match r.read_u8()? {
+                    0 => Ok(ScanPriority::RefetchingNullifiers),
+                    1 => Ok(ScanPriority::Scanning),
+                    2 => Ok(ScanPriority::Scanned),
+                    3 => Ok(ScanPriority::ScannedWithoutMapping),
+                    4 => Ok(ScanPriority::Historic),
+                    5 => Ok(ScanPriority::OpenAdjacent),
+                    6 => Ok(ScanPriority::FoundNote),
+                    7 => Ok(ScanPriority::ChainTip),
+                    8 => Ok(ScanPriority::Verify),
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid scan priority",
+                    )),
+                }?,
+                2 => match r.read_u8()? {
                     0 => Ok(ScanPriority::Scanning),
                     1 => Ok(ScanPriority::Scanned),
                     2 => Ok(ScanPriority::ScannedWithoutMapping),
@@ -112,9 +128,8 @@ impl SyncState {
                         std::io::ErrorKind::InvalidData,
                         "invalid scan priority",
                     )),
-                }?
-            } else {
-                match r.read_u8()? {
+                }?,
+                0 | 1 => match r.read_u8()? {
                     0 => Ok(ScanPriority::Scanning),
                     1 => Ok(ScanPriority::Scanned),
                     2 => Ok(ScanPriority::Historic),
@@ -126,7 +141,7 @@ impl SyncState {
                         std::io::ErrorKind::InvalidData,
                         "invalid scan priority",
                     )),
-                }?
+                }?,
             };
 
             Ok(ScanRange::from_parts(start..end, priority))
@@ -479,14 +494,39 @@ impl TransparentCoin {
 
 impl<N, Nf: Copy> WalletNote<N, Nf> {
     fn serialized_version() -> u8 {
-        0
+        1
     }
+}
+
+fn read_refetch_nullifier_ranges(
+    reader: &mut impl Read,
+    version: u8,
+) -> std::io::Result<Vec<Range<BlockHeight>>> {
+    if version >= 1 {
+        Vector::read(reader, |r| {
+            let start = r.read_u32::<LittleEndian>()?;
+            let end = r.read_u32::<LittleEndian>()?;
+            Ok(BlockHeight::from_u32(start)..BlockHeight::from_u32(end))
+        })
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+fn write_refetch_nullifier_ranges(
+    writer: &mut impl Write,
+    ranges: &[Range<BlockHeight>],
+) -> std::io::Result<()> {
+    Vector::write(writer, ranges, |w, range| {
+        w.write_u32::<LittleEndian>(range.start.into())?;
+        w.write_u32::<LittleEndian>(range.end.into())
+    })
 }
 
 impl SaplingNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = reader.read_u16::<LittleEndian>()?;
@@ -557,6 +597,7 @@ impl SaplingNote {
         })?;
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
+        let refetch_nullifier_ranges = read_refetch_nullifier_ranges(&mut reader, version)?;
 
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
@@ -566,6 +607,7 @@ impl SaplingNote {
             position,
             memo,
             spending_transaction,
+            refetch_nullifier_ranges,
         })
     }
 
@@ -602,14 +644,16 @@ impl SaplingNote {
 
         Optional::write(&mut writer, self.spending_transaction, |w, txid| {
             txid.write(w)
-        })
+        })?;
+
+        write_refetch_nullifier_ranges(&mut writer, &self.refetch_nullifier_ranges)
     }
 }
 
 impl OrchardNote {
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
 
         let txid = TxId::read(&mut reader)?;
         let output_index = reader.read_u16::<LittleEndian>()?;
@@ -663,6 +707,7 @@ impl OrchardNote {
         })?;
 
         let spending_transaction = Optional::read(&mut reader, TxId::read)?;
+        let refetch_nullifier_ranges = read_refetch_nullifier_ranges(&mut reader, version)?;
 
         Ok(Self {
             output_id: OutputId::new(txid, output_index),
@@ -673,6 +718,7 @@ impl OrchardNote {
             position,
             memo,
             spending_transaction,
+            refetch_nullifier_ranges,
         })
     }
 
@@ -702,7 +748,7 @@ impl OrchardNote {
             txid.write(w)
         })?;
 
-        Ok(())
+        write_refetch_nullifier_ranges(&mut writer, &self.refetch_nullifier_ranges)
     }
 }
 
