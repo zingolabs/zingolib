@@ -59,7 +59,7 @@ impl LightClient {
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
-        memo: Option<zcash_primitives::memo::MemoBytes>,
+        memo: Option<zcash_protocol::memo::MemoBytes>,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let max_send_value = self

@@ -383,7 +383,7 @@ mod tests {
 
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::TransactionRequest;
-    use zcash_primitives::memo::{Memo, MemoBytes};
+    use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
 
     use crate::data::receivers::{Receivers, transaction_request_from_receivers};

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 /// Not to be used for internal logic in the system.
 use std::{cmp::Ordering, collections::HashMap};
 
-use zcash_primitives::memo::Memo;
+use zcash_protocol::memo::Memo;
 use zcash_protocol::PoolType;
 
 use pepper_sync::keys::transparent;
