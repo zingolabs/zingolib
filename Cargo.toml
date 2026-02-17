@@ -39,15 +39,13 @@ zcash_keys = { version = "0.12", features = [
 zcash_note_encryption = "0.4"
 zcash_primitives = "0.26"
 zcash_proofs = "0.26"
-zcash_protocol = "0.7"
+zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
-
-# Zebra
-zebra-chain = "3.0"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo_common_components = { path = "../zingo-common/zingo_common_components" } # public API
+# zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "remove_zebra_from_public_api" }
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -72,7 +70,7 @@ dirs = "6"
 futures = "0.3"
 futures-util = "0.3"
 hex = "0.4"
-http = "1"
+http = "1" # public API
 http-body-util = "0.1"
 http-body = "1"
 hyper-util = "0.1"

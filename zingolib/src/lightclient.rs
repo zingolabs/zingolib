@@ -97,12 +97,12 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && config.wallet_path_exists() {
+            if !overwrite && config.wallet_path().exists() {
                 return Err(LightClientError::FileError(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     format!(
                         "Cannot save to given data directory as a wallet file already exists at:\n{}",
-                        config.get_wallet_pathbuf().to_string_lossy()
+                        config.get_wallet_path().display()
                     ),
                 )));
             }
@@ -122,7 +122,7 @@ impl LightClient {
     /// Create a `LightClient` from an existing wallet file.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
-        let wallet_path = if config.wallet_path_exists() {
+        let wallet_path = if config.wallet_path().exists() {
             config.get_wallet_path()
         } else {
             return Err(LightClientError::FileError(std::io::Error::new(
@@ -149,14 +149,14 @@ impl LightClient {
         self.tor_client.as_ref()
     }
 
-    /// Returns URI of the server the lightclient is connected to.
-    pub fn server_uri(&self) -> http::Uri {
-        self.config.get_lightwalletd_uri()
+    /// Returns URI of the indexer the lightclient is connected to.
+    pub fn indexer_uri(&self) -> http::Uri {
+        self.config.get_indexer_uri()
     }
 
     /// Set the server uri.
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server;
+        *self.config.indexer_uri.write().unwrap() = server;
     }
 
     /// Creates a tor client for current price updates.
@@ -182,7 +182,7 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        match crate::grpc_connector::get_info(self.server_uri()).await {
+        match crate::grpc_connector::get_info(self.indexer_uri()).await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
@@ -319,7 +319,6 @@ mod tests {
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
-    use zingo_common_components::protocol::activation_heights::for_test;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -327,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::build(ChainType::Regtest(for_test::all_height_one_nus()))
+        let config = ZingoConfig::builder(ChainType::Regtest(ActivationHeights::default())
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .create();
         let mut lc = LightClient::create_from_wallet(

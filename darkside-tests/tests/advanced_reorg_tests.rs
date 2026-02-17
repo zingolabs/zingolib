@@ -15,7 +15,6 @@ use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
 use zcash_primitives::consensus::BlockHeight;
-use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
@@ -41,7 +40,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -199,7 +198,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -357,7 +356,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -537,7 +536,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -792,7 +791,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -992,7 +991,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();

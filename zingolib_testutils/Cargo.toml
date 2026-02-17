@@ -20,7 +20,6 @@ zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", bra
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
 # zcash
-zebra-chain.workspace = true
 zcash_protocol.workspace = true
 
 # bitcoin

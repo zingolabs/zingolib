@@ -329,8 +329,6 @@ pub mod scenarios {
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_primitives::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
-    use zebra_chain::parameters::testnet;
-    use zingo_common_components::protocol::activation_heights::for_test;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -348,7 +346,7 @@ pub mod scenarios {
         lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) configured_activation_heights: testnet::ConfiguredActivationHeights,
+        pub(crate) configured_activation_heights: ActivationHeights,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -365,7 +363,7 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
             );
-            let configured_activation_heights = for_test::all_height_one_nus();
+            let configured_activation_heights = ActivationHeights::default();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
@@ -676,7 +674,7 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_activation_heights(&self) -> testnet::ConfiguredActivationHeights {
+        pub fn get_activation_heights(&self) -> ActivationHeights {
             self.configured_activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {

@@ -114,7 +114,7 @@ impl LightClient {
     // TodO: can we shred it?
     pub async fn do_delete(&self) -> Result<(), String> {
         // Check if the file exists before attempting to delete
-        if self.config.wallet_path_exists() {
+        if self.config.wallet_path().exists() {
             match remove_file(self.config.get_wallet_path()) {
                 Ok(()) => {
                     log::debug!("File deleted successfully!");

@@ -42,11 +42,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("chain")
                 .long("chain").short('c')
                 .value_name("CHAIN")
-                .help(if cfg!(feature = "regtest") {
+                .help(
                     r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
-                } else {
-                    r#"What chain to expect. One of "mainnet" or "testnet". Defaults to "mainnet""#
-                }))
+                )
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")

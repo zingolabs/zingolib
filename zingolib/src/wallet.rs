@@ -40,6 +40,8 @@ pub mod sync;
 pub mod transaction;
 mod zcb_traits;
 
+pub use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+
 /// Wallet settings.
 #[derive(Debug, Clone)]
 pub struct WalletSettings {
