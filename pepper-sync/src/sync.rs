@@ -16,9 +16,9 @@ use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_primitives::zip32::AccountId;
 use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zip32::AccountId;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -49,7 +49,7 @@ pub(crate) mod state;
 pub(crate) mod transparent;
 
 const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
-pub(crate) const MAX_VERIFICATION_WINDOW: u32 = 100;
+pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
@@ -363,30 +363,8 @@ where
     if chain_height == 0.into() {
         return Err(SyncError::ServerError(ServerError::GenesisBlockOnly));
     }
-    let wallet_height = if let Some(mut height) = wallet_guard
-        .get_sync_state()
-        .map_err(SyncError::WalletError)?
-        .wallet_height()
-    {
-        if height > chain_height {
-            if height - chain_height >= MAX_VERIFICATION_WINDOW {
-                return Err(SyncError::ChainError(MAX_VERIFICATION_WINDOW));
-            }
-            // TODO: also truncate the scan ranges in the wallet's sync state
-            truncate_wallet_data(&mut *wallet_guard, chain_height)?;
-            height = chain_height;
-        }
-
-        height
-    } else {
-        let birthday = checked_birthday(consensus_parameters, &*wallet_guard)
-            .map_err(SyncError::WalletError)?;
-        if birthday > chain_height {
-            return Err(SyncError::ChainError(birthday - chain_height));
-        }
-
-        birthday - 1
-    };
+    let last_known_chain_height =
+        checked_wallet_height(&mut *wallet_guard, chain_height, consensus_parameters)?;
 
     let ufvks = wallet_guard
         .get_unified_full_viewing_keys()
@@ -397,7 +375,7 @@ where
         &mut *wallet_guard,
         fetch_request_sender.clone(),
         &ufvks,
-        wallet_height,
+        last_known_chain_height,
         chain_height,
         config.transparent_address_discovery,
     )
@@ -420,7 +398,7 @@ where
 
     state::update_scan_ranges(
         consensus_parameters,
-        wallet_height,
+        last_known_chain_height,
         chain_height,
         wallet_guard
             .get_sync_state_mut()
@@ -436,7 +414,7 @@ where
     )
     .await?;
 
-    let initial_verification_height = wallet_guard
+    let initial_unscanned_height = wallet_guard
         .get_sync_state()
         .map_err(SyncError::WalletError)?
         .highest_scanned_height()
@@ -473,7 +451,7 @@ where
                     &ufvks,
                     scan_range,
                     scan_results,
-                    initial_verification_height,
+                    initial_unscanned_height,
                     config.performance_level,
                     &mut nullifier_map_limit_exceeded,
                 )
@@ -613,6 +591,315 @@ where
     })
 }
 
+/// This ensures that the height used as the initial bound of the sync is valid.
+/// The comparison takes two input heights and uses several constants to select the best height
+/// to bound the sync.
+/// The input parameter heights are:
+///
+///   (1) chain_height:
+///       * the best block-height reported by the proxy (zainod or lwd)
+///   (2) last_known_chain_height
+///       * the last max height the wallet recorded from earlier scans
+///
+/// The constants are:
+///   (1) MAX_REORG_ALLOWANCE:
+///       * the number of blocks AHEAD of proxy_reported_chain_height allowed
+///   (2) Sapling Epoch Height:
+///       * the lower bound on the wallet birthday
+///
+fn checked_wallet_height<W, P>(
+    wallet: &mut W,
+    chain_height: BlockHeight,
+    consensus_parameters: &P,
+) -> Result<BlockHeight, SyncError<W::Error>>
+where
+    W: SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
+    P: zcash_protocol::consensus::Parameters,
+{
+    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+    if let Some(last_known_chain_height) = sync_state.last_known_chain_height() {
+        dbg!(&last_known_chain_height);
+        if last_known_chain_height > chain_height {
+            if last_known_chain_height - chain_height >= MAX_REORG_ALLOWANCE {
+                // There's a human attention requiring problem, the wallet supplied
+                // last_known_chain_height is more than MAX_REORG_ALLOWANCE **above**
+                // the proxy's reported height.
+                return Err(SyncError::ChainError(
+                    u32::from(last_known_chain_height),
+                    MAX_REORG_ALLOWANCE,
+                    u32::from(chain_height),
+                ));
+            }
+            truncate_wallet_data(wallet, chain_height)?;
+            // The wallet reported height is above the current proxy height
+            // reset to the proxy height.
+            return Ok(chain_height);
+        }
+        // The last wallet reported height is equal or below the proxy height
+        // since it was derived from a bday in an earlier scan, we don't check its
+        // lower bound.
+        // TODO:  Think through the possibilty of syncing to a short side chain,
+        // this logic doesn't explicitly handle the scan, but the overlap of range
+        // bounds may handle it elsewhere.
+        Ok(last_known_chain_height)
+    } else {
+        dbg!("There was a syncstate, but no last_known_chain_height!!");
+        let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+        if raw_bday > chain_height {
+            // Human attention requiring error, a bday *above* the proxy reported
+            // chain tipe has been provided
+            return Err(SyncError::ChainError(
+                u32::from(raw_bday),
+                MAX_REORG_ALLOWANCE,
+                u32::from(chain_height),
+            ));
+        }
+        // The bday is set with a floor of the Sapling Epoch -1
+        // TODO:  Confirm that the Sapling Epoch -1 is the correct floor
+        Ok(sapling_floored_bday(consensus_parameters, raw_bday) - 1)
+    }
+}
+#[cfg(test)]
+mod test {
+
+    mod checked_height_validation {
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::local_consensus::LocalNetwork;
+        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(3)),
+            blossom: Some(BlockHeight::from_u32(3)),
+            heartwood: Some(BlockHeight::from_u32(3)),
+            canopy: Some(BlockHeight::from_u32(3)),
+            nu5: Some(BlockHeight::from_u32(3)),
+            nu6: Some(BlockHeight::from_u32(3)),
+            nu6_1: Some(BlockHeight::from_u32(3)),
+        };
+        use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
+        // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
+        // this test shows that such an error is raies wrapped in a WalletError and return as the Err variant
+        #[tokio::test]
+        async fn get_sync_state_error() {
+            let builder = crate::mocks::MockWalletBuilder::new();
+            let test_error = "get_sync_state_error";
+            let mut test_wallet = builder
+                .get_sync_state_patch(Box::new(|_| {
+                    Err(MockWalletError::AnErrorVariant(test_error.to_string()))
+                }))
+                .create_mock_wallet();
+            let res =
+                checked_wallet_height(&mut test_wallet, BlockHeight::from_u32(1), &LOCAL_NETWORK);
+            assert!(matches!(
+                res,
+                Err(SyncError::WalletError(
+                    crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                )) if s == test_error
+            ));
+        }
+
+        mod last_known_chain_height {
+            use crate::{
+                sync::{MAX_REORG_ALLOWANCE, ScanRange},
+                wallet::SyncState,
+            };
+            const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
+            const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
+            const DEFAULT_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
+
+            use super::*;
+            #[tokio::test]
+            async fn above_allowance() {
+                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(211);
+                let lkch = vec![ScanRange::from_parts(
+                    DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let res =
+                    checked_wallet_height(&mut test_wallet, DEFAULT_CHAIN_HEIGHT, &LOCAL_NETWORK);
+                if let Err(e) = res {
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "wallet height {} is more than {} blocks ahead of best chain height {}",
+                            LAST_KNOWN_HEIGHT - 1,
+                            MAX_REORG_ALLOWANCE,
+                            DEFAULT_CHAIN_HEIGHT
+                        )
+                    );
+                } else {
+                    panic!()
+                }
+            }
+            #[tokio::test]
+            async fn above_chain_height_below_allowance() {
+                // The hain_height is received from the proxy
+                // truncate uses the wallet scan start height
+                // as a
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let chain_height = BlockHeight::from_u32(4);
+                // This will trigger a call to truncate_wallet_data with
+                // chain_height and start_height inferred from the wallet.
+                // chain must be greater than by this time which hits the Greater cmp
+                // match
+                let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
+                assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn equal_or_below_chain_height_and_above_sapling() {
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn equal_or_below_chain_height_and_below_sapling() {
+                // This case requires that the wallet have a scan_start_below sapling
+                // which is an unexpected state.
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn below_sapling() {
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+        }
+        mod no_last_known_chain_height {
+            use super::*;
+            // If there are know scan_ranges in the SyncState
+            #[tokio::test]
+            async fn get_bday_error() {
+                let test_error = "get_bday_error";
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder
+                    .get_birthday_patch(Box::new(|_| {
+                        Err(crate::mocks::MockWalletError::AnErrorVariant(
+                            test_error.to_string(),
+                        ))
+                    }))
+                    .create_mock_wallet();
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                assert!(matches!(
+                    res,
+                    Err(SyncError::WalletError(
+                        crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                    )) if s == test_error
+                ));
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn raw_bday_above_chain_height() {
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder
+                    .birthday(BlockHeight::from_u32(15))
+                    .create_mock_wallet();
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                if let Err(e) = res {
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "wallet height is more than {} blocks ahead of best chain height",
+                            15 - 1
+                        )
+                    );
+                } else {
+                    panic!()
+                }
+            }
+            mod sapling_height {
+                use super::*;
+                #[tokio::test]
+                async fn raw_bday_above() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(4))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(4 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_equal() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(3))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_below() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(1))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                }
+            }
+        }
+    }
+}
+
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 /// If there is still nullifiers to be re-fetched when scanning is complete, the percentages will be overrided to 99%
 /// until sync is complete.
@@ -647,13 +934,13 @@ where
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
-    let birthday = sync_state
-        .wallet_birthday()
+    let start_height = sync_state
+        .get_initial_scan_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let wallet_height = sync_state
-        .wallet_height()
+    let last_known_chain_height = sync_state
+        .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = wallet_height - birthday + 1;
+    let total_blocks = last_known_chain_height - start_height + 1;
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
@@ -931,7 +1218,7 @@ async fn process_scan_results<W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_range: ScanRange,
     scan_results: Result<ScanResults, ScanError>,
-    initial_verification_height: BlockHeight,
+    initial_unscanned_height: BlockHeight,
     performance_level: PerformanceLevel,
     nullifier_map_limit_exceeded: &mut bool,
 ) -> Result<(), SyncError<W::Error>>
@@ -1189,8 +1476,8 @@ where
                 let sync_state = wallet
                     .get_sync_state_mut()
                     .map_err(SyncError::WalletError)?;
-                let wallet_height = sync_state
-                    .wallet_height()
+                let last_known_chain_height = sync_state
+                    .last_known_chain_height()
                     .expect("scan ranges should be non-empty in this scope");
 
                 // reset scan range from `Scanning` to `Verify`
@@ -1210,7 +1497,7 @@ where
                 .start;
                 state::merge_scan_ranges(sync_state, ScanPriority::Verify);
 
-                if initial_verification_height - verification_start > MAX_VERIFICATION_WINDOW {
+                if initial_unscanned_height - verification_start > MAX_REORG_ALLOWANCE {
                     clear_wallet_data(wallet)?;
 
                     return Err(ServerError::ChainVerificationError.into());
@@ -1222,7 +1509,7 @@ where
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     wallet,
-                    wallet_height,
+                    last_known_chain_height,
                 )
                 .await?;
             } else {
@@ -1251,7 +1538,7 @@ where
     let mempool_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_height()
+        .last_known_chain_height()
         .expect("wallet height must exist after sync is initialised")
         + 1;
 
@@ -1306,12 +1593,12 @@ fn truncate_wallet_data<W>(
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
 {
-    let birthday = wallet
+    let start_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_birthday()
+        .get_initial_scan_height()
         .expect("should be non-empty in this scope");
-    let checked_truncate_height = match truncate_height.cmp(&birthday) {
+    let checked_truncate_height = match truncate_height.cmp(&start_height) {
         std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => truncate_height,
         std::cmp::Ordering::Less => consensus::H0,
     };
@@ -1580,7 +1867,7 @@ where
         .collect::<Vec<_>>();
 
     wallet.get_wallet_blocks_mut()?.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || scanned_range_bounds.contains(height)
             || wallet_transaction_heights.contains(height)
     });
@@ -1608,7 +1895,7 @@ where
         .collect::<Vec<_>>();
 
     scanned_blocks.retain(|height, _| {
-        *height >= highest_scanned_height.saturating_sub(MAX_VERIFICATION_WINDOW)
+        *height >= highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE)
             || *height == scan_range.block_range().start
             || *height == scan_range.block_range().end - 1
             || wallet_transaction_heights.contains(height)
@@ -1685,8 +1972,8 @@ async fn add_initial_frontier<W>(
 where
     W: SyncWallet + SyncShardTrees,
 {
-    let birthday =
-        checked_birthday(consensus_parameters, wallet).map_err(SyncError::WalletError)?;
+    let raw_bday = wallet.get_birthday().map_err(SyncError::WalletError)?;
+    let birthday = sapling_floored_bday(consensus_parameters, raw_bday);
     if birthday
         == consensus_parameters
             .activation_height(consensus::NetworkUpgrade::Sapling)
@@ -1734,18 +2021,17 @@ where
 }
 
 /// Compares the wallet birthday to sapling activation height and returns the highest block height.
-fn checked_birthday<W: SyncWallet>(
+fn sapling_floored_bday(
     consensus_parameters: &impl consensus::Parameters,
-    wallet: &W,
-) -> Result<BlockHeight, W::Error> {
-    let wallet_birthday = wallet.get_birthday()?;
+    raw_birthday: BlockHeight,
+) -> BlockHeight {
     let sapling_activation_height = consensus_parameters
         .activation_height(consensus::NetworkUpgrade::Sapling)
         .expect("sapling activation height should always return Some");
 
-    match wallet_birthday.cmp(&sapling_activation_height) {
-        cmp::Ordering::Greater | cmp::Ordering::Equal => Ok(wallet_birthday),
-        cmp::Ordering::Less => Ok(sapling_activation_height),
+    match raw_birthday.cmp(&sapling_activation_height) {
+        cmp::Ordering::Greater => raw_birthday,
+        cmp::Ordering::Less | cmp::Ordering::Equal => sapling_activation_height,
     }
 }
 
@@ -1812,10 +2098,10 @@ fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
-    let wallet_height = wallet
+    let last_known_chain_height = wallet
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .wallet_height()
+        .last_known_chain_height()
         .expect("wallet height must exist after scan ranges have been updated");
     let wallet_transactions = wallet
         .get_wallet_transactions_mut()
@@ -1825,7 +2111,7 @@ where
         .values()
         .filter(|transaction| {
             transaction.status().is_pending()
-                && wallet_height >= transaction.transaction().expiry_height()
+                && last_known_chain_height >= transaction.transaction().expiry_height()
         })
         .map(super::wallet::WalletTransaction::txid)
         .collect::<Vec<_>>();
@@ -1835,7 +2121,7 @@ where
         .values()
         .filter(|transaction| {
             transaction.status().is_pending()
-                && wallet_height
+                && last_known_chain_height
                     >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
         })
         .map(super::wallet::WalletTransaction::txid)

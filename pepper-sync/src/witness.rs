@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use incrementalmerkletree::{Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::LocatedPrunableTree;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::BlockHeight;
 
 #[cfg(not(feature = "darkside_test"))]
 use {

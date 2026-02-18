@@ -48,7 +48,7 @@ impl LightClient {
         &mut self,
         address: ZcashAddress,
         zennies_for_zingo: bool,
-        memo: Option<zcash_primitives::memo::MemoBytes>,
+        memo: Option<zcash_protocol::memo::MemoBytes>,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let max_send_value = self
@@ -236,7 +236,7 @@ mod shielding {
             .values()
             .map(|address| {
                 Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
                         network.network_type(),
                     )
                     .expect("incorrect network should be checked on wallet load"))
@@ -246,12 +246,12 @@ mod shielding {
 
         assert_eq!(
             transparent_addresses,
-            [zcash_primitives::legacy::TransparentAddress::PublicKeyHash(
-                [
+            [
+                zcash_transparent::address::TransparentAddress::PublicKeyHash([
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,
                     255, 189, 198, 33
-                ]
-            )]
+                ])
+            ]
         );
     }
 }

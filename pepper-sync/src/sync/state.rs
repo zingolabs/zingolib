@@ -64,12 +64,12 @@ fn find_scan_targets(
 /// Update scan ranges for scanning.
 pub(super) async fn update_scan_ranges(
     consensus_parameters: &impl consensus::Parameters,
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
     reset_scan_ranges(sync_state);
-    create_scan_range(wallet_height, chain_height, sync_state).await;
+    create_scan_range(last_known_chain_height, chain_height, sync_state).await;
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
@@ -128,17 +128,17 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 
 /// Create scan range between the wallet height and the chain height from the server.
 async fn create_scan_range(
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    if wallet_height == chain_height {
+    if last_known_chain_height == chain_height {
         return;
     }
 
     let new_scan_range = ScanRange::from_parts(
         Range {
-            start: wallet_height + 1,
+            start: last_known_chain_height + 1,
             end: chain_height + 1,
         },
         ScanPriority::Historic,
@@ -493,11 +493,11 @@ fn determine_block_range(
                 range.end - 1
             } else {
                 sync_state
-                    .wallet_birthday()
+                    .get_initial_scan_height()
                     .expect("scan range should not be empty")
             };
             let end = sync_state
-                .wallet_height()
+                .last_known_chain_height()
                 .expect("scan range should not be empty")
                 + 1;
 
@@ -788,8 +788,8 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
+    let start_height = sync_state
+        .get_initial_scan_height()
         .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
@@ -798,7 +798,7 @@ where
     let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
         calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
     let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
-        if let Ok(block) = wallet.get_wallet_block(birthday) {
+        if let Ok(block) = wallet.get_wallet_block(start_height) {
             (
                 block.tree_bounds.sapling_initial_tree_size,
                 block.tree_bounds.orchard_initial_tree_size,
@@ -808,7 +808,7 @@ where
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
-                birthday - 1,
+                start_height - 1,
             )
             .await?
         };

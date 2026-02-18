@@ -14,7 +14,7 @@ use darkside_tests::{
 use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::activation_heights::for_test;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::summary::data::SentValueTransfer;
