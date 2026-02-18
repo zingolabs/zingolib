@@ -19,7 +19,7 @@ to transmission.
 - `lightclient::error::SendError` - now includes all error types related to sending such as transmission and proposal errors.
 - `wallet::LightWallet`:
 - removed `send_progress` field
-- `remove_unconfirmed_transactions` method - renamed to `remove_failed_transactions` and now only removes transactions with the
+- `remove_unconfirmed_transactions` method renamed to `remove_failed_transactions` and now only removes transactions with the
 new `Failed` status. Also now returns `wallet::error::WalletError`. No longer resets spends as spends are now reset when
 a transaction is updated to `Failed` status. Transactions are automatically updated to `Failed` if transmission fails 4 times or
 if the transaction expires before it is confirmed. Spends locked up in unconfirmed transactions for 3 blocks will also be reset
