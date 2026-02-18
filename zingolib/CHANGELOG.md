@@ -16,8 +16,8 @@ to transmission.
 - `SyncError` fmt display altered
 - `SendError` variant added
 - `FileError` removed From impl for std::io::error
-`lightclient::error::SendError` - now includes all error types related to sending such as transmission and proposal errors.
-`wallet::LightWallet`:
+- `lightclient::error::SendError` - now includes all error types related to sending such as transmission and proposal errors.
+- `wallet::LightWallet`:
 - removed `send_progress` field
 - `remove_unconfirmed_transactions` method - renamed to `remove_failed_transactions` and now only removes transactions with the
 new `Failed` status. Also now returns `wallet::error::WalletError`. No longer resets spends as spends are now reset when
@@ -33,7 +33,7 @@ to release the funds, restoring balance and allowing funds to be spent in anothe
 - `TransactionWrite` removed From impl for std::io::error
 - `CalculateTxScanError` include fmt display of underlying error in fmt display
 - `ShardTreeError` fmt display altered
-`wallet::error::ProposeShieldError` - renamed `Insufficient` variant to `InsufficientFunds`
+- `wallet::error::ProposeShieldError` - renamed `Insufficient` variant to `InsufficientFunds`
 
 - `wallet::utils::interpret_memo_string`: changed name to `memo_bytes_from_string`. No longer decodes hex. Memo text will be displayed as inputted by the user.
 
