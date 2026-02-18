@@ -44,6 +44,21 @@ pub struct BalanceSnapshot {
     pub total: String,
 }
 
+#[derive(Clone, Debug, uniffi::Record, PartialEq, Eq)]
+pub struct SeedPhrase {
+    pub words: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct RestoreParams {
+    pub seed_phrase: SeedPhrase,
+    pub birthday: u32,
+    pub indexer_uri: String,
+    pub chain: Chain,
+    pub perf: Performance,
+    pub minconf: u32,
+}
+
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum WalletEvent {
     EngineReady,
@@ -669,25 +684,17 @@ impl WalletEngine {
     /// ## Errors
     /// - [`WalletError::CommandQueueClosed`] if the engine thread has exited.
     /// - [`WalletError::Internal`] on config/mnemonic/wallet construction errors.
-    pub fn init_from_seed(
-        &self,
-        seed_phrase: String,
-        birthday: u32,
-        indexer_uri: String,
-        chain: Chain,
-        perf: Performance,
-        minconf: u32,
-    ) -> Result<(), WalletError> {
+    pub fn init_from_seed(&self, params: RestoreParams) -> Result<(), WalletError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.inner
             .cmd_tx
             .blocking_send(Command::InitFromSeed {
-                seed_phrase,
-                birthday,
-                indexer_uri,
-                chain,
-                perf,
-                minconf,
+                seed_phrase: params.seed_phrase.words,
+                birthday: params.birthday,
+                indexer_uri: params.indexer_uri,
+                chain: params.chain,
+                perf: params.perf,
+                minconf: params.minconf,
                 reply: reply_tx,
             })
             .map_err(|_| WalletError::CommandQueueClosed)?;

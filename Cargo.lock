@@ -303,7 +303,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "serde",
  "serde_derive",
- "syn 2.0.111",
+ "syn 2.0.116",
 ]
 
 [[package]]
@@ -964,7 +964,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1126,14 +1126,14 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.49"
+version = "4.5.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a0b5487afeab2deb2ff4e03a807ad1a03ac532ff5a2cee5d86884440c7f7671"
+checksum = "a92793da1a46a5f2a02a6f4c46c6496b28c43638adea8306fcb0caa1634f24e5"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.111",
+ "syn 2.0.116",
 ]
 
 [[package]]
@@ -2177,7 +2177,7 @@ dependencies = [
  "bip0039 0.13.4",
  "http",
  "pepper-sync",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
  "uniffi",
  "zcash_primitives",
@@ -5646,7 +5646,7 @@ checksum = "1783eabc414609e28a5ba76aee5ddd52199f7107a0b24c2e9746a1ecc34a683d"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.111",
+ "syn 2.0.116",
 ]
 
 [[package]]
@@ -7966,12 +7966,12 @@ dependencies = [
  "glob",
  "goblin",
  "heck",
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "once_cell",
  "serde",
  "tempfile",
  "textwrap",
- "toml 0.9.10+spec-1.1.0",
+ "toml 0.8.23",
  "uniffi_internal_macros",
  "uniffi_meta",
  "uniffi_pipeline",
@@ -8008,10 +8008,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98f51ebca0d9a4b2aa6c644d5ede45c56f73906b96403c08a1985e75ccb64a01"
 dependencies = [
  "anyhow",
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "proc-macro2",
  "quote",
- "syn 2.0.111",
+ "syn 2.0.116",
 ]
 
 [[package]]
@@ -8026,8 +8026,8 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "syn 2.0.111",
- "toml 0.9.10+spec-1.1.0",
+ "syn 2.0.116",
+ "toml 0.8.23",
  "uniffi_meta",
 ]
 
@@ -8051,7 +8051,7 @@ checksum = "a806dddc8208f22efd7e95a5cdf88ed43d0f3271e8f63b47e757a8bbdb43b63a"
 dependencies = [
  "anyhow",
  "heck",
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "tempfile",
  "uniffi_internal_macros",
 ]
