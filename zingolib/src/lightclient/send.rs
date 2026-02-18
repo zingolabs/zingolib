@@ -170,7 +170,7 @@ pub mod send_with_proposal {
             };
             use zingo_test_vectors::seeds::ABANDON_ART_SEED;
 
-            let config = ZingoConfigBuilder::default().create();
+            let config = ZingoConfigBuilder::default().build();
             let mut lc = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,

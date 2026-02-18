@@ -152,7 +152,7 @@ impl LightClient {
 
     /// Returns URI of the indexer the lightclient is connected to.
     pub fn indexer_uri(&self) -> http::Uri {
-        self.config.get_indexer_uri()
+        self.config.indexer_uri()
     }
 
     /// Set the server uri.
@@ -167,8 +167,7 @@ impl LightClient {
         &mut self,
         tor_dir: Option<PathBuf>,
     ) -> Result<(), LightClientError> {
-        let tor_dir =
-            tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
+        let tor_dir = tor_dir.unwrap_or_else(|| self.config.wallet_dir().join("tor"));
         tokio::fs::create_dir_all(tor_dir.as_path()).await?;
         self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
 
@@ -329,7 +328,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = ZingoConfig::builder(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
-            .create();
+            .build();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,

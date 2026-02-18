@@ -1,10 +1,12 @@
 use std::num::NonZeroU32;
 
 use bytes::Buf;
-
 use http::Uri;
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+
 use zcash_protocol::{PoolType, ShieldedProtocol};
+
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;

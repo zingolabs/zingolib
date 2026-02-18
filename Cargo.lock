@@ -1432,9 +1432,8 @@ dependencies = [
  "zcash_local_net",
  "zcash_primitives",
  "zcash_protocol",
- "zebra-chain",
  "zingo-netutils",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components 0.2.0 (git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
  "zingolib",
  "zingolib_testutils",
@@ -3345,9 +3344,8 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zebra-chain",
  "zingo-status",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components 0.2.0 (git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
  "zingolib",
  "zingolib_testutils",
@@ -9358,7 +9356,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components 0.2.0 (git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api)",
  "zingolib",
  "zip32",
 ]
@@ -9441,10 +9439,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingo-common.git#096a79e2b3eb8b12d642e3380044bac00e7c855d"
-dependencies = [
- "zebra-chain",
-]
+source = "git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api#2daae0e722ff1c140e895bdb923c86d7e2763dad"
 
 [[package]]
 name = "zingo_test_vectors"
@@ -9517,12 +9512,11 @@ dependencies = [
  "zcash_proofs",
  "zcash_protocol",
  "zcash_transparent",
- "zebra-chain",
  "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils",
  "zingo-price",
  "zingo-status",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components 0.2.0 (git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zip32",
@@ -9539,8 +9533,7 @@ dependencies = [
  "tempfile",
  "zcash_local_net",
  "zcash_protocol",
- "zebra-chain",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components 0.2.0 (git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
  "zingolib",
  "zip32",

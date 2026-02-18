@@ -3,9 +3,9 @@
 
 use std::{
     io::{self, Error},
+    net::ToSocketAddrs,
     num::NonZeroU32,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
 };
 
 use log::{LevelFilter, info};
@@ -142,43 +142,15 @@ pub fn load_clientconfig(
     no_of_accounts: NonZeroU32,
     wallet_name: String,
 ) -> std::io::Result<ZingoConfig> {
-    use std::net::ToSocketAddrs;
+    check_indexer_uri(&lightwallet_uri);
+    let wallet_name = wallet_name_or_default(Some(wallet_name));
+    let wallet_dir = wallet_dir_or_default(data_dir, chain);
 
-    let host = lightwallet_uri.host();
-    let port = lightwallet_uri.port();
-
-    if host.is_none() || port.is_none() {
-        info!("Using offline mode");
-    } else {
-        match format!(
-            "{}:{}",
-            lightwallet_uri.host().unwrap(),
-            lightwallet_uri.port().unwrap()
-        )
-        .to_socket_addrs()
-        {
-            Ok(_) => {
-                info!("Connected to {lightwallet_uri}");
-            }
-            Err(e) => {
-                info!("Couldn't resolve server: {e}");
-            }
-        }
-    }
-
-    // if id is empty, the name is the default name
-    let wallet_name_config = if wallet_name.is_empty() {
-        DEFAULT_WALLET_NAME
-    } else {
-        &wallet_name
-    };
-
-    // Create a Light Client Config
     let config = ZingoConfig {
-        indexer_uri: Arc::new(RwLock::new(lightwallet_uri)),
-        chain,
-        wallet_dir: data_dir,
-        wallet_name: wallet_name_config.into(),
+        indexer_uri: lightwallet_uri,
+        network_type: chain,
+        wallet_dir,
+        wallet_name,
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
         no_of_accounts,
@@ -190,6 +162,7 @@ pub fn load_clientconfig(
 /// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_LIGHTWALLETD_SERVER`.
 /// If the provided string is missing the http prefix, a prefix of `http://` will be added.
 /// If the provided string is missing a port, a port of `:9067` will be added.
+// TODO: handle errors
 #[must_use]
 pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
@@ -223,9 +196,10 @@ pub struct ZingoConfig {
     /// The URI of the indexer the lightclient is connected to.
     indexer_uri: http::Uri,
     /// The network type of the blockchain the lightclient is connected to.
-    chain: ChainType,
+    // TODO: change for zingo common public API safe type
+    network_type: ChainType,
     /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
-    wallet_dir: Option<PathBuf>,
+    wallet_dir: PathBuf,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
     wallet_name: String,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
@@ -248,22 +222,24 @@ impl ZingoConfig {
     /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
     #[must_use]
     pub fn create_testnet() -> ZingoConfig {
-        ZingoConfig::builder(ChainType::Testnet)
-            .set_lightwalletd_uri(
+        ZingoConfig::builder()
+            .set_network_type(ChainType::Testnet)
+            .set_indexer_uri(
                 (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
                     .parse::<http::Uri>()
                     .unwrap(),
             )
-            .create()
+            .build()
     }
 
     #[cfg(any(test, feature = "testutils"))]
     /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
     #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
-        ZingoConfig::builder(ChainType::Mainnet)
-            .set_lightwalletd_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
-            .create()
+        ZingoConfig::builder()
+            .set_network_type(ChainType::Mainnet)
+            .set_indexer_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
+            .build()
     }
 
     #[cfg(feature = "testutils")]
@@ -271,15 +247,55 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         if let Some(dir) = dir {
-            ZingoConfig::build(chain).set_wallet_dir(dir).create()
+            ZingoConfig::builder()
+                .set_network_type(chain)
+                .set_wallet_dir(dir)
+                .build()
         } else {
-            ZingoConfig::build(chain).create()
+            ZingoConfig::builder().set_network_type(chain).build()
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn set_data_dir(&mut self, dir_str: String) {
-        self.wallet_dir = Some(PathBuf::from(dir_str));
+    /// Returns indexer URI.
+    #[must_use]
+    pub fn indexer_uri(&self) -> http::Uri {
+        self.indexer_uri.clone()
+    }
+
+    /// Returns wallet directory.
+    #[must_use]
+    pub fn network_type(&self) -> ChainType {
+        self.network_type
+    }
+
+    /// Returns wallet directory.
+    #[must_use]
+    pub fn wallet_dir(&self) -> PathBuf {
+        self.wallet_dir.clone()
+    }
+
+    /// Returns wallet file name.
+    #[must_use]
+    pub fn wallet_name(&self) -> &str {
+        &self.wallet_name
+    }
+
+    /// Returns log file name.
+    #[must_use]
+    pub fn logfile_name(&self) -> &str {
+        &self.logfile_name
+    }
+
+    /// Returns wallet settings..
+    #[must_use]
+    pub fn wallet_settings(&self) -> WalletSettings {
+        self.wallet_settings.clone()
+    }
+
+    /// Returns number of accounts..
+    #[must_use]
+    pub fn no_of_accounts(&self) -> NonZeroU32 {
+        self.no_of_accounts
     }
 
     /// Build the Logging config
@@ -314,63 +330,11 @@ impl ZingoConfig {
             .map_err(|e| Error::other(format!("{e}")))
     }
 
-    /// TODO: Add Doc Comment Here!
-    #[must_use]
-    pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        {
-            PathBuf::from(&self.wallet_dir.as_ref().unwrap()).into_boxed_path()
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            let mut zcash_data_location;
-            // If there's some --data-dir path provided, use it
-            if self.wallet_dir.is_some() {
-                zcash_data_location = PathBuf::from(&self.wallet_dir.as_ref().unwrap());
-            } else {
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
-                {
-                    zcash_data_location =
-                        dirs::data_dir().expect("Couldn't determine app data directory!");
-                    zcash_data_location.push("Zcash");
-                }
-
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                {
-                    if dirs::home_dir().is_none() {
-                        log::info!("Couldn't determine home dir!");
-                    }
-                    zcash_data_location =
-                        dirs::home_dir().expect("Couldn't determine home directory!");
-                    zcash_data_location.push(".zcash");
-                }
-
-                match &self.chain {
-                    ChainType::Mainnet => {}
-                    ChainType::Testnet => zcash_data_location.push("testnet3"),
-                    ChainType::Regtest(_) => zcash_data_location.push("regtest"),
-                }
-            }
-
-            // Create directory if it doesn't exist on non-mobile platforms
-            match std::fs::create_dir_all(zcash_data_location.clone()) {
-                Ok(()) => {}
-                Err(e) => {
-                    tracing::error!("Couldn't create zcash directory!\n{e}");
-                    panic!("Couldn't create zcash directory!");
-                }
-            }
-
-            zcash_data_location.into_boxed_path()
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
+    /// Returns the directory that the Zcash proving parameters are located in.
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
-            Ok(PathBuf::from(&self.wallet_dir.as_ref().unwrap()).into_boxed_path())
+            Ok(self.wallet_dir().into_boxed_path())
         }
 
         //TODO:  This fn is not correct for regtest mode
@@ -379,7 +343,7 @@ impl ZingoConfig {
             if dirs::home_dir().is_none() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Couldn't determine Home Dir",
+                    "Couldn't determine home directory!",
                 ));
             }
 
@@ -389,26 +353,26 @@ impl ZingoConfig {
         }
     }
 
-    /// TODO: Add Doc Comment Here!
-    // TODO remove RWlock from lwd uri in wallet
-    #[must_use]
-    pub fn get_indexer_uri(&self) -> http::Uri {
-        self.indexer_uri
-            .read()
-            .expect("Couldn't read configured server URI!")
-            .clone()
-    }
-
-    /// TODO: Add Doc Comment Here!
+    /// Returns full path to wallet file.
     #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
-        let mut wallet_path = self.get_zingo_wallet_dir().into_path_buf();
+        let mut wallet_path = self.wallet_dir();
         wallet_path.push(&self.wallet_name);
 
         wallet_path.into_boxed_path()
     }
 
-    /// TODO: Add Doc Comment Here!
+    /// Returns full path to the log file.
+    #[must_use]
+    pub fn get_log_path(&self) -> Box<Path> {
+        let mut log_path = self.wallet_dir();
+        log_path.push(&self.logfile_name);
+
+        log_path.into_boxed_path()
+    }
+
+    /// Creates a backup file of the current wallet file in the wallet directory.
+    // TODO: move to lightclient or lightwallet
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
         if !self.get_wallet_path().exists() {
             return Err(format!(
@@ -417,7 +381,7 @@ impl ZingoConfig {
             ));
         }
 
-        let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
+        let mut backup_file_path = self.wallet_dir();
         backup_file_path.push(format!(
             "zingo-wallet.backup.{}.dat",
             std::time::SystemTime::now()
@@ -431,114 +395,29 @@ impl ZingoConfig {
 
         Ok(backup_file_str)
     }
-
-    /// TODO: Add Doc Comment Here!
-    #[must_use]
-    pub fn get_log_path(&self) -> Box<Path> {
-        let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
-        log_path.push(&self.logfile_name);
-        //tracing::info!("LogFile:\n{}", log_path.to_str().unwrap());
-
-        log_path.into_boxed_path()
-    }
 }
 
-/// TODO: Add Doc Comment Here!
+/// Builder for [`ZingoConfig`].
 #[derive(Clone, Debug)]
 pub struct ZingoConfigBuilder {
-    /// TODO: Add Doc Comment Here!
-    pub lightwalletd_uri: Option<http::Uri>,
-    /// TODO: Add Doc Comment Here!
-    pub chain: ChainType,
-    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows. For mac it is in: ~/Library/Application Support/Zcash
-    pub wallet_dir: Option<PathBuf>,
-    /// The filename of the wallet. This will be created in the `wallet_dir`.
-    pub wallet_name: Option<PathBuf>,
-    /// The filename of the logfile. This will be created in the `wallet_dir`.
-    pub logfile_name: Option<PathBuf>,
-    /// Wallet settings.
-    pub wallet_settings: WalletSettings,
-    /// Number of accounts
-    pub no_of_accounts: NonZeroU32,
+    indexer_uri: Option<http::Uri>,
+    network_type: ChainType,
+    wallet_dir: Option<PathBuf>,
+    wallet_name: Option<String>,
+    logfile_name: Option<String>,
+    wallet_settings: WalletSettings,
+    no_of_accounts: NonZeroU32,
 }
 
 impl ZingoConfigBuilder {
-    /// Set the URI of the proxy server we download blockchain information from.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
-    /// use http::Uri;
-    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
-    /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
-        self.lightwalletd_uri = Some(lightwalletd_uri);
-        self
-    }
-
-    /// Set the chain the consuming client will interact with.
-    /// See <https://github.com/bitcoin/bips/blob/master/bip-0087.mediawiki#coin-type>
-    /// for chain types.
-    /// Note "chain type" is not a formal standard.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
-    /// use zingolib::config::ChainType::Testnet;
-    /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
-    /// ```
-    pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
-        self.chain = chain;
-        self
-    }
-
-    /// Set the wallet directory where client transaction data will be stored in a wallet.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
-    /// use tempfile::TempDir;
-    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().into_path();
-    /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
-    /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
-    /// ```
-    pub fn set_wallet_dir(&mut self, dir: PathBuf) -> &mut Self {
-        self.wallet_dir = Some(dir);
-        self
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn set_wallet_settings(&mut self, wallet_settings: WalletSettings) -> &mut Self {
-        self.wallet_settings = wallet_settings;
-        self
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn set_no_of_accounts(&mut self, no_of_accounts: NonZeroU32) -> &mut Self {
-        self.no_of_accounts = no_of_accounts;
-        self
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn create(&self) -> ZingoConfig {
-        let lightwalletd_uri = self.lightwalletd_uri.clone().unwrap_or_default();
-        ZingoConfig {
-            indexer_uri: Arc::new(RwLock::new(lightwalletd_uri)),
-            chain: self.chain,
-            wallet_dir: self.wallet_dir.clone(),
-            wallet_name: DEFAULT_WALLET_NAME.into(),
-            logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            wallet_settings: self.wallet_settings.clone(),
-            no_of_accounts: self.no_of_accounts,
-        }
-    }
-}
-
-impl Default for ZingoConfigBuilder {
-    fn default() -> Self {
-        ZingoConfigBuilder {
-            lightwalletd_uri: None,
+    /// Constructs a new builder for [`ZingoConfig`].
+    pub fn new() -> Self {
+        Self {
+            indexer_uri: None,
             wallet_dir: None,
             wallet_name: None,
             logfile_name: None,
-            chain: ChainType::Mainnet,
+            network_type: ChainType::Mainnet,
             wallet_settings: WalletSettings {
                 sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
@@ -550,6 +429,171 @@ impl Default for ZingoConfigBuilder {
             no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }
     }
+
+    /// Set indexer URI.
+    /// # Examples
+    /// ```
+    /// use zingolib::config::ZingoConfigBuilder;
+    /// use http::Uri;
+    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
+    /// ```
+    pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
+        self.indexer_uri = Some(indexer_uri);
+        self
+    }
+
+    /// Set network type.
+    /// # Examples
+    /// ```
+    /// use zingolib::config::ZingoConfigBuilder;
+    /// use zingolib::config::ChainType::Testnet;
+    /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
+    /// ```
+    pub fn set_network_type(mut self, network_type: ChainType) -> Self {
+        self.network_type = network_type;
+        self
+    }
+
+    /// Set wallet directory.
+    /// # Examples
+    /// ```
+    /// use zingolib::config::ZingoConfigBuilder;
+    /// use tempfile::TempDir;
+    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().into_path();
+    /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
+    /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
+    /// ```
+    pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
+        self.wallet_dir = Some(dir);
+        self
+    }
+
+    /// Set wallet file name.
+    pub fn set_wallet_name(mut self, wallet_name: String) -> Self {
+        self.wallet_name = Some(wallet_name);
+        self
+    }
+
+    /// Set log file name.
+    pub fn set_logfile_name(mut self, logfile_name: String) -> Self {
+        self.logfile_name = Some(logfile_name);
+        self
+    }
+
+    /// Set wallet settings.
+    pub fn set_wallet_settings(mut self, wallet_settings: WalletSettings) -> Self {
+        self.wallet_settings = wallet_settings;
+        self
+    }
+
+    /// Set number of accounts.
+    pub fn set_no_of_accounts(mut self, no_of_accounts: NonZeroU32) -> Self {
+        self.no_of_accounts = no_of_accounts;
+        self
+    }
+
+    /// Build a [`ZingoConfig`] from the builder.
+    pub fn build(self) -> ZingoConfig {
+        let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.network_type);
+        let wallet_name = wallet_name_or_default(self.wallet_name);
+        let logfile_name = logfile_name_or_default(self.logfile_name);
+
+        ZingoConfig {
+            indexer_uri: self.indexer_uri.clone().unwrap_or_default(),
+            network_type: self.network_type,
+            wallet_dir,
+            wallet_name,
+            logfile_name,
+            wallet_settings: self.wallet_settings,
+            no_of_accounts: self.no_of_accounts,
+        }
+    }
+}
+
+impl Default for ZingoConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// TODO: return errors
+fn check_indexer_uri(indexer_uri: &http::Uri) {
+    if let Some(host) = indexer_uri.host()
+        && let Some(port) = indexer_uri.port()
+    {
+        match format!("{}:{}", host, port,).to_socket_addrs() {
+            Ok(_) => {
+                info!("Connected to {indexer_uri}");
+            }
+            Err(e) => {
+                info!("Couldn't resolve server: {e}");
+            }
+        }
+    } else {
+        info!("Using offline mode");
+    }
+}
+
+fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
+    let wallet_name = opt_wallet_name.unwrap_or_else(|| DEFAULT_WALLET_NAME.into());
+    if wallet_name.is_empty() {
+        DEFAULT_WALLET_NAME.into()
+    } else {
+        wallet_name
+    }
+}
+
+fn logfile_name_or_default(opt_logfile_name: Option<String>) -> String {
+    let logfile_name = opt_logfile_name.unwrap_or_else(|| DEFAULT_LOGFILE_NAME.into());
+    if logfile_name.is_empty() {
+        DEFAULT_LOGFILE_NAME.into()
+    } else {
+        logfile_name
+    }
+}
+
+fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> PathBuf {
+    let wallet_dir: PathBuf;
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        // TODO: handle errors
+        wallet_dir = opt_wallet_dir.unwrap();
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        wallet_dir = opt_wallet_dir.clone().unwrap_or_else(|| {
+            let mut dir = dirs::data_dir().expect("Couldn't determine user's data directory!");
+
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                dir.push("Zcash");
+            }
+
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                dir.push(".zcash");
+            }
+
+            match chain {
+                ChainType::Mainnet => {}
+                ChainType::Testnet => dir.push("testnet3"),
+                ChainType::Regtest(_) => dir.push("regtest"),
+            }
+
+            dir
+        });
+
+        // Create directory if it doesn't exist on non-mobile platforms
+        match std::fs::create_dir_all(wallet_dir.clone()) {
+            Ok(()) => {}
+            Err(e) => {
+                panic!("Couldn't create zcash directory!\n {e}");
+            }
+        }
+    }
+
+    wallet_dir
 }
 
 #[cfg(test)]
@@ -624,8 +668,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(valid_config.get_indexer_uri(), valid_uri);
-        assert_eq!(valid_config.chain, crate::config::ChainType::Mainnet);
+        assert_eq!(valid_config.indexer_uri(), valid_uri);
+        assert_eq!(valid_config.network_type, crate::config::ChainType::Mainnet);
 
         // let invalid_config = load_clientconfig_serverless(
         //     invalid_uri.clone(),
