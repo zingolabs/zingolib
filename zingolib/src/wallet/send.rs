@@ -9,6 +9,10 @@ use zcash_client_backend::proposal::Proposal;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
+use zcash_primitives::transaction::fees::zip317;
+use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus::{BlockHeight, Parameters as _};
+use zcash_protocol::{ShieldedProtocol, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
