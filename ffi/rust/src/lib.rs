@@ -215,6 +215,7 @@ impl EngineInner {
                     _ => 0,
                 };
 
+                // TODO: this should be a proper percentage, or should not exist
                 let percent = if nh > 0 {
                     (wh as f32 / nh as f32).clamp(0.0, 1.0)
                 } else {

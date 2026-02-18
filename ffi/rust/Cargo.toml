@@ -20,7 +20,8 @@ uniffi = { version = "0.31", features = ["build"] }
 
 
 [lib]
-crate-type = ["cdylib"]
+# rlib is necessary to run examples
+crate-type = ["rlib", "cdylib"]
 name = "ffi"
 
 [[bin]]
