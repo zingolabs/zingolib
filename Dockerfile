@@ -21,6 +21,7 @@ FROM stagex/user-abseil-cpp@sha256:926f69e9cd112dfe3450a0af56d1560dc0a62589e6104
 FROM stagex/core-sqlite3@sha256:44807b914585c81dda2bb0a5617cab53395255fe6685ce9599628060229c8929 AS sqlite3
 # Runtime Deps
 FROM stagex/core-busybox@sha256:d608daa946e4799cf28b105aba461db00187657bd55ea7c2935ff11dac237e27 AS busybox
+FROM stagex/user-util-linux@sha256:dbe8025801b4aa2ce8b7077a594ec6c5516a3f9d075283d56e9cd119631fa2c3 AS util-linux
 
 
 ############################
@@ -73,6 +74,7 @@ COPY --from=builder /usr/local/bin/zingo-cli /zingo-cli
 ############################
 FROM busybox AS runtime
 
+COPY --from=util-linux . /
 # Create a non-privileged user for running `zingo-cli`.
 #
 # We use a high UID/GID (10901) to avoid overlap with host system users.

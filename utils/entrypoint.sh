@@ -21,8 +21,14 @@ set -eo pipefail
 exec_as_user() {
   user=$(id -u)
   if [[ ${user} == '0' ]]; then
-    setpriv -d
-    setpriv --reuid "${UID}" --regid "${GID}" --init-groups "$@"
+    which setpriv
+    ls -la /usr/bin/setpriv
+    ldd /usr/bin/setpriv
+    file /usr/bin/setpriv
+    readelf -l /usr/bin/setpriv
+    /usr/bin/setpriv -d
+    /usr/bin/setpriv --help
+    /usr/priv/setpriv --reuid "${UID}" --regid "${GID}" --init-groups "$@"
   else
     exec "$@"
   fi
