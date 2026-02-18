@@ -128,7 +128,7 @@ pub enum ScanError {
     DecryptedNoteDataNotFound(OutputId),
     /// Invalid memo bytes..
     #[error("invalid memo bytes. {0}")]
-    InvalidMemoBytes(#[from] zcash_primitives::memo::Error),
+    InvalidMemoBytes(#[from] zcash_protocol::memo::Error),
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address. {0}")]
     AddressParseError(#[from] zcash_address::unified::ParseError),

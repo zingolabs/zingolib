@@ -17,7 +17,6 @@ use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::Script,
     memo::Memo,
     merkle_tree::HashSer,
     transaction::{Transaction, TxId},
@@ -26,6 +25,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_status::confirmation_status::ConfirmationStatus;
