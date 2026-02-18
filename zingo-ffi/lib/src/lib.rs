@@ -28,8 +28,8 @@ use rustls::crypto::{CryptoProvider, ring::default_provider};
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::zip32::AccountId;
+use zcash_protocol::consensus::BlockHeight;
+use zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 use pepper_sync::keys::transparent;
@@ -48,11 +48,11 @@ use zingolib::data::receivers::Receivers;
 use zcash_address::ZcashAddress;
 use zcash_protocol::{value::Zatoshis};
 use tokio::runtime::Runtime;
-use zcash_primitives::memo::MemoBytes;
+use zcash_protocol::memo::MemoBytes;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::data::proposal::total_fee;
 
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ZingolibError {
@@ -235,7 +235,7 @@ fn construct_uri_load_config(
     let chaintype = match chain_hint.as_str() {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
-        "regtest" => ChainType::Regtest(for_test::all_height_one_nus()),
+        "regtest" => ChainType::Regtest(all_height_one_nus()),
         _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let performancetype = match performance_level.as_str() {
@@ -508,7 +508,7 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
                 let wallet = lightclient.wallet.write().await;
-                object! { "height" => json::JsonValue::from(wallet.sync_state.wallet_height().map(u32::from).unwrap_or(0))}.pretty(2)
+                object! { "height" => json::JsonValue::from(wallet.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
             }))
         } else {
             Err(ZingolibError::LightclientNotInitialized)
@@ -763,7 +763,7 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
                 [
                     ChainType::Mainnet,
                     ChainType::Testnet,
-                    ChainType::Regtest(for_test::all_height_one_nus()),
+                    ChainType::Regtest(all_height_one_nus()),
                 ]
                 .iter()
                 .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -1009,26 +1009,6 @@ pub fn zec_price(tor: String) -> Result<String, ZingolibError> {
     })
 }
 
-pub fn resend_transaction(txid: String) -> Result<String, ZingolibError> {
-    with_panic_guard(|| {
-        let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
-        if let Some(lightclient) = &mut *guard {
-            let txid = match txid_from_hex_encoded_str(&txid) {
-                Ok(txid) => txid,
-                Err(e) => return Ok(format!("Error: {e}")),
-            };
-            Ok(RT.block_on(async move {
-                match lightclient.resend(txid).await {
-                    Ok(_) => "Successfully resent transaction.".to_string(),
-                    Err(e) => format!("Error: {e}"),
-                }
-            }))
-        } else {
-            Err(ZingolibError::LightclientNotInitialized)
-        }
-    })
-}
-
 pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         let mut guard = LIGHTCLIENT.write().map_err(|_| ZingolibError::LightclientLockPoisoned)?;
@@ -1039,7 +1019,7 @@ pub fn remove_transaction(txid: String) -> Result<String, ZingolibError> {
             };
             Ok(RT.block_on(async move {
                 let mut wallet = lightclient.wallet.write().await;
-                match wallet.remove_unconfirmed_transaction(txid)
+                match wallet.remove_failed_transaction(txid)
                 {
                     Ok(_) => "Successfully removed transaction.".to_string(),
                     Err(e) => format!("Error: {e}"),

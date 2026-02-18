@@ -142,11 +142,6 @@ namespace zingo {
   );
 
   [Throws=ZingolibError]
-  string resend_transaction(
-    string txid
-  );
-
-  [Throws=ZingolibError]
   string remove_transaction(
     string txid
   );
