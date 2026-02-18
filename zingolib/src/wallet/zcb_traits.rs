@@ -20,13 +20,13 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{Transaction, TxId},
 };
-use zcash_transparent::address::TransparentAddress;
-use zcash_transparent::keys::TransparentKeyScope;
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
 };
+use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::{OutPoint, TxOut};
+use zcash_transparent::keys::TransparentKeyScope;
 
 use super::{LightWallet, error::WalletError, output::OutputRef};
 use crate::wallet::output::RemainingNeeded;

@@ -21,11 +21,11 @@ use zcash_primitives::{
     merkle_tree::HashSer,
     transaction::{Transaction, TxId},
 };
-use zcash_transparent::address::Script;
 use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_status::confirmation_status::ConfirmationStatus;

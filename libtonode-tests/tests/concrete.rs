@@ -145,8 +145,8 @@ mod fast {
     use zcash_local_net::validator::Validator;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
-    use zcash_transparent::keys::NonHardenedChildIndex;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
+    use zcash_transparent::keys::NonHardenedChildIndex;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -1451,9 +1451,9 @@ mod slow {
         TransparentCoin,
     };
     use zcash_local_net::validator::Validator;
+    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
-    use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;

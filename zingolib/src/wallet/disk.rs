@@ -15,8 +15,8 @@ use zcash_client_backend::proto::service::TreeState;
 use zcash_encoding::{Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
-use zcash_transparent::keys::NonHardenedChildIndex;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_price::PriceList;
 use zip32::AccountId;
 

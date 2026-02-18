@@ -26,12 +26,12 @@ use zcash_primitives::{
     memo::Memo,
     transaction::{TxId, components::transparent::OutPoint},
 };
-use zcash_transparent::address::Script;
 use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 

@@ -5,9 +5,9 @@ use std::ops::Range;
 use tokio::sync::mpsc;
 
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zip32::AccountId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
+use zip32::AccountId;
 
 use crate::client::{self, FetchRequest};
 use crate::config::TransparentAddressDiscovery;

@@ -268,12 +268,12 @@ mod shielding {
 
         assert_eq!(
             transparent_addresses,
-            [zcash_transparent::address::TransparentAddress::PublicKeyHash(
-                [
+            [
+                zcash_transparent::address::TransparentAddress::PublicKeyHash([
                     161, 138, 222, 242, 254, 121, 71, 105, 93, 131, 177, 31, 59, 185, 120, 148,
                     255, 189, 198, 33
-                ]
-            )]
+                ])
+            ]
         );
     }
 }

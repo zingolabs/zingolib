@@ -19,8 +19,8 @@ use zcash_local_net::{
     network::localhost_uri,
     process::Process as _,
 };
-use zcash_protocol::consensus::BranchId;
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
+use zcash_protocol::consensus::BranchId;
 
 use super::{
     constants,
