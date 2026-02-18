@@ -1,6 +1,6 @@
-//! TODO: Add Mod Description Here!
+//! BIP32 key derivation primitives
 use std::io;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use ring::hmac::{self, Context, Key};
@@ -72,6 +72,15 @@ pub struct ExtendedPrivKey {
     pub chain_code: ChainCode,
 }
 
+// Uses type inference from return to get 32 byte chunk size
+// the argument MUST be 32 bytes or this is unsafe
+fn get_32_byte_key_chunk_and_cc(signature: ring::hmac::Tag) -> ([u8; 32], Vec<u8>) {
+    let (k, cc) = signature
+        .as_ref()
+        .split_first_chunk()
+        .expect("signature.len >= 32");
+    (*k, cc.to_vec())
+}
 impl ExtendedPrivKey {
     /// Generate an `ExtendedPrivKey` from seed
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
@@ -81,12 +90,11 @@ impl ExtendedPrivKey {
             h.update(seed);
             h.sign()
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let private_key = SecretKey::from_slice(key)?;
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
+        let private_key = SecretKey::from_byte_array(key)?;
         Ok(ExtendedPrivKey {
             private_key,
-            chain_code: chain_code.to_vec(),
+            chain_code,
         })
     }
 
@@ -140,14 +148,13 @@ impl ExtendedPrivKey {
             KeyIndex::Hardened(index) => self.sign_hardened_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let private_key = SecretKey::from_slice(key)?;
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
+        let private_key = SecretKey::from_byte_array(key)?;
         let tweak = secp256k1::Scalar::from(self.private_key);
         let tweaked_private_key = private_key.add_tweak(&tweak)?;
         Ok(ExtendedPrivKey {
             private_key: tweaked_private_key,
-            chain_code: chain_code.to_vec(),
+            chain_code,
         })
     }
 }
@@ -157,7 +164,7 @@ impl ReadableWriteable for SecretKey {
     fn read<R: std::io::Read>(mut reader: R, (): ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
         reader.read_exact(&mut secret_key_bytes)?;
-        SecretKey::from_slice(&secret_key_bytes)
+        SecretKey::from_byte_array(secret_key_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
@@ -211,13 +218,12 @@ impl ExtendedPubKey {
             KeyIndex::Hardened(_) => return Err(Error::InvalidTweak),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let new_sk = SecretKey::from_slice(key)?;
+        let (key, chain_code) = get_32_byte_key_chunk_and_cc(signature);
+        let new_sk = SecretKey::from_byte_array(key)?;
         let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
         Ok(Self {
             public_key: new_pk.combine(&self.public_key)?,
-            chain_code: chain_code.to_vec(),
+            chain_code,
         })
     }
 }
@@ -284,4 +290,35 @@ fn test_commutativity_of_key_derivation_mechanisms() {
     let pk_i_ = pk.derive_public_key(i).unwrap();
 
     assert_eq!(pk_i, pk_i_);
+}
+
+#[test]
+fn test_sign_and_verify_with_derived_key() {
+    // Show standard sign/verify algoritms work
+    let secp = Secp256k1::new();
+
+    // derive a child key pair
+    // 0xcd = 11001101: alternating bit pattern used as deterministic test seed
+    let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
+    let sk_i = sk
+        .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
+        .unwrap()
+        .derive_private_key(KeyIndex::Normal(0))
+        .unwrap();
+    let pk_i = ExtendedPubKey::from(&sk_i);
+
+    // sign a message: "Hello World" zero-padded to 32 bytes
+    let mut digest = [0u8; 32];
+    digest[..11].copy_from_slice(b"Hello World");
+    let msg = secp256k1::Message::from_digest(digest);
+    let sig = secp.sign_ecdsa(msg, &sk_i.private_key);
+
+    // verify succeeds with the correct public key
+    assert!(secp.verify_ecdsa(msg, &sig, &pk_i.public_key).is_ok());
+
+    // verify fails with a different key
+    // 0xef = 11101111: distinct bit pattern to produce an unrelated key pair
+    let other_sk = ExtendedPrivKey::with_seed(&[0xef; 64]).unwrap();
+    let other_pk = ExtendedPubKey::from(&other_sk);
+    assert!(secp.verify_ecdsa(msg, &sig, &other_pk.public_key).is_err());
 }

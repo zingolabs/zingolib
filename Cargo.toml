@@ -14,7 +14,7 @@ resolver = "2"
 [workspace.dependencies]
 
 # Protocol
-bip0039 = { version = "0.12", features = ["rand"] }
+bip0039 = { version = "0.13", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
@@ -44,8 +44,8 @@ zcash_transparent = "0.6"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = { path = "../zingo-common/zingo_common_components" } # public API
-# zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "remove_zebra_from_public_api" }
+zingo_common_components = { git = "https://github.com/Oscar-Pepper/zingo-common.git", branch = "remove_zebra_from_public_api" }
+# zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev", version = "0.2" }
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -65,14 +65,21 @@ byteorder = "1"
 bytes = "1"
 chrono = "0.4"
 clap = "4"
-concat-idents = "1"
 dirs = "6"
 futures = "0.3"
 futures-util = "0.3"
 hex = "0.4"
+<<<<<<< HEAD
 http = "1" # public API
 http-body-util = "0.1"
 http-body = "1"
+||||||| b3ffc426
+http = "1"
+http-body-util = "0.1"
+http-body = "1"
+=======
+http = "1"
+>>>>>>> dev
 hyper-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27", features = ["http2"] }
@@ -93,9 +100,8 @@ ring = "0.17.14"
 rust_decimal = "1.37.2"
 rust-embed = "8"
 rustls = { version = "0.23", features = ["ring"] }
-rustls-pemfile = "2"
 rustyline = "11"
-secp256k1 = "0.29.1"
+secp256k1 = "0.31.1"
 secrecy = "0.8"
 serde = "1"
 serde_json = "1"
@@ -121,6 +127,9 @@ zingo-price = { path = "zingo-price" }
 zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
 
 [profile.test]
 opt-level = 3
+

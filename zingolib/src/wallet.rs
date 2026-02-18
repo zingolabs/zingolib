@@ -7,8 +7,8 @@ use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
@@ -417,10 +417,10 @@ impl LightWallet {
             .time_historical_prices_last_updated()
             .is_none()
         {
-            let Some(birthday) = self.sync_state.wallet_birthday() else {
+            let Some(start_height) = self.sync_state.get_initial_scan_height() else {
                 return Err(PriceError::NotInitialised);
             };
-            let birthday_block = match self.wallet_blocks.get(&birthday) {
+            let birthday_block = match self.wallet_blocks.get(&start_height) {
                 Some(block) => block.clone(),
                 None => {
                     return Err(PriceError::NotInitialised);

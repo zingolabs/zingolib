@@ -23,7 +23,6 @@ use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::Script,
     memo::Memo,
     transaction::{TxId, components::transparent::OutPoint},
 };
@@ -32,6 +31,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -40,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     witness,
 };
 
@@ -207,15 +207,14 @@ impl SyncState {
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday().map(|birthday| birthday - 1)
+            self.get_initial_scan_height().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
-    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     #[must_use]
-    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
+    pub fn get_initial_scan_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
@@ -223,7 +222,7 @@ impl SyncState {
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
     #[must_use]
-    pub fn wallet_height(&self) -> Option<BlockHeight> {
+    pub fn last_known_chain_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
@@ -1164,10 +1163,8 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
-        let mut orchard =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
             .checkpoint(BlockHeight::from_u32(0))
