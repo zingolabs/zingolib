@@ -69,17 +69,7 @@ dirs = "6"
 futures = "0.3"
 futures-util = "0.3"
 hex = "0.4"
-<<<<<<< HEAD
-http = "1" # public API
-http-body-util = "0.1"
-http-body = "1"
-||||||| b3ffc426
 http = "1"
-http-body-util = "0.1"
-http-body = "1"
-=======
-http = "1"
->>>>>>> dev
 hyper-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27", features = ["http2"] }

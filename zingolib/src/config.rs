@@ -122,7 +122,7 @@ impl TryFrom<&str> for ChainType {
             "mainnet" => Ok(ChainType::Mainnet),
             "testnet" => Ok(ChainType::Testnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
-            _ => Err(ChainFromStringError::UnknownChain(value.to_string())),
+            _ => Err(InvalidChainType(value.to_string())),
         }
     }
 }
