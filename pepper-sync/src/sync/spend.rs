@@ -299,14 +299,22 @@ where
 /// Locates any output ids of coins in the wallet's transactions which match an output id in the wallet's outpoint map.
 /// If a spend is detected, the output id is removed from the outpoint map and added to the map of spend scan targets.
 /// Finally, all coins that were detected as spent are updated with the located spending transaction.
-pub(super) fn update_transparent_spends<W>(wallet: &mut W) -> Result<(), W::Error>
+pub(super) fn update_transparent_spends<W>(
+    wallet: &mut W,
+    additional_outpoint_map: Option<&mut BTreeMap<OutputId, ScanTarget>>,
+) -> Result<(), W::Error>
 where
     W: SyncBlocks + SyncTransactions + SyncOutPoints,
 {
     let transparent_output_ids = collect_transparent_output_ids(wallet.get_wallet_transactions()?);
 
-    let transparent_spend_scan_targets =
-        detect_transparent_spends(wallet.get_outpoints_mut()?, transparent_output_ids);
+    let mut transparent_spend_scan_targets =
+        detect_transparent_spends(wallet.get_outpoints_mut()?, transparent_output_ids.clone());
+    if let Some(outpoint_map) = additional_outpoint_map {
+        let mut additional_transparent_spend_scan_targets =
+            detect_transparent_spends(outpoint_map, transparent_output_ids);
+        transparent_spend_scan_targets.append(&mut additional_transparent_spend_scan_targets);
+    }
 
     update_spent_coins(
         wallet.get_wallet_transactions_mut()?,

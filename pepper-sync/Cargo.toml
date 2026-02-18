@@ -78,3 +78,6 @@ byteorder = { workspace = true, optional = true }
 
 # Documentation
 simple-mermaid.workspace = true
+
+[dev-dependencies]
+zcash_protocol = { workspace = true, features = [ "local-consensus"] }

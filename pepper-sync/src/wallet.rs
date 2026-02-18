@@ -40,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     witness,
 };
 
@@ -201,20 +201,20 @@ impl SyncState {
             .filter(|scan_range| {
                 scan_range.priority() == ScanPriority::Scanned
                     || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
             })
             .next_back()
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday().map(|birthday| birthday - 1)
+            self.get_initial_scan_height().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
-    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     #[must_use]
-    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
+    pub fn get_initial_scan_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
@@ -222,7 +222,7 @@ impl SyncState {
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
     #[must_use]
-    pub fn wallet_height(&self) -> Option<BlockHeight> {
+    pub fn last_known_chain_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
@@ -709,6 +709,12 @@ pub trait NoteInterface: OutputInterface {
 
     /// Memo
     fn memo(&self) -> &Memo;
+
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` or `RefetchingNullifiers` priority before this note was
+    /// scanned, meaning the nullifiers were discarded due to memory constraints and will be re-fetched later in the
+    /// sync process.
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>];
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet.
@@ -800,6 +806,11 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` or `RefetchingNullifiers` priority before this note was
+    /// scanned, meaning the nullifiers were discarded due to memory constraints and will be re-fetched later in the
+    /// sync process.
+    pub(crate) refetch_nullifier_ranges: Vec<Range<BlockHeight>>,
 }
 
 /// Sapling note.
@@ -865,6 +876,10 @@ impl NoteInterface for SaplingNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
+    }
 }
 
 /// Orchard note.
@@ -929,6 +944,10 @@ impl NoteInterface for OrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
     }
 }
 
@@ -1144,10 +1163,8 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
-        let mut orchard =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
             .checkpoint(BlockHeight::from_u32(0))

@@ -1,5 +1,6 @@
 //! All things needed to create, manaage, and use notes
 
+use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
@@ -10,8 +11,6 @@ use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
 use super::error::WalletError;
-use super::transaction::transaction_unspent_coins;
-use super::transaction::transaction_unspent_notes;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
@@ -244,7 +243,7 @@ impl LightWallet {
         account: zip32::AccountId,
         include_potentially_spent_notes: bool,
     ) -> Result<Vec<&'a N>, WalletError> {
-        let Some(spend_horizon) = self.spend_horizon() else {
+        let Some(spend_horizon) = self.spend_horizon(false) else {
             return Err(WalletError::NoSyncData);
         };
         if self
@@ -282,38 +281,41 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&anchor_height)
                 {
-                    transaction_unspent_notes::<N>(
-                        transaction,
-                        exclude,
-                        account,
-                        spend_horizon,
-                        include_potentially_spent_notes,
-                    )
-                    .collect::<Vec<_>>()
+                    N::transaction_outputs(transaction)
+                        .iter()
+                        .filter(move |&note| {
+                            note.spending_transaction().is_none()
+                                && note.nullifier().is_some()
+                                && note.position().is_some()
+                                && self.can_build_witness::<N>(
+                                    transaction.status().get_height(),
+                                    anchor_height,
+                                )
+                                && !exclude.contains(&note.output_id())
+                                && note.key_id().account_id() == account
+                                && (include_potentially_spent_notes
+                                    || self.note_spends_confirmed(
+                                        transaction.status().get_height(),
+                                        spend_horizon,
+                                        note.refetch_nullifier_ranges(),
+                                    ))
+                        })
+                        .collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 }
-                .into_iter()
-                .filter(|&note| {
-                    note.nullifier().is_some()
-                        && note.position().is_some()
-                        && self.can_build_witness::<N>(
-                            transaction.status().get_height(),
-                            anchor_height,
-                        )
-                })
             })
             .collect())
     }
 
     /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
     ///
-    /// Any coins with output IDs in `exclude` will not be returned.
     /// Any coins from a coinbase transaction will not be returned without 100 additional confirmations.
     pub(crate) fn spendable_transparent_coins(
         &self,
         target_height: BlockHeight,
         allow_zero_conf_shielding: bool,
+        include_potentially_spent_coins: bool,
     ) -> Vec<&TransparentCoin> {
         // TODO: add support for zero conf shielding
         assert!(
@@ -321,19 +323,13 @@ impl LightWallet {
             "zero conf shielding not currently supported!"
         );
 
+        let Some(spend_horizon) = self.spend_horizon(true) else {
+            return Vec::new();
+        };
+
         self.wallet_transactions
             .values()
-            .filter(|&transaction| transaction.status().is_confirmed())
             .flat_map(|transaction| {
-                if transaction
-                    .status()
-                    .get_confirmed_height()
-                    .expect("transaction must be confirmed in this scope")
-                    > self.sync_state.wallet_height().unwrap_or(self.birthday)
-                {
-                    return Vec::new();
-                }
-
                 let additional_confirmations = transaction
                     .transaction()
                     .transparent_bundle()
@@ -343,7 +339,20 @@ impl LightWallet {
                     .status()
                     .is_confirmed_before_or_at(&(target_height - additional_confirmations))
                 {
-                    transaction_unspent_coins(transaction).collect()
+                    TransparentCoin::transaction_outputs(transaction)
+                        .iter()
+                        .filter(move |&coin| {
+                            coin.spending_transaction().is_none()
+                                && if include_potentially_spent_coins {
+                                    true
+                                } else {
+                                    // checks all ranges with `FoundNote` priority or higher above the coin height are
+                                    // scanned as all relevant transactions containing transparent spends are known and
+                                    // targetted before scanning begins.
+                                    transaction.status().get_height() >= spend_horizon
+                                }
+                        })
+                        .collect()
                 } else {
                     Vec::new()
                 }

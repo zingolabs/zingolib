@@ -157,7 +157,10 @@ impl LightWallet {
             .is_some_and(|bundle| bundle.is_coinbase());
 
         if is_coinbase {
-            let current_height = self.sync_state.wallet_height().unwrap_or(self.birthday);
+            let current_height = self
+                .sync_state
+                .last_known_chain_height()
+                .unwrap_or(self.birthday);
             let tx_height = transaction.status().get_height();
 
             // Work with u32 values
@@ -463,10 +466,10 @@ impl LightWallet {
     /// - not dust (note value larger than `5_000` zats)
     /// - the wallet can build a witness for the note's commitment
     /// - satisfy the number of minimum confirmations set by the wallet
-    /// - the nullifier derived from the note has not yet been found in a transaction input on chain
+    /// - the nullifier derived from the note does not appear in a transaction input (spend) on chain
     ///
     /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
-    /// cannot guarantee the notes are unspent.
+    /// is incomplete and it is unknown if the note has already been spent (the nullifier has not appeared on chain *yet*).
     ///
     /// # Error
     ///
@@ -482,7 +485,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(spend_horizon) = self.spend_horizon() else {
+        let Some(spend_horizon) = self.spend_horizon(false) else {
             return Ok(Zatoshis::ZERO);
         };
         let Some((_, anchor_height)) = self
@@ -499,11 +502,12 @@ impl LightWallet {
                     && transaction.status().get_height() <= anchor_height
                     && note.position().is_some()
                     && self.can_build_witness::<N>(transaction.status().get_height(), anchor_height)
-                    && if include_potentially_spent_notes {
-                        true
-                    } else {
-                        transaction.status().get_height() >= spend_horizon
-                    }
+                    && (include_potentially_spent_notes
+                        || self.note_spends_confirmed(
+                            transaction.status().get_height(),
+                            spend_horizon,
+                            note.refetch_nullifier_ranges(),
+                        ))
             },
             account_id,
         )?;
