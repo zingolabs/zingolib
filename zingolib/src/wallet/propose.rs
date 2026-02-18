@@ -85,7 +85,7 @@ impl LightWallet {
             .values()
             .map(|address| {
                 Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
                         self.network.network_type(),
                     )
                     .expect("incorrect network should be checked on wallet load"))

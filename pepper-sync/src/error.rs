@@ -27,8 +27,8 @@ where
     #[error("sync mode error. {0}")]
     SyncModeError(#[from] SyncModeError),
     /// Chain error.
-    #[error("wallet height is more than {0} blocks ahead of best chain height")]
-    ChainError(u32),
+    #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
+    ChainError(u32, u32, u32),
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
@@ -128,7 +128,7 @@ pub enum ScanError {
     DecryptedNoteDataNotFound(OutputId),
     /// Invalid memo bytes..
     #[error("invalid memo bytes. {0}")]
-    InvalidMemoBytes(#[from] zcash_primitives::memo::Error),
+    InvalidMemoBytes(#[from] zcash_protocol::memo::Error),
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address. {0}")]
     AddressParseError(#[from] zcash_address::unified::ParseError),

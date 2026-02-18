@@ -10,10 +10,10 @@ use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::AccountId;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedProtocol};
+use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
