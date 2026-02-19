@@ -18,13 +18,15 @@ pub async fn new_client_from_save_buffer(
         .wallet
         .write()
         .await
-        .write(&mut wallet_bytes, &template_client.config.network_type())?;
+        .write(&mut wallet_bytes, &template_client.config.network_type())
+        .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
 
     LightClient::create_from_wallet(
         LightWallet::read(
             wallet_bytes.as_slice(),
             template_client.config.network_type(),
-        )?,
+        )
+        .map_err(LightClientError::FileError)?,
         template_client.config.clone(),
         false,
     )
@@ -77,7 +79,7 @@ pub mod from_inputs {
     use zcash_primitives::transaction::TxId;
 
     use crate::{
-        lightclient::{LightClient, error::QuickSendError},
+        lightclient::{LightClient, error::LightClientError},
         wallet::error::ProposeSendError,
     };
 
@@ -85,7 +87,7 @@ pub mod from_inputs {
     pub async fn quick_send(
         quick_sender: &mut crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<NonEmpty<TxId>, QuickSendError> {
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender

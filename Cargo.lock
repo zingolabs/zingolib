@@ -9390,11 +9390,10 @@ dependencies = [
 [[package]]
 name = "zingo-status"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5535da49b496f5d003e4129472d557ddd4398f6918b73d7faa361a5209a2d6c"
 dependencies = [
  "byteorder",
  "zcash_primitives",
+ "zcash_protocol",
 ]
 
 [[package]]

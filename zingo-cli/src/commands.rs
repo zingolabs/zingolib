@@ -430,28 +430,6 @@ impl Command for SyncCommand {
     }
 }
 
-struct SendProgressCommand {}
-impl Command for SendProgressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r"
-            Get the progress of any send transactions that are currently computing
-
-            Usage:
-            send_progress
-        "}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Get the progress of any send transactions that are currently computing"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(
-            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
-        )
-    }
-}
-
 struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
@@ -1335,7 +1313,7 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Confirms the latest proposal, completing and broadcasting the transaction(s) and resuming the sync task.
+            Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
@@ -1349,7 +1327,7 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
+        "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1372,44 +1350,6 @@ impl Command for ConfirmCommand {
                 }
             }
             .pretty(2)
-        })
-    }
-}
-
-struct ResendCommand {}
-impl Command for ResendCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Re_transmits a calculated transaction from the wallet with the given txid.
-            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
-            to remove the calculated transaction in the case of send failure.
-
-            usage:
-            resend <txid>
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Re_transmits a calculated transaction from the wallet with the given txid."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
-                .to_string();
-        }
-
-        let txid = match txid_from_hex_encoded_str(args[0]) {
-            Ok(txid) => txid,
-            Err(e) => return format!("Error: {e}"),
-        };
-
-        RT.block_on(async move {
-            match lightclient.resend(txid).await {
-                Ok(()) => "Successfully resent transaction.".to_string(),
-                Err(e) => format!("Error: {e}"),
-            }
         })
     }
 }
@@ -1851,11 +1791,9 @@ struct RemoveTransactionCommand {}
 impl Command for RemoveTransactionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Removes an unconfirmed transaction from the wallet with the given txid.
-            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
-            the "resend" command to attempt to re-transmit.
+            Removes a failed transaction from the wallet with the given txid.
             This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them or resend.
+            until the user decides to remove them.
 
             usage:
             remove_transaction <txid>
@@ -1864,7 +1802,7 @@ impl Command for RemoveTransactionCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Removes an unconfirmed transaction from the wallet with the given txid."
+        "Removes a failed transaction from the wallet with the given txid."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1883,9 +1821,9 @@ impl Command for RemoveTransactionCommand {
                 .wallet
                 .write()
                 .await
-                .remove_unconfirmed_transaction(txid)
+                .remove_failed_transaction(txid)
             {
-                Ok(()) => "Successfully removed transaction.".to_string(),
+                Ok(()) => "Successfully removed failed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1985,7 +1923,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("send_progress", Box::new(SendProgressCommand {})),
         ("value_transfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
@@ -1999,7 +1936,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
-        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("settings", Box::new(SettingsCommand {})),

@@ -63,7 +63,6 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
     Ok(response.into_inner())
 }
 
-/// TODO: Add Doc Comment Here!
 pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,

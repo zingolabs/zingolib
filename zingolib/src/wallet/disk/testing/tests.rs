@@ -239,7 +239,7 @@ async fn reload_wallet_from_buffer() {
 
     let config = ZingoConfig::create_testnet();
     let client = LightClient::create_from_wallet(
-        LightWallet::read(&mid_buffer[..], config.chain).unwrap(),
+        LightWallet::read(&mid_buffer[..], config.network_type()).unwrap(),
         config,
         true,
     )

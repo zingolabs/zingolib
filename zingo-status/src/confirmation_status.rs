@@ -7,34 +7,30 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use zcash_protocol::consensus::BlockHeight;
 
-/// Transaction confirmation states. Every transaction record includes exactly one of these variants.
+/// Transaction confirmation status. As a transaction is created and transmitted to the blockchain, it will move
+/// through each of these states. Received transactions will either be seen in the mempool or scanned from confirmed
+/// blocks. Variant order is logical display order for efficient sorting instead of the order of logical status flow.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConfirmationStatus {
-    /// The transaction has been included in at-least one block mined to the zcash blockchain.
-    /// The height of a confirmed block that contains the transaction.
+    /// The transaction has been included in a confirmed block on the blockchain.
+    /// The block height is the height of the confirmed block that contains the transaction.
     Confirmed(BlockHeight),
-    /// The transaction is known to be or have been in the mempool.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction entered the mempool, i.e. the target height.
+    /// The transaction is known to be - or has been - in the mempool.
+    /// The block height is the chain height when the transaction was seen in the mempool + 1 (target height).
     Mempool(BlockHeight),
-    /// The transaction has been sent to the zcash blockchain. It could be in the mempool.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The transaction has been transmitted to the blockchain but has not been seen in the mempool yet.
+    /// The block height is the chain height when the transaction was transmitted + 1 (target height).
     Transmitted(BlockHeight),
-    /// The transaction has been calculated but not yet broadcast to the chain.
-    /// The `BlockHeight` is the 1 + the height of the chain as the transaction was broadcast, i.e. the target height.
+    /// The transaction has been created but not yet transmitted to the blockchain.
+    /// The block height is the chain height when the transaction was created + 1 (target height).
     Calculated(BlockHeight),
+    /// The transaction has been created but failed to be transmitted, was not accepted into the mempool, was rejected
+    /// from the mempool or expired before it was included in a confirmed block on the block chain.
+    /// The block height is the chain height when the transaction was last updated + 1 (target height).
+    Failed(BlockHeight),
 }
 
 impl ConfirmationStatus {
-    /// Converts from a blockheight and `pending`. pending is deprecated and is only needed in loading from save.
-    #[must_use]
-    pub fn from_blockheight_and_pending_bool(blockheight: BlockHeight, pending: bool) -> Self {
-        if pending {
-            Self::Transmitted(blockheight)
-        } else {
-            Self::Confirmed(blockheight)
-        }
-    }
-
     /// A wrapper matching the Confirmed case.
     /// # Examples
     ///
@@ -173,7 +169,6 @@ impl ConfirmationStatus {
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&10.into()));
     /// assert!(!ConfirmationStatus::Confirmed(10.into()).is_pending_before(&11.into()));
     /// ```
-    // TODO remove 'pending' and fix spend status.
     #[must_use]
     pub fn is_pending_before(&self, comparison_height: &BlockHeight) -> bool {
         match self {
@@ -182,6 +177,46 @@ impl ConfirmationStatus {
             | Self::Mempool(self_height) => self_height < comparison_height,
             _ => false,
         }
+    }
+
+    /// Check if transaction has `Calculated`, `Transmitted` or `Mempool` status.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// assert!(ConfirmationStatus::Calculated(1.into()).is_pending());
+    /// assert!(ConfirmationStatus::Transmitted(1.into()).is_pending());
+    /// assert!(ConfirmationStatus::Mempool(1.into()).is_pending());
+    /// assert!(!ConfirmationStatus::Confirmed(1.into()).is_pending());
+    /// assert!(!ConfirmationStatus::Failed(1.into()).is_pending());
+    /// ```
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        matches!(
+            self,
+            Self::Calculated(_) | Self::Transmitted(_) | Self::Mempool(_)
+        )
+    }
+
+    /// Check if transaction has `Failed` status.
+    /// # Examples
+    ///
+    /// ```
+    /// use zingo_status::confirmation_status::ConfirmationStatus;
+    /// use zcash_primitives::consensus::BlockHeight;
+    ///
+    /// assert!(!ConfirmationStatus::Calculated(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Transmitted(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Mempool(1.into()).is_failed());
+    /// assert!(!ConfirmationStatus::Confirmed(1.into()).is_failed());
+    /// assert!(ConfirmationStatus::Failed(1.into()).is_failed());
+    /// ```
+    #[must_use]
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed(_))
     }
 
     /// Returns none if transaction is not confirmed, otherwise returns the height it was confirmed at.
@@ -217,32 +252,46 @@ impl ConfirmationStatus {
     #[must_use]
     pub fn get_height(&self) -> BlockHeight {
         match self {
-            Self::Calculated(self_height) => *self_height,
+            Self::Confirmed(self_height) => *self_height,
             Self::Mempool(self_height) => *self_height,
             Self::Transmitted(self_height) => *self_height,
-            Self::Confirmed(self_height) => *self_height,
+            Self::Calculated(self_height) => *self_height,
+            Self::Failed(self_height) => *self_height,
         }
     }
 
     fn serialized_version() -> u8 {
-        0
+        1
     }
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        let _version = reader.read_u8()?;
+        let version = reader.read_u8()?;
         let status = reader.read_u8()?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
 
-        match status {
-            0 => Ok(Self::Calculated(block_height)),
-            1 => Ok(Self::Transmitted(block_height)),
-            2 => Ok(Self::Mempool(block_height)),
-            3 => Ok(Self::Confirmed(block_height)),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "failed to read status",
-            )),
+        match version {
+            0 => match status {
+                0 => Ok(Self::Calculated(block_height)),
+                1 => Ok(Self::Transmitted(block_height)),
+                2 => Ok(Self::Mempool(block_height)),
+                3 => Ok(Self::Confirmed(block_height)),
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read status",
+                )),
+            },
+            1.. => match status {
+                0 => Ok(Self::Confirmed(block_height)),
+                1 => Ok(Self::Mempool(block_height)),
+                2 => Ok(Self::Transmitted(block_height)),
+                3 => Ok(Self::Calculated(block_height)),
+                4 => Ok(Self::Failed(block_height)),
+                _ => Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to read status",
+                )),
+            },
         }
     }
 
@@ -250,10 +299,11 @@ impl ConfirmationStatus {
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
         writer.write_u8(match self {
-            Self::Calculated(_) => 0,
-            Self::Transmitted(_) => 1,
-            Self::Mempool(_) => 2,
-            Self::Confirmed(_) => 3,
+            Self::Confirmed(_) => 0,
+            Self::Mempool(_) => 1,
+            Self::Transmitted(_) => 2,
+            Self::Calculated(_) => 3,
+            Self::Failed(_) => 4,
         })?;
         writer.write_u32::<LittleEndian>(self.get_height().into())
     }
@@ -263,17 +313,20 @@ impl ConfirmationStatus {
 impl std::fmt::Display for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Calculated(_h) => {
-                write!(f, "calculated")
-            }
-            Self::Transmitted(_h) => {
-                write!(f, "transmitted")
+            Self::Confirmed(_h) => {
+                write!(f, "confirmed")
             }
             Self::Mempool(_h) => {
                 write!(f, "mempool")
             }
-            Self::Confirmed(_h) => {
-                write!(f, "confirmed")
+            Self::Transmitted(_h) => {
+                write!(f, "transmitted")
+            }
+            Self::Calculated(_h) => {
+                write!(f, "calculated")
+            }
+            Self::Failed(_h) => {
+                write!(f, "failed")
             }
         }
     }
@@ -289,21 +342,25 @@ fn stringify_display() {
 impl std::fmt::Debug for ConfirmationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Calculated(h) => {
+            Self::Confirmed(h) => {
                 let hi = u32::from(*h);
-                write!(f, "Calculated for {hi}")
-            }
-            Self::Transmitted(h) => {
-                let hi = u32::from(*h);
-                write!(f, "Transmitted for {hi}")
+                write!(f, "Confirmed at {hi}")
             }
             Self::Mempool(h) => {
                 let hi = u32::from(*h);
                 write!(f, "Mempool for {hi}")
             }
-            Self::Confirmed(h) => {
+            Self::Transmitted(h) => {
                 let hi = u32::from(*h);
-                write!(f, "Confirmed at {hi}")
+                write!(f, "Transmitted for {hi}")
+            }
+            Self::Calculated(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Calculated for {hi}")
+            }
+            Self::Failed(h) => {
+                let hi = u32::from(*h);
+                write!(f, "Failed. Last updated at {hi}")
             }
         }
     }

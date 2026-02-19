@@ -435,14 +435,18 @@ impl WalletWrite for LightWallet {
         for sent_transaction in transactions {
             // this is a workaround as Transaction does not implement Clone
             let mut transaction_bytes = vec![];
-            sent_transaction.tx().write(&mut transaction_bytes)?;
+            sent_transaction
+                .tx()
+                .write(&mut transaction_bytes)
+                .map_err(WalletError::TransactionWrite)?;
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(
                     &self.network,
                     sent_transaction.target_height().into(),
                 ),
-            )?;
+            )
+            .map_err(WalletError::TransactionRead)?;
 
             match pepper_sync::scan_pending_transaction(
                 &network,
