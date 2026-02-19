@@ -149,6 +149,7 @@ impl LightWallet {
                 ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
                 ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
                 ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
+                ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
             }
         } else {
             SpendStatus::Unspent
