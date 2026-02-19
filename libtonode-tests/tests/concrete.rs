@@ -7,6 +7,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
@@ -144,6 +145,7 @@ mod fast {
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zcash_transparent::keys::NonHardenedChildIndex;
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -792,7 +794,7 @@ mod fast {
         // messages
         let alice_to_bob = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
@@ -806,7 +808,7 @@ mod fast {
         .unwrap();
         let alice_to_bob_2 = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
@@ -820,7 +822,7 @@ mod fast {
         .unwrap();
         let alice_to_charlie = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&charlie.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
@@ -840,7 +842,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Charlie->Alice #2\nReply to\n".to_string()
-                            + &charlie.encode(&faucet.config().chain)),
+                            + &charlie.encode(&faucet.config().network_type())),
                     )
                     .unwrap(),
                 )),
@@ -858,7 +860,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Bob->Alice #2\nReply to\n".to_string()
-                            + &bob.encode(&faucet.config().chain)),
+                            + &bob.encode(&faucet.config().network_type())),
                     )
                     .unwrap(),
                 )),
@@ -884,11 +886,11 @@ mod fast {
 
         // Collect observations
         let value_transfers_bob = &recipient
-            .messages_containing(Some(&bob.encode(&recipient.config().chain)))
+            .messages_containing(Some(&bob.encode(&recipient.config().network_type())))
             .await
             .unwrap();
         let value_transfers_charlie = &recipient
-            .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
+            .messages_containing(Some(&charlie.encode(&recipient.config().network_type())))
             .await
             .unwrap();
         let all_vts = &recipient.value_transfers(true).await.unwrap();
@@ -1449,9 +1451,10 @@ mod slow {
     use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
-    use zingolib::config::ChainType;
+    use zingolib::config::{ChainType, ZingoConfig};
     use zingolib::lightclient::error::{QuickSendError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
@@ -1777,21 +1780,22 @@ mod slow {
             false,
             local_net.validator().get_activation_heights().await,
         );
-        let zingo_config = zingolib::config::load_clientconfig(
-            client_builder.server_id,
-            Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(local_net.validator().get_activation_heights().await),
-            WalletSettings {
+        let zingo_config = ZingoConfig::builder()
+            .set_indexer_uri(client_builder.server_id)
+            .set_network_type(ChainType::Regtest(
+                local_net.validator().get_activation_heights().await,
+            ))
+            .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
+            .set_wallet_name("".to_string())
+            .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        )
-        .unwrap();
+            })
+            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+            .build();
 
         let (recipient_taddr, recipient_sapling, recipient_unified) = (
             get_base_address_macro!(original_recipient, "transparent"),
@@ -4570,7 +4574,7 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ZingoConfig},
+        config::{ChainType, DEFAULT_TESTNET_LIGHTWALLETD_SERVER, ZingoConfig},
         lightclient::LightClient,
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
@@ -4588,16 +4592,23 @@ mod testnet_test {
 
         while test_count < NUM_TESTS {
             let wallet_dir = TempDir::new().unwrap();
-            let mut config = ZingoConfig::create_testnet();
-            config.wallet_dir = Some(wallet_dir.path().to_path_buf());
+            let config = ZingoConfig::builder()
+                .set_network_type(ChainType::Testnet)
+                .set_indexer_uri(
+                    (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
+                        .parse::<http::Uri>()
+                        .unwrap(),
+                )
+                .set_wallet_dir(wallet_dir.path().to_path_buf())
+                .build();
             let wallet = LightWallet::new(
                 ChainType::Testnet,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
+                    no_of_accounts: config.no_of_accounts(),
                 },
                 2_000_000.into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .unwrap();
 

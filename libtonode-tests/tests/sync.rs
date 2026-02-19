@@ -5,12 +5,14 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
-    config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
+    config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
@@ -29,30 +31,29 @@ async fn sync_mainnet_test() {
     let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
+    let config = ZingoConfig::builder()
+        .set_indexer_uri(uri.clone())
+        .set_network_type(ChainType::Mainnet)
+        .set_wallet_dir(temp_path)
+        .set_wallet_name("".to_string())
+        .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
+        })
+        .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+        .build();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
             1_500_000.into(),
-            config.wallet_settings.clone(),
+            config.wallet_settings(),
         )
         .unwrap(),
         config,
@@ -99,30 +100,29 @@ async fn sync_status() {
     let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
+    let config = ZingoConfig::builder()
+        .set_indexer_uri(uri.clone())
+        .set_network_type(ChainType::Mainnet)
+        .set_wallet_dir(temp_path)
+        .set_wallet_name("".to_string())
+        .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
+        })
+        .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+        .build();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
             2_496_152.into(),
-            config.wallet_settings.clone(),
+            config.wallet_settings(),
         )
         .unwrap(),
         config,

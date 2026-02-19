@@ -323,6 +323,7 @@ mod tests {
     };
     use bip0039::Mnemonic;
     use tempfile::TempDir;
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -336,7 +337,7 @@ mod tests {
             .build();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts(),
@@ -355,7 +356,7 @@ mod tests {
 
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts(),

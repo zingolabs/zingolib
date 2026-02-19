@@ -15,6 +15,7 @@ use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
 use zcash_protocol::consensus::BlockHeight;
+use zingo_common_components::protocol::ActivationHeights;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;

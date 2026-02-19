@@ -606,43 +606,15 @@ fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> P
 mod tests {
     use std::num::NonZeroU32;
 
-    use crate::wallet::WalletSettings;
+    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
-    /// Validate that the `load_clientconfig` function creates a valid config from an empty uri
+    use crate::{
+        config::{ChainType, ZingoConfig},
+        wallet::WalletSettings,
+    };
+
     #[tokio::test]
     async fn test_load_clientconfig() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Ring to work as a default");
-        tracing_subscriber::fmt().init();
-
-        let valid_uri = crate::config::construct_lightwalletd_uri(Some(String::new()));
-
-        let temp_dir = tempfile::TempDir::new().unwrap();
-
-        let temp_path = temp_dir.path().to_path_buf();
-
-        let valid_config = crate::config::load_clientconfig(
-            valid_uri.clone(),
-            Some(temp_path),
-            crate::config::ChainType::Mainnet,
-            WalletSettings {
-                sync_config: pepper_sync::config::SyncConfig {
-                    transparent_address_discovery:
-                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::config::PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        );
-
-        assert!(valid_config.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_load_clientconfig_serverless() {
         rustls::crypto::ring::default_provider()
             .install_default()
             .expect("Ring to work as a default");
@@ -657,25 +629,23 @@ mod tests {
         let temp_path = temp_dir.path().to_path_buf();
         // let temp_path_invalid = temp_dir.path().to_path_buf();
 
-        let valid_config = crate::config::load_clientconfig(
-            valid_uri.clone(),
-            Some(temp_path),
-            crate::config::ChainType::Mainnet,
-            WalletSettings {
-                sync_config: pepper_sync::config::SyncConfig {
-                    transparent_address_discovery:
-                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::config::PerformanceLevel::High,
+        let valid_config = ZingoConfig::builder()
+            .set_indexer_uri(valid_uri.clone())
+            .set_network_type(ChainType::Mainnet)
+            .set_wallet_dir(temp_path)
+            .set_wallet_settings(WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        )
-        .unwrap();
+            })
+            .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
+            .set_wallet_name("".to_string())
+            .build();
 
         assert_eq!(valid_config.indexer_uri(), valid_uri);
-        assert_eq!(valid_config.network_type, crate::config::ChainType::Mainnet);
+        assert_eq!(valid_config.network_type, ChainType::Mainnet);
 
         // let invalid_config = load_clientconfig_serverless(
         //     invalid_uri.clone(),

@@ -4,6 +4,7 @@ use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::network::localhost_uri;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::get_base_address_macro;
 use zingolib::testutils::lightclient::from_inputs;

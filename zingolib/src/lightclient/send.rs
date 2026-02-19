@@ -173,7 +173,7 @@ pub mod send_with_proposal {
             let config = ZingoConfigBuilder::default().build();
             let mut lc = LightClient::create_from_wallet(
                 LightWallet::new(
-                    config.chain,
+                    config.network_type(),
                     WalletBase::Mnemonic {
                         mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
                         no_of_accounts: 1.try_into().unwrap(),

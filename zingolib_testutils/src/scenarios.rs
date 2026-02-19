@@ -29,13 +29,13 @@ use zcash_local_net::logs::LogsToStdoutAndStderr;
 use zcash_local_net::network::localhost_uri;
 use zcash_local_net::process::Process;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
-use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
-
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_common_components::protocol::ActivationHeights;
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
+use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
@@ -173,21 +173,20 @@ impl ClientBuilder {
         configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
-        load_clientconfig(
-            self.server_id.clone(),
-            Some(conf_path),
-            ChainType::Regtest(configured_activation_heights),
-            WalletSettings {
+        ZingoConfig::builder()
+            .set_indexer_uri(self.server_id.clone())
+            .set_network_type(ChainType::Regtest(configured_activation_heights))
+            .set_wallet_dir(conf_path)
+            .set_wallet_name("".to_string())
+            .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        )
-        .unwrap()
+            })
+            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+            .build()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -215,13 +214,13 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),
             },
             (birthday as u32).into(),
-            config.wallet_settings.clone(),
+            config.wallet_settings(),
         )
         .unwrap();
         wallet

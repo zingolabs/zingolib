@@ -329,6 +329,7 @@ pub mod scenarios {
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zingo_common_components::protocol::ActivationHeights;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,

@@ -206,7 +206,7 @@ mod shielding {
         let config = ZingoConfigBuilder::default().build();
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string())
                         .unwrap(),
