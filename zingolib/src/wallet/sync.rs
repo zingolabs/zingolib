@@ -12,7 +12,7 @@ use pepper_sync::{
     },
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::BlockHeight;
 use zip32::{AccountId, DiversifierIndex};
 
 use super::{

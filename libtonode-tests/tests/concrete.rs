@@ -143,10 +143,10 @@ mod fast {
         zip321::{Payment, TransactionRequest},
     };
     use zcash_local_net::validator::Validator;
-    use zcash_primitives::{
-        consensus::BlockHeight, legacy::keys::NonHardenedChildIndex, memo::Memo,
-    };
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
+    use zcash_transparent::keys::NonHardenedChildIndex;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -981,7 +981,8 @@ mod fast {
     pub mod tex {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
-        use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
+        use zcash_primitives::transaction::TxId;
+        use zcash_transparent::address::TransparentAddress;
         use zingolib::{testutils, wallet::LightWallet};
 
         use super::*;
@@ -1450,15 +1451,15 @@ mod slow {
         TransparentCoin,
     };
     use zcash_local_net::validator::Validator;
-    use zcash_primitives::consensus::BlockHeight;
-    use zcash_primitives::memo::Memo;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::ChainType;
-    use zingolib::lightclient::error::{QuickSendError, SendError};
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1910,7 +1911,7 @@ mod slow {
                     vec![(zingo_test_vectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
-                Err(QuickSendError::SendError(SendError::CalculateSendError(
+                Err(LightClientError::SendError(SendError::CalculateSendError(
                     CalculateTransactionError::NoSpendingKey(_)
                 )))
             ));
@@ -1963,12 +1964,12 @@ mod slow {
         .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
-            QuickSendError::ProposalError(ProposeSendError::Proposal(
+            LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
                     available: _,
                     required: _
                 }
-            ))
+            )))
         ));
     }
 
@@ -3606,7 +3607,7 @@ TransactionSummary {
         // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => match e {
                 ProposeSendError::Proposal(insufficient) => {
                     if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
@@ -3635,9 +3636,9 @@ TransactionSummary {
         //  t -> z
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => {
-                if let ProposeSendError::Proposal(insufficient) = proposesenderror {
-                    match insufficient {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
+                if let ProposeSendError::Proposal(insufficient_funds) = e {
+                    match insufficient_funds {
                         zcash_client_backend::data_api::error::Error::InsufficientFunds {
                             available,
                             required,
@@ -4568,5 +4569,68 @@ mod send_all {
             proposal_error,
             Err(ProposeSendError::ZeroValueSendAll)
         ));
+    }
+}
+
+mod testnet_test {
+    use bip0039::Mnemonic;
+    use pepper_sync::sync_status;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingolib::{
+        config::{ChainType, ZingoConfig},
+        lightclient::LightClient,
+        testutils::tempfile::TempDir,
+        wallet::{LightWallet, WalletBase},
+    };
+
+    #[ignore = "testnet cannot be run offline"]
+    #[tokio::test]
+    async fn reload_wallet_after_short_sync() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .unwrap();
+
+        const NUM_TESTS: u8 = 20;
+        let mut test_count = 0;
+
+        while test_count < NUM_TESTS {
+            let wallet_dir = TempDir::new().unwrap();
+            let mut config = ZingoConfig::create_testnet();
+            config.wallet_dir = Some(wallet_dir.path().to_path_buf());
+            let wallet = LightWallet::new(
+                ChainType::Testnet,
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
+                    no_of_accounts: config.no_of_accounts,
+                },
+                2_000_000.into(),
+                config.wallet_settings.clone(),
+            )
+            .unwrap();
+
+            let mut lightclient =
+                LightClient::create_from_wallet(wallet, config.clone(), true).unwrap();
+            lightclient.save_task().await;
+            lightclient.sync().await.unwrap();
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await;
+            while sync_status(&*lightclient.wallet.read().await)
+                .await
+                .unwrap()
+                .percentage_total_outputs_scanned
+                > 1.0
+            {
+                interval.tick().await;
+            }
+            lightclient.stop_sync().unwrap();
+            lightclient.await_sync().await.unwrap();
+            lightclient.shutdown_save_task().await.unwrap();
+
+            // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
+            LightClient::create_from_wallet_path(config).unwrap();
+
+            test_count += 1;
+        }
     }
 }

@@ -348,7 +348,12 @@ impl TransactionRecord {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-        let status = zingo_status::confirmation_status::ConfirmationStatus::from_blockheight_and_pending_bool(block, pending);
+        let status = if pending {
+            ConfirmationStatus::Transmitted(block)
+        } else {
+            ConfirmationStatus::Confirmed(block)
+        };
+
         Ok(Self {
             status,
             datetime,

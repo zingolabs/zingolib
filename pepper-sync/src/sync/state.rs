@@ -16,7 +16,6 @@ use zcash_protocol::{
 
 use crate::{
     client::{self, FetchRequest},
-    config::PerformanceLevel,
     error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
     scan::task::ScanTask,
@@ -27,7 +26,7 @@ use crate::{
     },
 };
 
-use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, checked_birthday};
+use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE};
 
 const NARROW_SCAN_AREA: u32 = 10_000;
 
@@ -38,26 +37,6 @@ use zcash_client_backend::proto::service::SubtreeRoot;
 pub(super) enum VerifyEnd {
     VerifyHighest,
     VerifyLowest,
-}
-
-/// Returns the last known chain height stored in the wallet.
-///
-/// If no chain height is yet known, returns the highest value of the wallet birthday or sapling activation height.
-pub(super) fn get_wallet_height<W>(
-    consensus_parameters: &impl consensus::Parameters,
-    wallet: &W,
-) -> Result<BlockHeight, W::Error>
-where
-    W: SyncWallet,
-{
-    let wallet_height = if let Some(height) = wallet.get_sync_state()?.wallet_height() {
-        height
-    } else {
-        let birthday = checked_birthday(consensus_parameters, wallet)?;
-        birthday - 1
-    };
-
-    Ok(wallet_height)
 }
 
 /// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::wallet::SyncState`]
@@ -85,12 +64,12 @@ fn find_scan_targets(
 /// Update scan ranges for scanning.
 pub(super) async fn update_scan_ranges(
     consensus_parameters: &impl consensus::Parameters,
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
     reset_scan_ranges(sync_state);
-    create_scan_range(wallet_height, chain_height, sync_state).await;
+    create_scan_range(last_known_chain_height, chain_height, sync_state).await;
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
@@ -149,17 +128,17 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 
 /// Create scan range between the wallet height and the chain height from the server.
 async fn create_scan_range(
-    wallet_height: BlockHeight,
+    last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
 ) {
-    if wallet_height == chain_height {
+    if last_known_chain_height == chain_height {
         return;
     }
 
     let new_scan_range = ScanRange::from_parts(
         Range {
-            start: wallet_height + 1,
+            start: last_known_chain_height + 1,
             end: chain_height + 1,
         },
         ScanPriority::Historic,
@@ -171,6 +150,8 @@ async fn create_scan_range(
 ///
 /// A range that was previously scanning when sync was last interrupted is set to `FoundNote` to be prioritised for
 /// scanning.
+/// A range that was previously refetching nullifiers when sync was last interrupted is set to `ScannedWithoutMapping`
+/// so the nullifiers can be fetched again.
 fn reset_scan_ranges(sync_state: &mut SyncState) {
     let previously_scanning_scan_ranges = sync_state
         .scan_ranges
@@ -183,6 +164,20 @@ fn reset_scan_ranges(sync_state: &mut SyncState) {
             sync_state,
             scan_range.block_range(),
             ScanPriority::FoundNote,
+        );
+    }
+
+    let previously_refetching_nullifiers_scan_ranges = sync_state
+        .scan_ranges
+        .iter()
+        .filter(|&range| range.priority() == ScanPriority::RefetchingNullifiers)
+        .cloned()
+        .collect::<Vec<_>>();
+    for scan_range in previously_refetching_nullifiers_scan_ranges {
+        set_scan_priority(
+            sync_state,
+            scan_range.block_range(),
+            ScanPriority::ScannedWithoutMapping,
         );
     }
 }
@@ -338,6 +333,35 @@ pub(super) fn set_scanned_scan_range(
     sync_state.scan_ranges.splice(index..=index, split_ranges);
 }
 
+pub(super) fn reset_refetching_nullifiers_scan_range(
+    sync_state: &mut SyncState,
+    invalid_refetch_range: Range<BlockHeight>,
+) {
+    let Some((index, scan_range)) =
+        sync_state
+            .scan_ranges
+            .iter()
+            .enumerate()
+            .find(|(_, scan_range)| {
+                scan_range
+                    .block_range()
+                    .contains(&invalid_refetch_range.start)
+                    && scan_range
+                        .block_range()
+                        .contains(&(invalid_refetch_range.end - 1))
+            })
+    else {
+        panic!("scan range containing invalid refetch range should exist!");
+    };
+
+    let split_ranges = split_out_scan_range(
+        scan_range.clone(),
+        invalid_refetch_range.clone(),
+        ScanPriority::ScannedWithoutMapping,
+    );
+    sync_state.scan_ranges.splice(index..=index, split_ranges);
+}
+
 /// Sets the scan range in `sync_state` with `block_range` to the given `scan_priority`.
 ///
 /// Panics if no scan range is found in `sync_state` with a block range of exactly `block_range`.
@@ -366,9 +390,9 @@ pub(super) fn set_scan_priority(
 /// If any scan ranges in `sync_state` are found to overlap with the given `block_range`, they will be split at the
 /// boundary and the new scan ranges contained by `block_range` will be set to `scan_priority`.
 /// Any scan ranges that fully contain the `block_range` will be split out with the given `scan_priority`.
-/// Any scan ranges with `Scanning` or `Scanned` priority or with higher (or equal) priority than
+/// Any scan ranges with `Scanning`, `RefetchingNullifiers` or `Scanned` priority or with higher (or equal) priority than
 /// `scan_priority` will be ignored.
-fn punch_scan_priority(
+pub(super) fn punch_scan_priority(
     sync_state: &mut SyncState,
     block_range: Range<BlockHeight>,
     scan_priority: ScanPriority,
@@ -380,6 +404,7 @@ fn punch_scan_priority(
         if scan_range.priority() == ScanPriority::Scanned
             || scan_range.priority() == ScanPriority::ScannedWithoutMapping
             || scan_range.priority() == ScanPriority::Scanning
+            || scan_range.priority() == ScanPriority::RefetchingNullifiers
             || scan_range.priority() >= scan_priority
         {
             continue;
@@ -468,11 +493,11 @@ fn determine_block_range(
                 range.end - 1
             } else {
                 sync_state
-                    .wallet_birthday()
+                    .get_initial_scan_height()
                     .expect("scan range should not be empty")
             };
             let end = sync_state
-                .wallet_height()
+                .last_known_chain_height()
                 .expect("scan range should not be empty")
                 + 1;
 
@@ -559,14 +584,18 @@ fn split_out_scan_range(
 /// Selects and prepares the next scan range for scanning.
 ///
 /// Sets the range for scanning to `Scanning` priority in the wallet `sync_state` but returns the scan range with its
-/// initial priority.
+/// initial priority for use in scanning and post-scan processing.
+/// If the selected range is of `ScannedWithoutMapping` priority, the range is set to `RefetchingNullifiers` in the
+/// wallet `sync_state` but returns the scan range with priority `ScannedWithoutMapping` for use in scanning and
+/// post-scan processing.
 /// Returns `None` if there are no more ranges to scan.
 ///
-/// Set `map_nullifiers` to `false` if the nullifiers are not going to be mapped to the wallet's main nullifier map.
+/// Set `nullifier_map_limit_exceeded` to `true` if the nullifiers are not going to be mapped to the wallet's main
+/// nullifier map due to performance constraints.
 fn select_scan_range(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
-    map_nullifiers: bool,
+    nullifier_map_limit_exceeded: bool,
 ) -> Option<ScanRange> {
     let (first_unscanned_index, first_unscanned_range) = sync_state
         .scan_ranges
@@ -574,25 +603,27 @@ fn select_scan_range(
         .enumerate()
         .find(|(_, scan_range)| {
             scan_range.priority() != ScanPriority::Scanned
-                && scan_range.priority() != ScanPriority::Scanning
+                && scan_range.priority() != ScanPriority::RefetchingNullifiers
         })?;
     let (selected_index, selected_scan_range) =
         if first_unscanned_range.priority() == ScanPriority::ScannedWithoutMapping {
             // prioritise re-fetching the nullifiers when a range with priority `ScannedWithoutMapping` is the first
             // unscanned range.
+            // the `first_unscanned_range` may have `Scanning` priority here as we must select a `ScannedWithoutMapping` range only when all ranges below are `Scanned`. if a `ScannedwithoutMapping` range is selected and completes *before* a lower range that is currently `Scanning`, the nullifiers will need to be discarded and re-fetched afterwards. so this avoids a race condition that results in a sync inefficiency.
             (first_unscanned_index, first_unscanned_range.clone())
         } else {
             // scan ranges are sorted from lowest to highest priority.
             // scan ranges with the same priority are sorted in block height order.
-            // the highest priority scan range is the selected from the end of the list, the highest priority with highest
+            // the highest priority scan range is then selected from the end of the list, the highest priority with highest
             // starting block height.
             // if the highest priority is `Historic` the range with the lowest starting block height is selected instead.
             // if nullifiers are not being mapped to the wallet's main nullifier map due to performance constraints
-            // (`map_nullifiers` is set `false`) then the range with the highest priority and lowest starting block
-            // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected.
+            // (`nullifier_map_limit_exceeded` is set `true`) then the range with the highest priority and lowest starting block
+            // height is selected to allow notes to be spendable quickly on rescan, otherwise spends would not be detected as nullifiers will be temporarily discarded.
+            // TODO: add this documentation of performance levels and order of scanning to pepper-sync doc comments
             let mut scan_ranges_priority_sorted: Vec<(usize, ScanRange)> =
                 sync_state.scan_ranges.iter().cloned().enumerate().collect();
-            if !map_nullifiers {
+            if nullifier_map_limit_exceeded {
                 scan_ranges_priority_sorted
                     .sort_by(|(_, a), (_, b)| b.block_range().start.cmp(&a.block_range().start));
             }
@@ -602,16 +633,18 @@ fn select_scan_range(
                 .last()
                 .map(|(index, highest_priority_range)| {
                     if highest_priority_range.priority() == ScanPriority::Historic {
-                        if map_nullifiers {
+                        if nullifier_map_limit_exceeded {
+                            // in this case, scan ranges are already sorted from highest to lowest and we are selecting
+                            // the last range (lowest range with historic priority)
+                            (*index, highest_priority_range.clone())
+                        } else {
+                            // in this case, scan ranges are sorted from lowest to highest and we are selecting
+                            // the lowest range with historic priority
                             scan_ranges_priority_sorted
                                 .iter()
                                 .find(|(_, range)| range.priority() == ScanPriority::Historic)
                                 .expect("range with Historic priority exists in this scope")
                                 .clone()
-                        } else {
-                            // in this case, scan ranges are already sorted from highest to lowest and we are selecting
-                            // the last range (lowest)
-                            (*index, highest_priority_range.clone())
                         }
                     } else {
                         // select the last range in the list
@@ -622,42 +655,67 @@ fn select_scan_range(
 
     let selected_priority = selected_scan_range.priority();
 
+    if selected_priority == ScanPriority::Scanned
+        || selected_priority == ScanPriority::Scanning
+        || selected_priority == ScanPriority::RefetchingNullifiers
+    {
+        return None;
+    }
+
     // historic scan ranges can be larger than a shard block range so must be split out.
     // otherwise, just set the scan priority of selected range to `Scanning` in sync state.
-    let selected_block_range = if selected_priority == ScanPriority::Historic {
-        let shard_block_range = determine_block_range(
-            consensus_parameters,
-            sync_state,
-            selected_scan_range.block_range().start,
-            Some(ShieldedProtocol::Orchard),
-        );
-        let split_ranges = split_out_scan_range(
-            selected_scan_range,
-            shard_block_range,
-            ScanPriority::Scanning,
-        );
-        let selected_block_range = split_ranges
-            .first()
-            .expect("split ranges should always be non-empty")
-            .block_range()
-            .clone();
-        sync_state
-            .scan_ranges
-            .splice(selected_index..=selected_index, split_ranges);
+    // if the selected range is of `ScannedWithoutMapping` priority, set the range to `RefetchingNullifiers` priority
+    // instead of `Scanning`.
+    let selected_block_range = match selected_priority {
+        ScanPriority::Historic => {
+            let shard_block_range = determine_block_range(
+                consensus_parameters,
+                sync_state,
+                selected_scan_range.block_range().start,
+                Some(ShieldedProtocol::Orchard),
+            );
+            let split_ranges = split_out_scan_range(
+                selected_scan_range,
+                shard_block_range,
+                ScanPriority::Scanning,
+            );
+            let selected_block_range = split_ranges
+                .first()
+                .expect("split ranges should always be non-empty")
+                .block_range()
+                .clone();
+            sync_state
+                .scan_ranges
+                .splice(selected_index..=selected_index, split_ranges);
 
-        selected_block_range
-    } else {
-        let selected_scan_range = sync_state
-            .scan_ranges
-            .get_mut(selected_index)
-            .expect("scan range should exist due to previous logic");
+            selected_block_range
+        }
+        ScanPriority::ScannedWithoutMapping => {
+            let selected_scan_range = sync_state
+                .scan_ranges
+                .get_mut(selected_index)
+                .expect("scan range should exist due to previous logic");
 
-        *selected_scan_range = ScanRange::from_parts(
-            selected_scan_range.block_range().clone(),
-            ScanPriority::Scanning,
-        );
+            *selected_scan_range = ScanRange::from_parts(
+                selected_scan_range.block_range().clone(),
+                ScanPriority::RefetchingNullifiers,
+            );
 
-        selected_scan_range.block_range().clone()
+            selected_scan_range.block_range().clone()
+        }
+        _ => {
+            let selected_scan_range = sync_state
+                .scan_ranges
+                .get_mut(selected_index)
+                .expect("scan range should exist due to previous logic");
+
+            *selected_scan_range = ScanRange::from_parts(
+                selected_scan_range.block_range().clone(),
+                ScanPriority::Scanning,
+            );
+
+            selected_scan_range.block_range().clone()
+        }
     };
 
     Some(ScanRange::from_parts(
@@ -670,25 +728,15 @@ fn select_scan_range(
 pub(crate) fn create_scan_task<W>(
     consensus_parameters: &impl consensus::Parameters,
     wallet: &mut W,
-    performance_level: PerformanceLevel,
+    nullifier_map_limit_exceeded: bool,
 ) -> Result<Option<ScanTask>, W::Error>
 where
     W: SyncWallet + SyncBlocks + SyncNullifiers,
 {
-    let nullifier_map = wallet.get_nullifiers()?;
-    let max_nullifier_map_size = match performance_level {
-        PerformanceLevel::Low => Some(0),
-        PerformanceLevel::Medium => Some(0),
-        PerformanceLevel::High => Some(2_000_000),
-        PerformanceLevel::Maximum => None,
-    };
-    let mut map_nullifiers = max_nullifier_map_size
-        .is_none_or(|max| nullifier_map.orchard.len() + nullifier_map.sapling.len() < max);
-
     if let Some(selected_range) = select_scan_range(
         consensus_parameters,
         wallet.get_sync_state_mut()?,
-        map_nullifiers,
+        nullifier_map_limit_exceeded,
     ) {
         if selected_range.priority() == ScanPriority::ScannedWithoutMapping {
             // all continuity checks and scanning is already complete, the scan worker will only re-fetch the nullifiers
@@ -699,7 +747,6 @@ where
                 None,
                 BTreeSet::new(),
                 HashMap::new(),
-                true,
             )))
         } else {
             let start_seam_block = wallet
@@ -717,37 +764,12 @@ where
                 .map(|(id, address)| (address.clone(), *id))
                 .collect();
 
-            // chain tip nullifiers are still mapped even in lowest performance setting to allow instant spendability
-            // of new notes.
-            if selected_range.priority() == ScanPriority::ChainTip {
-                map_nullifiers = true;
-            } else {
-                // map nullifiers if the scanning the lowest range to be scanned for final spend detection.
-                // this will set the range to `Scanned` (as opose to `ScannedWithoutMapping`) and prevent immediate
-                // re-fetching of the nullifiers in this range.
-                // the selected range is not the lowest range to be scanned unless all ranges before it are scanned or
-                // scanning.
-                for scan_range in wallet.get_sync_state()?.scan_ranges() {
-                    if scan_range.priority() != ScanPriority::Scanned
-                        && scan_range.priority() != ScanPriority::ScannedWithoutMapping
-                        && scan_range.priority() != ScanPriority::Scanning
-                    {
-                        break;
-                    }
-
-                    if scan_range.block_range() == selected_range.block_range() {
-                        map_nullifiers = true;
-                    }
-                }
-            }
-
             Ok(Some(ScanTask::from_parts(
                 selected_range,
                 start_seam_block,
                 end_seam_block,
                 scan_targets,
                 transparent_addresses,
-                map_nullifiers,
             )))
         }
     } else {
@@ -766,8 +788,8 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let birthday = sync_state
-        .wallet_birthday()
+    let start_height = sync_state
+        .get_initial_scan_height()
         .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
         .fully_scanned_height()
@@ -776,7 +798,7 @@ where
     let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
         calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
     let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
-        if let Ok(block) = wallet.get_wallet_block(birthday) {
+        if let Ok(block) = wallet.get_wallet_block(start_height) {
             (
                 block.tree_bounds.sapling_initial_tree_size,
                 block.tree_bounds.orchard_initial_tree_size,
@@ -786,7 +808,7 @@ where
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
-                birthday - 1,
+                start_height - 1,
             )
             .await?
         };
@@ -828,6 +850,7 @@ pub(super) fn calculate_scanned_blocks(sync_state: &SyncState) -> u32 {
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .map(super::ScanRange::block_range)
         .fold(0, |acc, block_range| {
@@ -846,6 +869,7 @@ where
         .filter(|scan_range| {
             scan_range.priority() == ScanPriority::Scanned
                 || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                || scan_range.priority() == ScanPriority::RefetchingNullifiers
         })
         .map(|scanned_range| scanned_range_tree_bounds(wallet, scanned_range.block_range().clone()))
         .collect::<Result<Vec<_>, _>>()?

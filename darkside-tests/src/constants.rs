@@ -60,7 +60,7 @@ mod tests {
         let tx = hex::decode(hex_transaction).unwrap();
         zcash_primitives::transaction::Transaction::read(
             &tx[..],
-            zcash_primitives::consensus::BranchId::Nu5,
+            zcash_protocol::consensus::BranchId::Nu5,
         )
         .unwrap();
     }
