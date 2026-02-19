@@ -1469,6 +1469,7 @@ where
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
+            tracing::warn!("Hash discontinuity detected before block {height}.");
             if height == scan_range.block_range().start
                 && scan_range.priority() == ScanPriority::Verify
             {
