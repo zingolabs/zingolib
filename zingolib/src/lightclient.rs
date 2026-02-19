@@ -76,12 +76,12 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         Self::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::FreshEntropy {
-                    no_of_accounts: config.no_of_accounts,
+                    no_of_accounts: config.no_of_accounts(),
                 },
                 chain_height,
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )?,
             config,
             overwrite,
@@ -98,7 +98,7 @@ impl LightClient {
     ) -> Result<Self, LightClientError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && config.wallet_path().exists() {
+            if !overwrite && config.get_wallet_path().exists() {
                 return Err(LightClientError::FileError(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     format!(
@@ -123,7 +123,7 @@ impl LightClient {
     /// Create a `LightClient` from an existing wallet file.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet_path(config: ZingoConfig) -> Result<Self, LightClientError> {
-        let wallet_path = if config.wallet_path().exists() {
+        let wallet_path = if config.get_wallet_path().exists() {
             config.get_wallet_path()
         } else {
             return Err(LightClientError::FileError(std::io::Error::new(
@@ -137,7 +137,11 @@ impl LightClient {
 
         let buffer = BufReader::new(File::open(wallet_path)?);
 
-        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
+        Self::create_from_wallet(
+            LightWallet::read(buffer, config.network_type())?,
+            config,
+            true,
+        )
     }
 
     /// Returns config used to create lightclient.
@@ -155,9 +159,9 @@ impl LightClient {
         self.config.indexer_uri()
     }
 
-    /// Set the server uri.
-    pub fn set_server(&self, server: http::Uri) {
-        *self.config.indexer_uri.write().unwrap() = server;
+    /// Set indexer uri.
+    pub fn set_indexer_uri(&mut self, server: http::Uri) {
+        self.config.set_indexer_uri(server);
     }
 
     /// Creates a tor client for current price updates.
@@ -187,7 +191,7 @@ impl LightClient {
                 let o = json::object! {
                     "version" => i.version,
                     "git_commit" => i.git_commit,
-                    "server_uri" => self.server_uri().to_string(),
+                    "server_uri" => self.indexer_uri().to_string(),
                     "vendor" => i.vendor,
                     "taddr_support" => i.taddr_support,
                     "chain_name" => i.chain_name,
@@ -326,7 +330,8 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::builder(ChainType::Regtest(ActivationHeights::default()))
+        let config = ZingoConfig::builder()
+            .set_network_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .build();
         let mut lc = LightClient::create_from_wallet(
@@ -334,10 +339,10 @@ mod tests {
                 config.chain,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
+                    no_of_accounts: config.no_of_accounts(),
                 },
                 0.into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .unwrap(),
             config.clone(),
@@ -353,10 +358,10 @@ mod tests {
                 config.chain,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
+                    no_of_accounts: config.no_of_accounts(),
                 },
                 0.into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .unwrap(),
             config,

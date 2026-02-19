@@ -659,246 +659,6 @@ where
         Ok(sapling_floored_bday(consensus_parameters, raw_bday) - 1)
     }
 }
-#[cfg(test)]
-mod test {
-
-    mod checked_height_validation {
-        use zcash_protocol::consensus::BlockHeight;
-        use zcash_protocol::local_consensus::LocalNetwork;
-        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
-            overwinter: Some(BlockHeight::from_u32(1)),
-            sapling: Some(BlockHeight::from_u32(3)),
-            blossom: Some(BlockHeight::from_u32(3)),
-            heartwood: Some(BlockHeight::from_u32(3)),
-            canopy: Some(BlockHeight::from_u32(3)),
-            nu5: Some(BlockHeight::from_u32(3)),
-            nu6: Some(BlockHeight::from_u32(3)),
-            nu6_1: Some(BlockHeight::from_u32(3)),
-        };
-        use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
-        // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
-        // this test shows that such an error is raies wrapped in a WalletError and return as the Err variant
-        #[tokio::test]
-        async fn get_sync_state_error() {
-            let builder = crate::mocks::MockWalletBuilder::new();
-            let test_error = "get_sync_state_error";
-            let mut test_wallet = builder
-                .get_sync_state_patch(Box::new(|_| {
-                    Err(MockWalletError::AnErrorVariant(test_error.to_string()))
-                }))
-                .create_mock_wallet();
-            let res =
-                checked_wallet_height(&mut test_wallet, BlockHeight::from_u32(1), &LOCAL_NETWORK);
-            assert!(matches!(
-                res,
-                Err(SyncError::WalletError(
-                    crate::mocks::MockWalletError::AnErrorVariant(ref s)
-                )) if s == test_error
-            ));
-        }
-
-        mod last_known_chain_height {
-            use crate::{
-                sync::{MAX_REORG_ALLOWANCE, ScanRange},
-                wallet::SyncState,
-            };
-            const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
-            const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
-            const DEFAULT_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
-
-            use super::*;
-            #[tokio::test]
-            async fn above_allowance() {
-                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(211);
-                let lkch = vec![ScanRange::from_parts(
-                    DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
-                let res =
-                    checked_wallet_height(&mut test_wallet, DEFAULT_CHAIN_HEIGHT, &LOCAL_NETWORK);
-                if let Err(e) = res {
-                    assert_eq!(
-                        e.to_string(),
-                        format!(
-                            "wallet height {} is more than {} blocks ahead of best chain height {}",
-                            LAST_KNOWN_HEIGHT - 1,
-                            MAX_REORG_ALLOWANCE,
-                            DEFAULT_CHAIN_HEIGHT
-                        )
-                    );
-                } else {
-                    panic!()
-                }
-            }
-            #[tokio::test]
-            async fn above_chain_height_below_allowance() {
-                // The hain_height is received from the proxy
-                // truncate uses the wallet scan start height
-                // as a
-                let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
-                let chain_height = BlockHeight::from_u32(4);
-                // This will trigger a call to truncate_wallet_data with
-                // chain_height and start_height inferred from the wallet.
-                // chain must be greater than by this time which hits the Greater cmp
-                // match
-                let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
-                assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
-            }
-            #[ignore = "in progress"]
-            #[tokio::test]
-            async fn equal_or_below_chain_height_and_above_sapling() {
-                let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
-            }
-            #[ignore = "in progress"]
-            #[tokio::test]
-            async fn equal_or_below_chain_height_and_below_sapling() {
-                // This case requires that the wallet have a scan_start_below sapling
-                // which is an unexpected state.
-                let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
-            }
-            #[ignore = "in progress"]
-            #[tokio::test]
-            async fn below_sapling() {
-                let lkch = vec![ScanRange::from_parts(
-                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
-                    crate::sync::ScanPriority::Scanned,
-                )];
-                let state = SyncState {
-                    scan_ranges: lkch,
-                    ..Default::default()
-                };
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
-            }
-        }
-        mod no_last_known_chain_height {
-            use super::*;
-            // If there are know scan_ranges in the SyncState
-            #[tokio::test]
-            async fn get_bday_error() {
-                let test_error = "get_bday_error";
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder
-                    .get_birthday_patch(Box::new(|_| {
-                        Err(crate::mocks::MockWalletError::AnErrorVariant(
-                            test_error.to_string(),
-                        ))
-                    }))
-                    .create_mock_wallet();
-                let res = checked_wallet_height(
-                    &mut test_wallet,
-                    BlockHeight::from_u32(1),
-                    &LOCAL_NETWORK,
-                );
-                assert!(matches!(
-                    res,
-                    Err(SyncError::WalletError(
-                        crate::mocks::MockWalletError::AnErrorVariant(ref s)
-                    )) if s == test_error
-                ));
-            }
-            #[ignore = "in progress"]
-            #[tokio::test]
-            async fn raw_bday_above_chain_height() {
-                let builder = crate::mocks::MockWalletBuilder::new();
-                let mut test_wallet = builder
-                    .birthday(BlockHeight::from_u32(15))
-                    .create_mock_wallet();
-                let res = checked_wallet_height(
-                    &mut test_wallet,
-                    BlockHeight::from_u32(1),
-                    &LOCAL_NETWORK,
-                );
-                if let Err(e) = res {
-                    assert_eq!(
-                        e.to_string(),
-                        format!(
-                            "wallet height is more than {} blocks ahead of best chain height",
-                            15 - 1
-                        )
-                    );
-                } else {
-                    panic!()
-                }
-            }
-            mod sapling_height {
-                use super::*;
-                #[tokio::test]
-                async fn raw_bday_above() {
-                    let builder = crate::mocks::MockWalletBuilder::new();
-                    let mut test_wallet = builder
-                        .birthday(BlockHeight::from_u32(4))
-                        .create_mock_wallet();
-                    let res = checked_wallet_height(
-                        &mut test_wallet,
-                        BlockHeight::from_u32(5),
-                        &LOCAL_NETWORK,
-                    );
-                    assert_eq!(res.unwrap(), BlockHeight::from_u32(4 - 1));
-                }
-                #[tokio::test]
-                async fn raw_bday_equal() {
-                    let builder = crate::mocks::MockWalletBuilder::new();
-                    let mut test_wallet = builder
-                        .birthday(BlockHeight::from_u32(3))
-                        .create_mock_wallet();
-                    let res = checked_wallet_height(
-                        &mut test_wallet,
-                        BlockHeight::from_u32(5),
-                        &LOCAL_NETWORK,
-                    );
-                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
-                }
-                #[tokio::test]
-                async fn raw_bday_below() {
-                    let builder = crate::mocks::MockWalletBuilder::new();
-                    let mut test_wallet = builder
-                        .birthday(BlockHeight::from_u32(1))
-                        .create_mock_wallet();
-                    let res = checked_wallet_height(
-                        &mut test_wallet,
-                        BlockHeight::from_u32(5),
-                        &LOCAL_NETWORK,
-                    );
-                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
-                }
-            }
-        }
-    }
-}
 
 /// Creates a [`self::SyncStatus`] from the wallet's current [`crate::wallet::SyncState`].
 /// If there is still nullifiers to be re-fetched when scanning is complete, the percentages will be overrided to 99%
@@ -2099,5 +1859,246 @@ fn max_nullifier_map_size(performance_level: PerformanceLevel) -> Option<usize> 
         PerformanceLevel::Medium => Some(125_000),
         PerformanceLevel::High => Some(2_000_000),
         PerformanceLevel::Maximum => None,
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    mod checked_height_validation {
+        use zcash_protocol::consensus::BlockHeight;
+        use zcash_protocol::local_consensus::LocalNetwork;
+        const LOCAL_NETWORK: LocalNetwork = LocalNetwork {
+            overwinter: Some(BlockHeight::from_u32(1)),
+            sapling: Some(BlockHeight::from_u32(3)),
+            blossom: Some(BlockHeight::from_u32(3)),
+            heartwood: Some(BlockHeight::from_u32(3)),
+            canopy: Some(BlockHeight::from_u32(3)),
+            nu5: Some(BlockHeight::from_u32(3)),
+            nu6: Some(BlockHeight::from_u32(3)),
+            nu6_1: Some(BlockHeight::from_u32(3)),
+        };
+        use crate::{error::SyncError, mocks::MockWalletError, sync::checked_wallet_height};
+        // It's possible an error from an implementor's get_sync_state could bubble up to checked_wallet_height
+        // this test shows that such an error is raies wrapped in a WalletError and return as the Err variant
+        #[tokio::test]
+        async fn get_sync_state_error() {
+            let builder = crate::mocks::MockWalletBuilder::new();
+            let test_error = "get_sync_state_error";
+            let mut test_wallet = builder
+                .get_sync_state_patch(Box::new(|_| {
+                    Err(MockWalletError::AnErrorVariant(test_error.to_string()))
+                }))
+                .create_mock_wallet();
+            let res =
+                checked_wallet_height(&mut test_wallet, BlockHeight::from_u32(1), &LOCAL_NETWORK);
+            assert!(matches!(
+                res,
+                Err(SyncError::WalletError(
+                    crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                )) if s == test_error
+            ));
+        }
+
+        mod last_known_chain_height {
+            use crate::{
+                sync::{MAX_REORG_ALLOWANCE, ScanRange},
+                wallet::SyncState,
+            };
+            const DEFAULT_START_HEIGHT: BlockHeight = BlockHeight::from_u32(1);
+            const _DEFAULT_LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(102);
+            const DEFAULT_CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(110);
+
+            use super::*;
+            #[tokio::test]
+            async fn above_allowance() {
+                const LAST_KNOWN_HEIGHT: BlockHeight = BlockHeight::from_u32(211);
+                let lkch = vec![ScanRange::from_parts(
+                    DEFAULT_START_HEIGHT..LAST_KNOWN_HEIGHT,
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let res =
+                    checked_wallet_height(&mut test_wallet, DEFAULT_CHAIN_HEIGHT, &LOCAL_NETWORK);
+                if let Err(e) = res {
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "wallet height {} is more than {} blocks ahead of best chain height {}",
+                            LAST_KNOWN_HEIGHT - 1,
+                            MAX_REORG_ALLOWANCE,
+                            DEFAULT_CHAIN_HEIGHT
+                        )
+                    );
+                } else {
+                    panic!()
+                }
+            }
+            #[tokio::test]
+            async fn above_chain_height_below_allowance() {
+                // The hain_height is received from the proxy
+                // truncate uses the wallet scan start height
+                // as a
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(6)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder.sync_state(state).create_mock_wallet();
+                let chain_height = BlockHeight::from_u32(4);
+                // This will trigger a call to truncate_wallet_data with
+                // chain_height and start_height inferred from the wallet.
+                // chain must be greater than by this time which hits the Greater cmp
+                // match
+                let res = checked_wallet_height(&mut test_wallet, chain_height, &LOCAL_NETWORK);
+                assert_eq!(res.unwrap(), BlockHeight::from_u32(4));
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn equal_or_below_chain_height_and_above_sapling() {
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn equal_or_below_chain_height_and_below_sapling() {
+                // This case requires that the wallet have a scan_start_below sapling
+                // which is an unexpected state.
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn below_sapling() {
+                let lkch = vec![ScanRange::from_parts(
+                    BlockHeight::from_u32(1)..BlockHeight::from_u32(10),
+                    crate::sync::ScanPriority::Scanned,
+                )];
+                let state = SyncState {
+                    scan_ranges: lkch,
+                    ..Default::default()
+                };
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut _test_wallet = builder.sync_state(state).create_mock_wallet();
+            }
+        }
+        mod no_last_known_chain_height {
+            use super::*;
+            // If there are know scan_ranges in the SyncState
+            #[tokio::test]
+            async fn get_bday_error() {
+                let test_error = "get_bday_error";
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder
+                    .get_birthday_patch(Box::new(|_| {
+                        Err(crate::mocks::MockWalletError::AnErrorVariant(
+                            test_error.to_string(),
+                        ))
+                    }))
+                    .create_mock_wallet();
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                assert!(matches!(
+                    res,
+                    Err(SyncError::WalletError(
+                        crate::mocks::MockWalletError::AnErrorVariant(ref s)
+                    )) if s == test_error
+                ));
+            }
+            #[ignore = "in progress"]
+            #[tokio::test]
+            async fn raw_bday_above_chain_height() {
+                let builder = crate::mocks::MockWalletBuilder::new();
+                let mut test_wallet = builder
+                    .birthday(BlockHeight::from_u32(15))
+                    .create_mock_wallet();
+                let res = checked_wallet_height(
+                    &mut test_wallet,
+                    BlockHeight::from_u32(1),
+                    &LOCAL_NETWORK,
+                );
+                if let Err(e) = res {
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "wallet height is more than {} blocks ahead of best chain height",
+                            15 - 1
+                        )
+                    );
+                } else {
+                    panic!()
+                }
+            }
+            mod sapling_height {
+                use super::*;
+                #[tokio::test]
+                async fn raw_bday_above() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(4))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(4 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_equal() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(3))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                }
+                #[tokio::test]
+                async fn raw_bday_below() {
+                    let builder = crate::mocks::MockWalletBuilder::new();
+                    let mut test_wallet = builder
+                        .birthday(BlockHeight::from_u32(1))
+                        .create_mock_wallet();
+                    let res = checked_wallet_height(
+                        &mut test_wallet,
+                        BlockHeight::from_u32(5),
+                        &LOCAL_NETWORK,
+                    );
+                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                }
+            }
+        }
     }
 }

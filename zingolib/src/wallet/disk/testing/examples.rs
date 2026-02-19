@@ -301,7 +301,7 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let wallet = self.load_example_wallet(config.chain);
+        let wallet = self.load_example_wallet(config.network_type());
 
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }
