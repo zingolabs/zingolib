@@ -27,7 +27,7 @@ async fn simple_sync() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
-        0,
+        1,
         true,
         activation_heights,
     );
@@ -71,7 +71,7 @@ async fn reorg_receipt_sync_generic() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
         DARKSIDE_SEED.to_string(),
-        0,
+        1,
         true,
         activation_heights,
     );
