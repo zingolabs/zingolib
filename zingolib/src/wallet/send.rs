@@ -10,7 +10,6 @@ use zcash_client_backend::proposal::Proposal;
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::NoteInterface;
 use zcash_primitives::transaction::fees::zip317;
-use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus::{BlockHeight, Parameters as _};
 use zcash_protocol::{ShieldedProtocol, TxId};
 
@@ -24,16 +23,9 @@ impl LightWallet {
         proposal: Proposal<zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
-        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
-            crate::wallet::utils::read_sapling_params()
-                .map_err(CalculateTransactionError::SaplingParams)?;
-
-        let sapling_prover =
-            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
         let calculated_txids = match proposal.steps().len() {
             1 => {
-                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
+                self.create_proposed_transactions(proposal, sending_account)
                     .await?
             }
             2 if proposal.steps()[1]
@@ -52,7 +44,7 @@ impl LightWallet {
                     )
                 }) =>
             {
-                self.create_proposed_transactions(sapling_prover, proposal, sending_account)
+                self.create_proposed_transactions(proposal, sending_account)
                     .await?
             }
 
@@ -65,7 +57,6 @@ impl LightWallet {
 
     async fn create_proposed_transactions<NoteRef>(
         &mut self,
-        sapling_prover: LocalTxProver,
         proposal: Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, NoteRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, CalculateTransactionError<NoteRef>> {
@@ -76,6 +67,12 @@ impl LightWallet {
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
+        // TODO:  Remove fallible sapling operations from Orchard only sends.
+        let (sapling_output, sapling_spend): (Vec<u8>, Vec<u8>) =
+            crate::wallet::utils::read_sapling_params()
+                .map_err(CalculateTransactionError::SaplingParams)?;
+        let sapling_prover =
+            zcash_proofs::prover::LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
         zcash_client_backend::data_api::wallet::create_proposed_transactions(
             self,
             &network,
