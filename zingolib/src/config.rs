@@ -73,8 +73,8 @@ pub enum ChainType {
 impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let chain = match self {
-            ChainType::Mainnet => "mainnet",
-            ChainType::Testnet => "testnet",
+            ChainType::Mainnet => "main",
+            ChainType::Testnet => "test",
             ChainType::Regtest(_) => "regtest",
         };
         write!(f, "{chain}")
