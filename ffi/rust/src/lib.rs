@@ -493,7 +493,7 @@ enum Command {
         reply: oneshot::Sender<Result<(), WalletError>>,
     },
     InitViewOnly {
-        viewing_key: String, // TODO: Use ViewingKeyType
+        viewing_key: String,
         birthday: u32,
         indexer_uri: String,
         chain: Chain,
@@ -510,16 +510,6 @@ enum Command {
     StartSync,
     PauseSync,
     Shutdown,
-}
-
-enum ViewingKeyType {
-    Unified(UnifiedViewingKeyType),
-}
-
-enum UnifiedViewingKeyType {
-    Full(String),
-    Incoming,
-    Outgoing,
 }
 
 #[derive(uniffi::Object, Clone)]
@@ -992,12 +982,10 @@ mod tests {
             .set_listener(Box::new(CapturingListener { tx }))
             .expect("set_listener");
 
-        // EngineReady first
         let _ = recv_timeout(&rx, Duration::from_secs(2));
 
         engine.start_sync().expect("start_sync send command");
 
-        // Should emit error from engine thread
         loop {
             let ev = recv_timeout(&rx, Duration::from_secs(2));
             match ev {
