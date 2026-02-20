@@ -98,18 +98,19 @@ impl LightWallet {
     ///
     /// Returns error if transaction is not `Failed` or does not exist in the wallet.
     pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
-        if let Some(transaction) = self.wallet_transactions.get(&txid) {
-            if !transaction.status().is_failed() {
-                return Err(WalletError::RemovalError);
+        match self
+            .wallet_transactions
+            .get(&txid)
+            .map(|tx| tx.status().is_failed())
+        {
+            Some(true) => {
+                self.wallet_transactions.remove(&txid);
+                self.save_required = true;
+                Ok(())
             }
-        } else {
-            return Err(WalletError::TransactionNotFound(txid));
+            Some(false) => Err(WalletError::RemovalError),
+            None => Err(WalletError::TransactionNotFound(txid)),
         }
-
-        self.wallet_transactions.remove(&txid);
-        self.save_required = true;
-
-        Ok(())
     }
 
     /// Determine the kind of transaction from the current state of wallet data.
