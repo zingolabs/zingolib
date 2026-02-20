@@ -48,7 +48,7 @@ pub(crate) mod spend;
 pub(crate) mod state;
 pub(crate) mod transparent;
 
-const MEMPOOL_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
+const UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD: u32 = 3;
 pub(crate) const MAX_REORG_ALLOWANCE: u32 = 100;
 const VERIFY_BLOCK_RANGE_SIZE: u32 = 10;
 
@@ -421,7 +421,7 @@ where
         .expect("scan ranges must be non-empty")
         + 1;
 
-    reset_invalid_spends(&mut *wallet_guard)?;
+    expire_transactions(&mut *wallet_guard)?;
 
     drop(wallet_guard);
 
@@ -1175,6 +1175,28 @@ pub fn reset_spends(
         });
 }
 
+/// Sets transactions associated with list of `failed_txids` in `wallet_transactions` to `Failed` status.
+///
+/// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
+pub fn set_transactions_failed(
+    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    failed_txids: Vec<TxId>,
+) {
+    for failed_txid in failed_txids.iter() {
+        if let Some(transaction) = wallet_transactions.get_mut(failed_txid) {
+            let height = transaction.status().get_height();
+            transaction.update_status(
+                ConfirmationStatus::Failed(height),
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("infalliable for such long time periods")
+                    .as_secs() as u32,
+            );
+        }
+    }
+    reset_spends(wallet_transactions, failed_txids);
+}
+
 /// Returns true if the scanner and mempool are shutdown.
 fn is_shutdown<P>(
     scanner: &Scanner<P>,
@@ -1447,6 +1469,7 @@ where
             tracing::debug!("Scan results processed.");
         }
         Err(ScanError::ContinuityError(ContinuityError::HashDiscontinuity { height, .. })) => {
+            tracing::warn!("Hash discontinuity detected before block {height}.");
             if height == scan_range.block_range().start
                 && scan_range.priority() == ScanPriority::Verify
             {
@@ -1533,11 +1556,18 @@ where
     );
 
     if let Some(tx) = wallet
-        .get_wallet_transactions()
+        .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
-        .get(&transaction.txid())
-        && (tx.status().is_confirmed() || matches!(tx.status(), ConfirmationStatus::Mempool(_)))
+        .get_mut(&transaction.txid())
     {
+        tx.update_status(
+            ConfirmationStatus::Mempool(mempool_height),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("infalliable for such long time periods")
+                .as_secs() as u32,
+        );
+
         return Ok(());
     }
 
@@ -1623,8 +1653,13 @@ where
         .map_err(SyncError::WalletError)?;
     *sync_state = SyncState::new();
     add_scan_targets(sync_state, &scan_targets);
+    truncate_wallet_data(wallet, consensus::H0)?;
+    wallet
+        .get_wallet_transactions_mut()
+        .map_err(SyncError::WalletError)?
+        .clear();
 
-    truncate_wallet_data(wallet, consensus::H0)
+    Ok(())
 }
 
 /// Updates the wallet with data from `scan_results`
@@ -2056,7 +2091,11 @@ async fn mempool_monitor(
     Ok(())
 }
 
-fn reset_invalid_spends<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
+/// Spends will be reset to free up funds if transaction has been unconfirmed for
+/// `UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD` confirmed blocks.
+/// Transaction status will then be set to `Failed` if it's still unconfirmed when the chain reaches it's expiry height.
+// TODO: add config to pepper-sync to set UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+fn expire_transactions<W>(wallet: &mut W) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncTransactions,
 {
@@ -2069,26 +2108,26 @@ where
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?;
 
-    let invalid_txids = wallet_transactions
+    let expired_txids = wallet_transactions
         .values()
         .filter(|transaction| {
-            matches!(transaction.status(), ConfirmationStatus::Mempool(_))
-                && transaction.status().get_height()
-                    <= last_known_chain_height - MEMPOOL_SPEND_INVALIDATION_THRESHOLD
+            transaction.status().is_pending()
+                && last_known_chain_height >= transaction.transaction().expiry_height()
         })
         .map(super::wallet::WalletTransaction::txid)
-        .chain(
-            wallet_transactions
-                .values()
-                .filter(|transaction| {
-                    (matches!(transaction.status(), ConfirmationStatus::Calculated(_))
-                        || matches!(transaction.status(), ConfirmationStatus::Transmitted(_)))
-                        && last_known_chain_height >= transaction.transaction().expiry_height()
-                })
-                .map(super::wallet::WalletTransaction::txid),
-        )
         .collect::<Vec<_>>();
-    reset_spends(wallet_transactions, invalid_txids);
+    set_transactions_failed(wallet_transactions, expired_txids);
+
+    let stuck_funds_txids = wallet_transactions
+        .values()
+        .filter(|transaction| {
+            transaction.status().is_pending()
+                && last_known_chain_height
+                    >= transaction.status().get_height() + UNCONFIRMED_SPEND_INVALIDATION_THRESHOLD
+        })
+        .map(super::wallet::WalletTransaction::txid)
+        .collect::<Vec<_>>();
+    reset_spends(wallet_transactions, stuck_funds_txids);
 
     Ok(())
 }

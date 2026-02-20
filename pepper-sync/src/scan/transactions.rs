@@ -278,7 +278,7 @@ pub(crate) fn scan_transaction(
 
     // collect nullifiers for pending transactions
     // nullifiers for confirmed transactions are collected during compact block scanning
-    if !status.is_confirmed() {
+    if status.is_pending() {
         collect_nullifiers(nullifier_map, block_height, txid, &transaction);
     }
 

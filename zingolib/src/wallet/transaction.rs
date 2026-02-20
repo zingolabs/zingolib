@@ -7,9 +7,10 @@ use pepper_sync::wallet::{
 };
 
 use super::LightWallet;
-use super::error::{FeeError, RemovalError, SpendError};
+use super::error::{FeeError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
 use crate::config::get_donation_address_for_chain;
+use crate::wallet::error::WalletError;
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -91,23 +92,20 @@ impl LightWallet {
             .expect("fee should not be negative"))
     }
 
-    /// Removes transaction with the given `txid` from the wallet.
-    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` restoring the
-    /// wallet balance and allowing these outputs to be re-selected for spending in future sends.
+    /// Removes failed transaction with the given `txid` from the wallet.
     ///
     /// # Error
     ///
-    /// Returns error if transaction is confirmed or does not exist in the wallet.
-    pub fn remove_unconfirmed_transaction(&mut self, txid: TxId) -> Result<(), RemovalError> {
+    /// Returns error if transaction is not `Failed` or does not exist in the wallet.
+    pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
         if let Some(transaction) = self.wallet_transactions.get(&txid) {
-            if transaction.status().is_confirmed() {
-                return Err(RemovalError::TransactionAlreadyConfirmed);
+            if !transaction.status().is_failed() {
+                return Err(WalletError::RemovalError);
             }
         } else {
-            return Err(RemovalError::TransactionNotFound);
+            return Err(WalletError::TransactionNotFound(txid));
         }
 
-        pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
         self.wallet_transactions.remove(&txid);
         self.save_required = true;
 
