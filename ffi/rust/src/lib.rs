@@ -59,6 +59,16 @@ pub struct RestoreParams {
     pub minconf: u32,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct UFVKImportParams {
+    pub ufvk: String,
+    pub birthday: u32,
+    pub indexer_uri: String,
+    pub chain: Chain,
+    pub perf: Performance,
+    pub minconf: u32,
+}
+
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum WalletEvent {
     EngineReady,
@@ -112,15 +122,18 @@ struct EngineInner {
 }
 
 impl EngineInner {
-    pub(crate) async fn handle_start_sync_spawn(self: Arc<Self>, st: Arc<Mutex<EngineState>>) {
-        let (lc, indexer_uri) = {
-            let mut s = st.lock().await;
+    pub(crate) async fn handle_start_sync_spawn(
+        self: Arc<Self>,
+        engine_state: Arc<Mutex<EngineState>>,
+    ) {
+        let (lightclient, indexer_uri) = {
+            let mut state = engine_state.lock().await;
 
-            if s.syncing {
+            if state.syncing {
                 return;
             }
 
-            let Some(lc) = s.lightclient.as_ref().cloned() else {
+            let Some(lc) = state.lightclient.as_ref().cloned() else {
                 emit(
                     &self,
                     WalletEvent::Error {
@@ -131,8 +144,8 @@ impl EngineInner {
                 return;
             };
 
-            s.syncing = true;
-            let indexer_uri = s.indexer_uri.clone();
+            state.syncing = true;
+            let indexer_uri = state.indexer_uri.clone();
 
             (lc, indexer_uri)
         };
@@ -141,12 +154,12 @@ impl EngineInner {
 
         // Spawn the sync loop so the command loop stays responsive.
         let inner = self.clone();
-        let st_for_task = st.clone();
+        let st_for_task = engine_state.clone();
 
         let task = tokio::spawn(async move {
             // Kick off sync/resume with a short write-lock section.
             {
-                let mut guard = lc.write().await;
+                let mut guard = lightclient.write().await;
 
                 if guard.sync_mode() == SyncMode::Paused {
                     // TODO: Replace with resume_sync() when available.
@@ -183,10 +196,10 @@ impl EngineInner {
 
             loop {
                 // Read-only stuff
-                let (wh, poll, bal_opt) = {
-                    let mut guard = lc.write().await;
+                let (highest_scanned_height, poll_report, balance_snapshot) = {
+                    let mut guard = lightclient.write().await;
 
-                    let wh = {
+                    let wallet_height = {
                         let w = guard.wallet.read().await;
                         w.sync_state
                             .highest_scanned_height()
@@ -201,11 +214,11 @@ impl EngineInner {
                         Err(_) => None,
                     };
 
-                    (wh, poll, bal_opt)
+                    (wallet_height, poll, bal_opt)
                 };
 
                 // network height is independent of LightClient lock
-                let nh = match indexer_uri.as_ref() {
+                let network_height = match indexer_uri.as_ref() {
                     Some(uri) if *uri != http::Uri::default() => {
                         match zingolib::grpc_connector::get_latest_block(uri.clone()).await {
                             Ok(b) => b.height as u32,
@@ -216,8 +229,8 @@ impl EngineInner {
                 };
 
                 // TODO: this should be a proper percentage, or should not exist
-                let percent = if nh > 0 {
-                    (wh as f32 / nh as f32).clamp(0.0, 1.0)
+                let percent = if network_height > 0 {
+                    (highest_scanned_height as f32 / network_height as f32).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
@@ -225,20 +238,20 @@ impl EngineInner {
                 emit(
                     &inner,
                     WalletEvent::SyncProgress {
-                        wallet_height: wh,
-                        network_height: nh,
+                        wallet_height: highest_scanned_height,
+                        network_height,
                         percent,
                     },
                 );
 
-                if let Some(snap) = bal_opt {
+                if let Some(snap) = balance_snapshot {
                     if last_balance_emitted.as_ref() != Some(&snap) {
                         last_balance_emitted = Some(snap.clone());
                         emit(&inner, WalletEvent::BalanceChanged(snap));
                     }
                 }
 
-                match poll {
+                match poll_report {
                     PollReport::Ready(Ok(_)) => {
                         emit(&inner, WalletEvent::SyncFinished);
                         let mut s = st_for_task.lock().await;
@@ -266,7 +279,7 @@ impl EngineInner {
             }
         });
 
-        let mut s = st.lock().await;
+        let mut s = engine_state.lock().await;
         s.sync_task = Some(task);
     }
 
@@ -327,6 +340,43 @@ impl EngineInner {
                     mnemonic,
                     no_of_accounts: config.no_of_accounts,
                 },
+                BlockHeight::from_u32(birthday),
+                config.wallet_settings.clone(),
+            )
+            .map_err(|e| WalletError::Internal(format!("LightWallet::new: {e}")))?;
+
+            let lc = zingolib::lightclient::LightClient::create_from_wallet(wallet, config, false)
+                .map_err(|e| WalletError::Internal(format!("create_from_wallet: {e}")))?;
+
+            st.lightclient = Some(Arc::new(RwLock::new(lc)));
+            st.indexer_uri = Some(lw_uri);
+            st.last_balance = None;
+            st.syncing = false;
+            st.sync_task = None;
+            Ok(())
+        })
+        .await;
+
+        let _ = reply.send(res);
+    }
+
+    pub(crate) async fn handle_init_view_only(
+        &self,
+        st: &mut EngineState,
+        viewing_key: String,
+        birthday: u32,
+        indexer_uri: String,
+        chain: Chain,
+        perf: Performance,
+        minconf: u32,
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    ) {
+        let res: Result<(), WalletError> = (async {
+            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+
+            let wallet = LightWallet::new(
+                config.chain,
+                WalletBase::Ufvk(viewing_key),
                 BlockHeight::from_u32(birthday),
                 config.wallet_settings.clone(),
             )
@@ -424,6 +474,7 @@ fn emit(inner: &EngineInner, event: WalletEvent) {
     }
 }
 
+// TODO; Remove repetition!!
 enum Command {
     InitNew {
         indexer_uri: String,
@@ -441,6 +492,15 @@ enum Command {
         minconf: u32,
         reply: oneshot::Sender<Result<(), WalletError>>,
     },
+    InitViewOnly {
+        viewing_key: String, // TODO: Use ViewingKeyType
+        birthday: u32,
+        indexer_uri: String,
+        chain: Chain,
+        perf: Performance,
+        minconf: u32,
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    },
     GetBalance {
         reply: oneshot::Sender<Result<BalanceSnapshot, WalletError>>,
     },
@@ -450,6 +510,16 @@ enum Command {
     StartSync,
     PauseSync,
     Shutdown,
+}
+
+enum ViewingKeyType {
+    Unified(UnifiedViewingKeyType),
+}
+
+enum UnifiedViewingKeyType {
+    Full(String),
+    Incoming,
+    Outgoing,
 }
 
 #[derive(uniffi::Object, Clone)]
@@ -532,6 +602,30 @@ impl WalletEngine {
                                 .handle_init_from_seed(
                                     &mut guard,
                                     seed_phrase,
+                                    birthday,
+                                    indexer_uri,
+                                    chain,
+                                    perf,
+                                    minconf,
+                                    reply,
+                                )
+                                .await;
+                        }
+
+                        Command::InitViewOnly {
+                            viewing_key,
+                            birthday,
+                            indexer_uri,
+                            chain,
+                            perf,
+                            minconf,
+                            reply,
+                        } => {
+                            let mut guard = st.lock().await;
+                            inner_for_task
+                                .handle_init_view_only(
+                                    &mut guard,
+                                    viewing_key,
                                     birthday,
                                     indexer_uri,
                                     chain,
@@ -691,6 +785,26 @@ impl WalletEngine {
             .cmd_tx
             .blocking_send(Command::InitFromSeed {
                 seed_phrase: params.seed_phrase.words,
+                birthday: params.birthday,
+                indexer_uri: params.indexer_uri,
+                chain: params.chain,
+                perf: params.perf,
+                minconf: params.minconf,
+                reply: reply_tx,
+            })
+            .map_err(|_| WalletError::CommandQueueClosed)?;
+
+        reply_rx
+            .blocking_recv()
+            .map_err(|_| WalletError::CommandQueueClosed)?
+    }
+
+    pub fn init_from_ufvk(&self, params: UFVKImportParams) -> Result<(), WalletError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.inner
+            .cmd_tx
+            .blocking_send(Command::InitViewOnly {
+                viewing_key: params.ufvk,
                 birthday: params.birthday,
                 indexer_uri: params.indexer_uri,
                 chain: params.chain,
