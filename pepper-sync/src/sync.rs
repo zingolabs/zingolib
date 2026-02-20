@@ -2122,7 +2122,7 @@ mod test {
                         BlockHeight::from_u32(5),
                         &LOCAL_NETWORK,
                     );
-                    assert_eq!(res.unwrap(), BlockHeight::from_u32(3 - 1));
+                    assert!(matches!(res, Err(SyncError::BirthdayBelowSapling(1, 3))));
                 }
             }
         }
