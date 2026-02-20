@@ -1721,7 +1721,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1980,7 +1980,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3200,7 +3200,7 @@ version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d463f34ca3c400fde3a054da0e0b8c6ffa21e4590922f3e18281bb5eeef4cbdc"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3695,7 +3695,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4650,7 +4650,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5255,7 +5255,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6127,7 +6127,7 @@ dependencies = [
  "getrandom 0.4.1",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8789,7 +8789,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=remove_zebra_from_public_api#38650b8f50afaa1d30b65138ad5b1286947e4c24"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=remove_zebra_from_public_api#33f600deace7f27ea84e7b68549a60c2fd24d021"
 dependencies = [
  "getset",
  "hex",
@@ -9399,7 +9399,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingo-common.git?branch=remove_zebra_from_public_api#2daae0e722ff1c140e895bdb923c86d7e2763dad"
+source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#85a61dcedbccd01e26b6b07bad003770ad30ac1b"
 
 [[package]]
 name = "zingo_test_vectors"
@@ -9412,7 +9412,7 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=remove_zebra_from_public_api#38650b8f50afaa1d30b65138ad5b1286947e4c24"
+source = "git+https://github.com/Oscar-Pepper/infrastructure.git?branch=remove_zebra_from_public_api#33f600deace7f27ea84e7b68549a60c2fd24d021"
 dependencies = [
  "bip0039 0.12.0",
 ]

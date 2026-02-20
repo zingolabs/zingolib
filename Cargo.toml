@@ -45,8 +45,7 @@ zcash_transparent = "0.6"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = { git = "https://github.com/Oscar-Pepper/zingo-common.git", branch = "remove_zebra_from_public_api" }
-# zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev", version = "0.2" }
+zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
 
 # Parallel processing
 crossbeam-channel = "0.5"
