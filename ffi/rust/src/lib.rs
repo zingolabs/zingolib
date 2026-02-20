@@ -1034,6 +1034,7 @@ mod tests {
 
     /// Requires network up
     #[test]
+    #[ignore = "requires non-existing running regtest networkd"]
     fn real_sync_smoke() {
         let indexer_uri = "http://localhost:20956".to_string();
         let chain = Chain::Regtest;
@@ -1080,6 +1081,7 @@ mod tests {
     /// Run manually:
     ///   cargo test -p ffi real_sync_progress_smoke -- --ignored --nocapture
     #[test]
+    #[ignore = "requires non-existing running regtest networkd"]
     fn real_sync_progress_smoke() {
         let indexer_uri = "http://localhost:20956".to_string();
         let chain = Chain::Regtest;
@@ -1179,6 +1181,7 @@ mod tests {
     /// This does NOT query latest block height externally.
     /// It relies purely on SyncProgress events emitted during each sync run.
     #[test]
+    #[ignore = "requires non-existing running regtest networkd"]
     fn real_sync_observe_5_new_block_heights_smoke() {
         use std::collections::BTreeSet;
         use std::sync::mpsc as std_mpsc;
