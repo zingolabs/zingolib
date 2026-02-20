@@ -68,7 +68,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         LightWallet::new(
             config.network_type(),
             WalletBase::Ufvk(ufvk),
-            0.into(),
+            1.into(),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),

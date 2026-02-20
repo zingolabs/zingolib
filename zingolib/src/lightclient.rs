@@ -341,7 +341,7 @@ mod tests {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts(),
                 },
-                0.into(),
+                1.into(),
                 config.wallet_settings(),
             )
             .unwrap(),
@@ -360,7 +360,7 @@ mod tests {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts(),
                 },
-                0.into(),
+                1.into(),
                 config.wallet_settings(),
             )
             .unwrap(),

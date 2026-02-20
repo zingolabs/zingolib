@@ -29,6 +29,11 @@ where
     /// Chain error.
     #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
     ChainError(u32, u32, u32),
+    /// Birthday below sapling error.
+    #[error(
+        "birthday {0} below sapling activation height {1}. pre-sapling wallets are not supported!"
+    )]
+    BirthdayBelowSapling(u32, u32),
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),

@@ -207,14 +207,14 @@ impl SyncState {
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.get_initial_scan_height().map(|start| start - 1)
+            self.wallet_birthday().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
     #[must_use]
-    pub fn get_initial_scan_height(&self) -> Option<BlockHeight> {
+    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)

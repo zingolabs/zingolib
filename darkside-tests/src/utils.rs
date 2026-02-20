@@ -396,7 +396,7 @@ pub mod scenarios {
             assert!(self.faucet.is_none(), "Error: Faucet already exists!");
             self.faucet = Some(self.client_builder.build_client(
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
-                0,
+                1,
                 true,
                 self.configured_activation_heights,
             ));

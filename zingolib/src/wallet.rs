@@ -416,7 +416,7 @@ impl LightWallet {
             .time_historical_prices_last_updated()
             .is_none()
         {
-            let Some(start_height) = self.sync_state.get_initial_scan_height() else {
+            let Some(start_height) = self.sync_state.wallet_birthday() else {
                 return Err(PriceError::NotInitialised);
             };
             let birthday_block = match self.wallet_blocks.get(&start_height) {
