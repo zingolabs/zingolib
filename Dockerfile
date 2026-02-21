@@ -21,7 +21,10 @@ FROM stagex/user-abseil-cpp@sha256:926f69e9cd112dfe3450a0af56d1560dc0a62589e6104
 FROM stagex/core-sqlite3@sha256:44807b914585c81dda2bb0a5617cab53395255fe6685ce9599628060229c8929 AS sqlite3
 # Runtime Deps
 FROM stagex/core-busybox@sha256:d608daa946e4799cf28b105aba461db00187657bd55ea7c2935ff11dac237e27 AS busybox
-FROM stagex/user-util-linux@sha256:dbe8025801b4aa2ce8b7077a594ec6c5516a3f9d075283d56e9cd119631fa2c3 AS util-linux
+# FROM stagex/core-llvm-runtime@sha256:11323894375bc44bc7da121345eb88a26c32edc63d0b07fdf8c08906c283751c AS llvm-runtime
+# FROM stagex/core-filesystem@sha256:cd3a66471ce1f630fa77d5c9bd9829f9f9fab6302a1aaa64d67b74f1f069b750 AS filesystem
+# FROM stagex/core-bash@sha256:5b598c14eef61148baf3f5a2830a214a5985b5d3544b019e3d0ed53c6b66989a AS bashy
+# FROM stagex/user-util-linux@sha256:dbe8025801b4aa2ce8b7077a594ec6c5516a3f9d075283d56e9cd119631fa2c3 AS util-linux
 
 
 ############################
@@ -74,7 +77,6 @@ COPY --from=builder /usr/local/bin/zingo-cli /zingo-cli
 ############################
 FROM busybox AS runtime
 
-COPY --from=util-linux . /
 # Create a non-privileged user for running `zingo-cli`.
 #
 # We use a high UID/GID (10901) to avoid overlap with host system users.
@@ -98,7 +100,6 @@ ENV USER=${USER}
 ARG HOME
 ENV HOME=${HOME}
 
-
 COPY --chmod=644 <<-EOF /etc/passwd
 	root:x:0:0:root:/root:/bin/sh
 	user:x:${UID}:${GID}::${HOME}:/bin/sh
@@ -109,23 +110,11 @@ COPY --chmod=644 <<-EOF /etc/group
 	user:x:${GID}:
 EOF
 
-# USER ${UID}:${GID}
-
-
-# WORKDIR ${HOME}
-
-# Copy the installed binary from builder
-COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
-COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN /usr/local/bin/zingo-cli --version
-
-# TODO : add HEALTHCHECK ?
-
-# We run as root initially and use setpriv in the entrypoint.sh
-# to step down to the non-privileged user. This allows us to change permissions
-# on directories before running the application as a non-root user.
-# User with UID=${UID} is created above and used via setpriv in entrypoint.sh.
-
 USER root
-ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
-CMD [ "/usr/local/bin/zingo-cli --version >/dev/null 2>&1 || exit 1" ]
+RUN mkdir -p /usr/local/bin/wallets && chown -R ${UID}:${GID} /usr/local/bin/ && chmod -R 777 /usr/local/bin/
+#RUN mkdir -p $HOME/.zcash/wallets && chown -R ${UID}:${GID} $HOME/.zcash/wallets
+COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
+# COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
+# USER $USER
+RUN /usr/local/bin/zingo-cli --version
+ENTRYPOINT [  "/usr/local/bin/zingo-cli" ]
