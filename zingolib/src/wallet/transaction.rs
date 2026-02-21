@@ -98,18 +98,19 @@ impl LightWallet {
     ///
     /// Returns error if transaction is not `Failed` or does not exist in the wallet.
     pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
-        if let Some(transaction) = self.wallet_transactions.get(&txid) {
-            if !transaction.status().is_failed() {
-                return Err(WalletError::RemovalError);
+        match self
+            .wallet_transactions
+            .get(&txid)
+            .map(|tx| tx.status().is_failed())
+        {
+            Some(true) => {
+                self.wallet_transactions.remove(&txid);
+                self.save_required = true;
+                Ok(())
             }
-        } else {
-            return Err(WalletError::TransactionNotFound(txid));
+            Some(false) => Err(WalletError::RemovalError),
+            None => Err(WalletError::TransactionNotFound(txid)),
         }
-
-        self.wallet_transactions.remove(&txid);
-        self.save_required = true;
-
-        Ok(())
     }
 
     /// Determine the kind of transaction from the current state of wallet data.
@@ -169,5 +170,82 @@ impl LightWallet {
         } else {
             Ok(TransactionKind::Sent(SendType::Send))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use pepper_sync::{
+        config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
+        wallet::WalletTransaction,
+    };
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        config::ZingoConfigBuilder,
+        wallet::{LightWallet, WalletBase, WalletSettings, error::WalletError},
+    };
+
+    fn test_wallet() -> LightWallet {
+        let config = ZingoConfigBuilder::default().create();
+        LightWallet::new(
+            config.chain,
+            WalletBase::FreshEntropy {
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            1.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: PerformanceLevel::High,
+                },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn remove_failed_transaction_not_found() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([0u8; 32]);
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::TransactionNotFound(id)) if id == txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_not_failed() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([1u8; 32]);
+        let status = ConfirmationStatus::Calculated(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::RemovalError)));
+        assert!(wallet.wallet_transactions.contains_key(&txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_success() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([2u8; 32]);
+        let status = ConfirmationStatus::Failed(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(result.is_ok());
+        assert!(!wallet.wallet_transactions.contains_key(&txid));
+        assert!(wallet.save_required);
     }
 }
