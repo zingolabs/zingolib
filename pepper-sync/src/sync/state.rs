@@ -155,7 +155,11 @@ fn create_scan_range(
 
 /// Splits the range containing [`truncate_height` + 1] and removes all ranges containing block heights above
 /// `truncate_height`.
+/// If `truncate_height` is zero, the sync state will be cleared completely.
 pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
+    if truncate_height == zcash_protocol::consensus::H0 {
+        *sync_state = SyncState::new();
+    }
     let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()

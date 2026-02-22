@@ -1411,16 +1411,15 @@ where
                 })
         })
         .collect::<Vec<_>>();
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    *sync_state = SyncState::new();
-    add_scan_targets(sync_state, &scan_targets);
     truncate_wallet_data(wallet, consensus::H0)?;
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
         .clear();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    add_scan_targets(sync_state, &scan_targets);
 
     Ok(())
 }

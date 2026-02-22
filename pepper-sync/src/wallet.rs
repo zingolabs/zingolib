@@ -82,9 +82,9 @@ pub struct InitialSyncState {
     pub(crate) wallet_tree_bounds: TreeBounds,
     /// Total number of blocks scanned in previous sync sessions.
     pub(crate) previously_scanned_blocks: u32,
-    /// Total number of sapling outputs to scanned in previous sync sessions.
+    /// Total number of sapling outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of orchard outputs to scanned in previous sync sessions.
+    /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
 }
 
