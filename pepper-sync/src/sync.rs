@@ -1420,6 +1420,7 @@ where
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?;
     add_scan_targets(sync_state, &scan_targets);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
