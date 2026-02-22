@@ -22,6 +22,8 @@ regtest = [ "zingo_common_components/for_test" ]
 
 [dependencies]
 
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+
 # Zingo
 zingo-memo = { workspace = true }
 zingo-status = { workspace = true }
