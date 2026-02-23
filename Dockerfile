@@ -110,11 +110,14 @@ COPY --chmod=644 <<-EOF /etc/group
 	user:x:${GID}:
 EOF
 
+WORKDIR /usr/local/bin
 USER root
-RUN mkdir -p /usr/local/bin/wallets && chown -R ${UID}:${GID} /usr/local/bin/ && chmod -R 777 /usr/local/bin/
-#RUN mkdir -p $HOME/.zcash/wallets && chown -R ${UID}:${GID} $HOME/.zcash/wallets
+RUN mkdir -p /usr/local/bin/wallets && chown -R ${UID}:${GID} /usr/local/bin/ && chmod -R 770 /usr/local/bin/
 COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
-# COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
-# USER $USER
-RUN /usr/local/bin/zingo-cli --version
-ENTRYPOINT [  "/usr/local/bin/zingo-cli" ]
+RUN chmod 550 /usr/local/bin/zingo-cli
+COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 550 /usr/local/bin/entrypoint.sh
+USER $USER
+ENTRYPOINT [ "./entrypoint.sh" ]
+# selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
+# ENTRYPOINT [ "./zingo-cli", "--server", "https://zzz.stripest.online:443", "--waitsync", "version" ]
