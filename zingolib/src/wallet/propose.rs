@@ -16,16 +16,19 @@ use super::{
     LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
 };
-use crate::config::ChainType;
+use crate::{
+    config::ChainType,
+    data::proposal::{ProportionalFeeProposal, ZingoProposal},
+};
 use pepper_sync::{keys::transparent::TransparentScope, sync::ScanPriority};
 
 impl LightWallet {
     /// Creates a proposal from a transaction request.
-    pub(crate) async fn create_send_proposal(
+    pub(crate) fn create_send_proposal(
         &mut self,
         request: TransactionRequest,
         account_id: zip32::AccountId,
-    ) -> Result<crate::data::proposal::ProportionalFeeProposal, ProposeSendError> {
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let memo = self.change_memo_from_transaction_request(&request);
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
@@ -66,7 +69,7 @@ impl LightWallet {
     /// In other words, shield does not take a user-specified amount
     /// to shield, rather it consumes all transparent value in the wallet that
     /// can be consumed without costing more in zip317 fees than is being transferred.
-    pub(crate) async fn create_shield_proposal(
+    pub(crate) fn create_shield_proposal(
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
@@ -85,7 +88,7 @@ impl LightWallet {
             .values()
             .map(|address| {
                 Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_primitives::legacy::TransparentAddress>(
+                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
                         self.network.network_type(),
                     )
                     .expect("incorrect network should be checked on wallet load"))
@@ -122,11 +125,22 @@ impl LightWallet {
                 .fold(0, |total_out, output| total_out + output.value().into_u64())
                 == 0
             {
-                return Err(ProposeShieldError::Insufficient);
+                return Err(ProposeShieldError::InsufficientFunds);
             }
         }
 
         Ok(proposed_shield)
+    }
+
+    /// Stores a proposal in the `send_proposal` field.
+    /// This field must be populated in order to then construct and transmit transactions.
+    pub(crate) fn store_proposal(&mut self, proposal: ZingoProposal) {
+        self.send_proposal = Some(proposal);
+    }
+
+    /// Takes the proposal from the `send_proposal` field, leaving the field empty.
+    pub(crate) fn take_proposal(&mut self) -> Option<ZingoProposal> {
+        self.send_proposal.take()
     }
 
     fn change_memo_from_transaction_request(&self, request: &TransactionRequest) -> MemoBytes {
@@ -260,7 +274,6 @@ mod test {
 
         wallet
             .create_send_proposal(request, zip32::AccountId::ZERO)
-            .await
             .expect("can propose from existing data");
     }
 }

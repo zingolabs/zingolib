@@ -3,7 +3,7 @@
 use json::JsonValue;
 
 use zcash_address::ZcashAddress;
-use zcash_primitives::memo::MemoBytes;
+use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
 use crate::commands::error::CommandError;

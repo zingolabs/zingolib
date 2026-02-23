@@ -2,11 +2,11 @@
 
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedProtocol;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
@@ -149,6 +149,7 @@ impl LightWallet {
                 ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
                 ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
                 ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
+                ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
             }
         } else {
             SpendStatus::Unspent

@@ -23,7 +23,6 @@ use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::Script,
     memo::Memo,
     transaction::{TxId, components::transparent::OutPoint},
 };
@@ -32,6 +31,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -207,15 +207,14 @@ impl SyncState {
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday().map(|birthday| birthday - 1)
+            self.get_initial_scan_height().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
-    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     #[must_use]
-    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
+    pub fn get_initial_scan_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
@@ -565,6 +564,86 @@ impl WalletTransaction {
                     .map(zcash_transparent::bundle::TxIn::prevout)
                     .collect::<Vec<_>>()
             })
+    }
+
+    /// Updates transaction status if `status` is a valid update for the current transaction status.
+    /// For example, if `status` is `Mempool` but the current transaction status is `Confirmed`, the status will remain
+    /// unchanged.
+    /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
+    /// to `Confirmed` status.
+    pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
+        match status {
+            ConfirmationStatus::Transmitted(_)
+                if matches!(self.status(), ConfirmationStatus::Calculated(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Mempool(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Confirmed(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_)
+                        | ConfirmationStatus::Transmitted(_)
+                        | ConfirmationStatus::Mempool(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+
+            ConfirmationStatus::Failed(_)
+                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            _ => (),
+        }
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl WalletTransaction {
+    /// Creates a minimal `WalletTransaction` for testing purposes.
+    ///
+    /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
+    pub fn new_for_test(txid: TxId, status: ConfirmationStatus) -> Self {
+        use zcash_primitives::transaction::{TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+
+        let transaction = TransactionData::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(0),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .expect("empty v5 transaction should always be valid");
+
+        Self {
+            txid,
+            status,
+            transaction,
+            datetime: 0,
+            transparent_coins: Vec::new(),
+            sapling_notes: Vec::new(),
+            orchard_notes: Vec::new(),
+            outgoing_sapling_notes: Vec::new(),
+            outgoing_orchard_notes: Vec::new(),
+        }
     }
 }
 

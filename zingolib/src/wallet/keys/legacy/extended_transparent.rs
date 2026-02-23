@@ -1,6 +1,6 @@
 //! BIP32 key derivation primitives
 use std::io;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use ring::hmac::{self, Context, Key};

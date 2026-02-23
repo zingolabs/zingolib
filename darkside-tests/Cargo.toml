@@ -46,5 +46,5 @@ tracing-subscriber.workspace = true
 [build-dependencies]
 tonic-prost-build = { workspace = true }
 
-[package.metadata.cargo-machete]
-ignored = ["prost"]
+[package.metadata.cargo-shear]
+ignored = ["prost", "tonic-prost", "futures-util"]
