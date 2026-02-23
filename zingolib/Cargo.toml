@@ -113,6 +113,7 @@ tempfile = { workspace = true, optional = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 
 [dev-dependencies]
+pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
 zingolib = { workspace = true, features = ["testutils"] }

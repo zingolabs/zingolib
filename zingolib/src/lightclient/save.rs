@@ -27,9 +27,14 @@ fn write_to_path(wallet_path: &std::path::Path, bytes: &[u8]) -> std::io::Result
     let file = writer.into_inner().map_err(|e| e.into_error())?;
     file.sync_all()?;
     std::fs::rename(&temp_wallet_path, wallet_path)?;
-    if let Some(parent) = wallet_path.parent() {
-        let wallet_dir = std::fs::File::open(parent)?;
-        let _ignore_error = wallet_dir.sync_all(); // NOTE: error is ignored as syncing dirs on windows OS may return an error
+
+    // NOTE: in windows no need to sync the folder, only for linux & macOS.
+    #[cfg(unix)]
+    {
+        if let Some(parent) = wallet_path.parent() {
+            let wallet_dir = std::fs::File::open(parent)?;
+            let _ignore_error = wallet_dir.sync_all(); // NOTE: error is ignored as syncing dirs on windows OS may return an error
+        }
     }
 
     Ok(())
