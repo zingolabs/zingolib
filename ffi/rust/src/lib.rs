@@ -219,6 +219,9 @@ impl WalletBackend for ZingolibBackend {
                             WalletError::Internal(error.to_string())
                         }
                         SyncError::WalletError(e) => WalletError::Internal(e.to_string()),
+                        SyncError::BirthdayBelowSapling(_, _) => {
+                            WalletError::Internal("BirthdayBelowSapling".to_string())
+                        }
                     };
                     return PollReport::Ready(Err(pepper_sync::error::SyncError::WalletError(
                         matched_error,
