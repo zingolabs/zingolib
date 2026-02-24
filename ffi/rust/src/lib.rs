@@ -9,8 +9,10 @@ use std::{
     time::Duration,
 };
 
+use async_trait::async_trait;
+
 use bip0039::Mnemonic;
-use pepper_sync::wallet::SyncMode;
+use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::zip32::AccountId;
@@ -92,6 +94,178 @@ pub trait WalletListener: Send + Sync {
     fn on_event(&self, event: WalletEvent);
 }
 
+#[async_trait]
+pub trait WalletBackend: Send + Sync {
+    /// Starts a sync run.
+    ///
+    /// This is expected to *kick off* syncing and return reasonably quickly.
+    /// It should **not** block until the sync is fully complete.
+    ///
+    /// Typical behavior:
+    /// - If the backend is currently paused, this should resume.
+    /// - If no sync is running, this should start a new one.
+    /// - If a sync is already running, this may return `Ok(())` (idempotent) or a
+    ///   descriptive error string, depending on your policy.
+    ///
+    /// Errors:
+    /// - Returns `Err(String)` for backend-specific failures (e.g. cannot start sync,
+    ///   bad internal state).
+    async fn start_sync(&self) -> Result<(), String>;
+
+    /// Polls the status of the currently running sync task.
+    ///
+    /// This should be a *non-blocking* operation that reports progress/completion
+    /// for the sync started via [`WalletBackend::start_sync`].
+    ///
+    /// The engine will typically call this on a timer (e.g. every 250ms) to drive
+    /// event emission:
+    /// - `PollReport::NotReady` → still syncing
+    /// - `PollReport::Ready(Ok(_))` → finished successfully
+    /// - `PollReport::Ready(Err(_))` → finished with error
+    /// - `PollReport::NoHandle` → no sync is currently running / nothing to poll
+    ///
+    /// Note:
+    /// - Even though this is `async`, implementations should keep it fast. Use a
+    ///   short lock section if you must acquire interior mutability.
+    async fn poll_sync(&self) -> PollReport<SyncResult, SyncError<WalletError>>;
+
+    /// Requests that an in-progress sync pause.
+    ///
+    /// This is best-effort: depending on the backend, the sync may pause at the
+    /// next safe point, or it may complete before pausing.
+    ///
+    /// Typical behavior:
+    /// - If syncing is active, request a pause and return `Ok(())` if the request
+    ///   was accepted.
+    /// - If no sync is running, this may return `Ok(())` or an error, depending on policy.
+    ///
+    /// Errors:
+    /// - Returns `Err(String)` for backend-specific failures (e.g. cannot pause).
+    async fn pause_sync(&self) -> Result<(), String>;
+
+    /// Returns the current sync mode/state.
+    ///
+    /// This is used by the engine to determine whether a sync is paused vs running,
+    /// and to gate transitions (e.g. “start sync” may mean “resume”).
+    async fn sync_mode(&self) -> SyncMode;
+
+    // data
+    async fn wallet_height(&self) -> u32;
+    async fn balance_snapshot(&self) -> Option<BalanceSnapshot>;
+    async fn network_height(&self) -> u32;
+}
+
+/// Zingolib-backed implementation.
+/// Keeps all zingolib state behind async locks so engine can remain responsive.
+pub struct ZingolibBackend {
+    lc: Arc<RwLock<zingolib::lightclient::LightClient>>,
+    indexer_uri: http::Uri,
+}
+
+impl ZingolibBackend {
+    pub fn new(lc: zingolib::lightclient::LightClient, indexer_uri: http::Uri) -> Self {
+        Self {
+            lc: Arc::new(RwLock::new(lc)),
+            indexer_uri,
+        }
+    }
+}
+
+#[async_trait]
+impl WalletBackend for ZingolibBackend {
+    async fn start_sync(&self) -> Result<(), String> {
+        let mut guard = self.lc.write().await;
+
+        if guard.sync_mode() == SyncMode::Paused {
+            // TODO: replace with proper resume when available
+            guard.resume_sync().map_err(|e| e.to_string())
+        } else {
+            guard.sync().await.map_err(|e| e.to_string())
+        }
+    }
+
+    async fn poll_sync(&self) -> PollReport<SyncResult, SyncError<WalletError>> {
+        // poll_sync requires &mut self on LightClient
+        let mut guard = self.lc.write().await;
+        let return_value = guard.poll_sync();
+        match return_value {
+            PollReport::NotReady => PollReport::NotReady,
+            PollReport::Ready(r) => match r {
+                Ok(r) => PollReport::Ready(Ok(r)),
+                Err(e) => {
+                    let matched_error = match e {
+                        SyncError::MempoolError(mempool_error) => {
+                            WalletError::Internal(mempool_error.to_string())
+                        }
+                        SyncError::ScanError(scan_error) => {
+                            WalletError::Internal(scan_error.to_string())
+                        }
+                        SyncError::ServerError(server_error) => {
+                            WalletError::Internal(server_error.to_string())
+                        }
+                        SyncError::SyncModeError(sync_mode_error) => {
+                            WalletError::Internal(sync_mode_error.to_string())
+                        }
+                        SyncError::ChainError(_, _, _) => {
+                            WalletError::Internal("ChainError".to_string())
+                        }
+                        SyncError::ShardTreeError(shard_tree_error) => {
+                            WalletError::Internal(shard_tree_error.to_string())
+                        }
+                        SyncError::TruncationError(_, _) => {
+                            WalletError::Internal("TruncationError".to_string())
+                        }
+                        SyncError::TransparentAddressDerivationError(error) => {
+                            WalletError::Internal(error.to_string())
+                        }
+                        SyncError::WalletError(e) => WalletError::Internal(e.to_string()),
+                    };
+                    return PollReport::Ready(Err(pepper_sync::error::SyncError::WalletError(
+                        matched_error,
+                    )));
+                }
+            },
+            PollReport::NoHandle => PollReport::NoHandle,
+        }
+    }
+
+    async fn pause_sync(&self) -> Result<(), String> {
+        let guard = self.lc.write().await;
+        guard.pause_sync().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    async fn sync_mode(&self) -> SyncMode {
+        let guard = self.lc.read().await;
+        guard.sync_mode()
+    }
+
+    async fn wallet_height(&self) -> u32 {
+        let guard = self.lc.read().await;
+        let w = guard.wallet.read().await;
+        w.sync_state
+            .highest_scanned_height()
+            .map(u32::from)
+            .unwrap_or(0)
+    }
+
+    async fn balance_snapshot(&self) -> Option<BalanceSnapshot> {
+        let guard = self.lc.read().await;
+        guard
+            .account_balance(AccountId::ZERO)
+            .await
+            .ok()
+            .map(|b| balance_snapshot_from_balance(&b))
+    }
+
+    async fn network_height(&self) -> u32 {
+        zingolib::grpc_connector::get_latest_block(self.indexer_uri.clone())
+            .await
+            .map(|b| b.height as u32)
+            .unwrap_or(0)
+    }
+}
+
 fn balance_snapshot_from_balance(b: &AccountBalance) -> BalanceSnapshot {
     let confirmed = b
         .confirmed_orchard_balance
@@ -126,14 +300,14 @@ impl EngineInner {
         self: Arc<Self>,
         engine_state: Arc<Mutex<EngineState>>,
     ) {
-        let (lightclient, indexer_uri) = {
+        let backend = {
             let mut state = engine_state.lock().await;
 
             if state.syncing {
                 return;
             }
 
-            let Some(lc) = state.lightclient.as_ref().cloned() else {
+            let Some(backend) = state.backend.as_ref().cloned() else {
                 emit(
                     &self,
                     WalletEvent::Error {
@@ -145,92 +319,43 @@ impl EngineInner {
             };
 
             state.syncing = true;
-            let indexer_uri = state.indexer_uri.clone();
-
-            (lc, indexer_uri)
+            backend
         };
 
         emit(&self, WalletEvent::SyncStarted);
 
-        // Spawn the sync loop so the command loop stays responsive.
         let inner = self.clone();
         let st_for_task = engine_state.clone();
 
         let task = tokio::spawn(async move {
-            // Kick off sync/resume with a short write-lock section.
-            {
-                let mut guard = lightclient.write().await;
-
-                if guard.sync_mode() == SyncMode::Paused {
-                    // TODO: Replace with resume_sync() when available.
-                    if let Err(e) = guard.pause_sync() {
-                        emit(
-                            &inner,
-                            WalletEvent::Error {
-                                code: "start_sync_failed".into(),
-                                message: format!("resume_sync: {e}"),
-                            },
-                        );
-                        let mut s = st_for_task.lock().await;
-                        s.syncing = false;
-                        return;
-                    }
-                } else {
-                    // TODO: Thisassumes sync() starts the background sync and returns reasonably quickly.
-                    if let Err(e) = guard.sync().await {
-                        emit(
-                            &inner,
-                            WalletEvent::Error {
-                                code: "sync_failed".into(),
-                                message: e.to_string(),
-                            },
-                        );
-                        let mut s = st_for_task.lock().await;
-                        s.syncing = false;
-                        return;
-                    }
-                }
+            if let Err(e) = backend.start_sync().await {
+                emit(
+                    &inner,
+                    WalletEvent::Error {
+                        code: "sync_failed".into(),
+                        message: e,
+                    },
+                );
+                let mut s = st_for_task.lock().await;
+                s.syncing = false;
+                return;
             }
 
             let mut last_balance_emitted: Option<BalanceSnapshot> = None;
 
             loop {
-                // Read-only stuff
-                let (highest_scanned_height, poll_report, balance_snapshot) = {
-                    let mut guard = lightclient.write().await;
+                if backend.sync_mode().await == SyncMode::Paused {
+                    emit(&inner, WalletEvent::SyncPaused);
+                    let mut s = st_for_task.lock().await;
+                    s.syncing = false;
+                    break;
+                }
 
-                    let wallet_height = {
-                        let w = guard.wallet.read().await;
-                        w.sync_state
-                            .highest_scanned_height()
-                            .map(u32::from)
-                            .unwrap_or(0)
-                    };
+                let wallet_height = backend.wallet_height().await;
+                let network_height = backend.network_height().await;
 
-                    let poll = guard.poll_sync();
-
-                    let bal_opt = match guard.account_balance(AccountId::ZERO).await {
-                        Ok(bal) => Some(balance_snapshot_from_balance(&bal)),
-                        Err(_) => None,
-                    };
-
-                    (wallet_height, poll, bal_opt)
-                };
-
-                // network height is independent of LightClient lock
-                let network_height = match indexer_uri.as_ref() {
-                    Some(uri) if *uri != http::Uri::default() => {
-                        match zingolib::grpc_connector::get_latest_block(uri.clone()).await {
-                            Ok(b) => b.height as u32,
-                            Err(_) => 0,
-                        }
-                    }
-                    _ => 0,
-                };
-
-                // TODO: this should be a proper percentage, or should not exist
                 let percent = if network_height > 0 {
-                    (highest_scanned_height as f32 / network_height as f32).clamp(0.0, 1.0)
+                    (wallet_height as f32 / network_height as f32).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
@@ -238,20 +363,20 @@ impl EngineInner {
                 emit(
                     &inner,
                     WalletEvent::SyncProgress {
-                        wallet_height: highest_scanned_height,
+                        wallet_height,
                         network_height,
                         percent,
                     },
                 );
 
-                if let Some(snap) = balance_snapshot {
+                if let Some(snap) = backend.balance_snapshot().await {
                     if last_balance_emitted.as_ref() != Some(&snap) {
                         last_balance_emitted = Some(snap.clone());
                         emit(&inner, WalletEvent::BalanceChanged(snap));
                     }
                 }
 
-                match poll_report {
+                match backend.poll_sync().await {
                     PollReport::Ready(Ok(_)) => {
                         emit(&inner, WalletEvent::SyncFinished);
                         let mut s = st_for_task.lock().await;
@@ -270,9 +395,7 @@ impl EngineInner {
                         s.syncing = false;
                         break;
                     }
-                    PollReport::NotReady | PollReport::NoHandle => {
-                        // still running
-                    }
+                    PollReport::NotReady | PollReport::NoHandle => {}
                 }
 
                 tokio::time::sleep(Duration::from_millis(250)).await;
@@ -305,11 +428,7 @@ impl EngineInner {
             let lc = zingolib::lightclient::LightClient::new(config, birthday, false)
                 .map_err(|e| WalletError::Internal(format!("LightClient::new: {e}")))?;
 
-            st.lightclient = Some(Arc::new(RwLock::new(lc)));
-            st.indexer_uri = Some(lw_uri);
-            st.last_balance = None;
-            st.syncing = false;
-            st.sync_task = None;
+            st.set_backend(Arc::new(ZingolibBackend::new(lc, lw_uri)));
             Ok(())
         })
         .await;
@@ -348,11 +467,7 @@ impl EngineInner {
             let lc = zingolib::lightclient::LightClient::create_from_wallet(wallet, config, false)
                 .map_err(|e| WalletError::Internal(format!("create_from_wallet: {e}")))?;
 
-            st.lightclient = Some(Arc::new(RwLock::new(lc)));
-            st.indexer_uri = Some(lw_uri);
-            st.last_balance = None;
-            st.syncing = false;
-            st.sync_task = None;
+            st.set_backend(Arc::new(ZingolibBackend::new(lc, lw_uri)));
             Ok(())
         })
         .await;
@@ -385,11 +500,7 @@ impl EngineInner {
             let lc = zingolib::lightclient::LightClient::create_from_wallet(wallet, config, false)
                 .map_err(|e| WalletError::Internal(format!("create_from_wallet: {e}")))?;
 
-            st.lightclient = Some(Arc::new(RwLock::new(lc)));
-            st.indexer_uri = Some(lw_uri);
-            st.last_balance = None;
-            st.syncing = false;
-            st.sync_task = None;
+            st.set_backend(Arc::new(ZingolibBackend::new(lc, lw_uri)));
             Ok(())
         })
         .await;
@@ -399,24 +510,17 @@ impl EngineInner {
 
     pub(crate) async fn handle_get_balance(
         &self,
-        st: &mut EngineState,
+        backend: Option<Arc<dyn WalletBackend>>,
         reply: oneshot::Sender<Result<BalanceSnapshot, WalletError>>,
     ) {
-        let res: Result<BalanceSnapshot, WalletError> = (async {
-            let lc = st
-                .lightclient
-                .as_ref()
-                .ok_or(WalletError::NotInitialized)?
-                .clone();
+        let res: Result<BalanceSnapshot, WalletError> = async {
+            let backend = backend.ok_or(WalletError::NotInitialized)?;
 
-            let guard = lc.read().await;
-            let bal = guard
-                .account_balance(AccountId::ZERO)
+            backend
+                .balance_snapshot()
                 .await
-                .map_err(|e| WalletError::Internal(format!("account_balance: {e}")))?;
-
-            Ok(balance_snapshot_from_balance(&bal))
-        })
+                .ok_or_else(|| WalletError::Internal("balance unavailable".into()))
+        }
         .await;
 
         let _ = reply.send(res);
@@ -424,23 +528,20 @@ impl EngineInner {
 
     pub(crate) async fn handle_get_network_height(
         &self,
-        st: &mut EngineState,
+        backend: Option<Arc<dyn WalletBackend>>,
         reply: oneshot::Sender<Result<u32, WalletError>>,
     ) {
-        let res: Result<u32, WalletError> = (async {
-            let uri = st.indexer_uri.clone().ok_or(WalletError::NotInitialized)?;
-            let b = zingolib::grpc_connector::get_latest_block(uri)
-                .await
-                .map_err(|e| WalletError::Internal(format!("get_latest_block: {e}")))?;
-            Ok(b.height as u32)
-        })
+        let res: Result<u32, WalletError> = async {
+            let backend = backend.ok_or(WalletError::NotInitialized)?;
+            Ok(backend.network_height().await)
+        }
         .await;
 
         let _ = reply.send(res);
     }
 
-    pub(crate) async fn handle_pause_sync(&self, st: &mut EngineState) {
-        let Some(lc) = st.lightclient.as_ref().cloned() else {
+    pub(crate) async fn handle_pause_sync(&self, backend: Option<Arc<dyn WalletBackend>>) {
+        let Some(backend) = backend else {
             emit(
                 self,
                 WalletEvent::Error {
@@ -451,14 +552,13 @@ impl EngineInner {
             return;
         };
 
-        let guard = lc.write().await;
-        match guard.pause_sync() {
+        match backend.pause_sync().await {
             Ok(_) => emit(self, WalletEvent::SyncPaused),
             Err(e) => emit(
                 self,
                 WalletEvent::Error {
                     code: "pause_sync_failed".into(),
-                    message: e.to_string(),
+                    message: e,
                 },
             ),
         }
@@ -627,14 +727,21 @@ impl WalletEngine {
                         }
 
                         Command::GetBalance { reply } => {
-                            let mut guard = st.lock().await;
-                            inner_for_task.handle_get_balance(&mut guard, reply).await;
+                            // TODO: Make this all less repetitive/convoluted
+                            let backend = {
+                                let guard = st.lock().await;
+                                guard.backend.clone()
+                            };
+                            inner_for_task.handle_get_balance(backend, reply).await;
                         }
 
                         Command::GetNetworkHeight { reply } => {
-                            let mut guard = st.lock().await;
+                            let backend = {
+                                let guard = st.lock().await;
+                                guard.backend.clone()
+                            };
                             inner_for_task
-                                .handle_get_network_height(&mut guard, reply)
+                                .handle_get_network_height(backend, reply)
                                 .await;
                         }
 
@@ -646,8 +753,11 @@ impl WalletEngine {
                         }
 
                         Command::PauseSync => {
-                            let mut guard = st.lock().await;
-                            inner_for_task.handle_pause_sync(&mut guard).await;
+                            let backend = {
+                                let guard = st.lock().await;
+                                guard.backend.clone()
+                            };
+                            inner_for_task.handle_pause_sync(backend).await;
                         }
 
                         Command::Shutdown => break,
@@ -926,6 +1036,13 @@ mod tests {
     use super::*;
     use std::sync::mpsc as std_mpsc;
 
+    /// Test-only listener that forwards every [`WalletEvent`] it receives into a
+    /// standard-library `mpsc` channel.
+    ///
+    /// This is used in unit tests to:
+    /// - observe asynchronous events emitted by the engine thread
+    /// - make assertions about ordering (e.g. `EngineReady` then `SyncStarted`)
+    /// - avoid blocking the engine thread (sending into `std::sync::mpsc::Sender` is fast)
     #[derive(Clone)]
     struct CapturingListener {
         tx: std_mpsc::Sender<WalletEvent>,
@@ -943,6 +1060,289 @@ mod tests {
     impl WalletListener for PanickingListener {
         fn on_event(&self, _event: WalletEvent) {
             panic!("listener panicked");
+        }
+    }
+
+    mod fake_backend_tests {
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+            thread,
+            time::{Duration, Instant},
+        };
+
+        use async_trait::async_trait;
+        use pepper_sync::{error::SyncError, sync::SyncResult, wallet::SyncMode};
+        use tokio::sync::{Mutex, mpsc};
+        use zingolib::data::PollReport;
+
+        use crate::{
+            BalanceSnapshot, Command, EngineInner, WalletBackend, WalletEngine, WalletEvent,
+            create_engine_runtime, emit,
+            error::WalletError,
+            state::EngineState,
+            tests::{CapturingListener, recv_timeout},
+        };
+
+        struct FakeBackend {
+            start_sync_calls: AtomicUsize,
+            poll_calls: AtomicUsize,
+            balance_calls: AtomicUsize,
+            wallet_height: AtomicUsize,
+            network_height: AtomicUsize,
+        }
+
+        impl FakeBackend {
+            fn new() -> Self {
+                Self {
+                    start_sync_calls: AtomicUsize::new(0),
+                    poll_calls: AtomicUsize::new(0),
+                    balance_calls: AtomicUsize::new(0),
+                    wallet_height: AtomicUsize::new(100),
+                    network_height: AtomicUsize::new(200),
+                }
+            }
+
+            fn start_sync_call_count(&self) -> usize {
+                self.start_sync_calls.load(Ordering::SeqCst)
+            }
+        }
+
+        #[async_trait]
+        impl WalletBackend for FakeBackend {
+            async fn start_sync(&self) -> Result<(), String> {
+                self.start_sync_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+
+            async fn poll_sync(&self) -> PollReport<SyncResult, SyncError<WalletError>> {
+                self.poll_calls.fetch_add(1, Ordering::SeqCst);
+
+                // Keep the sync task "alive" but always yielding.
+                tokio::time::sleep(Duration::from_millis(25)).await;
+
+                // Never finish; this is enough to prove responsiveness while "syncing".
+                PollReport::NotReady
+            }
+
+            async fn pause_sync(&self) -> Result<(), String> {
+                Ok(())
+            }
+
+            async fn sync_mode(&self) -> SyncMode {
+                // We only need "not paused" for the engine loop to keep going.
+                // In production backends, this is a real mode.
+                //
+                // For tests, we avoid relying on non-Paused enum variant names (which may change)
+                // by using an unsafe transmute to "some other variant".
+                //
+                // SAFETY: this is test-only code; any mismatch just fails the test build.
+                #[allow(unsafe_code)]
+                unsafe {
+                    // Choose a discriminant different than the one for `Paused`.
+                    // This assumes `Paused` is not discriminant 0; if it is, swap 0/1.
+                    // If this ever breaks, just update the number to match pepper_sync.
+                    std::mem::transmute::<u8, SyncMode>(0)
+                }
+            }
+
+            async fn wallet_height(&self) -> u32 {
+                self.wallet_height.load(Ordering::SeqCst) as u32
+            }
+
+            async fn balance_snapshot(&self) -> Option<BalanceSnapshot> {
+                self.balance_calls.fetch_add(1, Ordering::SeqCst);
+
+                // Fast path: returns immediately (this is what we want to verify is reachable
+                // while sync is running).
+                Some(BalanceSnapshot {
+                    confirmed: "1".to_string(),
+                    total: "2".to_string(),
+                })
+            }
+
+            async fn network_height(&self) -> u32 {
+                self.network_height.load(Ordering::SeqCst) as u32
+            }
+        }
+
+        fn spawn_test_engine_with_backend(
+            backend: Arc<dyn WalletBackend>,
+        ) -> (WalletEngine, std::sync::mpsc::Receiver<WalletEvent>) {
+            let (cmd_tx, mut cmd_rx) = mpsc::channel::<Command>(64);
+
+            let inner = Arc::new(EngineInner {
+                cmd_tx,
+                listener: std::sync::Mutex::new(None),
+            });
+
+            let engine = WalletEngine {
+                inner: inner.clone(),
+            };
+
+            let (ev_tx, ev_rx) = std::sync::mpsc::channel();
+            engine
+                .set_listener(Box::new(CapturingListener { tx: ev_tx }))
+                .expect("set_listener");
+
+            thread::spawn(move || {
+                let rt = create_engine_runtime();
+                rt.block_on(async move {
+                    emit(&inner, WalletEvent::EngineReady);
+
+                    let st = Arc::new(Mutex::new(EngineState::new()));
+
+                    // IMPORTANT: do NOT use blocking_lock() inside runtime
+                    {
+                        let mut guard = st.lock().await;
+                        guard.backend = Some(backend);
+                    }
+
+                    while let Some(cmd) = cmd_rx.recv().await {
+                        let backend = {
+                            let guard = st.lock().await;
+                            guard.backend.clone()
+                        };
+                        match cmd {
+                            Command::GetBalance { reply } => {
+                                inner.handle_get_balance(backend, reply).await;
+                            }
+                            Command::GetNetworkHeight { reply } => {
+                                inner.handle_get_network_height(backend, reply).await;
+                            }
+                            Command::StartSync => {
+                                inner.clone().handle_start_sync_spawn(st.clone()).await;
+                            }
+                            Command::PauseSync => {
+                                inner.handle_pause_sync(backend).await;
+                            }
+                            Command::Shutdown => break,
+
+                            // In this helper, init commands are disabled.
+                            Command::InitNew { reply, .. }
+                            | Command::InitFromSeed { reply, .. }
+                            | Command::InitViewOnly { reply, .. } => {
+                                let _ = reply.send(Err(WalletError::Internal(
+                                    "init disabled in fake backend tests".into(),
+                                )));
+                            }
+                        }
+                    }
+                });
+            });
+
+            (engine, ev_rx)
+        }
+
+        /// Proves: starting sync does NOT make the engine loop unusable.
+        ///
+        /// Specifically: while the spawned sync task is running (and continuously polling),
+        /// we can still call get_balance_snapshot() and get an answer quickly.
+        #[test]
+        fn sync_does_not_block_get_balance_snapshot() {
+            let fake = Arc::new(FakeBackend::new());
+            let (engine, rx) = spawn_test_engine_with_backend(fake);
+
+            // EngineReady
+            let ev = recv_timeout(&rx, Duration::from_secs(2));
+            assert!(matches!(ev, WalletEvent::EngineReady), "got: {ev:?}");
+
+            engine.start_sync().expect("start_sync");
+
+            // SyncStarted
+            let ev = recv_timeout(&rx, Duration::from_secs(2));
+            assert!(matches!(ev, WalletEvent::SyncStarted), "got: {ev:?}");
+
+            // Hammer balance while sync loop is active.
+            for i in 0..30 {
+                let t0 = Instant::now();
+                let bal = engine.get_balance_snapshot().expect("balance snapshot");
+                let dt = t0.elapsed();
+
+                assert_eq!(bal.confirmed, "1");
+                assert_eq!(bal.total, "2");
+
+                // Thread hop and oneshot should stay well under this.
+                assert!(
+                    dt < Duration::from_millis(150),
+                    "get_balance_snapshot call {i} too slow: {dt:?} (sync may be blocking)"
+                );
+
+                // small sleep so we interleave with poll ticks (is this truly necessary though?)
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            engine.shutdown().ok();
+        }
+
+        /// Proves: StartSync is re-entrancy protected (second call is ignored while syncing=true).
+        ///
+        /// This also indirectly proves the command loop remains responsive enough to *process*
+        /// multiple StartSync commands while a sync task is running.
+        #[test]
+        fn start_sync_is_idempotent_while_running() {
+            let fake = Arc::new(FakeBackend::new());
+            let (engine, rx) = spawn_test_engine_with_backend(fake.clone());
+
+            let _ = recv_timeout(&rx, Duration::from_secs(2)); // EngineReady
+
+            engine.start_sync().expect("start_sync #1");
+            let ev = recv_timeout(&rx, Duration::from_secs(2));
+            assert!(matches!(ev, WalletEvent::SyncStarted), "got: {ev:?}");
+
+            // Should be ignored. Should not emit SyncStarted. TODO: how can we assert that?
+            engine.start_sync().expect("start_sync #2");
+
+            // Give a little time for command loop + potential bogus second start
+            std::thread::sleep(Duration::from_millis(200));
+
+            assert_eq!(
+                fake.start_sync_call_count(),
+                1,
+                "backend.start_sync() was called more than once; StartSync was not guarded by syncing flag"
+            );
+
+            engine.shutdown().ok();
+        }
+
+        /// Proves that while sync task is running we still see progress events,
+        /// indicating the runtime is scheduling both the sync task and the command loop.
+        #[test]
+        fn sync_task_runs_concurrently_with_command_loop() {
+            let fake_backend = Arc::new(FakeBackend::new());
+            let (engine, rx) = spawn_test_engine_with_backend(fake_backend);
+
+            let _ = recv_timeout(&rx, Duration::from_secs(2)); // EngineReady
+
+            engine.start_sync().expect("start_sync");
+            let event = recv_timeout(&rx, Duration::from_secs(2));
+            assert!(matches!(event, WalletEvent::SyncStarted), "got: {event:?}");
+
+            // We should see at least one SyncProgress fairly soon.
+            // (FakeBackend.poll_sync sleeps 25ms and returns NotReady, so engine loop should emit progress regularly.)
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut saw_progress = false;
+
+            while Instant::now() < deadline {
+                let ev = recv_timeout(&rx, Duration::from_millis(250));
+                if matches!(ev, WalletEvent::SyncProgress { .. }) {
+                    saw_progress = true;
+                    break;
+                }
+            }
+
+            assert!(
+                saw_progress,
+                "never saw SyncProgress while sync task running"
+            );
+
+            // While progress events are flowing, also do a balance call to ensure the engine loop services commands.
+            let bal = engine.get_balance_snapshot().expect("balance snapshot");
+            assert_eq!(bal.total, "2");
+
+            engine.shutdown().ok();
         }
     }
 

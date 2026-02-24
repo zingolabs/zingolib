@@ -2164,6 +2164,7 @@ dependencies = [
 name = "ffi"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "bip0039 0.13.4",
  "http",
  "pepper-sync",

@@ -14,6 +14,7 @@ zingolib.workspace = true
 pepper-sync.workspace = true
 zingo_common_components = { workspace = true, features = ["for_test"] }
 http.workspace = true
+async-trait = "0.1.89"
 
 [build-dependencies]
 uniffi = { version = "0.31", features = ["build"] }
