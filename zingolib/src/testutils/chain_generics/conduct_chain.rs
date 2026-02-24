@@ -32,7 +32,7 @@ pub trait ConductChain {
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
         let config = self.zingo_config().await;
-        let mut lightclient = LightClient::new(config, 0.into(), false).unwrap();
+        let mut lightclient = LightClient::new(config, 1.into(), false).unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .await

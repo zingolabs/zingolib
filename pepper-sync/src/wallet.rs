@@ -82,9 +82,9 @@ pub struct InitialSyncState {
     pub(crate) wallet_tree_bounds: TreeBounds,
     /// Total number of blocks scanned in previous sync sessions.
     pub(crate) previously_scanned_blocks: u32,
-    /// Total number of sapling outputs to scanned in previous sync sessions.
+    /// Total number of sapling outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of orchard outputs to scanned in previous sync sessions.
+    /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
 }
 
@@ -207,14 +207,14 @@ impl SyncState {
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.get_initial_scan_height().map(|start| start - 1)
+            self.wallet_birthday().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
     #[must_use]
-    pub fn get_initial_scan_height(&self) -> Option<BlockHeight> {
+    pub fn wallet_birthday(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .first()
             .map(|range| range.block_range().start)
