@@ -81,7 +81,7 @@ pub(crate) mod conduct_chain {
                         mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                     },
-                    0.into(),
+                    1.into(),
                     config.wallet_settings.clone(),
                 )
                 .unwrap(),
@@ -161,7 +161,7 @@ pub(crate) mod conduct_chain {
                         //trees
                         let transaction = zcash_primitives::transaction::Transaction::read(
                             raw_tx.data.as_slice(),
-                            zcash_primitives::consensus::BranchId::Nu6,
+                            zcash_protocol::consensus::BranchId::Nu6,
                         )
                         .unwrap();
                         for output in transaction

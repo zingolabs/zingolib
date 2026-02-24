@@ -3,10 +3,10 @@
 use nonempty::NonEmpty;
 
 use zcash_client_backend::proposal::Proposal;
-use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
 use crate::lightclient::LightClient;
@@ -127,14 +127,14 @@ where
             .unwrap()
             .height as u32,
     );
-    let wallet_height_at_send = sender
+    let last_known_chain_height = sender
         .wallet
         .read()
         .await
         .sync_state
-        .wallet_height()
+        .last_known_chain_height()
         .unwrap();
-    timestamped_test_log(format!("wallet height at send {wallet_height_at_send}").as_str());
+    timestamped_test_log(format!("wallet height at send {last_known_chain_height}").as_str());
 
     // check that each record has the expected fee and status, returning the fee
     let (sender_recorded_fees, (sender_recorded_outputs, sender_recorded_statuses)): (
@@ -164,10 +164,10 @@ where
     for status in sender_recorded_statuses {
         if !matches!(
             status,
-            ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == wallet_height_at_send + 1
+            ConfirmationStatus::Transmitted(transmitted_status_height) if transmitted_status_height == last_known_chain_height + 1
         ) {
             tracing::debug!("{status:?}");
-            tracing::debug!("{wallet_height_at_send:?}");
+            tracing::debug!("{last_known_chain_height:?}");
             panic!();
         }
     }
@@ -260,14 +260,14 @@ where
         timestamped_test_log("syncking transaction confirmation.");
         // chain scan shows the same
         sender.sync_and_await().await.unwrap();
-        let wallet_height_at_confirmation = sender
+        let last_known_chain_height = sender
             .wallet
             .read()
             .await
             .sync_state
-            .wallet_height()
+            .last_known_chain_height()
             .unwrap();
-        timestamped_test_log(format!("wallet height now {wallet_height_at_confirmation}").as_str());
+        timestamped_test_log(format!("wallet height now {last_known_chain_height}").as_str());
         timestamped_test_log("cross-checking confirmed records.");
 
         // check that each record has the expected fee and status, returning the fee and outputs
@@ -312,7 +312,10 @@ where
                     any_transaction_not_yet_confirmed = true;
                 }
                 ConfirmationStatus::Confirmed(confirmed_height) => {
-                    assert!(wallet_height_at_confirmation >= confirmed_height);
+                    assert!(last_known_chain_height >= confirmed_height);
+                }
+                ConfirmationStatus::Failed(_block_height) => {
+                    panic!("transaction failed")
                 }
             }
         }

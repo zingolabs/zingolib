@@ -3,7 +3,6 @@
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
 use std::sync::Arc;
-use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tower::ServiceExt;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
@@ -28,15 +27,7 @@ pub async fn get_zcb_client(
 
     if uri.scheme_str() == Some("https") {
         let mut root_store = RootCertStore::empty();
-        root_store.extend(
-            webpki_roots::TLS_SERVER_ROOTS
-                .iter()
-                .map(|anchor_ref| TrustAnchor {
-                    subject: Der::from_slice(anchor_ref.subject),
-                    subject_public_key_info: Der::from_slice(anchor_ref.spki),
-                    name_constraints: anchor_ref.name_constraints.map(Der::from_slice),
-                }),
-        );
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let config = ClientConfig::builder()
             .with_root_certificates(root_store)

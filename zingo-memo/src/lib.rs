@@ -11,7 +11,7 @@ use std::io::{self, Read, Write};
 use zcash_address::unified::{Address, Container, Encoding, Receiver};
 use zcash_encoding::{CompactSize, Vector};
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::consensus::Parameters;
+use zcash_protocol::consensus::Parameters;
 
 /// A parsed memo.
 /// The main use-case for this is to record the UAs that a foreign recipient provided,
@@ -210,7 +210,7 @@ mod tests {
     use super::*;
     use rand::{self, Rng};
     use test_vectors::TestVector;
-    use zcash_primitives::consensus::MAIN_NETWORK;
+    use zcash_protocol::consensus::MAIN_NETWORK;
 
     fn get_some_number_of_ephemeral_indexes() -> Vec<u32> {
         // Generate a random number of elements between 0 and 10

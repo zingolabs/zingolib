@@ -143,10 +143,10 @@ mod fast {
         zip321::{Payment, TransactionRequest},
     };
     use zcash_local_net::validator::Validator;
-    use zcash_primitives::{
-        consensus::BlockHeight, legacy::keys::NonHardenedChildIndex, memo::Memo,
-    };
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
+    use zcash_transparent::keys::NonHardenedChildIndex;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -466,7 +466,7 @@ mod fast {
             client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             true,
             local_net.validator().get_activation_heights().await,
         );
@@ -516,7 +516,7 @@ mod fast {
         // rebuild recipient and check the UAs don't exist in the wallet
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             true,
             local_net.validator().get_activation_heights().await,
         );
@@ -981,7 +981,8 @@ mod fast {
     pub mod tex {
         use pepper_sync::keys::decode_address;
         use zcash_client_backend::address::Address;
-        use zcash_primitives::{legacy::TransparentAddress, transaction::TxId};
+        use zcash_primitives::transaction::TxId;
+        use zcash_transparent::address::TransparentAddress;
         use zingolib::{testutils, wallet::LightWallet};
 
         use super::*;
@@ -1195,7 +1196,7 @@ mod fast {
             .to_string();
         let mut recipient = client_builder.build_client(
             seed_phrase,
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -1268,7 +1269,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
         let client_b = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -1450,15 +1451,15 @@ mod slow {
         TransparentCoin,
     };
     use zcash_local_net::validator::Validator;
-    use zcash_primitives::consensus::BlockHeight;
-    use zcash_primitives::memo::Memo;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
     use zingolib::config::ChainType;
-    use zingolib::lightclient::error::{QuickSendError, SendError};
+    use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists, build_fvk_client,
@@ -1779,7 +1780,7 @@ mod slow {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -1910,7 +1911,7 @@ mod slow {
                     vec![(zingo_test_vectors::EXT_TADDR, 1000, None)]
                 )
                 .await,
-                Err(QuickSendError::SendError(SendError::CalculateSendError(
+                Err(LightClientError::SendError(SendError::CalculateSendError(
                     CalculateTransactionError::NoSpendingKey(_)
                 )))
             ));
@@ -1963,12 +1964,12 @@ mod slow {
         .unwrap_err();
         assert!(matches!(
             sent_transaction_error,
-            QuickSendError::ProposalError(ProposeSendError::Proposal(
+            LightClientError::SendError(SendError::ProposeSendError(ProposeSendError::Proposal(
                 zcash_client_backend::data_api::error::Error::InsufficientFunds {
                     available: _,
                     required: _
                 }
-            ))
+            )))
         ));
     }
 
@@ -3398,7 +3399,7 @@ TransactionSummary {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -3443,7 +3444,7 @@ TransactionSummary {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -3606,7 +3607,7 @@ TransactionSummary {
         // Very explicit catch of reject sending from transparent
         match from_inputs::quick_send(&mut client, vec![(&pmc_taddr, 10_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => match proposesenderror {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => match e {
                 ProposeSendError::Proposal(insufficient) => {
                     if let zcash_client_backend::data_api::error::Error::InsufficientFunds {
                         available,
@@ -3635,9 +3636,9 @@ TransactionSummary {
         //  t -> z
         match from_inputs::quick_send(&mut client, vec![(&pmc_sapling, 50_000, None)]).await {
             Ok(_) => panic!(),
-            Err(QuickSendError::ProposalError(proposesenderror)) => {
-                if let ProposeSendError::Proposal(insufficient) = proposesenderror {
-                    match insufficient {
+            Err(LightClientError::SendError(SendError::ProposeSendError(e))) => {
+                if let ProposeSendError::Proposal(insufficient_funds) = e {
+                    match insufficient_funds {
                         zcash_client_backend::data_api::error::Error::InsufficientFunds {
                             available,
                             required,

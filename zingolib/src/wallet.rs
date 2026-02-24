@@ -7,8 +7,8 @@ use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
@@ -19,9 +19,9 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::ChainType;
+use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use send::SendProgress;
 
 pub mod error;
 pub(crate) mod legacy;
@@ -133,12 +133,12 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Wallet settings.
+    /// Wallet settings
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
-    /// Progress of an outgoing transaction
-    pub send_progress: SendProgress,
+    /// Send proposal
+    send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
 }
@@ -253,7 +253,7 @@ impl LightWallet {
             wallet_settings,
             price_list: PriceList::new(),
             save_required: true,
-            send_progress: SendProgress::new(0),
+            send_proposal: None,
         })
     }
 
@@ -332,6 +332,11 @@ impl LightWallet {
         )
     }
 
+    /// Clears the proposal in the `send_proposal` field.
+    pub fn clear_proposal(&mut self) {
+        self.send_proposal = None;
+    }
+
     #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
@@ -359,12 +364,6 @@ impl LightWallet {
         );
 
         Ok(())
-    }
-
-    // Set the previous send's result as a JSON string.
-    pub(super) fn set_send_result(&mut self, result: String) {
-        self.send_progress.is_send_in_progress = false;
-        self.send_progress.last_result = Some(result);
     }
 
     /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
@@ -415,10 +414,10 @@ impl LightWallet {
             .time_historical_prices_last_updated()
             .is_none()
         {
-            let Some(birthday) = self.sync_state.wallet_birthday() else {
+            let Some(start_height) = self.sync_state.wallet_birthday() else {
                 return Err(PriceError::NotInitialised);
             };
-            let birthday_block = match self.wallet_blocks.get(&birthday) {
+            let birthday_block = match self.wallet_blocks.get(&start_height) {
                 Some(block) => block.clone(),
                 None => {
                     return Err(PriceError::NotInitialised);

@@ -16,7 +16,7 @@ Pepper-sync is a rust-based sync engine library for wallets operating on the zca
 ## Terminology
 - Chain height - highest block height of best chain from the server.
 - Chain tip - the range of blocks at the top of the blockchain; Starting from the lowest block which contains the last note commitment to the latest shard of each shielded protocol; Ending at the chain height.
-- Wallet height - highest block height of blockchain known to the wallet.
+- Last Known Chain Height - highest block height of blockchain known to the wallet.
 - Fully scanned height - block height in which the wallet has completed scanning all blocks equal to and below this height.
 - Shard range - the range of blocks that contain all note commitments to a fully completed shard for a given shielded protocol.
 - Nullifier map - a map of all the nullifiers collected from each transaction's shielded inputs/spends during scanning.

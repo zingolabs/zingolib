@@ -113,10 +113,9 @@ tempfile = { workspace = true, optional = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 
 [dev-dependencies]
-concat-idents = { workspace = true }
+pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 zingolib = { workspace = true, features = ["testutils"] }
 
 [build-dependencies]

@@ -17,7 +17,6 @@ use zcash_client_backend::{
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::{TransparentAddress, keys::TransparentKeyScope},
     memo::Memo,
     transaction::{Transaction, TxId},
 };
@@ -25,7 +24,9 @@ use zcash_protocol::{
     PoolType, ShieldedProtocol,
     consensus::{self, BlockHeight, Parameters},
 };
+use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::{OutPoint, TxOut};
+use zcash_transparent::keys::TransparentKeyScope;
 
 use super::{LightWallet, error::WalletError, output::OutputRef};
 use crate::wallet::output::RemainingNeeded;
@@ -151,7 +152,7 @@ impl WalletRead for LightWallet {
     }
 
     fn chain_height(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        Ok(self.sync_state.wallet_height())
+        Ok(self.sync_state.last_known_chain_height())
     }
 
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
@@ -184,7 +185,7 @@ impl WalletRead for LightWallet {
         &self,
         min_confirmations: NonZeroU32,
     ) -> Result<Option<(TargetHeight, BlockHeight)>, Self::Error> {
-        let target_height = if let Some(height) = self.sync_state.wallet_height() {
+        let target_height = if let Some(height) = self.sync_state.last_known_chain_height() {
             height + 1
         } else {
             return Ok(None);
@@ -434,14 +435,18 @@ impl WalletWrite for LightWallet {
         for sent_transaction in transactions {
             // this is a workaround as Transaction does not implement Clone
             let mut transaction_bytes = vec![];
-            sent_transaction.tx().write(&mut transaction_bytes)?;
+            sent_transaction
+                .tx()
+                .write(&mut transaction_bytes)
+                .map_err(WalletError::TransactionWrite)?;
             let transaction = Transaction::read(
                 transaction_bytes.as_slice(),
                 consensus::BranchId::for_height(
                     &self.network,
                     sent_transaction.target_height().into(),
                 ),
-            )?;
+            )
+            .map_err(WalletError::TransactionRead)?;
 
             match pepper_sync::scan_pending_transaction(
                 &network,

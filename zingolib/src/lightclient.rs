@@ -15,7 +15,8 @@ use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::{consensus::BlockHeight, legacy::TransparentAddress};
+use zcash_protocol::consensus::BlockHeight;
+use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
     error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
@@ -23,7 +24,6 @@ use pepper_sync::{
 
 use crate::{
     config::ZingoConfig,
-    data::proposal::ZingoProposal,
     wallet::{
         LightWallet, WalletBase,
         balance::AccountBalance,
@@ -58,7 +58,6 @@ pub struct LightClient {
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
-    latest_proposal: Option<ZingoProposal>, // TODO: move to wallet
 }
 
 impl LightClient {
@@ -115,7 +114,6 @@ impl LightClient {
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
             save_handle: None,
-            latest_proposal: None,
         })
     }
 
@@ -134,9 +132,13 @@ impl LightClient {
             )));
         };
 
-        let buffer = BufReader::new(File::open(wallet_path)?);
+        let buffer = BufReader::new(File::open(wallet_path).map_err(LightClientError::FileError)?);
 
-        Self::create_from_wallet(LightWallet::read(buffer, config.chain)?, config, true)
+        Self::create_from_wallet(
+            LightWallet::read(buffer, config.chain).map_err(LightClientError::FileError)?,
+            config,
+            true,
+        )
     }
 
     /// Returns config used to create lightclient.
@@ -168,7 +170,9 @@ impl LightClient {
     ) -> Result<(), LightClientError> {
         let tor_dir =
             tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().to_path_buf().join("tor"));
-        tokio::fs::create_dir_all(tor_dir.as_path()).await?;
+        tokio::fs::create_dir_all(tor_dir.as_path())
+            .await
+            .map_err(LightClientError::FileError)?;
         self.tor_client = Some(tor::Client::create(tor_dir.as_path(), |_| {}).await?);
 
         Ok(())
@@ -306,7 +310,6 @@ impl std::fmt::Debug for LightClient {
                 "save_active",
                 &self.save_active.load(std::sync::atomic::Ordering::Acquire),
             )
-            .field("latest_proposal", &self.latest_proposal)
             .finish()
     }
 }
@@ -337,7 +340,7 @@ mod tests {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts,
                 },
-                0.into(),
+                1.into(),
                 config.wallet_settings.clone(),
             )
             .unwrap(),
@@ -356,7 +359,7 @@ mod tests {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                     no_of_accounts: config.no_of_accounts,
                 },
-                0.into(),
+                1.into(),
                 config.wallet_settings.clone(),
             )
             .unwrap(),

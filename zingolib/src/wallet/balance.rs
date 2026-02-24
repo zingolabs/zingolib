@@ -157,7 +157,10 @@ impl LightWallet {
             .is_some_and(|bundle| bundle.is_coinbase());
 
         if is_coinbase {
-            let current_height = self.sync_state.wallet_height().unwrap_or(self.birthday);
+            let current_height = self
+                .sync_state
+                .last_known_chain_height()
+                .unwrap_or(self.birthday);
             let tx_height = transaction.status().get_height();
 
             // Work with u32 values
@@ -427,7 +430,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| !transaction.status().is_confirmed(),
+            |_, transaction: &WalletTransaction| transaction.status().is_pending(),
             account_id,
         )
     }
@@ -450,7 +453,7 @@ impl LightWallet {
     {
         self.get_filtered_balance::<Op, _>(
             |note, transaction: &WalletTransaction| {
-                Op::value(note) > MARGINAL_FEE.into_u64() && !transaction.status().is_confirmed()
+                Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_pending()
             },
             account_id,
         )
