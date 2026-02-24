@@ -22,17 +22,23 @@ set -eo pipefail
 #
 # Main Script Logic
 #
-# 1. Print environment variables and config for debugging
-# 2. Tests zingo-cli.
-# 3. Process command-line arguments and execute appropriate action
+# 1. Print environment variables and config for debugging.
+# 2. Creates a wallet, if the container has not been initialized before.
+# 3. Tests zingo-cli.
+# 4. Process command-line arguments and execute appropriate action.
 
 echo "INFO: Using the following environment variables:"
 printenv
 
+if [ ! -f ./initialized ]; then
+  # A wallet will be created in this container if there is none. A version will be printed after sync."
+  # selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
+  echo "Container not initialized, creating wallet, syncing, and printing address..."
+  ./zingo-cli --server https://zzz.stripest.online:443 --waitsync addresses
+  touch ./initialized
+fi
+
 echo "Testing zingo-cli to print version string:"
-# A wallet will be created in this container if there is none. A version will be printed after sync."
-# selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
-#./zingo-cli --server https://zzz.stripest.online:443 --waitsync version
 ./zingo-cli --version
 
 echo "now exec'ing $@ "
