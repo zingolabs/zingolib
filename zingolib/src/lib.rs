@@ -5,7 +5,6 @@
 
 pub mod config;
 pub mod data;
-pub mod grpc_client;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod utils;

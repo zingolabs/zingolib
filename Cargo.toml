@@ -47,7 +47,7 @@ zcash_transparent = "0.6"
 zebra-chain = "5.0.0"
 
 # Zingo-common
-zingo-netutils = "1.1.0"
+zingo-netutils = { path = "../../zingo-common.git/dev/zingo-netutils" }
 zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", version = "0.2" }
 
 # Parallel processing
