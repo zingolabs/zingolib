@@ -191,7 +191,7 @@ mod shielding {
                         .unwrap(),
                     no_of_accounts: 1.try_into().unwrap(),
                 },
-                0.into(),
+                1.into(),
                 WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery:

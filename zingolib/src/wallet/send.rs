@@ -93,7 +93,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(start_height) = self.sync_state.get_initial_scan_height() else {
+        let Some(start_height) = self.sync_state.wallet_birthday() else {
             return false;
         };
         let scan_ranges = self.sync_state.scan_ranges();

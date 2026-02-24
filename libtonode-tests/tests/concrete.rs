@@ -466,7 +466,7 @@ mod fast {
             client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             true,
             local_net.validator().get_activation_heights().await,
         );
@@ -516,7 +516,7 @@ mod fast {
         // rebuild recipient and check the UAs don't exist in the wallet
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             true,
             local_net.validator().get_activation_heights().await,
         );
@@ -1196,7 +1196,7 @@ mod fast {
             .to_string();
         let mut recipient = client_builder.build_client(
             seed_phrase,
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -1269,7 +1269,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
         let client_b = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -1780,7 +1780,7 @@ mod slow {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -3399,7 +3399,7 @@ TransactionSummary {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );
@@ -3444,7 +3444,7 @@ TransactionSummary {
             .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
+            1,
             false,
             local_net.validator().get_activation_heights().await,
         );

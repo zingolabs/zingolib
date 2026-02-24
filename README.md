@@ -67,7 +67,7 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 
 * `--data-dir`: uses the specified path as data directory. This is required when not using the `--regtest` option.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
-* `--waitsync`: Wait for sync before running a command in non-interactive mode
+* `--waitsync`: Wait for sync before running a command in non-interactive mode or entering the command prompt in interactive mode.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --waitsync balance`
 * `--server`: Connect to a custom zcash lightwalletd server.
     * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
