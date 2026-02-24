@@ -23,19 +23,17 @@ set -eo pipefail
 # Main Script Logic
 #
 # 1. Print environment variables and config for debugging
-# 2. Process command-line arguments and execute appropriate action
+# 2. Tests zingo-cli.
+# 3. Process command-line arguments and execute appropriate action
 
 echo "INFO: Using the following environment variables:"
 printenv
 
-echo "starting zingo-cli. A wallet will be created in this container if there is none. A version will be printed after sync."
-./zingo-cli --server https://zzz.stripest.online:443 --waitsync version
+echo "Testing zingo-cli to print version string:"
+# A wallet will be created in this container if there is none. A version will be printed after sync."
+# selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
+#./zingo-cli --server https://zzz.stripest.online:443 --waitsync version
+./zingo-cli --version
 
-# Keep container running for re-attach
-echo "--  This container has succeeded in making a wallet!"
-echo "Use 'docker exec -it <container> /bin/sh' in another active terminal for manual use."
-# TODO add handle for manual commands
-echo "'tail' executing which will keep this container running until stopped."
-echo "3 SIGTERM/SIGINTs will forcefully exit."
-echo "Restarting the same container will re-sync, but retain the existing wallet."
-exec tail -f /dev/null
+echo "now exec'ing $@ "
+exec "$@"
