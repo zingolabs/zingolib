@@ -31,9 +31,9 @@ echo "INFO: Using the following environment variables:"
 printenv
 
 if [ ! -f ./initialized ]; then
-  # A wallet will be created in this container if there is none. A version will be printed after sync."
-  # selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
+  # A wallet will be created in this container if there is none. The address of the new wallet will be printed after sync."
   echo "Container not initialized, creating wallet, syncing, and printing address..."
+  # selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
   ./zingo-cli --server https://zzz.stripest.online:443 --waitsync addresses
   touch ./initialized
 fi
