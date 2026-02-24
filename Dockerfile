@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
 # check=skip=UndefinedVar,UserExist # We use `runuser` in the entrypoint instead of USER directive
 
-
 ############################
 # Global build args
 ############################
@@ -21,11 +20,6 @@ FROM stagex/user-abseil-cpp@sha256:926f69e9cd112dfe3450a0af56d1560dc0a62589e6104
 FROM stagex/core-sqlite3@sha256:44807b914585c81dda2bb0a5617cab53395255fe6685ce9599628060229c8929 AS sqlite3
 # Runtime Deps
 FROM stagex/core-busybox@sha256:d608daa946e4799cf28b105aba461db00187657bd55ea7c2935ff11dac237e27 AS busybox
-# FROM stagex/core-llvm-runtime@sha256:11323894375bc44bc7da121345eb88a26c32edc63d0b07fdf8c08906c283751c AS llvm-runtime
-# FROM stagex/core-filesystem@sha256:cd3a66471ce1f630fa77d5c9bd9829f9f9fab6302a1aaa64d67b74f1f069b750 AS filesystem
-# FROM stagex/core-bash@sha256:5b598c14eef61148baf3f5a2830a214a5985b5d3544b019e3d0ed53c6b66989a AS bashy
-# FROM stagex/user-util-linux@sha256:dbe8025801b4aa2ce8b7077a594ec6c5516a3f9d075283d56e9cd119631fa2c3 AS util-linux
-
 
 ############################
 # Builder
@@ -100,17 +94,18 @@ ENV USER=${USER}
 ARG HOME
 ENV HOME=${HOME}
 
-COPY --chmod=644 <<-EOF /etc/passwd
+COPY --chmod=550 <<-EOF /etc/passwd
 	root:x:0:0:root:/root:/bin/sh
 	user:x:${UID}:${GID}::${HOME}:/bin/sh
 EOF
 
-COPY --chmod=644 <<-EOF /etc/group
+COPY --chmod=550 <<-EOF /etc/group
 	root:x:0:
 	user:x:${GID}:
 EOF
 
 WORKDIR /usr/local/bin
+
 USER root
 RUN mkdir -p /usr/local/bin/wallets && chown -R ${UID}:${GID} /usr/local/bin/ && chmod -R 770 /usr/local/bin/
 COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
@@ -118,6 +113,9 @@ RUN chmod 550 /usr/local/bin/zingo-cli
 COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 550 /usr/local/bin/entrypoint.sh
 USER $USER
+
+# Prints Zingo-cli version on success.
 ENTRYPOINT [ "./entrypoint.sh" ]
-# selected server = zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit
-# ENTRYPOINT [ "./zingo-cli", "--server", "https://zzz.stripest.online:443", "--waitsync", "version" ]
+# ./entrypoint.sh runs, then exec "$@" executes CMD (or custom args).
+# Default command. Selected server uses zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit.
+CMD [ "./zingo-cli", "--server", "https://zzz.stripest.online:443" ]
