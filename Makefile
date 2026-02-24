@@ -6,7 +6,7 @@
 .PHONY: stagex compat build
 
 stagex:	compat build
-	@echo "stagex build completed via make."
+	@echo "[Stageˣ] build completed via make."
 
 compat:
 	@echo "Beginning Compatibility Check step."
@@ -17,3 +17,8 @@ build:
 	@echo "Entering Build step."
 	@./utils/build.sh
 	@echo "Build step complete."
+
+create:
+	@echo "Creating zingo-cli wallet, if there is none."
+	@./utils/create_wallet.sh
+	@echo "Wallet creation script complete."
