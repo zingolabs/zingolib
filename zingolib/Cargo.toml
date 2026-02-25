@@ -112,6 +112,9 @@ rand = { workspace = true }
 tempfile = { workspace = true, optional = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 
+# Windows compatible
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
