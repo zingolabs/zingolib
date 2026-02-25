@@ -686,13 +686,13 @@ where
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
-    let start_height = sync_state
+    let birthday = sync_state
         .wallet_birthday()
         .ok_or(SyncStatusError::NoSyncData)?;
     let last_known_chain_height = sync_state
         .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = last_known_chain_height - start_height + 1;
+    let total_blocks = last_known_chain_height - birthday + 1;
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
