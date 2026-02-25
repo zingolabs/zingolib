@@ -8,7 +8,5 @@ if [ -z "$$(docker images -q zingo-cli:latest 2>/dev/null)" ]; then
   echo "There is no `zingo-cli:latest` image listed by docker."
 else
   echo "Creating wallet if there is none, then opening zingo-cli interactively."
-  docker run -it zingo-cli:latest
-# docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443
+  docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443
 fi
-
