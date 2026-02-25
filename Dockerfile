@@ -112,10 +112,10 @@ COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
 RUN chmod 550 /usr/local/bin/zingo-cli
 COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 550 /usr/local/bin/entrypoint.sh
-USER $USER
 
-# Prints Zingo-cli version on success.
+USER $USER
+# ./entrypoint.sh runs, then executes CMD (or custom command if provided).
+# Prints zingo-cli version, address if a new wallet is created, and info on success.
 ENTRYPOINT [ "./entrypoint.sh" ]
-# ./entrypoint.sh runs, then exec "$@" executes CMD (or custom args).
 # Default command. Selected server uses zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit.
-CMD [ "./zingo-cli", "--server", "https://zzz.stripest.online:443" ]
+CMD [ "./zingo-cli", "--server", "https://zzz.stripest.online:443", "settings" ]
