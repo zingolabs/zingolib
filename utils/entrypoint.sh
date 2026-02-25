@@ -23,12 +23,15 @@ set -eo pipefail
 # Main Script Logic
 #
 # 1. Print environment variables and config for debugging.
-# 2. Creates a wallet, if the container has not been initialized before.
-# 3. Tests zingo-cli.
+# 2. Tests if zingo-cli runs.
+# 3. Creates a wallet, if the container has not been initialized before.
 # 4. Process command-line arguments and execute appropriate action.
 
 echo "INFO: Using the following environment variables:"
 printenv
+
+echo "Testing zingo-cli to print version string:"
+./zingo-cli --version
 
 if [ ! -f ./initialized ]; then
   # A wallet will be created in this container if there is none. The address of the new wallet will be printed after sync."
@@ -38,8 +41,8 @@ if [ ! -f ./initialized ]; then
   touch ./initialized
 fi
 
-echo "Testing zingo-cli to print version string:"
-./zingo-cli --version
+echo "Lightwalletd server's info info:"
+./zingo-cli --server https://zzz.stripest.online:443 --nosync info
 
 echo "now exec'ing $@ "
 exec "$@"
