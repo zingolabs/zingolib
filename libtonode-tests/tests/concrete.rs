@@ -144,7 +144,7 @@ mod fast {
         encoding::encode_payment_address_p,
         zip321::{Payment, TransactionRequest},
     };
-    use zcash_local_net::validator::Validator;
+    use zcash_local_net::{protocol::ActivationHeights, validator::Validator};
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
@@ -467,19 +467,13 @@ mod fast {
     #[tokio::test]
     async fn unified_address_discovery() {
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(
-            true,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
-        );
+        let mut faucet =
+            client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
         let mut recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         let network = recipient.wallet.read().await.network;
 
@@ -529,9 +523,7 @@ mod fast {
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         if let Some(_ua) =
             recipient
@@ -1211,9 +1203,7 @@ mod fast {
             seed_phrase,
             1,
             false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         let network = recipient.wallet.read().await.network;
         let (new_address_id, new_address) = recipient
@@ -1286,9 +1276,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
 
         assert_eq!(
@@ -1356,8 +1344,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
+        let configured_activation_heights = ActivationHeights {
             overwinter: Some(1u32),
             sapling: Some(3u32),
             blossom: Some(5u32),
@@ -1369,11 +1356,8 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu7: None,
         };
 
-        let (local_net, mut lightclient) = scenarios::unfunded_client(
-            configured_activation_heights_to_local_network(configured_activation_heights),
-            None,
-        )
-        .await;
+        let (local_net, mut lightclient) =
+            scenarios::unfunded_client(configured_activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
             .await
             .unwrap();
@@ -1381,8 +1365,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn sync_all_epochs_from_heartwood() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
+        let configured_activation_heights = ActivationHeights {
             overwinter: Some(1u32),
             sapling: Some(1u32),
             blossom: Some(1u32),
@@ -1393,11 +1376,9 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             nu6_1: Some(9u32),
             nu7: None,
         };
-        let (local_net, mut lightclient) = scenarios::unfunded_client(
-            configured_activation_heights_to_local_network(configured_activation_heights),
-            None,
-        )
-        .await;
+
+        let (local_net, mut lightclient) =
+            scenarios::unfunded_client(configured_activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
             .await
             .unwrap();
@@ -1469,6 +1450,7 @@ mod slow {
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
     };
+    use zcash_local_net::protocol::ActivationHeights;
     use zcash_local_net::validator::Validator;
     use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
     use zcash_protocol::consensus::BlockHeight;
@@ -1798,26 +1780,18 @@ mod slow {
 
         tracing_subscriber::fmt().init();
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(
-            false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
-        );
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut original_recipient = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         let zingo_config = zingolib::config::load_clientconfig(
             client_builder.server_id,
             Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            )),
+            ChainType::Regtest(local_net.validator().get_activation_heights().await),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -2604,8 +2578,7 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
+        let configured_activation_heights = ActivationHeights {
             overwinter: Some(1u32),
             sapling: Some(1u32),
             blossom: Some(1u32),
@@ -2616,9 +2589,10 @@ TransactionSummary {
             nu6_1: Some(5u32),
             nu7: None,
         };
+
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
-            configured_activation_heights_to_local_network(configured_activation_heights),
+            configured_activation_heights,
             None,
         )
         .await;
@@ -3427,19 +3401,13 @@ TransactionSummary {
     async fn list_value_transfers_check_fees() {
         // Check that list_value_transfers behaves correctly given different fee scenarios
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(
-            false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
-        );
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut pool_migration_client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
         let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
@@ -3478,19 +3446,13 @@ TransactionSummary {
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
         let (local_net, mut client_builder) = scenarios::custom_clients_default().await;
-        let mut faucet = client_builder.build_faucet(
-            false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
-        );
+        let mut faucet = client_builder
+            .build_faucet(false, local_net.validator().get_activation_heights().await);
         let mut client = client_builder.build_client(
             HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             false,
-            configured_activation_heights_to_local_network(
-                local_net.validator().get_activation_heights().await,
-            ),
+            local_net.validator().get_activation_heights().await,
         );
         let pmc_taddr = get_base_address_macro!(client, "transparent");
         let pmc_sapling = get_base_address_macro!(client, "sapling");

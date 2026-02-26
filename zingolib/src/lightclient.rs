@@ -323,6 +323,7 @@ mod tests {
     use bip0039::Mnemonic;
     use tempfile::TempDir;
     use zcash_protocol::local_consensus::LocalNetwork;
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -330,18 +331,9 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::build(ChainType::Regtest(LocalNetwork {
-            overwinter: Some(1.into()),
-            sapling: Some(1.into()),
-            blossom: Some(1.into()),
-            heartwood: Some(1.into()),
-            canopy: Some(1.into()),
-            nu5: Some(1.into()),
-            nu6: Some(1.into()),
-            nu6_1: Some(1.into()),
-        }))
-        .set_wallet_dir(temp_dir.path().to_path_buf())
-        .create();
+        let config = ZingoConfig::build(ChainType::Regtest(ActivationHeights::default()))
+            .set_wallet_dir(temp_dir.path().to_path_buf())
+            .create();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
                 config.chain,

@@ -16,7 +16,6 @@ use zcash_local_net::{
         Indexer as _,
         lightwalletd::{Lightwalletd, LightwalletdConfig},
     },
-    network::localhost_uri,
     process::Process as _,
 };
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
@@ -327,6 +326,7 @@ pub mod scenarios {
     use std::ops::Add;
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
+    use zcash_local_net::protocol::ActivationHeights;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zebra_chain::parameters::testnet;
@@ -350,7 +350,7 @@ pub mod scenarios {
         lightwalletd: Lightwalletd,
         pub(crate) darkside_connector: DarksideConnector,
         pub(crate) client_builder: ClientBuilder,
-        pub(crate) configured_activation_heights: testnet::ConfiguredActivationHeights,
+        pub(crate) configured_activation_heights: ActivationHeights,
         faucet: Option<LightClient>,
         lightclients: Vec<LightClient>,
         pub(crate) staged_blockheight: BlockHeight,
@@ -372,9 +372,7 @@ pub mod scenarios {
                 lightwalletd,
                 darkside_connector,
                 client_builder,
-                configured_activation_heights: local_network_to_configured_activation_heights(
-                    configured_activation_heights,
-                ),
+                configured_activation_heights,
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
@@ -403,7 +401,7 @@ pub mod scenarios {
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 1,
                 true,
-                configured_activation_heights_to_local_network(self.configured_activation_heights),
+                self.configured_activation_heights,
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -432,7 +430,7 @@ pub mod scenarios {
                 seed,
                 birthday,
                 true,
-                configured_activation_heights_to_local_network(self.configured_activation_heights),
+                self.configured_activation_heights,
             );
             self.lightclients.push(lightclient);
             self
@@ -680,7 +678,7 @@ pub mod scenarios {
         pub fn get_client_builder(&self) -> &ClientBuilder {
             &self.client_builder
         }
-        pub fn get_activation_heights(&self) -> testnet::ConfiguredActivationHeights {
+        pub fn get_activation_heights(&self) -> ActivationHeights {
             self.configured_activation_heights
         }
         pub fn get_faucet(&mut self) -> &mut LightClient {

@@ -9432,7 +9432,7 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.3.0"
-source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#131d818e1caf77307a7d77dd205a9e7202e93b0a"
+source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#b64a80846efe221886fa0827e09907d2abbf171b"
 
 [[package]]
 name = "zingo_test_vectors"

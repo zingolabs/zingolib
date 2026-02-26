@@ -72,9 +72,9 @@ pub(crate) mod conduct_chain {
         async fn create_faucet(&mut self) -> LightClient {
             self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
                 .await;
-            let config = self.client_builder.make_unique_data_dir_and_load_config(
-                configured_activation_heights_to_local_network(self.configured_activation_heights),
-            );
+            let config = self
+                .client_builder
+                .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
                     config.chain,
@@ -100,9 +100,8 @@ pub(crate) mod conduct_chain {
         }
 
         async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-            self.client_builder.make_unique_data_dir_and_load_config(
-                configured_activation_heights_to_local_network(self.configured_activation_heights),
-            )
+            self.client_builder
+                .make_unique_data_dir_and_load_config(self.configured_activation_heights)
         }
 
         async fn increase_chain_height(&mut self) {
