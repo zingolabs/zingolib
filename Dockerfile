@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# check=skip=UndefinedVar,UserExist # We use `runuser` in the entrypoint instead of USER directive
+# check=skip=UndefinedVar,UserExist
 
 ############################
 # Global build args
