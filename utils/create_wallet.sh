@@ -9,5 +9,4 @@ if [ -z "$(docker images -q zingo-cli:latest 2>/dev/null)" ]; then
 else
   echo "Creating wallet if there is none, then printing wallet's orchard u address."
   docker run zingo-cli:latest
-  # ./zingo-cli --server https://zzz.stripest.online:443 --waitsync addresses
 fi
