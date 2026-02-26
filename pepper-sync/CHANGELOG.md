@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Removed
+
+## [0.2.0] - 2026-02-26
+
+### Added
 - `wallet::WalletTransaction::update_status`
 - `wallet::WalletTransaction::new_for_test`
 - `sync::set_transactions_failed` - also re-exported in lib.rs
