@@ -118,7 +118,8 @@ zingo-memo = "0.1.0"
 zingo-price = { path = "zingo-price" }
 # zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 zingo-status = "0.2.0"
-pepper-sync = { path = "pepper-sync" }
+# pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
