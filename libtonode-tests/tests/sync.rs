@@ -5,7 +5,6 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
@@ -17,7 +16,9 @@ use zingolib::{
     testutils::lightclient::from_inputs::{self},
     wallet::{LightWallet, WalletBase, WalletSettings},
 };
-use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
+use zingolib_testutils::scenarios::{
+    self, all_height_one_nus, increase_height_and_wait_for_client,
+};
 
 #[ignore = "temporary mainnet test for sync development"]
 #[tokio::test]

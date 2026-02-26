@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 
 [features]
-regtest = [ "zingolib/regtest", "zingo_common_components/for_test" ]
+regtest = ["zingolib/regtest"]
 
 [dependencies]
 pepper-sync = { workspace = true }

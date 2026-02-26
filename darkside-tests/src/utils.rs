@@ -330,7 +330,6 @@ pub mod scenarios {
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zebra_chain::parameters::testnet;
-    use zingo_common_components::protocol::activation_heights::for_test;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -342,7 +341,10 @@ pub mod scenarios {
     };
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::lightclient::LightClient;
-    use zingolib_testutils::scenarios::ClientBuilder;
+    use zingolib_testutils::scenarios::{
+        ClientBuilder, all_height_one_nus, configured_activation_heights_to_local_network,
+        local_network_to_configured_activation_heights,
+    };
 
     pub struct DarksideEnvironment {
         lightwalletd: Lightwalletd,
@@ -365,12 +367,14 @@ pub mod scenarios {
                 darkside_connector.0.clone(),
                 zingolib::testutils::tempfile::tempdir().unwrap(),
             );
-            let configured_activation_heights = for_test::all_height_one_nus();
+            let configured_activation_heights = all_height_one_nus();
             DarksideEnvironment {
                 lightwalletd,
                 darkside_connector,
                 client_builder,
-                configured_activation_heights,
+                configured_activation_heights: local_network_to_configured_activation_heights(
+                    configured_activation_heights,
+                ),
                 faucet: None,
                 lightclients: vec![],
                 staged_blockheight: BlockHeight::from(1),
@@ -399,7 +403,7 @@ pub mod scenarios {
                 zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
                 1,
                 true,
-                self.configured_activation_heights,
+                configured_activation_heights_to_local_network(self.configured_activation_heights),
             ));
 
             let faucet_funding_transaction = match funded_pool {
@@ -428,7 +432,7 @@ pub mod scenarios {
                 seed,
                 birthday,
                 true,
-                self.configured_activation_heights,
+                configured_activation_heights_to_local_network(self.configured_activation_heights),
             );
             self.lightclients.push(lightclient);
             self

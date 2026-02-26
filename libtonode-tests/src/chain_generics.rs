@@ -10,6 +10,7 @@ use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::timestamped_test_log;
 
 use zingolib_testutils::scenarios::ClientBuilder;
+use zingolib_testutils::scenarios::configured_activation_heights_to_local_network;
 use zingolib_testutils::scenarios::custom_clients_default;
 use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 
@@ -37,13 +38,17 @@ impl ConductChain for LibtonodeEnvironment {
     async fn create_faucet(&mut self) -> LightClient {
         self.client_builder.build_faucet(
             false,
-            self.local_net.validator().get_activation_heights().await,
+            configured_activation_heights_to_local_network(
+                self.local_net.validator().get_activation_heights().await,
+            ),
         )
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
         self.client_builder.make_unique_data_dir_and_load_config(
-            self.local_net.validator().get_activation_heights().await,
+            configured_activation_heights_to_local_network(
+                self.local_net.validator().get_activation_heights().await,
+            ),
         )
     }
 

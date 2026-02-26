@@ -26,11 +26,11 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::network::localhost_uri;
 use zcash_local_net::process::Process;
+use zcash_local_net::protocol::ActivationHeights;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
+use zcash_protocol::local_consensus::LocalNetwork;
 use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -47,6 +47,8 @@ use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
+
+use crate::localhost_uri;
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -84,11 +86,47 @@ pub mod network_combo {
     pub type DefaultValidator = zcash_local_net::validator::zebrad::Zebrad;
 }
 
+pub fn all_height_one_nus() -> ActivationHeights {
+    <ActivationHeights as std::default::Default>::default()
+}
+
+pub fn local_network_to_configured_activation_heights(
+    local_network: LocalNetwork,
+) -> ConfiguredActivationHeights {
+    ConfiguredActivationHeights {
+        before_overwinter: Some(1),
+        overwinter: local_network.overwinter.map(|h| h.into()),
+        sapling: local_network.sapling.map(|h| h.into()),
+        blossom: local_network.blossom.map(|h| h.into()),
+        heartwood: local_network.heartwood.map(|h| h.into()),
+        canopy: local_network.canopy.map(|h| h.into()),
+        nu5: local_network.nu5.map(|h| h.into()),
+        nu6: local_network.nu6.map(|h| h.into()),
+        nu6_1: local_network.nu6_1.map(|h| h.into()),
+        nu7: None,
+    }
+}
+
+pub fn configured_activation_heights_to_local_network(
+    local_network: ConfiguredActivationHeights,
+) -> LocalNetwork {
+    LocalNetwork {
+        overwinter: local_network.overwinter.map(|h| h.into()),
+        sapling: local_network.sapling.map(|h| h.into()),
+        blossom: local_network.blossom.map(|h| h.into()),
+        heartwood: local_network.heartwood.map(|h| h.into()),
+        canopy: local_network.canopy.map(|h| h.into()),
+        nu5: local_network.nu5.map(|h| h.into()),
+        nu6: local_network.nu6.map(|h| h.into()),
+        nu6_1: local_network.nu6_1.map(|h| h.into()),
+    }
+}
+
 /// To launch a `LocalNet` with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> LocalNet<V, I>
 where
@@ -154,7 +192,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         //! Each client requires a unique `data_dir`, we use the
         //! `client_number` counter for this.
@@ -171,7 +209,7 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         load_clientconfig(
@@ -195,7 +233,7 @@ impl ClientBuilder {
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
@@ -212,7 +250,7 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
@@ -235,7 +273,7 @@ impl ClientBuilder {
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) = custom_clients(
@@ -274,7 +312,7 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultInd
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) =
@@ -299,7 +337,7 @@ pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, Li
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultValidator, DefaultIndexer>,
@@ -342,7 +380,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultValidator, DefaultIndexer>,
@@ -445,7 +483,7 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder) {
     let local_net = launch_test::<DefaultValidator, DefaultIndexer>(

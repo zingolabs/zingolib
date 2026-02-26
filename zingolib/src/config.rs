@@ -27,8 +27,7 @@ use zcash_protocol::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
 };
 
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_common_components::protocol::ActivationHeights;
 
 use crate::wallet::WalletSettings;
 
@@ -55,7 +54,7 @@ pub enum ChainType {
     /// Mainnet
     Mainnet,
     /// Regtest
-    Regtest(zebra_chain::parameters::testnet::ConfiguredActivationHeights),
+    Regtest(ActivationHeights),
 }
 
 impl std::fmt::Display for ChainType {
@@ -85,18 +84,14 @@ impl Parameters for ChainType {
             Testnet => TEST_NETWORK.activation_height(nu),
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Regtest(activation_heights) => match nu {
-                NetworkUpgrade::Overwinter => {
-                    activation_heights.overwinter.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Sapling => activation_heights.sapling.map(BlockHeight::from_u32),
-                NetworkUpgrade::Blossom => activation_heights.blossom.map(BlockHeight::from_u32),
-                NetworkUpgrade::Heartwood => {
-                    activation_heights.heartwood.map(BlockHeight::from_u32)
-                }
-                NetworkUpgrade::Canopy => activation_heights.canopy.map(BlockHeight::from_u32),
-                NetworkUpgrade::Nu5 => activation_heights.nu5.map(BlockHeight::from_u32),
-                NetworkUpgrade::Nu6 => activation_heights.nu6.map(BlockHeight::from_u32),
-                NetworkUpgrade::Nu6_1 => activation_heights.nu6_1.map(BlockHeight::from_u32),
+                NetworkUpgrade::Overwinter => activation_heights.overwinter().map(|h| h.into()),
+                NetworkUpgrade::Sapling => activation_heights.sapling().map(|h| h.into()),
+                NetworkUpgrade::Blossom => activation_heights.blossom().map(|h| h.into()),
+                NetworkUpgrade::Heartwood => activation_heights.heartwood().map(|h| h.into()),
+                NetworkUpgrade::Canopy => activation_heights.canopy().map(|h| h.into()),
+                NetworkUpgrade::Nu5 => activation_heights.nu5().map(|h| h.into()),
+                NetworkUpgrade::Nu6 => activation_heights.nu6().map(|h| h.into()),
+                NetworkUpgrade::Nu6_1 => activation_heights.nu6_1().map(|h| h.into()),
             },
         }
     }
