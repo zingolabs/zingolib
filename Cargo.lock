@@ -3331,7 +3331,7 @@ dependencies = [
  "http",
  "itertools 0.14.0",
  "json",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "proptest",
  "rustls 0.23.36",
  "shardtree",
@@ -4094,6 +4094,44 @@ dependencies = [
 [[package]]
 name = "pepper-sync"
 version = "0.2.0"
+dependencies = [
+ "bip32",
+ "byteorder",
+ "crossbeam-channel",
+ "futures",
+ "incrementalmerkletree",
+ "json",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
+ "shardtree",
+ "simple-mermaid",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo-netutils",
+ "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zip32",
+]
+
+[[package]]
+name = "pepper-sync"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0e72645feff01b129fa99c02ceebc86ffb990bfb2c36b9796ce61842161274d"
 dependencies = [
  "bip32",
  "byteorder",
@@ -9348,7 +9386,7 @@ dependencies = [
  "indoc",
  "json",
  "log",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.23.36",
  "rustyline",
  "shellwords",
@@ -9474,7 +9512,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "2.1.2"
+version = "3.0.0-rc.1"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9497,7 +9535,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "prost",
  "rand 0.8.5",
@@ -9544,7 +9582,7 @@ version = "0.1.0"
 dependencies = [
  "bip0039 0.13.4",
  "http",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "tempfile",
  "zcash_local_net",
