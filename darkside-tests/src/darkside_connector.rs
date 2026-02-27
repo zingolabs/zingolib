@@ -3,11 +3,7 @@ use super::darkside_types::{
     Empty, RawTransaction, TreeState, darkside_streamer_client::DarksideStreamerClient,
 };
 
-use hyper::Uri;
-use hyper_util::client::legacy::connect::HttpConnector;
-use std::sync::Arc;
-use tower::ServiceExt;
-use zingo_netutils::UnderlyingService;
+use tonic::transport::Channel;
 
 macro_rules! define_darkside_connector_methods(
     ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
@@ -32,33 +28,15 @@ impl DarksideConnector {
     pub fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<DarksideStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+        Output = Result<DarksideStreamerClient<Channel>, Box<dyn std::error::Error>>,
     > {
-        let uri = Arc::new(self.0.clone());
+        let uri = self.0.clone();
         async move {
-            let mut http_connector = HttpConnector::new();
-            http_connector.enforce_http(false);
-            let connector = tower::ServiceBuilder::new().service(http_connector);
-            let client = zingo_netutils::client::client_from_connector(connector, true);
-            let uri = uri.clone();
-            let svc = tower::ServiceBuilder::new()
-                //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                .map_request(move |mut req: http::Request<tonic::body::Body>| {
-                    let uri = Uri::builder()
-                        .scheme(uri.scheme().unwrap().clone())
-                        .authority(uri.authority().unwrap().clone())
-                        //here. The Request's uri contains the path to the GRPC server and
-                        //the method being called
-                        .path_and_query(req.uri().path_and_query().unwrap().clone())
-                        .build()
-                        .unwrap();
-
-                    *req.uri_mut() = uri;
-                    req
-                })
-                .service(client);
-
-            Ok(DarksideStreamerClient::new(svc.boxed_clone()))
+            let channel = tonic::transport::Endpoint::from_shared(uri.to_string())?
+                .tcp_nodelay(true)
+                .connect()
+                .await?;
+            Ok(DarksideStreamerClient::new(channel))
         }
     }
 
