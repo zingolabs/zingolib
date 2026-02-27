@@ -29,12 +29,4 @@ impl EngineState {
         self.syncing = false;
         self.sync_task = None;
     }
-
-    /// Clear the backend.
-    pub(crate) fn clear_backend(&mut self) {
-        self.backend = None;
-        self.last_balance = None;
-        self.syncing = false;
-        self.sync_task = None;
-    }
 }

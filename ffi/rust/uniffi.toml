@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "ZingolibFfi"
+
+[bindings.swift]
+module_name = "zingolib_ffi"
+ffi_module_filename = "zingolib_ffi"

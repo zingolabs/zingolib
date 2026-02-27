@@ -17,14 +17,23 @@ kotlin: build
     cargo run --bin generate-bindings generate \
       --library target/release/libffi.dylib \
       --language kotlin \
-      --out-dir ffi/rust/uniffi-output
+      --out-dir ffi/rust/uniffi-output/kotlin
+
+cargo-ndk: kotlin
+    cargo ndk \
+        -t arm64-v8a \
+        -t armeabi-v7a \
+        build --release
+
+copy-kt-bindings: kotlin
+    cp -r ffi/rust/uniffi-output/kotlin/ZingolibFfi ffi/android/ZingolibFfi/zingolibffi/src/main/java/
 
 # Generate Swift bindings
 swift: build
     cargo run --bin generate-bindings generate \
       --library target/release/libffi.dylib \
       --language swift \
-      --out-dir ffi/rust/uniffi-output
+      --out-dir ffi/rust/uniffi-output/swift
 
 # Clean build artifacts
 clean:

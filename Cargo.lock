@@ -3501,14 +3501,13 @@ dependencies = [
 [[package]]
 name = "libzcash_script"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f8ce05b56f3cbc65ec7d0908adb308ed91281e022f61c8c3a0c9388b5380b17"
+source = "git+https://github.com/dorianvp/zcash_script?branch=fix%2Farm-v7a-cc#61eff21d52aeaa14bfb870b32742d70166894345"
 dependencies = [
  "bindgen 0.72.1",
  "cc",
  "thiserror 2.0.18",
  "tracing",
- "zcash_script",
+ "zcash_script 0.5.2",
 ]
 
 [[package]]
@@ -9082,7 +9081,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zcash_transparent",
  "zip32",
  "zip321",
@@ -9212,7 +9211,7 @@ dependencies = [
  "zcash_encoding",
  "zcash_note_encryption",
  "zcash_protocol",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zcash_spec",
  "zcash_transparent",
  "zip32",
@@ -9273,6 +9272,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash_script"
+version = "0.5.2"
+source = "git+https://github.com/dorianvp/zcash_script?branch=fix%2Farm-v7a-cc#61eff21d52aeaa14bfb870b32742d70166894345"
+dependencies = [
+ "bitflags 2.11.0",
+ "bounded-vec",
+ "ripemd 0.1.3",
+ "secp256k1 0.29.1",
+ "sha1",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "zcash_spec"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9302,7 +9315,7 @@ dependencies = [
  "zcash_address",
  "zcash_encoding",
  "zcash_protocol",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zcash_spec",
  "zip32",
 ]
@@ -9365,7 +9378,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zcash_transparent",
 ]
 
@@ -9502,7 +9515,7 @@ dependencies = [
  "zcash_keys",
  "zcash_primitives",
  "zcash_protocol",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zcash_transparent",
  "zebra-chain",
  "zebra-consensus",
@@ -9521,7 +9534,7 @@ dependencies = [
  "libzcash_script",
  "thiserror 2.0.18",
  "zcash_primitives",
- "zcash_script",
+ "zcash_script 0.4.2",
  "zebra-chain",
 ]
 

@@ -125,5 +125,9 @@ zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
 ffi = { path = "ffi/rust" }
 
+[patch.crates-io]
+# Necessary to cross-compile for armv7a. Hopefully this merges upstream soon.
+libzcash_script = { git = "https://github.com/dorianvp/zcash_script", branch = "fix/arm-v7a-cc" }
+
 [profile.test]
 opt-level = 3
