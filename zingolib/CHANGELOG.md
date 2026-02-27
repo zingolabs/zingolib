@@ -15,13 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [3.0.0-rc.1] - 2026-02-26
+## [3.0.0-rc.2] - 2026-02-27
 
 ### Deprecated
 
 ### Added
 - `lightclient::error::TransmissionError` - moved from `wallet::error` and simplified to much fewer variants more specific
 to transmission.
+- `wallet`: publicly re-exported `pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes}`
 
 ### Changed
 - `lightclient::error::LightClientError`:
@@ -42,6 +43,7 @@ to release the funds, restoring balance and allowing funds to be spent in anothe
   - added `RemovalError` variant
   - added `TransactionNotFound` variant
   - added `TransactionRead` variant
+  - added `BirthdayBelowSapling` variant
   - `TransactionWrite` removed From impl for std::io::error
   - `CalculateTxScanError` include fmt display of underlying error in fmt display
   - `ShardTreeError` fmt display altered
