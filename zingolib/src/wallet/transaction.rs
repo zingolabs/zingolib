@@ -196,7 +196,7 @@ mod tests {
             WalletBase::FreshEntropy {
                 no_of_accounts: 1.try_into().unwrap(),
             },
-            1.into(),
+            419_200.into(),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
