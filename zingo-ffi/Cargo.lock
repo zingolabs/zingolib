@@ -2736,7 +2736,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -3333,6 +3333,7 @@ version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -4041,8 +4042,9 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=rework_resend_and_remove_tx#bca283656340a5d250322738e85a304e67726b94"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0e72645feff01b129fa99c02ceebc86ffb990bfb2c36b9796ce61842161274d"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4909,7 +4911,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -6391,7 +6393,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -8086,9 +8088,9 @@ checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
+checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -8592,7 +8594,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "trait-variant",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
  "which",
  "zcash_address",
  "zcash_encoding",
@@ -9249,6 +9251,7 @@ dependencies = [
  "log",
  "once_cell",
  "pepper-sync",
+ "rusqlite",
  "rustls 0.23.36",
  "serde_json",
  "thiserror 1.0.69",
@@ -9299,7 +9302,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=rework_resend_and_remove_tx#bca283656340a5d250322738e85a304e67726b94"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1#48db52fc389a3b08e7ce873e7d8be43095b37048"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -9313,8 +9316,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=rework_resend_and_remove_tx#bca283656340a5d250322738e85a304e67726b94"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b345e3911479cf21dddf6027c8fb78010b787044d42461d6864dcc42620f159"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -9355,8 +9359,8 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "2.1.2"
-source = "git+https://github.com/zingolabs/zingolib?branch=rework_resend_and_remove_tx#bca283656340a5d250322738e85a304e67726b94"
+version = "3.0.0-rc.1"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1#48db52fc389a3b08e7ce873e7d8be43095b37048"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9400,7 +9404,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 0.25.4",
+ "webpki-roots 1.0.6",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -9422,7 +9426,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=rework_resend_and_remove_tx#bca283656340a5d250322738e85a304e67726b94"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1#48db52fc389a3b08e7ce873e7d8be43095b37048"
 dependencies = [
  "bip0039 0.13.4",
  "http",

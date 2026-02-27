@@ -3,11 +3,11 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, branch = "rework_resend_and_remove_tx", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, rev = "zingolib_v3.0.0-rc.1", features = [
     "testutils",
 ] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", branch = "rework_resend_and_remove_tx" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", branch = "rework_resend_and_remove_tx", features = [
+pepper-sync = { version = "0.2.0" }
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0-rc.1", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
