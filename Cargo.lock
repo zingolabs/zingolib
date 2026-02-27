@@ -9428,20 +9428,17 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "1.1.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3716e3f0352d80468ce2baef8a998ffeee8bdfe0aacc515eb8821e3147d4057e"
+checksum = "752f1c49b42f2e57c237a94878dfd3bd468300c5bbabe6b659767d3906344487"
 dependencies = [
  "http",
- "http-body",
  "hyper",
  "hyper-rustls",
  "hyper-util",
  "thiserror 1.0.69",
  "tokio-rustls",
  "tonic",
- "tower 0.5.3",
- "webpki-roots 0.25.4",
  "zcash_client_backend",
 ]
 
