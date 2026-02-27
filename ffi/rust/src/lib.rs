@@ -185,51 +185,14 @@ impl WalletBackend for ZingolibBackend {
         }
     }
 
-    async fn poll_sync(&self) -> PollReport<SyncResult, SyncError<WalletError>> {
-        // poll_sync requires &mut self on LightClient
+    async fn poll_sync(&self) -> PollReport<SyncResult, SyncError<crate::error::WalletError>> {
         let mut guard = self.lc.write().await;
-        let return_value = guard.poll_sync();
-        match return_value {
+
+        match guard.poll_sync() {
             PollReport::NotReady => PollReport::NotReady,
-            PollReport::Ready(r) => match r {
-                Ok(r) => PollReport::Ready(Ok(r)),
-                Err(e) => {
-                    let matched_error = match e {
-                        SyncError::MempoolError(mempool_error) => {
-                            WalletError::Internal(mempool_error.to_string())
-                        }
-                        SyncError::ScanError(scan_error) => {
-                            WalletError::Internal(scan_error.to_string())
-                        }
-                        SyncError::ServerError(server_error) => {
-                            WalletError::Internal(server_error.to_string())
-                        }
-                        SyncError::SyncModeError(sync_mode_error) => {
-                            WalletError::Internal(sync_mode_error.to_string())
-                        }
-                        SyncError::ChainError(_, _, _) => {
-                            WalletError::Internal("ChainError".to_string())
-                        }
-                        SyncError::ShardTreeError(shard_tree_error) => {
-                            WalletError::Internal(shard_tree_error.to_string())
-                        }
-                        SyncError::TruncationError(_, _) => {
-                            WalletError::Internal("TruncationError".to_string())
-                        }
-                        SyncError::TransparentAddressDerivationError(error) => {
-                            WalletError::Internal(error.to_string())
-                        }
-                        SyncError::WalletError(e) => WalletError::Internal(e.to_string()),
-                        SyncError::BirthdayBelowSapling(_, _) => {
-                            WalletError::Internal("BirthdayBelowSapling".to_string())
-                        }
-                    };
-                    return PollReport::Ready(Err(pepper_sync::error::SyncError::WalletError(
-                        matched_error,
-                    )));
-                }
-            },
             PollReport::NoHandle => PollReport::NoHandle,
+            PollReport::Ready(Ok(r)) => PollReport::Ready(Ok(r)),
+            PollReport::Ready(Err(e)) => PollReport::Ready(Err(map_sync_error_from_zingolib(e))),
         }
     }
 
@@ -291,6 +254,26 @@ fn balance_snapshot_from_balance(b: &AccountBalance) -> BalanceSnapshot {
     BalanceSnapshot {
         confirmed: confirmed.to_string(),
         total: total.to_string(),
+    }
+}
+
+fn map_sync_error_from_zingolib(
+    e: SyncError<zingolib::wallet::error::WalletError>,
+) -> SyncError<crate::error::WalletError> {
+    use pepper_sync::error::SyncError as SE;
+
+    match e {
+        SE::MempoolError(x) => SE::MempoolError(x),
+        SE::ScanError(x) => SE::ScanError(x),
+        SE::ServerError(x) => SE::ServerError(x),
+        SE::SyncModeError(x) => SE::SyncModeError(x),
+        SE::ChainError(a, b, c) => SE::ChainError(a, b, c),
+        SE::ShardTreeError(x) => SE::ShardTreeError(x),
+        SE::TruncationError(a, b) => SE::TruncationError(a, b),
+        SE::TransparentAddressDerivationError(x) => SE::TransparentAddressDerivationError(x),
+        SE::BirthdayBelowSapling(a, b) => SE::BirthdayBelowSapling(a, b),
+
+        SE::WalletError(w) => SE::WalletError(crate::error::WalletError::Internal(w.to_string())),
     }
 }
 
