@@ -1082,6 +1082,19 @@ impl WalletEngine {
             .try_send(Command::ShutdownSync)
             .map_err(|_| WalletError::CommandQueueClosed)
     }
+
+    /// Shuts down the engine thread and unloads the wallet from memory.
+    pub fn unload_wallet(&self) -> Result<(), WalletError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.inner
+            .cmd_tx
+            .blocking_send(Command::Unload { reply: reply_tx })
+            .map_err(|_| WalletError::CommandQueueClosed)?;
+
+        reply_rx
+            .blocking_recv()
+            .map_err(|_| WalletError::CommandQueueClosed)?
+    }
 }
 
 #[cfg(test)]
