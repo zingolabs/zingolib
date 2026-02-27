@@ -453,7 +453,7 @@ pub fn startup(
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-        LightClient::new(config.clone(), (chain_height - 100).max(1.into()), false)
+        LightClient::new(config.clone(), chain_height, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 

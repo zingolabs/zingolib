@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-## [3.0.0-rc.2] - 2026-02-27
+## [3.0.0-rc.3] - 2026-02-27
 
 ### Deprecated
 
@@ -25,6 +25,7 @@ to transmission.
 - `wallet`: publicly re-exported `pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes}`
 
 ### Changed
+- `lightclient::LightClient::new`: no longer recommends the `chain_height` parameter to actually be {chain height - 100}. consumers should input the current chain height.
 - `lightclient::error::LightClientError`:
   - `SyncError` fmt display altered
   - `SendError` variant added
