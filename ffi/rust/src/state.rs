@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use tokio::{sync::RwLock, task::JoinHandle};
-use zingolib::lightclient::LightClient;
-
-use crate::{BalanceSnapshot, WalletBackend, ZingolibBackend};
+use crate::{BalanceSnapshot, WalletBackend};
 
 pub(crate) struct EngineState {
     pub backend: Option<Arc<dyn WalletBackend>>,
@@ -19,16 +16,6 @@ impl EngineState {
     pub(crate) fn new() -> Self {
         Self {
             backend: None,
-            syncing: false,
-            sync_task: None,
-            last_balance: None,
-        }
-    }
-
-    /// Convenience constructor that injects a backend directly.
-    pub(crate) fn with_backend(backend: Arc<dyn WalletBackend>) -> Self {
-        Self {
-            backend: Some(backend),
             syncing: false,
             sync_task: None,
             last_balance: None,

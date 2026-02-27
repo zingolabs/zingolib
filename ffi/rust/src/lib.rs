@@ -87,6 +87,7 @@ pub enum WalletEvent {
         code: String,
         message: String,
     },
+    Unloaded,
 }
 
 #[uniffi::export(callback_interface)]
@@ -299,6 +300,46 @@ struct EngineInner {
 }
 
 impl EngineInner {
+    pub(crate) async fn handle_unload_wallet(
+        self: Arc<Self>,
+        engine_state: Arc<tokio::sync::Mutex<EngineState>>,
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    ) {
+        let (backend, was_syncing, sync_task) = {
+            let mut state = engine_state.lock().await;
+
+            let backend = state.backend.clone();
+            let was_syncing = state.syncing;
+
+            let sync_task = state.sync_task.take();
+
+            state.syncing = false;
+
+            (backend, was_syncing, sync_task)
+        };
+
+        if was_syncing {
+            if let Some(task) = sync_task {
+                task.abort();
+            }
+
+            // TODO: maybe remove, or put first
+            if let Some(b) = backend.as_ref() {
+                let _ = b.pause_sync().await; // TODO: this should be replaced with the future "stop" command
+            }
+        }
+
+        {
+            let mut state = engine_state.lock().await;
+            state.backend = None;
+            state.last_balance = None;
+        }
+
+        emit(&self, WalletEvent::Unloaded);
+
+        let _ = reply.send(Ok(()));
+    }
+
     pub(crate) async fn handle_start_sync_spawn(
         self: Arc<Self>,
         engine_state: Arc<Mutex<EngineState>>,
@@ -612,7 +653,10 @@ enum Command {
     },
     StartSync,
     PauseSync,
-    Shutdown,
+    ShutdownSync,
+    Unload {
+        reply: oneshot::Sender<Result<(), WalletError>>,
+    },
 }
 
 #[derive(uniffi::Object, Clone)]
@@ -625,7 +669,6 @@ fn create_engine_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().expect("tokio runtime")
 }
 
-// TODO: THIS NEEDS TO BE BEHIND AN ASYNC LOCK. With the current setup, sync will block the thread.
 #[uniffi::export]
 impl WalletEngine {
     /// Creates a new [`WalletEngine`] and starts the internal engine thread.
@@ -729,6 +772,13 @@ impl WalletEngine {
                                 .await;
                         }
 
+                        Command::Unload { reply } => {
+                            inner_for_task
+                                .clone()
+                                .handle_unload_wallet(st.clone(), reply)
+                                .await;
+                        }
+
                         Command::GetBalance { reply } => {
                             // TODO: Make this all less repetitive/convoluted
                             let backend = {
@@ -763,7 +813,7 @@ impl WalletEngine {
                             inner_for_task.handle_pause_sync(backend).await;
                         }
 
-                        Command::Shutdown => break,
+                        Command::ShutdownSync => break,
                     }
                 }
             });
@@ -1029,7 +1079,7 @@ impl WalletEngine {
     pub fn shutdown(&self) -> Result<(), WalletError> {
         self.inner
             .cmd_tx
-            .try_send(Command::Shutdown)
+            .try_send(Command::ShutdownSync)
             .map_err(|_| WalletError::CommandQueueClosed)
     }
 }
@@ -1221,9 +1271,7 @@ mod tests {
                             Command::PauseSync => {
                                 inner.handle_pause_sync(backend).await;
                             }
-                            Command::Shutdown => break,
-
-                            // In this helper, init commands are disabled.
+                            Command::ShutdownSync => break,
                             Command::InitNew { reply, .. }
                             | Command::InitFromSeed { reply, .. }
                             | Command::InitViewOnly { reply, .. } => {
@@ -1231,6 +1279,7 @@ mod tests {
                                     "init disabled in fake backend tests".into(),
                                 )));
                             }
+                            Command::Unload { reply } => todo!(),
                         }
                     }
                 });
