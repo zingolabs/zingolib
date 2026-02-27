@@ -13,7 +13,6 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::network::localhost_uri;
 use zcash_protocol::consensus::BlockHeight;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::summary::data::SentValueTransfer;
@@ -22,7 +21,10 @@ use zingolib::{
     testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
 };
-use zingolib_testutils::scenarios::{ClientBuilder, all_height_one_nus};
+use zingolib_testutils::{
+    localhost_uri,
+    scenarios::{ClientBuilder, all_height_one_nus},
+};
 
 #[ignore]
 #[tokio::test]

@@ -90,38 +90,6 @@ pub fn all_height_one_nus() -> ActivationHeights {
     <ActivationHeights as std::default::Default>::default()
 }
 
-pub fn local_network_to_configured_activation_heights(
-    local_network: LocalNetwork,
-) -> ConfiguredActivationHeights {
-    ConfiguredActivationHeights {
-        before_overwinter: Some(1),
-        overwinter: local_network.overwinter.map(|h| h.into()),
-        sapling: local_network.sapling.map(|h| h.into()),
-        blossom: local_network.blossom.map(|h| h.into()),
-        heartwood: local_network.heartwood.map(|h| h.into()),
-        canopy: local_network.canopy.map(|h| h.into()),
-        nu5: local_network.nu5.map(|h| h.into()),
-        nu6: local_network.nu6.map(|h| h.into()),
-        nu6_1: local_network.nu6_1.map(|h| h.into()),
-        nu7: None,
-    }
-}
-
-pub fn configured_activation_heights_to_local_network(
-    local_network: ConfiguredActivationHeights,
-) -> LocalNetwork {
-    LocalNetwork {
-        overwinter: local_network.overwinter.map(|h| h.into()),
-        sapling: local_network.sapling.map(|h| h.into()),
-        blossom: local_network.blossom.map(|h| h.into()),
-        heartwood: local_network.heartwood.map(|h| h.into()),
-        canopy: local_network.canopy.map(|h| h.into()),
-        nu5: local_network.nu5.map(|h| h.into()),
-        nu6: local_network.nu6.map(|h| h.into()),
-        nu6_1: local_network.nu6_1.map(|h| h.into()),
-    }
-}
-
 /// To launch a `LocalNet` with darkside settings.
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,

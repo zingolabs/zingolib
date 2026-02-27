@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-use zingo_common_components::protocol::activation_heights::for_test;
 
 use json::JsonValue;
 
@@ -9,7 +8,6 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
-use zebra_chain::parameters::testnet;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
@@ -161,10 +159,7 @@ mod fast {
             summary::data::{SelfSendValueTransfer, SentValueTransfer, ValueTransferKind},
         },
     };
-    use zingolib_testutils::scenarios::{
-        all_height_one_nus, configured_activation_heights_to_local_network,
-        increase_height_and_wait_for_client,
-    };
+    use zingolib_testutils::scenarios::{all_height_one_nus, increase_height_and_wait_for_client};
     use zip32::AccountId;
 
     use super::*;
@@ -1475,10 +1470,7 @@ mod slow {
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
     };
     use zingolib::wallet::{WalletSettings, summary};
-    use zingolib_testutils::scenarios::{
-        all_height_one_nus, configured_activation_heights_to_local_network,
-        increase_height_and_wait_for_client,
-    };
+    use zingolib_testutils::scenarios::{all_height_one_nus, increase_height_and_wait_for_client};
     use zip32::AccountId;
 
     use super::*;

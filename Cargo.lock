@@ -1435,7 +1435,7 @@ dependencies = [
  "zebra-chain",
  "zingo-netutils",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types)",
+ "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3349,7 +3349,7 @@ dependencies = [
  "zebra-chain",
  "zingo-status",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types)",
+ "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -8823,7 +8823,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types#c7909f47873e92f76b08a64b1cfeb63b63b0516f"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#4ae9d392d2adc3ee094b668b779203f86e512d7d"
 dependencies = [
  "getset",
  "hex",
@@ -8839,7 +8839,7 @@ dependencies = [
  "zebra-node-services",
  "zebra-rpc",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types)",
+ "zingo_test_vectors",
 ]
 
 [[package]]
@@ -9245,18 +9245,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.39"
+version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6d35d663eadb6c932438e763b262fe1a70987f9ae936e60158176d710cae4a"
+checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.39"
+version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4122cd3169e94605190e77839c9a40d40ed048d305bfdc146e7df40ab0f3e517"
+checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9437,15 +9437,7 @@ source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#b64a80846
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types#c7909f47873e92f76b08a64b1cfeb63b63b0516f"
-dependencies = [
- "bip0039 0.12.0",
-]
-
-[[package]]
-name = "zingo_test_vectors"
-version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#8af419b93043beb408a650a851c97db5ed302c69"
+source = "git+https://github.com/zingolabs/infrastructure.git?branch=dev#4ae9d392d2adc3ee094b668b779203f86e512d7d"
 dependencies = [
  "bip0039 0.12.0",
 ]
@@ -9512,7 +9504,7 @@ dependencies = [
  "zingo-price",
  "zingo-status",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
+ "zingo_test_vectors",
  "zingolib",
  "zip32",
 ]
@@ -9530,7 +9522,7 @@ dependencies = [
  "zcash_protocol",
  "zebra-chain",
  "zingo_common_components",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=ci%2Fexternal-types)",
+ "zingo_test_vectors",
  "zingolib",
  "zip32",
 ]

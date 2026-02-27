@@ -8,8 +8,8 @@ use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::timestamped_test_log;
 
+use zingolib_testutils::localhost_uri;
 use zingolib_testutils::scenarios::ClientBuilder;
-use zingolib_testutils::scenarios::configured_activation_heights_to_local_network;
 use zingolib_testutils::scenarios::custom_clients_default;
 use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 

@@ -120,8 +120,8 @@ zingo-status = { path = "zingo-status" } # NOTE: for development between release
 # zingo-status = "0.1.0"
 pepper-sync = { path = "pepper-sync" }
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "ci/external-types" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "ci/external-types" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev" }
 
 [profile.test]
 opt-level = 3

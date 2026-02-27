@@ -44,7 +44,6 @@ pub(crate) mod conduct_chain {
     use zingolib::wallet::LightWallet;
     use zingolib::wallet::WalletBase;
     use zingolib::wallet::keys::unified::ReceiverSelection;
-    use zingolib_testutils::scenarios::configured_activation_heights_to_local_network;
 
     use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
     use crate::constants::DARKSIDE_SEED;

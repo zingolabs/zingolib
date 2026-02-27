@@ -3,17 +3,16 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::network::localhost_uri;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::get_base_address_macro;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::tempfile;
 use zingolib::wallet::balance::AccountBalance;
+use zingolib_testutils::localhost_uri;
 use zingolib_testutils::scenarios::ClientBuilder;
 
 use darkside_tests::utils::lightwalletd;
 use zingolib_testutils::scenarios::all_height_one_nus;
-use zingolib_testutils::scenarios::confiured_activation_heights_to_local_network;
 
 #[ignore = "darkside bug, invalid block hash length in tree states"]
 #[tokio::test]
