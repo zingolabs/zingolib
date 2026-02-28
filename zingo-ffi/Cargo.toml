@@ -3,11 +3,9 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, rev = "zingolib_v3.0.0-rc.1", features = [
-    "testutils",
-] }
-pepper-sync = { version = "0.2.0" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0-rc.1", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0-rc.5" }
+pepper-sync = "0.2.0"
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0-rc.5", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
@@ -33,7 +31,7 @@ zcash_transparent = "0.6"
 
 zebra-chain = "5.0.0"
 
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", version = "0.2" }
+zingo_common_components = "0.2.0"
 
 bip0039 = { version = "0.13", features = ["rand"] }
 zip32 = "0.2.0"
