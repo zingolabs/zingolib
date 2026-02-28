@@ -4079,6 +4079,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "pepper-sync"
+version = "0.2.0"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1#48db52fc389a3b08e7ce873e7d8be43095b37048"
+dependencies = [
+ "bip32",
+ "byteorder",
+ "crossbeam-channel",
+ "futures",
+ "incrementalmerkletree",
+ "json",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "rayon",
+ "sapling-crypto",
+ "shardtree",
+ "simple-mermaid",
+ "subtle",
+ "thiserror 2.0.17",
+ "tokio",
+ "tonic",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo-memo",
+ "zingo-netutils",
+ "zingo-status",
+ "zip32",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5108,7 +5145,7 @@ version = "2.0.0"
 dependencies = [
  "env_logger 0.10.2",
  "json",
- "pepper-sync",
+ "pepper-sync 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1)",
  "regchest_utils",
  "rustls 0.23.36",
  "tokio",
@@ -5165,7 +5202,7 @@ version = "2.0.0"
 dependencies = [
  "env_logger 0.10.2",
  "json",
- "pepper-sync",
+ "pepper-sync 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1)",
  "regchest_utils",
  "rustls 0.23.36",
  "tokio",
@@ -9250,7 +9287,7 @@ dependencies = [
  "lazy_static",
  "log",
  "once_cell",
- "pepper-sync",
+ "pepper-sync 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1)",
  "rusqlite",
  "rustls 0.23.36",
  "serde_json",
@@ -9262,7 +9299,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
- "zingo_common_components 0.2.0",
+ "zingo_common_components 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingolib",
  "zip32",
 ]
@@ -9336,6 +9373,15 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b842ab061189fd4277f8773af2134b4949b82db8623deb86c315cb97bdfdcb"
+dependencies = [
+ "zebra-chain 5.0.0",
+]
+
+[[package]]
+name = "zingo_common_components"
+version = "0.2.0"
 source = "git+https://github.com/zingolabs/zingo-common.git#096a79e2b3eb8b12d642e3380044bac00e7c855d"
 dependencies = [
  "zebra-chain 5.0.0",
@@ -9383,7 +9429,7 @@ dependencies = [
  "log4rs",
  "nonempty",
  "orchard",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "prost",
  "rand 0.8.5",
@@ -9418,7 +9464,7 @@ dependencies = [
  "zingo-netutils",
  "zingo-price",
  "zingo-status",
- "zingo_common_components 0.2.0",
+ "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zip32",
 ]
@@ -9430,13 +9476,13 @@ source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.1#48d
 dependencies = [
  "bip0039 0.13.4",
  "http",
- "pepper-sync",
+ "pepper-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "portpicker",
  "tempfile",
  "zcash_local_net",
  "zcash_protocol",
  "zebra-chain 5.0.0",
- "zingo_common_components 0.2.0",
+ "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
  "zingolib",
  "zip32",
