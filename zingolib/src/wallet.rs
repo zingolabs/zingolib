@@ -8,6 +8,7 @@ use bip0039::Mnemonic;
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_protocol::consensus::Parameters;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
@@ -39,6 +40,10 @@ pub mod summary;
 pub mod sync;
 pub mod transaction;
 mod zcb_traits;
+
+pub use pepper_sync::config::{
+    PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
+};
 
 /// Wallet settings.
 #[derive(Debug, Clone)]
@@ -155,6 +160,16 @@ impl LightWallet {
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
+        let sapling_activation_height = network
+            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+            .expect("should have some sapling activation height");
+        if birthday < sapling_activation_height {
+            return Err(WalletError::BirthdayBelowSapling(
+                u32::from(birthday),
+                u32::from(sapling_activation_height),
+            ));
+        }
+
         let (unified_key_store, mnemonic) = match wallet_base {
             WalletBase::FreshEntropy { no_of_accounts } => {
                 return Self::new(
@@ -414,10 +429,10 @@ impl LightWallet {
             .time_historical_prices_last_updated()
             .is_none()
         {
-            let Some(start_height) = self.sync_state.wallet_birthday() else {
+            let Some(birthday) = self.sync_state.wallet_birthday() else {
                 return Err(PriceError::NotInitialised);
             };
-            let birthday_block = match self.wallet_blocks.get(&start_height) {
+            let birthday_block = match self.wallet_blocks.get(&birthday) {
                 Some(block) => block.clone(),
                 None => {
                     return Err(PriceError::NotInitialised);

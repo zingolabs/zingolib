@@ -15,7 +15,7 @@ use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
@@ -61,24 +61,28 @@ pub struct LightClient {
 }
 
 impl LightClient {
-    /// Creates a `LightClient` with a new wallet from fresh entropy and a birthday of `chain_height`.
+    /// Creates a `LightClient` with a new wallet from fresh entropy and a birthday of the higher value between
+    /// [`chain_height` - 100] or sapling activation height.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
-    ///
-    /// It is worth considering setting `chain_height` to 100 blocks below current height of block chain to protect
-    /// from re-orgs.
     #[allow(clippy::result_large_err)]
     pub fn new(
         config: ZingoConfig,
         chain_height: BlockHeight,
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
+        let sapling_activation_height = config
+            .chain
+            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+            .expect("should have some sapling activation height");
+        let birthday = sapling_activation_height.max(chain_height - 100);
+
         Self::create_from_wallet(
             LightWallet::new(
                 config.chain,
                 WalletBase::FreshEntropy {
                     no_of_accounts: config.no_of_accounts,
                 },
-                chain_height,
+                birthday,
                 config.wallet_settings.clone(),
             )?,
             config,
