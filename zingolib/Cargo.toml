@@ -1,7 +1,7 @@
 [package]
 name = "zingolib"
 description = "Zingo backend library."
-version = "2.1.2"
+version = "3.0.0-rc.1"
 authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
@@ -32,7 +32,7 @@ zingo_common_components = { workspace = true }
 zingo-netutils = { workspace = true }
 
 # Test
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}
+zingo_test_vectors = { workspace = true, optional = true}
 
 # Zcash
 incrementalmerkletree = { workspace = true }
@@ -108,7 +108,11 @@ rand = { workspace = true }
 tempfile = { workspace = true, optional = true }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 
+# Windows compatible
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+
 [dev-dependencies]
+pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
 zingolib = { workspace = true, features = ["testutils"] }

@@ -11,6 +11,7 @@ use tokio::sync::{RwLock, mpsc};
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
+use tonic::transport::Channel;
 use zcash_client_backend::proto::service::RawTransaction;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -305,7 +306,7 @@ impl ScanRange {
 /// Set `sync_mode` back to `Running` to resume scanning.
 /// Set `sync_mode` to `Shutdown` to stop the sync process.
 pub async fn sync<P, W>(
-    client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    client: CompactTxStreamerClient<Channel>,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
     sync_mode: Arc<AtomicU8>,
@@ -686,13 +687,13 @@ where
     }
     let total_blocks_scanned = state::calculate_scanned_blocks(sync_state);
 
-    let start_height = sync_state
+    let birthday = sync_state
         .wallet_birthday()
         .ok_or(SyncStatusError::NoSyncData)?;
     let last_known_chain_height = sync_state
         .last_known_chain_height()
         .ok_or(SyncStatusError::NoSyncData)?;
-    let total_blocks = last_known_chain_height - start_height + 1;
+    let total_blocks = last_known_chain_height - birthday + 1;
     let total_sapling_outputs = sync_state
         .initial_sync_state
         .wallet_tree_bounds
@@ -1411,16 +1412,16 @@ where
                 })
         })
         .collect::<Vec<_>>();
-    let sync_state = wallet
-        .get_sync_state_mut()
-        .map_err(SyncError::WalletError)?;
-    *sync_state = SyncState::new();
-    add_scan_targets(sync_state, &scan_targets);
     truncate_wallet_data(wallet, consensus::H0)?;
     wallet
         .get_wallet_transactions_mut()
         .map_err(SyncError::WalletError)?
         .clear();
+    let sync_state = wallet
+        .get_sync_state_mut()
+        .map_err(SyncError::WalletError)?;
+    add_scan_targets(sync_state, &scan_targets);
+    wallet.set_save_flag().map_err(SyncError::WalletError)?;
 
     Ok(())
 }
@@ -1788,7 +1789,7 @@ where
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
 async fn mempool_monitor(
-    mut client: CompactTxStreamerClient<zingo_netutils::UnderlyingService>,
+    mut client: CompactTxStreamerClient<Channel>,
     mempool_transaction_sender: mpsc::Sender<RawTransaction>,
     unprocessed_transactions_count: Arc<AtomicU8>,
     shutdown_mempool: Arc<AtomicBool>,

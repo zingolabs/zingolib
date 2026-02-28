@@ -450,7 +450,7 @@ pub fn startup(
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-        LightClient::new(config.clone(), (chain_height - 100).max(1.into()), false)
+        LightClient::new(config.clone(), chain_height, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
@@ -463,17 +463,6 @@ pub fn startup(
         info!("Lightclient connecting to {}", config.indexer_uri());
     }
 
-    if filled_template.tor_enabled {
-        info!("Creating tor client");
-        lightclient = RT.block_on(async move {
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            }
-            lightclient
-        });
-    }
-
-    // At startup, run a sync.
     if filled_template.sync {
         let update = commands::do_user_command("sync", &["run"], &mut lightclient);
         println!("{update}");
@@ -481,6 +470,24 @@ pub fn startup(
 
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
     println!("{update}");
+
+    lightclient = RT.block_on(async move {
+        if filled_template.tor_enabled {
+            info!("Creating tor client");
+            if let Err(e) = lightclient.create_tor_client(None).await {
+                eprintln!("error: failed to create tor client. price updates disabled. {e}");
+            }
+        }
+
+        if filled_template.sync
+            && filled_template.waitsync
+            && let Err(e) = lightclient.await_sync().await
+        {
+            eprintln!("error: {e}");
+        }
+
+        lightclient
+    });
 
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);
@@ -510,41 +517,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
     } else {
-        // Optionally wait for background sync to finish before executing command
-        if cli_config.sync && cli_config.waitsync {
-            use std::{thread, time::Duration};
-            loop {
-                // Poll sync task status
-                command_transmitter
-                    .send(("sync".to_string(), vec!["poll".to_string()]))
-                    .unwrap();
-                match resp_receiver.recv() {
-                    Ok(resp) => {
-                        if resp.starts_with("Error:") {
-                            eprintln!(
-                                "Sync error while waiting: {resp}\nProceeding to execute the command."
-                            );
-                            break;
-                        } else if resp.starts_with("Sync completed succesfully:") {
-                            // Sync finished; proceed
-                            break;
-                        } else if resp == "Sync task has not been launched." {
-                            // Try to launch sync and continue waiting
-                            command_transmitter
-                                .send(("sync".to_string(), vec!["run".to_string()]))
-                                .unwrap();
-                            let _ = resp_receiver.recv();
-                            thread::sleep(Duration::from_millis(500));
-                        } else {
-                            // Not ready yet
-                            thread::sleep(Duration::from_millis(500));
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-
         command_transmitter
             .send((
                 cli_config.command.clone().unwrap(),

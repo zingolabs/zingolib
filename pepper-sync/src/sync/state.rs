@@ -155,7 +155,11 @@ fn create_scan_range(
 
 /// Splits the range containing [`truncate_height` + 1] and removes all ranges containing block heights above
 /// `truncate_height`.
+/// If `truncate_height` is zero, the sync state will be cleared completely.
 pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
+    if truncate_height == zcash_protocol::consensus::H0 {
+        *sync_state = SyncState::new();
+    }
     let Some((index, range_to_split)) = sync_state
         .scan_ranges()
         .iter()
@@ -820,7 +824,7 @@ where
     W: SyncWallet + SyncBlocks,
 {
     let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-    let start_height = sync_state
+    let birthday = sync_state
         .wallet_birthday()
         .expect("scan ranges must be non-empty");
     let fully_scanned_height = sync_state
@@ -830,7 +834,7 @@ where
     let (previously_scanned_sapling_outputs, previously_scanned_orchard_outputs) =
         calculate_scanned_outputs(wallet).map_err(SyncError::WalletError)?;
     let (birthday_sapling_initial_tree_size, birthday_orchard_initial_tree_size) =
-        if let Ok(block) = wallet.get_wallet_block(start_height) {
+        if let Ok(block) = wallet.get_wallet_block(birthday) {
             (
                 block.tree_bounds.sapling_initial_tree_size,
                 block.tree_bounds.orchard_initial_tree_size,
@@ -840,7 +844,7 @@ where
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 wallet,
-                start_height - 1,
+                birthday - 1,
             )
             .await?
         };

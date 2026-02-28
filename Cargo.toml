@@ -44,8 +44,8 @@ zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
 
 # Zingo-common
-zingo-netutils = "1.1.0"
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo-netutils = "2.0.1"
+zingo_common_components = "0.3.0"
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -113,12 +113,13 @@ webpki-roots = "1.0.6"
 # zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
 zingo-memo = "0.1.0"
 zingo-price = { path = "zingo-price" }
-zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-# zingo-status = "0.1.0"
-pepper-sync = { path = "pepper-sync" }
+# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-status = "0.2.0"
+pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+# pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/Oscar-Pepper/infrastructure.git", branch = "remove_zebra_from_public_api" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
 
 [profile.test]
 opt-level = 3

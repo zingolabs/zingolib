@@ -82,9 +82,9 @@ pub struct InitialSyncState {
     pub(crate) wallet_tree_bounds: TreeBounds,
     /// Total number of blocks scanned in previous sync sessions.
     pub(crate) previously_scanned_blocks: u32,
-    /// Total number of sapling outputs to scanned in previous sync sessions.
+    /// Total number of sapling outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of orchard outputs to scanned in previous sync sessions.
+    /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
 }
 
@@ -607,6 +607,42 @@ impl WalletTransaction {
                 self.datetime = datetime;
             }
             _ => (),
+        }
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl WalletTransaction {
+    /// Creates a minimal `WalletTransaction` for testing purposes.
+    ///
+    /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
+    pub fn new_for_test(txid: TxId, status: ConfirmationStatus) -> Self {
+        use zcash_primitives::transaction::{TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+
+        let transaction = TransactionData::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(0),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .expect("empty v5 transaction should always be valid");
+
+        Self {
+            txid,
+            status,
+            transaction,
+            datetime: 0,
+            transparent_coins: Vec::new(),
+            sapling_notes: Vec::new(),
+            orchard_notes: Vec::new(),
+            outgoing_sapling_notes: Vec::new(),
+            outgoing_orchard_notes: Vec::new(),
         }
     }
 }
