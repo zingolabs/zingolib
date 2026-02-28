@@ -312,7 +312,7 @@ pub fn init_new(
             Ok(h) => h,
             Err(e) => return Ok(format!("Error: {e}")),
         };
-        let lightclient = match LightClient::new(config, chain_height - 100, false) {
+        let lightclient = match LightClient::new(config, chain_height, false) {
             Ok(l) => l,
             Err(e) => return Ok(format!("Error: {e}")),
         };
