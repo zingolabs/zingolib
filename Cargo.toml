@@ -48,8 +48,8 @@ zebra-chain = "5.0.0"
 
 # Zingo-common
 zingo-netutils = "1.1.0"
-zingo_common_components = "0.2.0"
-# zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" } # NOTE: for development between releases
+zingo_common_components = { version = "0.2.0", features = [ "for_test" ] }
+ # zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev", features = [ "for_test" ] } # NOTE: for development between releases
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -122,8 +122,8 @@ zingo-status = "0.2.0"
 # pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "e4714fd" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "for_zingolib_v3_release" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "for_zingolib_v3_release" }
 
 [profile.test]
 opt-level = 3
