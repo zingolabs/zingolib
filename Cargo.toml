@@ -116,10 +116,21 @@ webpki-roots = "1.0.6"
 # zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
 zingo-memo = "0.1.0"
 zingo-price = { path = "zingo-price" }
+<<<<<<< HEAD
 # zingo-status = { path = "zingo-status" } # NOTE: for development between releases
 zingo-status = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # pepper-sync = "0.2.0"
+||||||| 76f29b89
+zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+# zingo-status = "0.1.0"
+pepper-sync = { path = "pepper-sync" }
+=======
+# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-status = "0.2.0"
+# pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+pepper-sync = "0.2.0"
+>>>>>>> stable
 zingolib = { path = "zingolib" }
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "for_zingolib_v3_release" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "for_zingolib_v3_release" }
