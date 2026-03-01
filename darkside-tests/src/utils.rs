@@ -16,7 +16,6 @@ use zcash_local_net::{
         Indexer as _,
         lightwalletd::{Lightwalletd, LightwalletdConfig},
     },
-    network::localhost_uri,
     process::Process as _,
 };
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
@@ -31,7 +30,7 @@ use crate::{
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-use zingolib::testutils::paths::get_cargo_manifest_dir;
+use zingolib::testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri};
 
 fn lightwalletd_config() -> LightwalletdConfig {
     LightwalletdConfig {
@@ -231,7 +230,7 @@ pub async fn init_darksidewalletd(
         ..lightwalletd_config()
     };
     let lightwalletd = Lightwalletd::launch(lightwalletd_config).await.unwrap();
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     let connector = DarksideConnector(server_id);
 
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd

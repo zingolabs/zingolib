@@ -3,11 +3,11 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::network::localhost_uri;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::get_base_address_macro;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::tempfile;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib_testutils::scenarios::ClientBuilder;
@@ -19,7 +19,7 @@ use darkside_tests::utils::lightwalletd;
 async fn simple_sync() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
@@ -62,7 +62,7 @@ async fn simple_sync() {
 async fn reorg_receipt_sync_generic() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
@@ -122,7 +122,7 @@ async fn reorg_receipt_sync_generic() {
 async fn sent_transaction_reorged_into_mempool() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();

@@ -26,7 +26,6 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::network::localhost_uri;
 use zcash_local_net::process::Process;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
 
@@ -41,6 +40,7 @@ use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
+use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
@@ -459,7 +459,7 @@ pub async fn custom_clients(
     }
 
     let client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().listen_port()),
+        port_to_localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
     );
 
@@ -490,7 +490,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
 pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -519,7 +519,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -577,7 +577,7 @@ pub async fn funded_transparent_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -618,7 +618,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =

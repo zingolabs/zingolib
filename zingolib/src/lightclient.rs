@@ -71,7 +71,7 @@ impl LightClient {
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         let sapling_activation_height = config
-            .chain
+            .network_type()
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
         let birthday = sapling_activation_height.max(chain_height - 100);
