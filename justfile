@@ -22,8 +22,7 @@ kotlin: build
 cargo-ndk: kotlin
     cargo ndk \
         -t arm64-v8a \
-        -t armeabi-v7a \
-        build --release
+        build --release -p ffi
 
 copy-kt-bindings: kotlin
     cp -r ffi/rust/uniffi-output/kotlin/ZingolibFfi ffi/android/ZingolibFfi/zingolibffi/src/main/java/

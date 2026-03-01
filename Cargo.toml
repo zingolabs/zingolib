@@ -127,7 +127,8 @@ ffi = { path = "ffi/rust" }
 
 [patch.crates-io]
 # Necessary to cross-compile for armv7a. Hopefully this merges upstream soon.
-libzcash_script = { git = "https://github.com/dorianvp/zcash_script", branch = "fix/arm-v7a-cc" }
+# zcash_script = { git = "https://github.com/dorianvp/zcash_script", rev = "a86c8a81f76e9dc6b3dc27c508f4c34fa77a6da3" }
+# libzcash_script = { git = "https://github.com/dorianvp/zcash_script", rev = "a86c8a81f76e9dc6b3dc27c508f4c34fa77a6da3" }
 
 [profile.test]
 opt-level = 3
