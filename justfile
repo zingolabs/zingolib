@@ -2,7 +2,7 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-# Default task
+# Runs `build` and `bindings`
 default: build bindings
 
 # Build the ffi crate in release mode
