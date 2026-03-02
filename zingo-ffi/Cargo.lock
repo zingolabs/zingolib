@@ -9212,7 +9212,7 @@ dependencies = [
 [[package]]
 name = "zingo-price"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.5#2cd0304af0bc39678e35e594c998d85cec7f56ea"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.6#127332852e47a99c350b6fb88a60d65dbcef982e"
 dependencies = [
  "byteorder",
  "reqwest",
@@ -9270,8 +9270,8 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "3.0.0-rc.1"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.5#2cd0304af0bc39678e35e594c998d85cec7f56ea"
+version = "3.0.0-rc.6"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.6#127332852e47a99c350b6fb88a60d65dbcef982e"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9337,7 +9337,7 @@ dependencies = [
 [[package]]
 name = "zingolib_testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.5#2cd0304af0bc39678e35e594c998d85cec7f56ea"
+source = "git+https://github.com/zingolabs/zingolib?rev=zingolib_v3.0.0-rc.6#127332852e47a99c350b6fb88a60d65dbcef982e"
 dependencies = [
  "bip0039 0.13.4",
  "http",
