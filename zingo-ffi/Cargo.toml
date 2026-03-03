@@ -3,40 +3,38 @@ members = ["lib", "android", "ios", "zingomobile_utils"]
 resolver = "2"
 
 [workspace.dependencies]
-zingolib = { git = "https://github.com/zingolabs/zingolib", default-features = true, tag = "zingolib_v2.1.2", features = [
-    "testutils",
-] }
-pepper-sync = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v2.1.2" }
-zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", tag = "zingolib_v2.1.2", features = [
+zingolib = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0" }
+pepper-sync = "0.2.0"
+zingolib_testutils = { git = "https://github.com/zingolabs/zingolib", rev = "zingolib_v3.0.0", features = [
     "test_lwd_zcashd",
 ] }
 regchest_utils = { git = "https://github.com/zingolabs/zingo-regchest", branch = "dev" }
 zingomobile_utils = { path = "zingomobile_utils" }
 
-zcash_address = { version = "0.10" }
+zcash_address = "0.10"
 zcash_client_backend = { version = "0.21", features = [
     "lightwalletd-tonic",
     "orchard",
     "transparent-inputs",
     "tor",
 ] }
-zcash_encoding = { version = "0.3" }
+zcash_encoding = "0.3"
 zcash_keys = { version = "0.12", features = [
     "transparent-inputs",
     "sapling",
     "orchard",
 ] }
 zcash_note_encryption = "0.4"
-zcash_primitives = { version = "0.26" }
-zcash_proofs = { version = "0.26" }
-zcash_protocol = { version = "0.7" }
-zcash_transparent = { version = "0.6" }
+zcash_proofs = "0.26"
+zcash_protocol = "0.7"
+zcash_transparent = "0.6"
 
-zebra-chain = { version = "3.0" }
+zebra-chain = "5.0.0"
 
-zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", branch = "dev" }
+zingo_common_components = "0.2.0"
 
-bip0039 = { version = "0.12", features = ["rand"] }
+bip0039 = { version = "0.13", features = ["rand"] }
+zip32 = "0.2.0"
 uniffi = "0.29"
 tokio = "1"
 rustls = { version = "0.23", features = ["ring"] }
@@ -52,14 +50,6 @@ log = "0.4"
 uniffi_build = "0.29"
 thiserror = "1"
 once_cell = "1"
-
-# [patch.crates-io]
-# zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
-# zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
-# zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
-# zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
-# zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
-# zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "3ba772c9b8" }
 
 [profile.release]
 debug = 1
