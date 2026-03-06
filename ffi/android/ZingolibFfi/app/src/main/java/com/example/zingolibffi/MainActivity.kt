@@ -41,7 +41,7 @@ fun ViewOnlyKitchenSinkUiOnly() {
     var indexerUri by remember { mutableStateOf("http://127.0.0.1:16992") }
     var birthday by remember { mutableStateOf("1") }
     var ufvk by remember {
-        mutableStateOf("uviewtest1...paste-ufvk-here...")
+        mutableStateOf("")
     }
 
     // UI-only state
@@ -144,7 +144,10 @@ fun ViewOnlyKitchenSinkUiOnly() {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Actions", style = MaterialTheme.typography.titleMedium)
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Button(
                         enabled = !engineCreated,
                         onClick = {
