@@ -3,6 +3,10 @@ name = "ffi"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = []
+regtest = ["zingo_common_components/for_test"]
+
 [dependencies]
 bip0039.workspace = true
 thiserror.workspace = true
@@ -12,7 +16,7 @@ zcash_primitives.workspace = true
 
 zingolib.workspace = true
 pepper-sync.workspace = true
-zingo_common_components = { workspace = true, features = ["for_test"] }
+zingo_common_components = { workspace = true }
 http.workspace = true
 async-trait = "0.1.89"
 

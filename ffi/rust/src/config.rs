@@ -1,7 +1,8 @@
 use std::num::NonZeroU32;
 
 use pepper_sync::config::PerformanceLevel;
-use zingo_common_components::protocol::activation_heights::for_test;
+#[cfg(feature = "regtest")]
+use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
 use zingolib::{
     config::{
         ChainType, SyncConfig, TransparentAddressDiscovery, ZingoConfig, construct_lightwalletd_uri,
@@ -11,11 +12,16 @@ use zingolib::{
 
 use crate::{Chain, Performance, error::WalletError};
 
-pub fn chain_to_chaintype(chain: Chain) -> ChainType {
+pub fn chain_to_chaintype(chain: Chain) -> Result<ChainType, WalletError> {
     match chain {
-        Chain::Mainnet => ChainType::Mainnet,
-        Chain::Testnet => ChainType::Testnet,
-        Chain::Regtest => ChainType::Regtest(for_test::all_height_one_nus()),
+        Chain::Mainnet => Ok(ChainType::Mainnet),
+        Chain::Testnet => Ok(ChainType::Testnet),
+        #[cfg(feature = "regtest")]
+        Chain::Regtest => Ok(ChainType::Regtest(all_height_one_nus())),
+        #[cfg(not(feature = "regtest"))]
+        Chain::Regtest => Err(WalletError::Internal(
+            "regtest feature not enabled".into(),
+        )),
     }
 }
 
@@ -42,7 +48,7 @@ pub fn construct_config(
     let config = zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
-        chain_to_chaintype(chain),
+        chain_to_chaintype(chain)?,
         WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
