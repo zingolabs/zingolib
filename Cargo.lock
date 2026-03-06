@@ -1530,8 +1530,8 @@ dependencies = [
  "zcash_protocol",
  "zebra-chain",
  "zingo-netutils",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
+ "zingo_common_components",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -3479,9 +3479,9 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zebra-chain",
- "zingo-status",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
+ "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo_common_components",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release)",
  "zingolib",
  "zingolib_testutils",
  "zip32",
@@ -4226,7 +4226,7 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bip32",
  "byteorder",
@@ -4256,7 +4256,7 @@ dependencies = [
  "zcash_transparent",
  "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils",
- "zingo-status",
+ "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zip32",
 ]
 
@@ -9142,7 +9142,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd#e4714fd28ab5ef42778b0f00f9d71fd974490924"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=for_zingolib_v3_release#7f67ec5e6cb4eecfcedf7c9a49abbef5f6324dd4"
 dependencies = [
  "getset",
  "hex",
@@ -9158,8 +9158,8 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git?branch=dev)",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
+ "zingo_common_components",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?tag=for_zingolib_v3_release)",
 ]
 
 [[package]]
@@ -9678,7 +9678,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components",
  "zingolib",
  "zip32",
 ]
@@ -9747,19 +9747,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo_common_components"
+name = "zingo-status"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingo-common.git?branch=dev#096a79e2b3eb8b12d642e3380044bac00e7c855d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b345e3911479cf21dddf6027c8fb78010b787044d42461d6864dcc42620f159"
 dependencies = [
- "zebra-chain",
+ "byteorder",
+ "zcash_primitives",
+ "zcash_protocol",
 ]
 
 [[package]]
 name = "zingo_common_components"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingo-common.git#096a79e2b3eb8b12d642e3380044bac00e7c855d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b842ab061189fd4277f8773af2134b4949b82db8623deb86c315cb97bdfdcb"
 dependencies = [
  "zebra-chain",
+]
+
+[[package]]
+name = "zingo_test_vectors"
+version = "0.0.1"
+source = "git+https://github.com/zingolabs/infrastructure.git?tag=for_zingolib_v3_release#7f67ec5e6cb4eecfcedf7c9a49abbef5f6324dd4"
+dependencies = [
+ "bip0039 0.12.0",
 ]
 
 [[package]]
@@ -9773,14 +9785,14 @@ dependencies = [
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd#e4714fd28ab5ef42778b0f00f9d71fd974490924"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release#7f67ec5e6cb4eecfcedf7c9a49abbef5f6324dd4"
 dependencies = [
  "bip0039 0.12.0",
 ]
 
 [[package]]
 name = "zingolib"
-version = "2.1.2"
+version = "3.0.0-rc.1"
 dependencies = [
  "append-only-vec",
  "bech32",
@@ -9838,8 +9850,8 @@ dependencies = [
  "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo-netutils",
  "zingo-price",
- "zingo-status",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zingo_common_components",
  "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?branch=dev)",
  "zingolib",
  "zip32",
@@ -9857,8 +9869,8 @@ dependencies = [
  "zcash_local_net",
  "zcash_protocol",
  "zebra-chain",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
- "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=e4714fd)",
+ "zingo_common_components",
+ "zingo_test_vectors 0.0.1 (git+https://github.com/zingolabs/infrastructure.git?rev=for_zingolib_v3_release)",
  "zingolib",
  "zip32",
 ]
