@@ -2172,7 +2172,7 @@ dependencies = [
  "tokio",
  "uniffi",
  "zcash_primitives",
- "zingo_common_components 0.2.0 (git+https://github.com/zingolabs/zingo-common.git)",
+ "zingo_common_components",
  "zingolib",
 ]
 
@@ -9739,7 +9739,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "byteorder",
  "zcash_primitives",
@@ -9792,7 +9792,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "3.0.0-rc.1"
+version = "3.0.0-rc.6"
 dependencies = [
  "append-only-vec",
  "bech32",
