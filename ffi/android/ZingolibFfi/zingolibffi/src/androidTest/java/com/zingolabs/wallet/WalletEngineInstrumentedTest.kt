@@ -2,11 +2,15 @@ package com.zingolabs.wallet
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.zingolibffi.Chain
+import com.example.zingolibffi.ImportUfvkRequest
+import com.example.zingolibffi.Performance
 import com.example.zingolibffi.WalletEngine
 import com.example.zingolibffi.WalletEngineException
 import com.example.zingolibffi.WalletEvent
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
@@ -48,6 +52,30 @@ class WalletEngineInstrumentedTest {
             // before the listener is attached. So this is just a smoke test that
             // listener registration itself does not crash.
             assertTrue(true)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun initFromUfvk_withInvalidUfvk_returnsInternalError() {
+        val engine = WalletEngine.create()
+        try {
+            val params = ImportUfvkRequest(
+                ufvk = "not-a-real-ufvk",
+                birthday = 1u,
+                indexerUri = "http://127.0.0.1:9067",
+                chain = Chain.REGTEST,
+                performance = Performance.HIGH,
+                minConfirmations = 1u
+            )
+
+            try {
+                engine.initFromUfvk(params)
+                fail("Expected WalletException.Internal")
+            } catch (e: WalletEngineException.Internal) {
+                assertTrue(e.details.contains("Key decoding failed"))
+            }
         } finally {
             engine.close()
         }
