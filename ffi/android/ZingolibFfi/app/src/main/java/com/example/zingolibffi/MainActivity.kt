@@ -104,6 +104,7 @@ fun ViewOnlyKitchenSinkUiOnly() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .padding(16.dp)
             .verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(12.dp)
