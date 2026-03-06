@@ -25,9 +25,10 @@ test-all-kotlin:
       :zingolibffi:testDebugUnitTest \
       :zingolibffi:connectedDebugAndroidTest
 
-cargo-ndk: kotlin
+cargo-ndk: kotlin copy-kt-bindings
     cargo ndk \
         -t arm64-v8a \
+        -o ./ffi/android/ZingolibFfi/zingolibffi/src/main/jniLibs \
         build --release -p ffi
 
 copy-kt-bindings: kotlin

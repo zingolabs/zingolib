@@ -6,8 +6,11 @@ zingolib/proptest-regressions
 test_binaries/bins/*
 libtonode-tests/tests/chain_generics.proptest-regressions
 libtonode-tests/store_all_checkpoints_test
+
+# FFI-specific
 ffi/android/ZingolibFfi/.idea/*
 ffi/android/ZingolibFfi/.idea
+*.so
 
 .DS_Store
 *.dat
