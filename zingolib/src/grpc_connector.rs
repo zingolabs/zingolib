@@ -13,7 +13,7 @@ pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Get server info.
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -30,7 +30,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 /// TODO: Add Doc Comment Here!
 #[cfg(feature = "testutils")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -48,7 +48,7 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 
 /// `get_latest_block` GRPC call
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -67,7 +67,7 @@ pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,
 ) -> Result<String, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri)
+    let mut client = zingo_netutils::get_client(uri)
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
