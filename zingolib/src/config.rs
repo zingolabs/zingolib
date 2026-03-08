@@ -439,9 +439,10 @@ impl ZingoConfigBuilder {
     /// Set indexer URI.
     /// # Examples
     /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
+    /// use zingolib::config::ZingoConfig;
     /// use http::Uri;
-    /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
+    /// let config = ZingoConfig::builder().set_indexer_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).build();
+    /// assert_eq!(config.indexer_uri(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
     pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
         self.indexer_uri = Some(indexer_uri);
@@ -451,9 +452,10 @@ impl ZingoConfigBuilder {
     /// Set network type.
     /// # Examples
     /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
-    /// use zingolib::config::ChainType::Testnet;
-    /// assert_eq!(ZingoConfigBuilder::default().set_chain(Testnet).create().chain, Testnet);
+    /// use zingolib::config::ZingoConfig;
+    /// use zingolib::config::ChainType;
+    /// let config = ZingoConfig::builder().set_network_type(ChainType::Testnet).build();
+    /// assert_eq!(config.network_type(), ChainType::Testnet);
     /// ```
     pub fn set_network_type(mut self, network_type: ChainType) -> Self {
         self.network_type = network_type;
@@ -463,11 +465,11 @@ impl ZingoConfigBuilder {
     /// Set wallet directory.
     /// # Examples
     /// ```
-    /// use zingolib::config::ZingoConfigBuilder;
+    /// use zingolib::config::ZingoConfig;
     /// use tempfile::TempDir;
-    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().into_path();
-    /// let config = ZingoConfigBuilder::default().set_wallet_dir(dir.clone()).create();
-    /// assert_eq!(config.wallet_dir.clone().unwrap(), dir);
+    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().path().to_path_buf();
+    /// let config = ZingoConfig::builder().set_wallet_dir(dir.clone()).build();
+    /// assert_eq!(config.wallet_dir(), dir);
     /// ```
     pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
         self.wallet_dir = Some(dir);
