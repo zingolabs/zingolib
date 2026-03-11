@@ -1,6 +1,4 @@
 #![forbid(unsafe_code)]
-use zingo_common_components::protocol::activation_heights::for_test;
-
 use json::JsonValue;
 
 use zcash_address::unified::Fvk;
@@ -9,7 +7,7 @@ use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 use pepper_sync::wallet::TransparentCoin;
 use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
-use zebra_chain::parameters::testnet;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::utils::conversion::address_from_str;
@@ -147,6 +145,7 @@ mod fast {
     use zcash_protocol::memo::Memo;
     use zcash_protocol::{PoolType, ShieldedProtocol, value::Zatoshis};
     use zcash_transparent::keys::NonHardenedChildIndex;
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
@@ -637,7 +636,7 @@ mod fast {
             Some(100_000),
             None,
             PoolType::Shielded(ShieldedProtocol::Orchard),
-            for_test::all_height_one_nus(),
+            ActivationHeights::default(),
             None,
         )
         .await;
@@ -795,7 +794,7 @@ mod fast {
         // messages
         let alice_to_bob = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #1\nReply to\n".to_string() + &alice)).unwrap(),
@@ -809,7 +808,7 @@ mod fast {
         .unwrap();
         let alice_to_bob_2 = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&bob.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&bob.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Bob #2\nReply to\n".to_string() + &alice)).unwrap(),
@@ -823,7 +822,7 @@ mod fast {
         .unwrap();
         let alice_to_charlie = TransactionRequest::new(vec![
             Payment::new(
-                ZcashAddress::from_str(&charlie.encode(&faucet.config().chain)).unwrap(),
+                ZcashAddress::from_str(&charlie.encode(&faucet.config().network_type())).unwrap(),
                 Zatoshis::from_u64(1_000).unwrap(),
                 Some(Memo::encode(
                     &Memo::from_str(&("Alice->Charlie #2\nReply to\n".to_string() + &alice))
@@ -843,7 +842,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Charlie->Alice #2\nReply to\n".to_string()
-                            + &charlie.encode(&faucet.config().chain)),
+                            + &charlie.encode(&faucet.config().network_type())),
                     )
                     .unwrap(),
                 )),
@@ -861,7 +860,7 @@ mod fast {
                 Some(Memo::encode(
                     &Memo::from_str(
                         &("Bob->Alice #2\nReply to\n".to_string()
-                            + &bob.encode(&faucet.config().chain)),
+                            + &bob.encode(&faucet.config().network_type())),
                     )
                     .unwrap(),
                 )),
@@ -887,11 +886,11 @@ mod fast {
 
         // Collect observations
         let value_transfers_bob = &recipient
-            .messages_containing(Some(&bob.encode(&recipient.config().chain)))
+            .messages_containing(Some(&bob.encode(&recipient.config().network_type())))
             .await
             .unwrap();
         let value_transfers_charlie = &recipient
-            .messages_containing(Some(&charlie.encode(&recipient.config().chain)))
+            .messages_containing(Some(&charlie.encode(&recipient.config().network_type())))
             .await
             .unwrap();
         let all_vts = &recipient.value_transfers(true).await.unwrap();
@@ -1284,7 +1283,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[tokio::test]
     async fn mine_to_orchard() {
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::ORCHARD, for_test::all_height_one_nus(), None).await;
+            scenarios::faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await;
         check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1296,7 +1295,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[tokio::test]
     async fn mine_to_sapling() {
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, for_test::all_height_one_nus(), None).await;
+            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
         check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
             .await
@@ -1307,12 +1306,9 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     /// Tests that the miner's address receives (immature) rewards from mining to the transparent pool.
     #[tokio::test]
     async fn mine_to_transparent() {
-        let (local_net, mut faucet, _recipient) = scenarios::faucet_recipient(
-            PoolType::Transparent,
-            for_test::all_height_one_nus(),
-            None,
-        )
-        .await;
+        let (local_net, mut faucet, _recipient) =
+            scenarios::faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None)
+                .await;
 
         let unconfirmed_balance = faucet
             .wallet
@@ -1343,21 +1339,20 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     #[ignore]
     #[tokio::test]
     async fn sync_all_epochs() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
-            overwinter: Some(1u32),
-            sapling: Some(3u32),
-            blossom: Some(5u32),
-            heartwood: Some(7u32),
-            canopy: Some(9u32),
-            nu5: Some(11u32),
-            nu6: Some(13u32),
-            nu6_1: Some(15u32),
-            nu7: None,
-        };
+        let activation_heights = ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(3))
+            .set_blossom(Some(5))
+            .set_heartwood(Some(7))
+            .set_canopy(Some(9))
+            .set_nu5(Some(11))
+            .set_nu6(Some(13))
+            .set_nu6_1(Some(15))
+            .set_nu7(None)
+            .build();
 
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(configured_activation_heights, None).await;
+            scenarios::unfunded_client(activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 14)
             .await
             .unwrap();
@@ -1365,20 +1360,20 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn sync_all_epochs_from_heartwood() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
-            overwinter: Some(1u32),
-            sapling: Some(1u32),
-            blossom: Some(1u32),
-            heartwood: Some(1u32),
-            canopy: Some(3u32),
-            nu5: Some(5u32),
-            nu6: Some(7u32),
-            nu6_1: Some(9u32),
-            nu7: None,
-        };
+        let activation_heights = ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(1))
+            .set_blossom(Some(1))
+            .set_heartwood(Some(1))
+            .set_canopy(Some(3))
+            .set_nu5(Some(5))
+            .set_nu6(Some(7))
+            .set_nu6_1(Some(9))
+            .set_nu7(None)
+            .build();
+
         let (local_net, mut lightclient) =
-            scenarios::unfunded_client(configured_activation_heights, None).await;
+            scenarios::unfunded_client(activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut lightclient, 5)
             .await
             .unwrap();
@@ -1386,7 +1381,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_shield() {
-        let activation_heights = for_test::all_height_one_nus();
+        let activation_heights = ActivationHeights::default();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1411,7 +1406,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
     #[tokio::test]
     async fn mine_to_transparent_and_propose_shielding() {
-        let activation_heights = for_test::all_height_one_nus();
+        let activation_heights = ActivationHeights::default();
         let (local_net, mut faucet, _recipient) =
             scenarios::faucet_recipient(PoolType::Transparent, activation_heights, None).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 100)
@@ -1456,9 +1451,10 @@ mod slow {
     use zcash_protocol::memo::Memo;
     use zcash_protocol::value::Zatoshis;
     use zcash_protocol::{PoolType, ShieldedProtocol};
+    use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
-    use zingolib::config::ChainType;
+    use zingolib::config::{ChainType, ZingoConfig};
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
@@ -1784,21 +1780,22 @@ mod slow {
             false,
             local_net.validator().get_activation_heights().await,
         );
-        let zingo_config = zingolib::config::load_clientconfig(
-            client_builder.server_id,
-            Some(client_builder.zingo_datadir.path().to_path_buf()),
-            ChainType::Regtest(local_net.validator().get_activation_heights().await),
-            WalletSettings {
+        let zingo_config = ZingoConfig::builder()
+            .set_indexer_uri(client_builder.server_id)
+            .set_network_type(ChainType::Regtest(
+                local_net.validator().get_activation_heights().await,
+            ))
+            .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
+            .set_wallet_name("".to_string())
+            .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        )
-        .unwrap();
+            })
+            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+            .build();
 
         let (recipient_taddr, recipient_sapling, recipient_unified) = (
             get_base_address_macro!(original_recipient, "transparent"),
@@ -2543,7 +2540,7 @@ TransactionSummary {
         // consistent with all the notes in the relevant block changing state.
         // NOTE that the balance doesn't give insight into the distribution across notes.
         let (local_net, mut faucet) =
-            scenarios::faucet(PoolType::SAPLING, for_test::all_height_one_nus(), None).await;
+            scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
 
         let amount_to_send = 10_000;
         let faucet_ua = get_base_address_macro!(faucet, "unified");
@@ -2574,21 +2571,21 @@ TransactionSummary {
 
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
-        let configured_activation_heights = testnet::ConfiguredActivationHeights {
-            before_overwinter: Some(1u32),
-            overwinter: Some(1u32),
-            sapling: Some(1u32),
-            blossom: Some(1u32),
-            heartwood: Some(1u32),
-            canopy: Some(3u32),
-            nu5: Some(5u32),
-            nu6: Some(5u32),
-            nu6_1: Some(5u32),
-            nu7: None,
-        };
+        let activation_heights = ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(1))
+            .set_blossom(Some(1))
+            .set_heartwood(Some(1))
+            .set_canopy(Some(3))
+            .set_nu5(Some(5))
+            .set_nu6(Some(5))
+            .set_nu6_1(Some(5))
+            .set_nu7(None)
+            .build();
+
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient(
             PoolType::Shielded(ShieldedProtocol::Sapling),
-            configured_activation_heights,
+            activation_heights,
             None,
         )
         .await;
@@ -2620,7 +2617,7 @@ TransactionSummary {
                 Some(100_000),
                 Some(100_000),
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                for_test::all_height_one_nus(),
+                ActivationHeights::default(),
                 None,
             )
             .await;
@@ -2708,7 +2705,7 @@ TransactionSummary {
                 Some(funding_value),
                 None,
                 PoolType::Shielded(ShieldedProtocol::Orchard),
-                for_test::all_height_one_nus(),
+                ActivationHeights::default(),
                 None,
             )
             .await;
@@ -4341,7 +4338,7 @@ mod basic_transactions {
 #[tokio::test]
 async fn mine_to_transparent_coinbase_maturity() {
     let (local_net, mut faucet, _recipient) =
-        scenarios::faucet_recipient(PoolType::Transparent, for_test::all_height_one_nus(), None)
+        scenarios::faucet_recipient(PoolType::Transparent, ActivationHeights::default(), None)
             .await;
 
     // After 3 blocks...
@@ -4577,7 +4574,7 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, ZingoConfig},
+        config::{ChainType, DEFAULT_TESTNET_LIGHTWALLETD_SERVER, ZingoConfig},
         lightclient::LightClient,
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
@@ -4595,16 +4592,23 @@ mod testnet_test {
 
         while test_count < NUM_TESTS {
             let wallet_dir = TempDir::new().unwrap();
-            let mut config = ZingoConfig::create_testnet();
-            config.wallet_dir = Some(wallet_dir.path().to_path_buf());
+            let config = ZingoConfig::builder()
+                .set_network_type(ChainType::Testnet)
+                .set_indexer_uri(
+                    (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
+                        .parse::<http::Uri>()
+                        .unwrap(),
+                )
+                .set_wallet_dir(wallet_dir.path().to_path_buf())
+                .build();
             let wallet = LightWallet::new(
                 ChainType::Testnet,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
-                    no_of_accounts: config.no_of_accounts,
+                    no_of_accounts: config.no_of_accounts(),
                 },
                 2_000_000.into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .unwrap();
 

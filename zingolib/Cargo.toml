@@ -17,8 +17,7 @@ maintenance = { status = "actively-developed" }
 default = []
 ci = []
 darkside_tests = ["pepper-sync/darkside_test"]
-testutils = ["portpicker", "zingo_test_vectors", "tempfile", "zingo_common_components/for_test"]
-regtest = [ "zingo_common_components/for_test" ]
+testutils = ["portpicker", "zingo_test_vectors", "tempfile"]
 
 [dependencies]
 
@@ -33,7 +32,7 @@ zingo_common_components = { workspace = true }
 zingo-netutils = { workspace = true }
 
 # Test
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", branch = "dev", optional = true}
+zingo_test_vectors = { workspace = true, optional = true}
 
 # Zcash
 incrementalmerkletree = { workspace = true }
@@ -53,9 +52,6 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
-
-# Zebra
-zebra-chain = { workspace = true }
 
 # Protocol
 zip32.workspace = true

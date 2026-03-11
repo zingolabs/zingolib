@@ -8,19 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Deprecated
+- `config::load_clientconfig`: being replaced by zingo config builder pattern (`ZingoConfigBuilder`)
 
 ### Added
+- impl TryFrom<&str> for `config::ChainType`
+- `config::InvalidChainType`
 
 ### Changed
+- `LightClient`:
+  - `server_uri`: renamed `indexer_uri`
+  - `set_server`: renamed `set_indexer_uri`
+- `config::ChainType`: `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
+- `config::ZingoConfig`: reworked. public fields now private with public getter methods to constrain public API:
+  - `wallet_dir` replaces `get_zingo_wallet_dir`
+  - `network_type` method replaces `chain` field
+  - `indexer_uri` method replaces `lightwalletd_uri` field and `get_lightwalletd_uri` method
+  - `build` renamed `builder`
+- `config::ZingoConfigBuilder`: reworked. public fields now private with public setter methods to constrain public API:
+  - `create` renamed `build`
 
 ### Removed
+- `regtest` feature: production binaries can now be tested in regtest mode.
+- `config::ChainFromStingError`: replaced by `InvalidChainType` error struct.
+- `config::chain_from_str`: replaced by impl TryFrom<&str> for `config::ChainType`
+- `config::ZingoConfig`:
+  - `get_wallet_with_name_pathbuf`
+  - `get_wallet_with_name_path`
+  - `wallet_with_name_path_exists`
+  - `get_wallet_pathbuf`
+  - `wallet_exists(`
 
 ## [3.0.0] - 2026-03-02
 
 ### Deprecated
 
 ### Added
-- `lightclient::error::TransmissionError` - moved from `wallet::error` and simplified to much fewer variants more specific
+- `lightclient::error::TransmissionError`: moved from `wallet::error` and simplified to much fewer variants more specific
 to transmission.
 - `wallet`: publicly re-exported `pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes}`
 

@@ -23,8 +23,7 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -91,17 +90,17 @@ impl Command for ChangeServerCommand {
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         match args.len() {
             0 => {
-                lightclient.set_server(http::Uri::default());
+                lightclient.set_indexer_uri(http::Uri::default());
                 "server set".to_string()
             }
             1 => match http::Uri::from_str(args[0]) {
                 Ok(uri) => {
-                    lightclient.set_server(uri);
+                    lightclient.set_indexer_uri(uri);
                     "server set"
                 }
                 Err(_) => match args[0] {
                     "" => {
-                        lightclient.set_server(http::Uri::default());
+                        lightclient.set_indexer_uri(http::Uri::default());
                         "server set"
                     }
                     _ => "invalid server uri",
@@ -220,8 +219,7 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
+                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -231,7 +229,6 @@ impl Command for ParseAddressCommand {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
-                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
