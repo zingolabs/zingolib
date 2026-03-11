@@ -417,36 +417,6 @@ impl LightWallet {
         Ok(current_price)
     }
 
-    /// Updates historical daily price list.
-    /// Prunes any unused price data in the wallet after it's been updated.
-    /// If this is the first time update has been called, initialises the price list from the wallet data.
-    ///
-    /// Currently only USD is supported.
-    // TODO: under development
-    pub async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
-        if self
-            .price_list
-            .time_historical_prices_last_updated()
-            .is_none()
-        {
-            let Some(birthday) = self.sync_state.wallet_birthday() else {
-                return Err(PriceError::NotInitialised);
-            };
-            let birthday_block = match self.wallet_blocks.get(&birthday) {
-                Some(block) => block.clone(),
-                None => {
-                    return Err(PriceError::NotInitialised);
-                }
-            };
-            self.price_list.set_start_time(birthday_block.time());
-        }
-        self.price_list.update_historical_price_list().await?;
-        self.prune_price_list();
-        self.save_required = true;
-
-        todo!()
-    }
-
     /// Prunes historical prices to days containing transactions in the wallet.
     ///
     /// Avoids pruning above fully scanned height.
