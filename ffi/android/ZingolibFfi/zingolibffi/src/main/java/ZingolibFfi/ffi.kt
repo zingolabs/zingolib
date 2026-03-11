@@ -2045,6 +2045,8 @@ public object FfiConverterTypeSeedPhrase: FfiConverterRustBuffer<SeedPhrase> {
 
 
 data class UfvkImportParams (
+    var `walletDir`: kotlin.String
+    , 
     var `ufvk`: kotlin.String
     , 
     var `birthday`: kotlin.UInt
@@ -2073,6 +2075,7 @@ public object FfiConverterTypeUFVKImportParams: FfiConverterRustBuffer<UfvkImpor
     override fun read(buf: ByteBuffer): UfvkImportParams {
         return UfvkImportParams(
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterString.read(buf),
             FfiConverterTypeChain.read(buf),
@@ -2082,6 +2085,7 @@ public object FfiConverterTypeUFVKImportParams: FfiConverterRustBuffer<UfvkImpor
     }
 
     override fun allocationSize(value: UfvkImportParams) = (
+            FfiConverterString.allocationSize(value.`walletDir`) +
             FfiConverterString.allocationSize(value.`ufvk`) +
             FfiConverterUInt.allocationSize(value.`birthday`) +
             FfiConverterString.allocationSize(value.`indexerUri`) +
@@ -2091,6 +2095,7 @@ public object FfiConverterTypeUFVKImportParams: FfiConverterRustBuffer<UfvkImpor
     )
 
     override fun write(value: UfvkImportParams, buf: ByteBuffer) {
+            FfiConverterString.write(value.`walletDir`, buf)
             FfiConverterString.write(value.`ufvk`, buf)
             FfiConverterUInt.write(value.`birthday`, buf)
             FfiConverterString.write(value.`indexerUri`, buf)

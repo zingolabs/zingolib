@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, path::PathBuf};
 
 use pepper_sync::config::PerformanceLevel;
 use zingo_common_components::protocol::activation_heights::for_test;
@@ -33,6 +33,7 @@ pub fn construct_config(
     chain: Chain,
     perf: Performance,
     min_confirmations: u32,
+    data_dir: Option<PathBuf>,
 ) -> Result<(ZingoConfig, http::Uri), WalletError> {
     let lightwalletd_uri = construct_lightwalletd_uri(Some(indexer_uri));
 
@@ -41,7 +42,7 @@ pub fn construct_config(
 
     let config = zingolib::config::load_clientconfig(
         lightwalletd_uri.clone(),
-        None,
+        data_dir,
         chain_to_chaintype(chain),
         WalletSettings {
             sync_config: SyncConfig {

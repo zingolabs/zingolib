@@ -69,13 +69,50 @@ class WalletEngineInstrumentedTest {
                 performance = Performance.HIGH,
                 minConfirmations = 1u
             )
+            println("Testing initFromUfvk with birthday=${params.birthday}, chain=${params.chain}, uri=${params.indexerUri}")
+
 
             try {
                 engine.initFromUfvk(params)
-                fail("Expected WalletException.Internal")
+                fail("Expected WalletEngineException.Internal")
             } catch (e: WalletEngineException.Internal) {
+                println("Caught WalletEngineException.Internal: details=${e.details}")
                 assertTrue(e.details.contains("Key decoding failed"))
             }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun initFromUfvk_withValidUfvk_initializesWallet() {
+        val engine = WalletEngine.create()
+        try {
+            val validTestUfvk =
+                "uviewregtest1sq45509uyu7sfz2veyqsl5jv834urwgelpwadvn37h2726gp47y5g8qklm4urcxpmn8rrtpr2m4r5c0vsjph9kj5q5vu044zyxzevrejphhx9ekjq7ctefzs036l5y9v2dnumgfq04g8r3gj8da8qhy8k0f4fcke2prnwcn0x2g6sng05lqux2a5y25ea39s3m70gxlfczfh5hvm4ggsd98r995fufr0xc3ns2p8ugdt9xy0k687k5vrvcdz5uzleuplz3w6gfr3gj8mwznuy7e62ntqaute8wp2yv8szgmrrz9fhdpnqx9k38w5duh79qwkm2f82s0mtemx5m2hx2de82w6nwrvsxlr6eh6y8hn3tkjhcft5q7fyae5a6t32swv6w0elfrgypkcclgc866z3t5mgz53ffvtjv2zdxzmzg3l47u23pmd778jwdgeag79fu7swnl5alqmrxfuuwfz6g64dhf24gj3tfudfsdpgwhjrc820ln0"
+
+            val params = ImportUfvkRequest(
+                ufvk = validTestUfvk,
+                birthday = 1u,
+                indexerUri = "http://127.0.0.1:9067",
+                chain = Chain.REGTEST,
+                performance = Performance.HIGH,
+                minConfirmations = 1u
+            )
+
+            println(
+                "initFromUfvk(valid): birthday=${params.birthday}, " +
+                        "chain=${params.chain}, uri=${params.indexerUri}, ufvkLength=${params.ufvk.length}"
+            )
+
+            engine.initFromUfvk(params)
+
+            val snapshot = engine.getBalanceSnapshot()
+            println("wallet initialized, snapshot=$snapshot")
+
+            assertNotNull(snapshot)
+            assertTrue(snapshot.confirmed.isNotBlank())
+            assertTrue(snapshot.total.isNotBlank())
         } finally {
             engine.close()
         }
@@ -88,7 +125,7 @@ class WalletEngineInstrumentedTest {
             try {
                 engine.getBalanceSnapshot()
                 throw AssertionError("Expected WalletEngineException.NotInitialized")
-            } catch (e: WalletEngineException.NotInitialized) {
+            } catch (_: WalletEngineException.NotInitialized) {
                 // expected
                 assertTrue(true)
             }

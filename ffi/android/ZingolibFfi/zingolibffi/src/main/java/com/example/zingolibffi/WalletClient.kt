@@ -100,6 +100,7 @@ class WalletEngine private constructor(
                     chain = params.chain.toFfi(),
                     perf = params.performance.toFfi(),
                     minconf = params.minConfirmations,
+                    walletDir = "./"
                 )
             )
         }
