@@ -9387,9 +9387,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "752f1c49b42f2e57c237a94878dfd3bd468300c5bbabe6b659767d3906344487"
+checksum = "2d2ca11c717feb94a0032da1e6cffb2928ce2c34aca3b430e85cac02fd0ab425"
 dependencies = [
  "http",
  "hyper",
