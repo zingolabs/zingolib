@@ -11,7 +11,7 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
@@ -41,7 +41,7 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
         unified_keystore.try_into().unwrap();
-    let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
+    let transparent_vk: zcash_transparent::keys::AccountPubKey =
         unified_keystore.try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];
@@ -66,9 +66,9 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
     );
     LightClient::create_from_wallet(
         LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::Ufvk(ufvk),
-            0.into(),
+            1.into(),
             WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -563,7 +563,7 @@ pub fn int_to_pooltype(int: i32) -> PoolType {
 /// helperized test print.
 /// if someone figures out how to improve this code it can be done in one place right here.
 pub fn timestamped_test_log(text: &str) {
-    println!("{}: {}", crate::utils::now(), text);
+    tracing::info!("{}: {}", crate::utils::now(), text);
 }
 
 #[allow(unused_macros)]
@@ -606,7 +606,7 @@ pub(crate) use build_push_list;
 /// Take a P2PKH taddr and interpret it as a tex addr
 pub fn interpret_taddr_as_tex_addr(
     taddr_bytes: [u8; 20],
-    p: &impl zcash_primitives::consensus::Parameters,
+    p: &impl zcash_protocol::consensus::Parameters,
 ) -> String {
     bech32::encode::<bech32::Bech32m>(
         bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),

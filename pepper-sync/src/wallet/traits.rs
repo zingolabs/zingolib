@@ -2,24 +2,27 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use orchard::tree::MerkleHashOrchard;
-use shardtree::store::{Checkpoint, ShardStore, TreeState};
 use tokio::sync::mpsc;
-use zcash_client_backend::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::AccountId;
-use zcash_protocol::ShieldedProtocol;
 use zip32::DiversifierIndex;
+
+use orchard::tree::MerkleHashOrchard;
+use shardtree::ShardTree;
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::store::{Checkpoint, ShardStore, TreeState};
+use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::{PoolType, ShieldedProtocol};
+use zip32::AccountId;
 
 use crate::error::{ServerError, SyncError};
 use crate::keys::transparent::TransparentAddressId;
-use crate::sync::{MAX_VERIFICATION_WINDOW, ScanRange};
+use crate::sync::{MAX_REORG_ALLOWANCE, ScanRange};
 use crate::wallet::{
     NullifierMap, OutputId, ShardTrees, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::LocatedTreeData;
-use crate::{Orchard, Sapling, SyncDomain, client, reset_spends};
+use crate::{Orchard, Sapling, SyncDomain, client, set_transactions_failed};
 
 use super::{FetchRequest, ScanTarget, witness};
 
@@ -139,8 +142,9 @@ pub trait SyncTransactions: SyncWallet {
         Ok(())
     }
 
-    /// Removes all confirmed wallet transactions above the given `block_height`.
-    /// Also sets any output's `spending_transaction` field to `None` if it's spending transaction was removed.
+    /// Sets all confirmed wallet transactions above the given `block_height` to `Failed` status.
+    /// Also sets any output's `spending_transaction` field to `None` if it's spending transaction was set to `Failed`
+    /// status.
     fn truncate_wallet_transactions(
         &mut self,
         truncate_height: BlockHeight,
@@ -152,11 +156,7 @@ pub trait SyncTransactions: SyncWallet {
             .map(|tx| tx.transaction().txid())
             .collect();
 
-        let wallet_transactions = self.get_wallet_transactions_mut()?;
-        reset_spends(wallet_transactions, invalid_txids.clone());
-        for invalid_txid in &invalid_txids {
-            wallet_transactions.remove(invalid_txid);
-        }
+        set_transactions_failed(self.get_wallet_transactions_mut()?, invalid_txids);
 
         Ok(())
     }
@@ -231,12 +231,14 @@ pub trait SyncShardTrees: SyncWallet {
     /// Get mutable reference to shard trees
     fn get_shard_trees_mut(&mut self) -> Result<&mut ShardTrees, Self::Error>;
 
-    /// Update wallet shard trees with new shard tree data
+    /// Update wallet shard trees with new shard tree data.
+    ///
+    /// `highest_scanned_height` is the height of the highest scanned block in the wallet not including the `scan_range` we are updating.
     fn update_shard_trees(
         &mut self,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_range: &ScanRange,
-        wallet_height: BlockHeight,
+        highest_scanned_height: BlockHeight,
         sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
         orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ) -> impl std::future::Future<Output = Result<(), SyncError<Self::Error>>> + Send
@@ -246,20 +248,27 @@ pub trait SyncShardTrees: SyncWallet {
         async move {
             let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
 
-            // limit the range that checkpoints are manually added to the top MAX_VERIFICATION_WINDOW blocks for efficiency.
+            // limit the range that checkpoints are manually added to the top MAX_REORG_ALLOWANCE scanned blocks for efficiency.
             // As we sync the chain tip first and have spend-before-sync, we will always choose anchors very close to chain
             // height and we will also never need to truncate to checkpoints lower than this height.
-            let checkpoint_range = match (
-                scan_range.block_range().start
-                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
-                scan_range.block_range().end - 1
-                    > wallet_height.saturating_sub(MAX_VERIFICATION_WINDOW),
-            ) {
-                (true, _) => scan_range.block_range().clone(),
-                (false, true) => {
-                    (wallet_height - MAX_VERIFICATION_WINDOW)..scan_range.block_range().end
-                }
-                (false, false) => BlockHeight::from_u32(0)..BlockHeight::from_u32(0),
+            let checkpoint_range = if scan_range.block_range().start > highest_scanned_height {
+                let verification_window_start = scan_range
+                    .block_range()
+                    .end
+                    .saturating_sub(MAX_REORG_ALLOWANCE);
+
+                std::cmp::max(scan_range.block_range().start, verification_window_start)
+                    ..scan_range.block_range().end
+            } else if scan_range.block_range().end
+                > highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1
+            {
+                let verification_window_start =
+                    highest_scanned_height.saturating_sub(MAX_REORG_ALLOWANCE) + 1;
+
+                std::cmp::max(scan_range.block_range().start, verification_window_start)
+                    ..scan_range.block_range().end
+            } else {
+                BlockHeight::from_u32(0)..BlockHeight::from_u32(0)
             };
 
             // in the case that sapling and/or orchard note commitments are not in an entire block there will be no retention
@@ -312,31 +321,51 @@ pub trait SyncShardTrees: SyncWallet {
     }
 
     /// Removes all shard tree data above the given `block_height`.
+    ///
+    /// A `truncate_height` of zero should replace the shard trees with empty trees.
     fn truncate_shard_trees(
         &mut self,
         truncate_height: BlockHeight,
     ) -> Result<(), SyncError<Self::Error>> {
-        if !self
-            .get_shard_trees_mut()
-            .map_err(SyncError::WalletError)?
-            .sapling
-            .truncate_to_checkpoint(&truncate_height)?
-        {
-            panic!("max checkpoints should always be higher or equal to max verification window!");
-        }
-        if !self
-            .get_shard_trees_mut()
-            .map_err(SyncError::WalletError)?
-            .orchard
-            .truncate_to_checkpoint(&truncate_height)?
-        {
-            panic!("max checkpoints should always be higher or equal to max verification window!");
+        if truncate_height == zcash_protocol::consensus::H0 {
+            let shard_trees = self.get_shard_trees_mut().map_err(SyncError::WalletError)?;
+            tracing::info!("Clearing shard trees.");
+            shard_trees.sapling =
+                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+            shard_trees.orchard =
+                ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        } else {
+            if !self
+                .get_shard_trees_mut()
+                .map_err(SyncError::WalletError)?
+                .sapling
+                .truncate_to_checkpoint(&truncate_height)?
+            {
+                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::SAPLING,
+                ));
+            }
+            if !self
+                .get_shard_trees_mut()
+                .map_err(SyncError::WalletError)?
+                .orchard
+                .truncate_to_checkpoint(&truncate_height)?
+            {
+                tracing::error!("Sapling shard tree is broken! Beginning rescan.");
+                return Err(SyncError::TruncationError(
+                    truncate_height,
+                    PoolType::ORCHARD,
+                ));
+            }
         }
 
         Ok(())
     }
 }
 
+// TODO: move into `update_shard_trees` trait method
 async fn add_checkpoint<D, L, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     checkpoint_height: BlockHeight,
@@ -373,7 +402,7 @@ where
             checkpoint.tree_state()
         } else {
             let frontiers =
-                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height - 1).await?;
+                client::get_frontiers(fetch_request_sender.clone(), checkpoint_height).await?;
             let tree_size = match D::SHIELDED_PROTOCOL {
                 ShieldedProtocol::Sapling => frontiers.final_sapling_tree().tree_size(),
                 ShieldedProtocol::Orchard => frontiers.final_orchard_tree().tree_size(),

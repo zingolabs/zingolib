@@ -27,11 +27,21 @@ where
     #[error("sync mode error. {0}")]
     SyncModeError(#[from] SyncModeError),
     /// Chain error.
-    #[error("wallet height is more than {0} blocks ahead of best chain height")]
-    ChainError(u32),
+    #[error("wallet height {0} is more than {1} blocks ahead of best chain height {2}")]
+    ChainError(u32, u32, u32),
+    /// Birthday below sapling error.
+    #[error(
+        "birthday {0} below sapling activation height {1}. pre-sapling wallets are not supported!"
+    )]
+    BirthdayBelowSapling(u32, u32),
     /// Shard tree error.
     #[error("shard tree error. {0}")]
     ShardTreeError(#[from] ShardTreeError<Infallible>),
+    /// Critical non-recoverable truncation error due to missing shard tree checkpoints.
+    #[error(
+        "critical non-recoverable truncation error at height {0} due to missing {1} shard tree checkpoints. wallet data cleared. rescan required."
+    )]
+    TruncationError(BlockHeight, PoolType),
     /// Transparent address derivation error.
     #[error("transparent address derivation error. {0}")]
     TransparentAddressDerivationError(bip32::Error),
@@ -123,7 +133,7 @@ pub enum ScanError {
     DecryptedNoteDataNotFound(OutputId),
     /// Invalid memo bytes..
     #[error("invalid memo bytes. {0}")]
-    InvalidMemoBytes(#[from] zcash_primitives::memo::Error),
+    InvalidMemoBytes(#[from] zcash_protocol::memo::Error),
     /// Failed to parse encoded address.
     #[error("failed to parse encoded address. {0}")]
     AddressParseError(#[from] zcash_address::unified::ParseError),
@@ -176,7 +186,7 @@ pub enum ServerError {
     InvalidSubtreeRoot,
     /// Server returned blocks that could not be verified against wallet block data. Exceeded max verification window.
     #[error(
-        "server returned blocks that could not be verified against wallet block data. exceeded max verification window."
+        "server returned blocks that could not be verified against wallet block data. exceeded max verification window. wallet data has been cleared as shard tree data cannot be truncated further. wallet rescan required."
     )]
     ChainVerificationError,
     /// Fetcher task was dropped.

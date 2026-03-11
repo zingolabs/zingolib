@@ -30,6 +30,11 @@ jobs:
         with:
           tool: nextest@0.9.78
 
+      - name: Install system deps
+        run: |
+         apt-get update
+         apt-get install -y libsqlite3-dev pkg-config
+
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
@@ -41,6 +46,7 @@ jobs:
         with:
           name: nextest-archive
           path: nextest-archive.tar.zst
+          overwrite: true
 
   run-tests:
     name: Run tests

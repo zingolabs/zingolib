@@ -1,15 +1,16 @@
 use std::num::NonZeroU32;
 
 use bytes::Buf;
-
 use http::Uri;
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+
 use zcash_protocol::{PoolType, ShieldedProtocol};
-use zingo_common_components::protocol::activation_heights::for_test;
+
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER};
+use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
@@ -280,26 +281,25 @@ impl NetworkSeedVersion {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
                 let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
 
-                crate::config::load_clientconfig(
-                    lightwalletd_uri,
-                    None,
-                    crate::config::ChainType::Regtest(for_test::all_height_one_nus()),
-                    WalletSettings {
+                ZingoConfig::builder()
+                    .set_indexer_uri(lightwalletd_uri)
+                    .set_network_type(ChainType::Regtest(ActivationHeights::default()))
+                    .set_wallet_name("".to_string())
+                    .set_wallet_settings(WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                             performance_level: PerformanceLevel::High,
                         },
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                    },
-                    1.try_into().unwrap(),
-                )
-                .unwrap()
+                    })
+                    .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+                    .build()
             }
             NetworkSeedVersion::Testnet(_) => crate::config::ZingoConfig::create_testnet(),
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let wallet = self.load_example_wallet(config.chain);
+        let wallet = self.load_example_wallet(config.network_type());
 
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }

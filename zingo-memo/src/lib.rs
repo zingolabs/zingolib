@@ -9,8 +9,9 @@
 use std::io::{self, Read, Write};
 
 use zcash_address::unified::{Address, Container, Encoding, Receiver};
-use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
+use zcash_keys::address::UnifiedAddress;
+use zcash_protocol::consensus::Parameters;
 
 /// A parsed memo.
 /// The main use-case for this is to record the UAs that a foreign recipient provided,
@@ -40,11 +41,14 @@ pub enum ParsedMemo {
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
 #[deprecated(note = "prefer version 1")]
-pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+pub fn create_wallet_internal_memo_version_0(
+    consensus_parameters: &impl Parameters,
+    uas: &[UnifiedAddress],
+) -> io::Result<[u8; 511]> {
     let mut version_and_data = Vec::new();
     CompactSize::write(&mut version_and_data, 0usize)?;
     Vector::write(&mut version_and_data, uas, |w, ua| {
-        write_unified_address_to_raw_encoding(ua, w)
+        write_unified_address_to_raw_encoding(consensus_parameters, ua, w)
     })?;
     let mut uas_bytes = [0u8; 511];
     if version_and_data.len() > 511 {
@@ -65,13 +69,14 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
 /// Ephemeral address indexes are `CompactSize` encoded, so for most use cases will only be
 /// one byte.
 pub fn create_wallet_internal_memo_version_1(
+    consensus_parameters: &impl Parameters,
     uas: &[UnifiedAddress],
     refund_address_indexes: &[u32],
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
     CompactSize::write(&mut memo_bytes_vec, 1usize)?;
     Vector::write(&mut memo_bytes_vec, uas, |w, ua| {
-        write_unified_address_to_raw_encoding(ua, w)
+        write_unified_address_to_raw_encoding(consensus_parameters, ua, w)
     })?;
     Vector::write(
         &mut memo_bytes_vec,
@@ -113,10 +118,11 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
 /// of receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn write_unified_address_to_raw_encoding<W: Write>(
+    consensus_parameters: &impl Parameters,
     ua: &UnifiedAddress,
     writer: W,
 ) -> io::Result<()> {
-    let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::MAIN_NETWORK);
+    let mainnet_encoded_ua = ua.encode(consensus_parameters);
     let (_mainnet, address) =
         Address::decode(&mainnet_encoded_ua).expect("freshly encoded ua to decode!");
     let receivers = address.items();
@@ -204,7 +210,7 @@ mod tests {
     use super::*;
     use rand::{self, Rng};
     use test_vectors::TestVector;
-    use zcash_primitives::consensus::MAIN_NETWORK;
+    use zcash_protocol::consensus::MAIN_NETWORK;
 
     fn get_some_number_of_ephemeral_indexes() -> Vec<u32> {
         // Generate a random number of elements between 0 and 10
@@ -220,7 +226,7 @@ mod tests {
             panic!("Couldn't decode test_vector UA")
         };
         let mut serialized_ua = Vec::new();
-        write_unified_address_to_raw_encoding(&ua, &mut serialized_ua).unwrap();
+        write_unified_address_to_raw_encoding(&MAIN_NETWORK, &ua, &mut serialized_ua).unwrap();
         (ua, serialized_ua)
     }
     #[test]
@@ -230,7 +236,8 @@ mod tests {
             // version0
             #[allow(deprecated)]
             let version0_bytes =
-                create_wallet_internal_memo_version_0(std::slice::from_ref(&ua)).unwrap();
+                create_wallet_internal_memo_version_0(&MAIN_NETWORK, std::slice::from_ref(&ua))
+                    .unwrap();
             let success_parse = parse_zingo_memo(version0_bytes).expect("To succeed in parse.");
             if let ParsedMemo::Version0 { uas } = success_parse {
                 assert_eq!(uas[0], ua);
@@ -238,6 +245,7 @@ mod tests {
             // version1
             let random_rejection_indexes = get_some_number_of_ephemeral_indexes();
             let version1_bytes = create_wallet_internal_memo_version_1(
+                &MAIN_NETWORK,
                 std::slice::from_ref(&ua),
                 &random_rejection_indexes,
             )

@@ -1,16 +1,16 @@
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{
-    KeyIdInterface, NoteInterface, OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface,
-    SaplingNote, TransparentCoin, WalletTransaction,
+    OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface, SaplingNote, TransparentCoin,
+    WalletTransaction,
 };
 
 use super::LightWallet;
-use super::error::{FeeError, RemovalError, SpendError};
+use super::error::{FeeError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
 use crate::config::get_donation_address_for_chain;
+use crate::wallet::error::WalletError;
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -92,27 +92,25 @@ impl LightWallet {
             .expect("fee should not be negative"))
     }
 
-    /// Removes transaction with the given `txid` from the wallet.
-    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` restoring the
-    /// wallet balance and allowing these outputs to be re-selected for spending in future sends.
+    /// Removes failed transaction with the given `txid` from the wallet.
     ///
     /// # Error
     ///
-    /// Returns error if transaction is confirmed or does not exist in the wallet.
-    pub fn remove_unconfirmed_transaction(&mut self, txid: TxId) -> Result<(), RemovalError> {
-        if let Some(transaction) = self.wallet_transactions.get(&txid) {
-            if transaction.status().is_confirmed() {
-                return Err(RemovalError::TransactionAlreadyConfirmed);
+    /// Returns error if transaction is not `Failed` or does not exist in the wallet.
+    pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
+        match self
+            .wallet_transactions
+            .get(&txid)
+            .map(|tx| tx.status().is_failed())
+        {
+            Some(true) => {
+                self.wallet_transactions.remove(&txid);
+                self.save_required = true;
+                Ok(())
             }
-        } else {
-            return Err(RemovalError::TransactionNotFound);
+            Some(false) => Err(WalletError::RemovalError),
+            None => Err(WalletError::TransactionNotFound(txid)),
         }
-
-        pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
-        self.wallet_transactions.remove(&txid);
-        self.save_required = true;
-
-        Ok(())
     }
 
     /// Determine the kind of transaction from the current state of wallet data.
@@ -175,41 +173,79 @@ impl LightWallet {
     }
 }
 
-/// Returns all unspent notes of the specified pool and `account` in the given `transaction`.
-///
-/// Any output IDs in `exclude` will not be returned.
-/// `spend_horizon` is the block height from which all nullifiers have been mapped, guaranteeing a note from a block
-/// equal to or above this height is unspent.
-/// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
-/// cannot guarantee the notes are unspent. In this case, the `spend_horizon` is not used.
-pub(crate) fn transaction_unspent_notes<'a, N: NoteInterface + 'a>(
-    transaction: &'a WalletTransaction,
-    exclude: &'a [OutputId],
-    account: zip32::AccountId,
-    spend_horizon: BlockHeight,
-    include_potentially_unspent_notes: bool,
-) -> impl Iterator<Item = &'a N> + 'a {
-    let guaranteed_unspent = if include_potentially_unspent_notes {
-        true
-    } else {
-        transaction.status().get_height() >= spend_horizon
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use pepper_sync::{
+        config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
+        wallet::WalletTransaction,
+    };
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+
+    use crate::{
+        config::ZingoConfig,
+        wallet::{LightWallet, WalletBase, WalletSettings, error::WalletError},
     };
 
-    N::transaction_outputs(transaction)
-        .iter()
-        .filter(move |&note| {
-            note.spending_transaction().is_none()
-                && !exclude.contains(&note.output_id())
-                && note.key_id().account_id() == account
-                && guaranteed_unspent
-        })
-}
+    fn test_wallet() -> LightWallet {
+        let config = ZingoConfig::builder().build();
+        LightWallet::new(
+            config.network_type(),
+            WalletBase::FreshEntropy {
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            419_200.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                    performance_level: PerformanceLevel::High,
+                },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
+        )
+        .unwrap()
+    }
 
-/// Returns all unspent transparent outputs in the given `transaction`.
-pub(crate) fn transaction_unspent_coins(
-    transaction: &WalletTransaction,
-) -> impl Iterator<Item = &TransparentCoin> {
-    TransparentCoin::transaction_outputs(transaction)
-        .iter()
-        .filter(move |&coin| coin.spending_transaction().is_none())
+    #[test]
+    fn remove_failed_transaction_not_found() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([0u8; 32]);
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::TransactionNotFound(id)) if id == txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_not_failed() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([1u8; 32]);
+        let status = ConfirmationStatus::Calculated(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::RemovalError)));
+        assert!(wallet.wallet_transactions.contains_key(&txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_success() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([2u8; 32]);
+        let status = ConfirmationStatus::Failed(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(result.is_ok());
+        assert!(!wallet.wallet_transactions.contains_key(&txid));
+        assert!(wallet.save_required);
+    }
 }

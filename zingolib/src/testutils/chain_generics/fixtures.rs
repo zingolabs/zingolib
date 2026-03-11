@@ -34,10 +34,10 @@ where
     let send_value_for_recipient = 23_000;
     let send_value_self = 17_000;
 
-    println!("client is ready to send");
+    tracing::info!("client is ready to send");
 
     let mut recipient = environment.create_client().await;
-    dbg!("TEST 1");
+    tracing::debug!("TEST 1");
     with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,
@@ -96,7 +96,7 @@ where
 
     assert_eq!(recipient.value_transfers(true).await.unwrap().len(), 1);
 
-    dbg!("TEST 2");
+    tracing::debug!("TEST 2");
     with_assertions::assure_propose_send_bump_sync_all_recipients(
         &mut environment,
         &mut sender,

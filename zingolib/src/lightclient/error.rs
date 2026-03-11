@@ -2,13 +2,11 @@
 
 use std::convert::Infallible;
 
-use pepper_sync::error::SyncModeError;
+use pepper_sync::error::{SyncError, SyncModeError};
+use zcash_protocol::TxId;
 
 use crate::wallet::{
-    error::{
-        CalculateTransactionError, ProposeSendError, ProposeShieldError, TransmissionError,
-        WalletError,
-    },
+    error::{CalculateTransactionError, ProposeSendError, ProposeShieldError, WalletError},
     output::OutputRef,
 };
 
@@ -19,17 +17,20 @@ pub enum LightClientError {
     SyncNotRunning,
     /// Sync error.
     #[error("Sync error. {0}")]
-    SyncError(#[from] pepper_sync::error::SyncError<WalletError>),
+    SyncError(#[from] SyncError<WalletError>),
     /// Sync mode error.
-    #[error("sync mode error. {0}")]
+    #[error("Sync mode error. {0}")]
     SyncModeError(#[from] SyncModeError),
-    /// gPRC client error
+    /// Send error.
+    #[error("Send error. {0}")]
+    SendError(#[from] SendError),
+    /// gPRC client error.
     #[error("gRPC client error. {0}")]
     ClientError(#[from] zingo_netutils::GetClientError),
-    /// File error
+    /// File error.
     #[error("File error. {0}")]
-    FileError(#[from] std::io::Error),
-    /// Wallet error
+    FileError(std::io::Error),
+    /// Wallet error.
     #[error("Wallet error. {0}")]
     WalletError(#[from] WalletError),
     /// Tor client error.
@@ -37,33 +38,39 @@ pub enum LightClientError {
     TorClientError(#[from] zcash_client_backend::tor::Error),
 }
 
-#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
-    #[error("The sending transaction could not be calculated. {0}")]
+    /// Propose send error.
+    #[error("Propose send error. {0}")]
+    ProposeSendError(#[from] ProposeSendError),
+    /// Propose shield error.
+    #[error("Propose shield error. {0}")]
+    ProposeShieldError(#[from] ProposeShieldError),
+    /// Failed to construct sending transaction.
+    #[error("Failed to construct sending transaction. {0}")]
     CalculateSendError(CalculateTransactionError<OutputRef>),
-    #[error("The shieldng transaction could not be calculated. {0}")]
+    /// Failed to construct shielding transaction.
+    #[error("Failed to construct shielding transaction. {0}")]
     CalculateShieldError(CalculateTransactionError<Infallible>),
-    #[error("Transmission failed. {0}")]
-    TransmissionError(#[from] TransmissionError),
-    #[error("No proposal found.")]
+    /// No proposal found in the wallet.
+    #[error("No proposal found in the wallet.")]
     NoStoredProposal,
+    /// Transmission error.
+    #[error("Transmission error. {0}")]
+    TransmissionError(#[from] TransmissionError),
 }
 
-#[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]
-pub enum QuickSendError {
-    #[error("proposal failed. {0}")]
-    ProposalError(#[from] ProposeSendError),
-    #[error("send failed. {0}")]
-    SendError(#[from] SendError),
-}
-
-#[allow(missing_docs)] // error types document themselves
-#[derive(Debug, thiserror::Error)]
-pub enum QuickShieldError {
-    #[error("proposal failed. {0}")]
-    ProposalError(#[from] ProposeShieldError),
-    #[error("send failed. {0}")]
-    SendError(#[from] SendError),
+pub enum TransmissionError {
+    /// Transmission failed.
+    #[error("Transmission failed. {0}")]
+    TransmissionFailed(String),
+    /// Transaction to transmit does not have `Calculated` status: {0}
+    #[error("Transaction to transmit does not have `Calculated` status: {0}")]
+    IncorrectTransactionStatus(TxId),
+    /// Txid reported by server does not match calculated txid.
+    #[error(
+        "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
+    )]
+    IncorrectTxidFromServer(TxId, TxId),
 }

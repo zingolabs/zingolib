@@ -3,7 +3,7 @@
 use json::JsonValue;
 
 use zcash_address::ZcashAddress;
-use zcash_primitives::memo::MemoBytes;
+use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
 use crate::commands::error::CommandError;
@@ -52,7 +52,7 @@ pub(super) fn parse_send_args(args: &[&str]) -> Result<Receivers, CommandError> 
         let amount = zatoshis_from_u64(amount_u64).map_err(CommandError::ConversionFailed)?;
         let memo = if args.len() == 3 {
             Some(
-                wallet::utils::interpret_memo_string(args[2].to_string())
+                wallet::utils::memo_bytes_from_string(args[2].to_string())
                     .map_err(CommandError::InvalidMemo)?,
             )
         } else {
@@ -106,7 +106,7 @@ pub(super) fn parse_send_all_args(
         zennies_for_zingo = false;
         address = address_from_str(args[0]).map_err(CommandError::ConversionFailed)?;
         memo = Some(
-            wallet::utils::interpret_memo_string(args[1].to_string())
+            wallet::utils::memo_bytes_from_string(args[1].to_string())
                 .map_err(CommandError::InvalidMemo)?,
         );
         check_memo_compatibility(&address, &memo)?;
@@ -212,7 +212,7 @@ fn memo_from_json(json_array: &JsonValue) -> Result<Option<MemoBytes>, CommandEr
         .as_str()
         .map(std::string::ToString::to_string)
     {
-        let memo = wallet::utils::interpret_memo_string(m).map_err(CommandError::InvalidMemo)?;
+        let memo = wallet::utils::memo_bytes_from_string(m).map_err(CommandError::InvalidMemo)?;
         Ok(Some(memo))
     } else {
         Ok(None)
@@ -224,7 +224,7 @@ mod tests {
     use zingolib::{
         data::receivers::Receiver,
         utils::conversion::{address_from_str, zatoshis_from_u64},
-        wallet::{self, utils::interpret_memo_string},
+        wallet::{self, utils::memo_bytes_from_string},
     };
 
     use crate::commands::error::CommandError;
@@ -236,7 +236,7 @@ mod tests {
         let value_str = "100000";
         let amount = zatoshis_from_u64(100_000).unwrap();
         let memo_str = "test memo";
-        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+        let memo = wallet::utils::memo_bytes_from_string(memo_str.to_string()).unwrap();
 
         // No memo
         let send_args = &[address_str, value_str];
@@ -386,7 +386,7 @@ mod tests {
         let address_str = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let address = address_from_str(address_str).unwrap();
         let memo_str = "test memo";
-        let memo = wallet::utils::interpret_memo_string(memo_str.to_string()).unwrap();
+        let memo = wallet::utils::memo_bytes_from_string(memo_str.to_string()).unwrap();
 
         // JSON single receiver
         let single_receiver = &[
@@ -432,7 +432,7 @@ mod tests {
     fn check_memo_compatibility() {
         let sapling_address = address_from_str("zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p").unwrap();
         let transparent_address = address_from_str("tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd").unwrap();
-        let memo = interpret_memo_string("test memo".to_string()).unwrap();
+        let memo = memo_bytes_from_string("test memo".to_string()).unwrap();
 
         // shielded address with memo
         super::check_memo_compatibility(&sapling_address, &Some(memo.clone())).unwrap();
@@ -515,7 +515,7 @@ mod tests {
         let json_args = json_args.members().next().unwrap();
         assert_eq!(
             super::memo_from_json(json_args).unwrap(),
-            Some(interpret_memo_string("test memo".to_string()).unwrap())
+            Some(memo_bytes_from_string("test memo".to_string()).unwrap())
         );
 
         // without memo

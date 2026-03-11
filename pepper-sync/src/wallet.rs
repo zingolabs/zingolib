@@ -23,7 +23,6 @@ use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::Script,
     memo::Memo,
     transaction::{TxId, components::transparent::OutPoint},
 };
@@ -32,6 +31,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zingo_status::confirmation_status::ConfirmationStatus;
 
@@ -40,7 +40,7 @@ use crate::{
     error::{ServerError, SyncModeError},
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
-    sync::{MAX_VERIFICATION_WINDOW, ScanPriority, ScanRange},
+    sync::{MAX_REORG_ALLOWANCE, ScanPriority, ScanRange},
     witness,
 };
 
@@ -82,9 +82,9 @@ pub struct InitialSyncState {
     pub(crate) wallet_tree_bounds: TreeBounds,
     /// Total number of blocks scanned in previous sync sessions.
     pub(crate) previously_scanned_blocks: u32,
-    /// Total number of sapling outputs to scanned in previous sync sessions.
+    /// Total number of sapling outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of orchard outputs to scanned in previous sync sessions.
+    /// Total number of orchard outputs scanned in previous sync sessions.
     pub(crate) previously_scanned_orchard_outputs: u32,
 }
 
@@ -201,18 +201,18 @@ impl SyncState {
             .filter(|scan_range| {
                 scan_range.priority() == ScanPriority::Scanned
                     || scan_range.priority() == ScanPriority::ScannedWithoutMapping
+                    || scan_range.priority() == ScanPriority::RefetchingNullifiers
             })
             .next_back()
         {
             Some(last_scanned_range.block_range().end - 1)
         } else {
-            self.wallet_birthday().map(|birthday| birthday - 1)
+            self.wallet_birthday().map(|start| start - 1)
         }
     }
 
     /// Returns the wallet birthday or `None` if `self.scan_ranges` is empty.
     ///
-    /// If the wallet birthday is below the sapling activation height, returns the sapling activation height instead.
     #[must_use]
     pub fn wallet_birthday(&self) -> Option<BlockHeight> {
         self.scan_ranges
@@ -222,7 +222,7 @@ impl SyncState {
 
     /// Returns the last known chain height to the wallet or `None` if `self.scan_ranges` is empty.
     #[must_use]
-    pub fn wallet_height(&self) -> Option<BlockHeight> {
+    pub fn last_known_chain_height(&self) -> Option<BlockHeight> {
         self.scan_ranges
             .last()
             .map(|range| range.block_range().end - 1)
@@ -533,7 +533,7 @@ impl WalletTransaction {
                 bundle
                     .shielded_spends()
                     .iter()
-                    .map(sapling_crypto::bundle::SpendDescription::nullifier)
+                    .map(|spend| spend.nullifier())
                     .collect::<Vec<_>>()
             })
     }
@@ -561,9 +561,89 @@ impl WalletTransaction {
                 bundle
                     .vin
                     .iter()
-                    .map(|txin| &txin.prevout)
+                    .map(zcash_transparent::bundle::TxIn::prevout)
                     .collect::<Vec<_>>()
             })
+    }
+
+    /// Updates transaction status if `status` is a valid update for the current transaction status.
+    /// For example, if `status` is `Mempool` but the current transaction status is `Confirmed`, the status will remain
+    /// unchanged.
+    /// `datetime` refers to the time in which the status was updated, or the time the block was mined when updating
+    /// to `Confirmed` status.
+    pub fn update_status(&mut self, status: ConfirmationStatus, datetime: u32) {
+        match status {
+            ConfirmationStatus::Transmitted(_)
+                if matches!(self.status(), ConfirmationStatus::Calculated(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Mempool(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_) | ConfirmationStatus::Transmitted(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            ConfirmationStatus::Confirmed(_)
+                if matches!(
+                    self.status(),
+                    ConfirmationStatus::Calculated(_)
+                        | ConfirmationStatus::Transmitted(_)
+                        | ConfirmationStatus::Mempool(_)
+                ) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+
+            ConfirmationStatus::Failed(_)
+                if !matches!(self.status(), ConfirmationStatus::Failed(_)) =>
+            {
+                self.status = status;
+                self.datetime = datetime;
+            }
+            _ => (),
+        }
+    }
+}
+
+#[cfg(feature = "test-features")]
+impl WalletTransaction {
+    /// Creates a minimal `WalletTransaction` for testing purposes.
+    ///
+    /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
+    pub fn new_for_test(txid: TxId, status: ConfirmationStatus) -> Self {
+        use zcash_primitives::transaction::{TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+
+        let transaction = TransactionData::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(0),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .expect("empty v5 transaction should always be valid");
+
+        Self {
+            txid,
+            status,
+            transaction,
+            datetime: 0,
+            transparent_coins: Vec::new(),
+            sapling_notes: Vec::new(),
+            orchard_notes: Vec::new(),
+            outgoing_sapling_notes: Vec::new(),
+            outgoing_orchard_notes: Vec::new(),
+        }
     }
 }
 
@@ -579,7 +659,7 @@ impl WalletTransaction {
                 bundle
                     .vout
                     .iter()
-                    .map(|output| output.value.into_u64())
+                    .map(|output| output.value().into_u64())
                     .sum()
             })
             .saturating_sub(self.total_output_value::<TransparentCoin>());
@@ -709,6 +789,12 @@ pub trait NoteInterface: OutputInterface {
 
     /// Memo
     fn memo(&self) -> &Memo;
+
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` or `RefetchingNullifiers` priority before this note was
+    /// scanned, meaning the nullifiers were discarded due to memory constraints and will be re-fetched later in the
+    /// sync process.
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>];
 }
 
 ///  Transparent coin (output) with metadata relevant to the wallet.
@@ -800,6 +886,11 @@ pub struct WalletNote<N, Nf: Copy> {
     /// Transaction ID of transaction this output was spent.
     /// If `None`, output is not spent.
     pub(crate) spending_transaction: Option<TxId>,
+    /// List of block ranges where the nullifiers must be re-fetched to guarantee the note has not been spent.
+    /// These scan ranges were marked `ScannedWithoutMapping` or `RefetchingNullifiers` priority before this note was
+    /// scanned, meaning the nullifiers were discarded due to memory constraints and will be re-fetched later in the
+    /// sync process.
+    pub(crate) refetch_nullifier_ranges: Vec<Range<BlockHeight>>,
 }
 
 /// Sapling note.
@@ -865,6 +956,10 @@ impl NoteInterface for SaplingNote {
     fn memo(&self) -> &Memo {
         &self.memo
     }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
+    }
 }
 
 /// Orchard note.
@@ -929,6 +1024,10 @@ impl NoteInterface for OrchardNote {
 
     fn memo(&self) -> &Memo {
         &self.memo
+    }
+
+    fn refetch_nullifier_ranges(&self) -> &[Range<BlockHeight>] {
+        &self.refetch_nullifier_ranges
     }
 }
 
@@ -1144,10 +1243,8 @@ impl ShardTrees {
     /// Create new `ShardTrees`
     #[must_use]
     pub fn new() -> Self {
-        let mut sapling =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
-        let mut orchard =
-            ShardTree::new(MemoryShardStore::empty(), MAX_VERIFICATION_WINDOW as usize);
+        let mut sapling = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
+        let mut orchard = ShardTree::new(MemoryShardStore::empty(), MAX_REORG_ALLOWANCE as usize);
 
         sapling
             .checkpoint(BlockHeight::from_u32(0))

@@ -6,9 +6,6 @@
 
 mod commands;
 
-#[cfg(feature = "regtest")]
-mod regtest;
-
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -21,7 +18,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::config::ChainType;
+use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
@@ -45,11 +42,9 @@ pub fn build_clap_app() -> clap::ArgMatches {
             .arg(Arg::new("chain")
                 .long("chain").short('c')
                 .value_name("CHAIN")
-                .help(if cfg!(feature = "regtest") {
+                .help(
                     r#"What chain to expect. One of "mainnet", "testnet", or "regtest". Defaults to "mainnet""#
-                } else {
-                    r#"What chain to expect. One of "mainnet" or "testnet". Defaults to "mainnet""#
-                }))
+                ))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -344,7 +339,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let server = zingolib::config::construct_lightwalletd_uri(server);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            zingolib::config::chain_from_str(chain).map_err(|e| e.to_string())?
+            ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
@@ -386,25 +381,25 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    let config = zingolib::config::load_clientconfig(
-        filled_template.server.clone(),
-        Some(filled_template.data_dir.clone()),
-        filled_template.chaintype,
-        WalletSettings {
+    let config = ZingoConfig::builder()
+        .set_indexer_uri(filled_template.server.clone())
+        .set_network_type(filled_template.chaintype)
+        .set_wallet_dir(filled_template.data_dir.clone())
+        .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                 performance_level: PerformanceLevel::High,
             },
             min_confirmations: NonZeroU32::try_from(3).unwrap(),
-        },
-        1.try_into().unwrap(),
-    )
-    .unwrap();
+        })
+        .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
+        .set_wallet_name("".to_string())
+        .build();
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(
@@ -415,7 +410,7 @@ pub fn startup(
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 },
                 (filled_template.birthday as u32).into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
@@ -426,17 +421,17 @@ pub fn startup(
         // Create client from UFVK
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Ufvk(ufvk),
                 (filled_template.birthday as u32).into(),
-                config.wallet_settings.clone(),
+                config.wallet_settings(),
             )
             .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
             false,
         )
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-    } else if config.wallet_path_exists() {
+    } else if config.get_wallet_path().exists() {
         // Open existing wallet from path
         LightClient::create_from_wallet_path(config.clone())
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
@@ -445,7 +440,7 @@ pub fn startup(
         println!("Creating a new wallet");
         // Call the lightwalletd server to get the current block-height
         // Do a getinfo first, before opening the wallet
-        let server_uri = config.get_lightwalletd_uri();
+        let server_uri = config.indexer_uri();
 
         let chain_height = RT
             .block_on(async move {
@@ -455,7 +450,7 @@ pub fn startup(
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-        LightClient::new(config.clone(), chain_height - 100, false)
+        LightClient::new(config.clone(), chain_height, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
@@ -465,23 +460,9 @@ pub fn startup(
         info!("Starting Zingo-CLI");
         info!("Light Client config {config:?}");
 
-        info!(
-            "Lightclient connecting to {}",
-            config.get_lightwalletd_uri()
-        );
+        info!("Lightclient connecting to {}", config.indexer_uri());
     }
 
-    if filled_template.tor_enabled {
-        info!("Creating tor client");
-        lightclient = RT.block_on(async move {
-            if let Err(e) = lightclient.create_tor_client(None).await {
-                eprintln!("error: failed to create tor client. price updates disabled. {e}");
-            }
-            lightclient
-        });
-    }
-
-    // At startup, run a sync.
     if filled_template.sync {
         let update = commands::do_user_command("sync", &["run"], &mut lightclient);
         println!("{update}");
@@ -489,6 +470,24 @@ pub fn startup(
 
     let update = commands::do_user_command("save", &["run"], &mut lightclient);
     println!("{update}");
+
+    lightclient = RT.block_on(async move {
+        if filled_template.tor_enabled {
+            info!("Creating tor client");
+            if let Err(e) = lightclient.create_tor_client(None).await {
+                eprintln!("error: failed to create tor client. price updates disabled. {e}");
+            }
+        }
+
+        if filled_template.sync
+            && filled_template.waitsync
+            && let Err(e) = lightclient.await_sync().await
+        {
+            eprintln!("error: {e}");
+        }
+
+        lightclient
+    });
 
     // Start the command loop
     let (command_transmitter, resp_receiver) = command_loop(lightclient);
@@ -518,41 +517,6 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
     } else {
-        // Optionally wait for background sync to finish before executing command
-        if cli_config.sync && cli_config.waitsync {
-            use std::{thread, time::Duration};
-            loop {
-                // Poll sync task status
-                command_transmitter
-                    .send(("sync".to_string(), vec!["poll".to_string()]))
-                    .unwrap();
-                match resp_receiver.recv() {
-                    Ok(resp) => {
-                        if resp.starts_with("Error:") {
-                            eprintln!(
-                                "Sync error while waiting: {resp}\nProceeding to execute the command."
-                            );
-                            break;
-                        } else if resp.starts_with("Sync completed succesfully:") {
-                            // Sync finished; proceed
-                            break;
-                        } else if resp == "Sync task has not been launched." {
-                            // Try to launch sync and continue waiting
-                            command_transmitter
-                                .send(("sync".to_string(), vec!["run".to_string()]))
-                                .unwrap();
-                            let _ = resp_receiver.recv();
-                            thread::sleep(Duration::from_millis(500));
-                        } else {
-                            // Not ready yet
-                            thread::sleep(Duration::from_millis(500));
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-
         command_transmitter
             .send((
                 cli_config.command.clone().unwrap(),
@@ -596,55 +560,6 @@ pub fn run_cli() {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {e:?}"),
     }
-}
-
-/// Run CLI in regtest mode
-/// This function is only available when the regtest feature is enabled
-/// It bypasses clap entirely and directly sets up a regtest environment
-#[cfg(feature = "regtest")]
-pub fn run_regtest_cli() {
-    use crate::commands::RT;
-
-    println!("Launching local regtest network...");
-
-    // Launch the local network first
-    let local_net = RT.block_on(regtest::launch_local_net());
-
-    // Get the lightwalletd port from the launched network
-    let lightwalletd_port = local_net.indexer().port();
-
-    println!("Local network launched on port {lightwalletd_port}");
-
-    // Create a regtest-specific config directly
-    let data_dir = regtest::get_regtest_dir();
-
-    // Ensure the regtest directory exists
-    std::fs::create_dir_all(&data_dir).expect("Failed to create regtest directory");
-
-    // Use a temporary directory for wallet data in regtest
-    let wallet_dir = zingolib::testutils::tempfile::tempdir().expect("Failed to create temp dir");
-    let wallet_data_dir = wallet_dir.path().to_path_buf();
-
-    let cli_config = ConfigTemplate {
-        params: vec![],
-        server: zingolib::config::construct_lightwalletd_uri(Some(format!(
-            "http://127.0.0.1:{lightwalletd_port}"
-        ))),
-        seed: None,
-        ufvk: None,
-        birthday: 0,
-        data_dir: wallet_data_dir,
-        sync: false, // Don't auto-sync in regtest
-        waitsync: false,
-        command: None,
-        chaintype: ChainType::Regtest(
-            zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus(),
-        ),
-        tor_enabled: false,
-    };
-
-    // Start the CLI in interactive mode
-    dispatch_command_or_start_interactive(&cli_config);
 }
 
 fn short_circuit_on_help(params: Vec<String>) {

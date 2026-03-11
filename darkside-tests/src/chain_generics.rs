@@ -76,13 +76,13 @@ pub(crate) mod conduct_chain {
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
-                    config.chain,
+                    config.network_type(),
                     WalletBase::Mnemonic {
                         mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                     },
-                    0.into(),
-                    config.wallet_settings.clone(),
+                    1.into(),
+                    config.wallet_settings(),
                 )
                 .unwrap(),
                 config,
@@ -98,7 +98,7 @@ pub(crate) mod conduct_chain {
             lightclient
         }
 
-        fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
+        async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
             self.client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights)
         }
@@ -161,7 +161,7 @@ pub(crate) mod conduct_chain {
                         //trees
                         let transaction = zcash_primitives::transaction::Transaction::read(
                             raw_tx.data.as_slice(),
-                            zcash_primitives::consensus::BranchId::Nu6,
+                            zcash_protocol::consensus::BranchId::Nu6,
                         )
                         .unwrap();
                         for output in transaction

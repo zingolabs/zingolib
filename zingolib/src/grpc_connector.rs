@@ -1,5 +1,7 @@
 //! TODO: Add Mod Description Here!
 
+use std::time::Duration;
+
 use tonic::Request;
 
 use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo, RawTransaction};
@@ -7,13 +9,16 @@ use zcash_client_backend::proto::service::{BlockId, ChainSpec, Empty, LightdInfo
 #[cfg(feature = "testutils")]
 use zcash_client_backend::proto::service::TreeState;
 
+pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Get server info.
 pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
-    let request = Request::new(Empty {});
+    let mut request = Request::new(Empty {});
+    request.set_timeout(DEFAULT_GRPC_TIMEOUT);
 
     let response = client
         .get_lightd_info(request)
@@ -25,7 +30,7 @@ pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
 /// TODO: Add Doc Comment Here!
 #[cfg(feature = "testutils")]
 pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
@@ -43,11 +48,12 @@ pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String>
 
 /// `get_latest_block` GRPC call
 pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri.clone())
+    let mut client = zingo_netutils::get_client(uri.clone())
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
-    let request = Request::new(ChainSpec {});
+    let mut request = Request::new(ChainSpec {});
+    request.set_timeout(DEFAULT_GRPC_TIMEOUT);
 
     let response = client
         .get_latest_block(request)
@@ -57,19 +63,19 @@ pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
     Ok(response.into_inner())
 }
 
-/// TODO: Add Doc Comment Here!
 pub(crate) async fn send_transaction(
     uri: http::Uri,
     transaction_bytes: Box<[u8]>,
 ) -> Result<String, String> {
-    let mut client = crate::grpc_client::get_zcb_client(uri)
+    let mut client = zingo_netutils::get_client(uri)
         .await
         .map_err(|e| format!("Error getting client: {e:?}"))?;
 
-    let request = Request::new(RawTransaction {
+    let mut request = Request::new(RawTransaction {
         data: transaction_bytes.to_vec(),
         height: 0,
     });
+    request.set_timeout(DEFAULT_GRPC_TIMEOUT);
 
     let response = client
         .send_transaction(request)

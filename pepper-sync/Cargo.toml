@@ -2,7 +2,7 @@
 name = "pepper-sync"
 description = "Pepper-sync is a crate providing a sync engine for the zcash network."
 authors = ["<zingo@zingolabs.org>"]
-version = "0.0.1"
+version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
@@ -17,32 +17,36 @@ default = ["wallet_essentials"]
 wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
 # removes failing calls to `GetSubTreeRoots` in darkside testing
 darkside_test = []
+# exposes test constructors for wallet types
+test-features = []
 
 [dependencies]
 # Zingo
-zingo-memo = { workspace = true }
-zingo-status = { workspace = true }
-zingo_netutils = { workspace = true }
+zingo-memo.workspace = true
+zingo-status.workspace = true
+
+# Zingo-common
+zingo-netutils.workspace = true
 
 # Zcash
+incrementalmerkletree.workspace = true
+orchard.workspace = true
+sapling-crypto.workspace = true
+shardtree.workspace = true
 zcash_address.workspace = true
-zcash_encoding = { workspace = true, optional = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable-serialization",
 ] }
-zcash_primitives.workspace = true
-zcash_note_encryption.workspace = true
+zcash_encoding = { workspace = true, optional = true }
 zcash_keys.workspace = true
+zcash_note_encryption.workspace = true
+zcash_primitives.workspace = true
 zcash_protocol.workspace = true
 zcash_transparent.workspace = true
-sapling-crypto.workspace = true
-orchard.workspace = true
-incrementalmerkletree.workspace = true
-shardtree.workspace = true
-zip32.workspace = true
 
-# Transparent
+# Protocol
 bip32.workspace = true
+zip32.workspace = true
 
 # Cryptography
 jubjub.workspace = true
@@ -76,3 +80,6 @@ byteorder = { workspace = true, optional = true }
 
 # Documentation
 simple-mermaid.workspace = true
+
+[dev-dependencies]
+zcash_protocol = { workspace = true, features = [ "local-consensus"] }

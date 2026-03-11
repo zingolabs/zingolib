@@ -23,8 +23,7 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -91,17 +90,17 @@ impl Command for ChangeServerCommand {
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         match args.len() {
             0 => {
-                lightclient.set_server(http::Uri::default());
+                lightclient.set_indexer_uri(http::Uri::default());
                 "server set".to_string()
             }
             1 => match http::Uri::from_str(args[0]) {
                 Ok(uri) => {
-                    lightclient.set_server(uri);
+                    lightclient.set_indexer_uri(uri);
                     "server set"
                 }
                 Err(_) => match args[0] {
                     "" => {
-                        lightclient.set_server(http::Uri::default());
+                        lightclient.set_indexer_uri(http::Uri::default());
                         "server set"
                     }
                     _ => "invalid server uri",
@@ -220,8 +219,7 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
+                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -231,7 +229,6 @@ impl Command for ParseAddressCommand {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
-                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -433,28 +430,6 @@ impl Command for SyncCommand {
     }
 }
 
-struct SendProgressCommand {}
-impl Command for SendProgressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r"
-            Get the progress of any send transactions that are currently computing
-
-            Usage:
-            send_progress
-        "}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Get the progress of any send transactions that are currently computing"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(
-            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
-        )
-    }
-}
-
 struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> &'static str {
@@ -468,8 +443,7 @@ impl Command for RescanCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet
-        birthday."
+        "Rescan the wallet, clearing all wallet data obtained from the blockchain and launching sync from the wallet birthday."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1221,7 +1195,7 @@ impl Command for QuickSendCommand {
             }
         };
         RT.block_on(async move {
-            match lightclient.quick_send(request, zip32::AccountId::ZERO).await {
+            match lightclient.quick_send(request, zip32::AccountId::ZERO, true).await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
                 }
@@ -1339,7 +1313,7 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Confirms the latest proposal, completing and broadcasting the transaction(s).
+            Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
@@ -1353,7 +1327,7 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
+        "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1366,7 +1340,7 @@ impl Command for ConfirmCommand {
 
         RT.block_on(async move {
             match lightclient
-                .send_stored_proposal()
+                .send_stored_proposal(true)
                 .await {
                 Ok(txids) => {
                     object! { "txids" => txids.iter().map(std::string::ToString::to_string).collect::<Vec<_>>() }
@@ -1376,44 +1350,6 @@ impl Command for ConfirmCommand {
                 }
             }
             .pretty(2)
-        })
-    }
-}
-
-struct ResendCommand {}
-impl Command for ResendCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Re-transmits a calculated transaction from the wallet with the given txid.
-            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
-            to remove the calculated transaction in the case of send failure.
-
-            usage:
-            resend <txid>
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Re-transmits a calculated transaction from the wallet with the given txid."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
-                .to_string();
-        }
-
-        let txid = match txid_from_hex_encoded_str(args[0]) {
-            Ok(txid) => txid,
-            Err(e) => return format!("Error: {e}"),
-        };
-
-        RT.block_on(async move {
-            match lightclient.resend(txid).await {
-                Ok(()) => "Successfully resent transaction.".to_string(),
-                Err(e) => format!("Error: {e}"),
-            }
         })
     }
 }
@@ -1755,7 +1691,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.wallet_height().map_or(0, u32::from))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
         })
     }
 }
@@ -1855,11 +1791,9 @@ struct RemoveTransactionCommand {}
 impl Command for RemoveTransactionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Removes an unconfirmed transaction from the wallet with the given txid.
-            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
-            the "resend" command to attempt to re-transmit.
+            Removes a failed transaction from the wallet with the given txid.
             This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them or resend.
+            until the user decides to remove them.
 
             usage:
             remove_transaction <txid>
@@ -1868,7 +1802,7 @@ impl Command for RemoveTransactionCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Removes an unconfirmed transaction from the wallet with the given txid."
+        "Removes a failed transaction from the wallet with the given txid."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1887,9 +1821,9 @@ impl Command for RemoveTransactionCommand {
                 .wallet
                 .write()
                 .await
-                .remove_unconfirmed_transaction(txid)
+                .remove_failed_transaction(txid)
             {
-                Ok(()) => "Successfully removed transaction.".to_string(),
+                Ok(()) => "Successfully removed failed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1963,42 +1897,6 @@ impl Command for QuitCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         let save_shutdown = do_user_command("save", &["shutdown"], lightclient);
 
-        // before shutting down, shut down all child processes..
-        // ...but only if the network being used is regtest.
-        let o = RT.block_on(async move { lightclient.do_info().await });
-        if o.contains("\"chain_name\": \"regtest\",") {
-            use std::process::Command;
-
-            // find zingo-cli's PID
-            let cli_pid: u32 = std::process::id();
-
-            // now find all child processes of this PID
-            let raw_child_processes = Command::new("ps")
-                .args(["--no-headers", "--ppid", &cli_pid.to_string()])
-                .output()
-                .expect("error running ps");
-
-            let owned_child_processes: String = String::from_utf8(raw_child_processes.stdout)
-                .expect("error unwrapping stdout of ps");
-            let child_processes = owned_child_processes.split('\n').collect::<Vec<&str>>();
-
-            // &str representation of PIDs
-            let mut spawned_pids: Vec<&str> = Vec::new();
-
-            for child in child_processes {
-                if !child.is_empty() {
-                    let ch: Vec<&str> = child.split_whitespace().collect();
-                    spawned_pids.push(ch[0]);
-                }
-            }
-
-            for pid in spawned_pids {
-                Command::new("kill")
-                    .arg(pid)
-                    .output()
-                    .expect("error while killing regtest-spawned processes!");
-            }
-        }
         format!("{save_shutdown}\nZingo CLI quit successfully.")
     }
 }
@@ -2025,7 +1923,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("send_progress", Box::new(SendProgressCommand {})),
         ("value_transfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
@@ -2039,7 +1936,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
-        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("settings", Box::new(SettingsCommand {})),

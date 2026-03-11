@@ -1,9 +1,11 @@
 //! Queue and prioritise fetch requests to fetch data from the server
 
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use tonic::transport::Channel;
+use tracing::instrument;
 use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{
@@ -13,12 +15,29 @@ use zcash_client_backend::proto::{
     },
 };
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
-use zingo_netutils::UnderlyingService;
 
 use crate::client::FetchRequest;
 
+const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
+const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
+
 #[cfg(not(feature = "darkside_test"))]
 use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
+
+async fn call_with_timeout<T, F>(
+    what: &'static str,
+    dur: Duration,
+    fut: F,
+) -> Result<T, tonic::Status>
+where
+    F: Future<Output = Result<T, tonic::Status>>,
+{
+    match tokio::time::timeout(dur, fut).await {
+        Ok(res) => res,
+        Err(_) => Err(tonic::Status::deadline_exceeded(format!("{what} timeout"))),
+    }
+}
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.
@@ -28,7 +47,7 @@ use zcash_client_backend::proto::service::{GetSubtreeRootsArg, SubtreeRoot};
 /// request prioritisation for further performance enhancement
 pub(crate) async fn fetch(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
-    mut client: CompactTxStreamerClient<UnderlyingService>,
+    mut client: CompactTxStreamerClient<Channel>,
 ) {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
@@ -94,7 +113,7 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 
 //
 async fn fetch_from_server(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     fetch_request: FetchRequest,
 ) {
     match fetch_request {
@@ -161,30 +180,41 @@ async fn fetch_from_server(
 }
 
 async fn get_latest_block(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<BlockId, tonic::Status> {
-    let request = tonic::Request::new(ChainSpec {});
+    let mut request = tonic::Request::new(ChainSpec {});
+    request.set_timeout(UNARY_RPC_TIMEOUT);
 
-    Ok(client.get_latest_block(request).await?.into_inner())
+    let resp = call_with_timeout(
+        "get_latest_block",
+        UNARY_RPC_TIMEOUT,
+        client.get_latest_block(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 async fn get_block(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     block_height: BlockHeight,
 ) -> Result<CompactBlock, tonic::Status> {
-    let request = tonic::Request::new(BlockId {
+    let mut request = tonic::Request::new(BlockId {
         height: u64::from(block_height),
         hash: vec![],
     });
 
-    Ok(client.get_block(request).await?.into_inner())
+    request.set_timeout(UNARY_RPC_TIMEOUT);
+
+    let resp = call_with_timeout("get_block", UNARY_RPC_TIMEOUT, client.get_block(request)).await?;
+    Ok(resp.into_inner())
 }
 
 async fn get_block_range(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-    let request = tonic::Request::new(BlockRange {
+    let mut request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
             height: u64::from(block_range.start),
             hash: vec![],
@@ -195,14 +225,23 @@ async fn get_block_range(
         }),
     });
 
-    Ok(client.get_block_range(request).await?.into_inner())
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
+
+    let resp = call_with_timeout(
+        "get_block_range (open)",
+        STREAM_OPEN_TIMEOUT,
+        client.get_block_range(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 async fn get_block_range_nullifiers(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-    let request = tonic::Request::new(BlockRange {
+    let mut request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
             height: u64::from(block_range.start),
             hash: vec![],
@@ -213,75 +252,112 @@ async fn get_block_range_nullifiers(
         }),
     });
 
-    Ok(client
-        .get_block_range_nullifiers(request)
-        .await?
-        .into_inner())
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
+
+    let resp = call_with_timeout(
+        "get_block_range_nullifiers (open)",
+        STREAM_OPEN_TIMEOUT,
+        client.get_block_range_nullifiers(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 #[cfg(not(feature = "darkside_test"))]
 async fn get_subtree_roots(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
 ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
-    let request = GetSubtreeRootsArg {
+    let mut request = tonic::Request::new(GetSubtreeRootsArg {
         start_index,
         shielded_protocol,
         max_entries,
-    };
+    });
 
-    Ok(client.get_subtree_roots(request).await?.into_inner())
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
+
+    let resp = call_with_timeout(
+        "get_subtree_roots (open)",
+        STREAM_OPEN_TIMEOUT,
+        client.get_subtree_roots(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
+#[instrument(skip(client), name = "fetch::get_tree_state", err, level = "info")]
 async fn get_tree_state(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     block_height: BlockHeight,
 ) -> Result<TreeState, tonic::Status> {
-    let request = tonic::Request::new(BlockId {
+    let mut request = tonic::Request::new(BlockId {
         height: block_height.into(),
         hash: vec![],
     });
+    request.set_timeout(UNARY_RPC_TIMEOUT);
 
-    Ok(client.get_tree_state(request).await?.into_inner())
+    let resp = call_with_timeout(
+        "get_tree_state",
+        UNARY_RPC_TIMEOUT,
+        client.get_tree_state(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 async fn get_transaction(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     txid: TxId,
 ) -> Result<RawTransaction, tonic::Status> {
-    let request = tonic::Request::new(TxFilter {
+    let mut request = tonic::Request::new(TxFilter {
         block: None,
         index: 0,
         hash: txid.as_ref().to_vec(),
     });
+    request.set_timeout(UNARY_RPC_TIMEOUT);
 
-    Ok(client.get_transaction(request).await?.into_inner())
+    let resp = call_with_timeout(
+        "get_transaction",
+        UNARY_RPC_TIMEOUT,
+        client.get_transaction(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 async fn get_address_utxos(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     addresses: Vec<String>,
     start_height: BlockHeight,
     max_entries: u32,
 ) -> Result<Vec<GetAddressUtxosReply>, tonic::Status> {
     let start_height: u64 = start_height.into();
-    let request = tonic::Request::new(GetAddressUtxosArg {
+    let mut request = tonic::Request::new(GetAddressUtxosArg {
         addresses,
         start_height,
         max_entries,
     });
 
-    Ok(client
-        .get_address_utxos(request)
-        .await?
-        .into_inner()
-        .address_utxos)
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
+
+    let resp = call_with_timeout(
+        "get_address_utxos",
+        HEAVY_UNARY_TIMEOUT,
+        client.get_address_utxos(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner().address_utxos)
 }
 
 async fn get_taddress_txs(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
     address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
@@ -295,18 +371,35 @@ async fn get_taddress_txs(
             hash: vec![],
         }),
     });
-    let request = tonic::Request::new(TransparentAddressBlockFilter { address, range });
 
-    Ok(client.get_taddress_txids(request).await?.into_inner())
+    let mut request = tonic::Request::new(TransparentAddressBlockFilter { address, range });
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
+
+    let resp = call_with_timeout(
+        "get_taddress_txids (open)",
+        STREAM_OPEN_TIMEOUT,
+        client.get_taddress_txids(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }
 
 /// Call `GetMempoolStream` client gPRC.
 ///
 /// This is not called from the fetch request framework and is intended to be called independently.
 pub(crate) async fn get_mempool_stream(
-    client: &mut CompactTxStreamerClient<UnderlyingService>,
+    client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-    let request = tonic::Request::new(zcash_client_backend::proto::service::Empty {});
+    let mut request = tonic::Request::new(zcash_client_backend::proto::service::Empty {});
+    request.set_timeout(HEAVY_UNARY_TIMEOUT);
 
-    Ok(client.get_mempool_stream(request).await?.into_inner())
+    let resp = call_with_timeout(
+        "get_mempool_stream (open)",
+        STREAM_OPEN_TIMEOUT,
+        client.get_mempool_stream(request),
+    )
+    .await?;
+
+    Ok(resp.into_inner())
 }

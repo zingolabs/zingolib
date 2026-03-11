@@ -3,34 +3,25 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2024"
 
-[features]
-regtest = ["zingolib/testutils", "zingo_common_components/for_test", "zcash_local_net"]
-
 [dependencies]
-zingolib = { workspace = true }
 pepper-sync = { workspace = true }
+zingo_common_components = { workspace = true }
+zingolib = { workspace = true }
 
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "5553bc50339bb13e208688387be8496ae59a7d5c", optional = true }
-
+zcash_address = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_keys = { workspace = true }
 zcash_protocol = { workspace = true }
 
 bip0039 = { workspace = true }
 clap = { workspace = true }
 http = { workspace = true }
+indoc = { workspace = true }
 json = { workspace = true }
 log = { workspace = true }
 rustls = { workspace = true }
 rustyline = { workspace = true }
 shellwords = { workspace = true }
-tracing-subscriber = { workspace = true }
-indoc = { workspace = true }
 tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
-zcash_client_backend = { workspace = true }
-zcash_primitives = { workspace = true }
-zcash_address = { workspace = true }
-zcash_keys = { workspace = true }
-zingo_common_components = { workspace = true, features = ["for_test"], optional = true }
-
-[dev-dependencies]
-zingolib = { workspace = true, features = ["testutils"] }
