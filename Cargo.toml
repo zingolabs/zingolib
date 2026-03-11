@@ -124,3 +124,5 @@ zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", 
 [profile.test]
 opt-level = 3
 
+[patch.crates-io]
+time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }
