@@ -533,7 +533,7 @@ impl WalletTransaction {
                 bundle
                     .shielded_spends()
                     .iter()
-                    .map(sapling_crypto::bundle::SpendDescription::nullifier)
+                    .map(|spend| spend.nullifier())
                     .collect::<Vec<_>>()
             })
     }
