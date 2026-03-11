@@ -63,6 +63,7 @@ pub struct RestoreParams {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct UFVKImportParams {
+    pub wallet_dir: String,
     pub ufvk: String,
     pub birthday: u32,
     pub indexer_uri: String,
@@ -443,7 +444,7 @@ impl EngineInner {
         reply: oneshot::Sender<Result<(), WalletError>>,
     ) {
         let res: Result<(), WalletError> = (async {
-            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf, None)?;
 
             let chain_height = zingolib::grpc_connector::get_latest_block(lw_uri.clone())
                 .await
@@ -475,7 +476,7 @@ impl EngineInner {
         reply: oneshot::Sender<Result<(), WalletError>>,
     ) {
         let res: Result<(), WalletError> = (async {
-            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf, None)?;
 
             let mnemonic = Mnemonic::from_phrase(seed_phrase)
                 .map_err(|e| WalletError::Internal(format!("Mnemonic: {e}")))?;
@@ -511,10 +512,17 @@ impl EngineInner {
         chain: Chain,
         perf: Performance,
         minconf: u32,
+        wallet_dir: String,
         reply: oneshot::Sender<Result<(), WalletError>>,
     ) {
         let res: Result<(), WalletError> = (async {
-            let (config, lw_uri) = construct_config(indexer_uri, chain, perf, minconf)?;
+            let (config, lw_uri) = construct_config(
+                indexer_uri,
+                chain,
+                perf,
+                minconf,
+                Some(wallet_dir.parse().unwrap()),
+            )?;
 
             let wallet = LightWallet::new(
                 config.chain,
@@ -620,12 +628,14 @@ enum Command {
         reply: oneshot::Sender<Result<(), WalletError>>,
     },
     InitViewOnly {
+        wallet_dir: String,
         viewing_key: String,
         birthday: u32,
         indexer_uri: String,
         chain: Chain,
         perf: Performance,
         minconf: u32,
+
         reply: oneshot::Sender<Result<(), WalletError>>,
     },
     GetBalance {
@@ -732,6 +742,7 @@ impl WalletEngine {
                         }
 
                         Command::InitViewOnly {
+                            wallet_dir,
                             viewing_key,
                             birthday,
                             indexer_uri,
@@ -750,6 +761,7 @@ impl WalletEngine {
                                     chain,
                                     perf,
                                     minconf,
+                                    wallet_dir,
                                     reply,
                                 )
                                 .await;
@@ -946,6 +958,7 @@ impl WalletEngine {
                 chain: params.chain,
                 perf: params.perf,
                 minconf: params.minconf,
+                wallet_dir: params.wallet_dir,
                 reply: reply_tx,
             })
             .map_err(|_| WalletError::CommandQueueClosed)?;

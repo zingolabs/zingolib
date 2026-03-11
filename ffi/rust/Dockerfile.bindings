@@ -1,0 +1,21 @@
+FROM rust:1.90-bullseye
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl unzip ca-certificates clang cmake pkg-config libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-ndk
+RUN cargo install cargo-ndk
+
+# Install Rust Android targets needed by cargo-ndk
+RUN rustup target add aarch64-linux-android armv7-linux-androideabi
+
+# Download Android NDK (example uses r26d; pin whatever you want)
+ARG NDK_ZIP=android-ndk-r26d-linux.zip
+ARG NDK_URL=https://dl.google.com/android/repository/${NDK_ZIP}
+RUN curl -fsSL "$NDK_URL" -o /tmp/ndk.zip \
+ && unzip -q /tmp/ndk.zip -d /opt \
+ && rm /tmp/ndk.zip
+
+ENV ANDROID_NDK_HOME=/opt/android-ndk-r26d
+WORKDIR /work

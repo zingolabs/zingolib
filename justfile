@@ -19,9 +19,16 @@ kotlin: build
       --language kotlin \
       --out-dir ffi/rust/uniffi-output/kotlin
 
-cargo-ndk: kotlin
+# Run all and
+test-all-kotlin:
+    ./ffi/android/ZingolibFfi/gradlew -p ./ffi/android/ZingolibFfi --continue \
+      :zingolibffi:testDebugUnitTest \
+      :zingolibffi:connectedDebugAndroidTest
+
+cargo-ndk: kotlin copy-kt-bindings
     cargo ndk \
         -t arm64-v8a \
+        -o ./ffi/android/ZingolibFfi/zingolibffi/src/main/jniLibs \
         build --release -p ffi
 
 copy-kt-bindings: kotlin
