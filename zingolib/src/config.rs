@@ -183,7 +183,7 @@ pub struct ZingoConfig {
     /// The network type of the blockchain the lightclient is connected to.
     // TODO: change for zingo common public API safe type
     network_type: ChainType,
-    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// The directory where the wallet will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     wallet_dir: PathBuf,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
     wallet_name: String,
