@@ -115,11 +115,11 @@ pub struct LightWallet {
     /// Wallet version that was read from on wallet load.
     read_version: u64,
     /// Network type
-    pub network: ChainType,
+    network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
-    pub birthday: BlockHeight,
+    birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// `Unified_addresses`
