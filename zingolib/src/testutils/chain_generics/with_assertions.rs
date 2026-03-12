@@ -128,7 +128,7 @@ where
             .height as u32,
     );
     let last_known_chain_height = sender
-        .wallet
+        .wallet()
         .read()
         .await
         .sync_state
@@ -261,7 +261,7 @@ where
         // chain scan shows the same
         sender.sync_and_await().await.unwrap();
         let last_known_chain_height = sender
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state

@@ -66,7 +66,7 @@ async fn sync_mainnet_test() {
     loop {
         interval.tick().await;
         {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             tracing::info!(
                 "{}",
                 json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
@@ -80,7 +80,7 @@ async fn sync_mainnet_test() {
             tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
             tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
-        lightclient.wallet.write().await.save().unwrap();
+        lightclient.wallet().write().await.save().unwrap();
     }
 
     // let wallet = lightclient.wallet.read().await;
@@ -234,7 +234,7 @@ async fn store_all_checkpoints_in_verification_window() {
     for height in 12..112 {
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees
@@ -247,7 +247,7 @@ async fn store_all_checkpoints_in_verification_window() {
         );
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees

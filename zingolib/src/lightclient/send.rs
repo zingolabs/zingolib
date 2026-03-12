@@ -25,7 +25,7 @@ impl LightClient {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let calculated_txids = self
-            .wallet
+            .wallet()
             .write()
             .await
             .calculate_transactions(proposal, sending_account)
@@ -41,7 +41,7 @@ impl LightClient {
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let calculated_txids = self
-            .wallet
+            .wallet()
             .write()
             .await
             .calculate_transactions(proposal, shielding_account)
@@ -58,7 +58,7 @@ impl LightClient {
         &mut self,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let opt_proposal = self.wallet.write().await.take_proposal();
+        let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let txids = match proposal {
                 ZingoProposal::Send {
@@ -92,7 +92,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id)
@@ -111,7 +111,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_shield_proposal(account_id)
@@ -126,7 +126,7 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
                 .wallet_transactions

@@ -13,6 +13,7 @@ use std::{
 use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
+use bip0039::Mnemonic;
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
 use zcash_protocol::consensus::{BlockHeight, Parameters};
@@ -23,7 +24,7 @@ use pepper_sync::{
 };
 
 use crate::{
-    config::ZingoConfig,
+    config::{ChainType, ZingoConfig},
     wallet::{
         LightWallet, WalletBase,
         balance::AccountBalance,
@@ -43,6 +44,18 @@ pub mod save;
 pub mod send;
 pub mod sync;
 
+/// Wallet owned by a [`LightClient`], with immutable metadata stored outside the lock.
+pub(crate) struct ClientWallet {
+    /// The chain type, extracted at construction for lock-free access.
+    pub(crate) chain_type: ChainType,
+    /// The wallet birthday height.
+    pub(crate) birthday: BlockHeight,
+    /// The mnemonic seed phrase, if this is a spending wallet.
+    mnemonic: Option<Mnemonic>,
+    /// The locked mutable wallet state.
+    pub(crate) inner: Arc<RwLock<LightWallet>>,
+}
+
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
@@ -53,7 +66,7 @@ pub struct LightClient {
     /// Tor client
     tor_client: Option<tor::Client>,
     /// Wallet data
-    pub wallet: Arc<RwLock<LightWallet>>,
+    pub(crate) client_wallet: ClientWallet,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
@@ -110,10 +123,19 @@ impl LightClient {
                 )));
             }
         }
+        let chain_type = wallet.network;
+        let birthday = wallet.birthday;
+        let mnemonic = wallet.mnemonic().cloned();
+
         Ok(LightClient {
             config,
             tor_client: None,
-            wallet: Arc::new(RwLock::new(wallet)),
+            client_wallet: ClientWallet {
+                chain_type,
+                birthday,
+                mnemonic,
+                inner: Arc::new(RwLock::new(wallet)),
+            },
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -149,6 +171,26 @@ impl LightClient {
     /// Returns config used to create lightclient.
     pub fn config(&self) -> &ZingoConfig {
         &self.config
+    }
+
+    /// Returns the chain type for lock-free access.
+    pub fn chain_type(&self) -> ChainType {
+        self.client_wallet.chain_type
+    }
+
+    /// Returns the wallet birthday height for lock-free access.
+    pub fn birthday(&self) -> BlockHeight {
+        self.client_wallet.birthday
+    }
+
+    /// Returns the mnemonic seed phrase, if this is a spending wallet.
+    pub fn mnemonic(&self) -> Option<&Mnemonic> {
+        self.client_wallet.mnemonic.as_ref()
+    }
+
+    /// Returns a reference to the locked mutable wallet state.
+    pub fn wallet(&self) -> &Arc<RwLock<LightWallet>> {
+        &self.client_wallet.inner
     }
 
     /// Returns tor client.
@@ -215,7 +257,7 @@ impl LightClient {
         receivers: ReceiverSelection,
         account_id: zip32::AccountId,
     ) -> Result<(UnifiedAddressId, UnifiedAddress), KeyError> {
-        self.wallet
+        self.wallet()
             .write()
             .await
             .generate_unified_address(receivers, account_id)
@@ -227,7 +269,7 @@ impl LightClient {
         account_id: zip32::AccountId,
         enforce_no_gap: bool,
     ) -> Result<(TransparentAddressId, TransparentAddress), KeyError> {
-        self.wallet
+        self.wallet()
             .write()
             .await
             .generate_transparent_address(account_id, enforce_no_gap)
@@ -235,12 +277,12 @@ impl LightClient {
 
     /// Wrapper for [`crate::wallet::LightWallet::unified_addresses_json`].
     pub async fn unified_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.unified_addresses_json()
+        self.wallet().read().await.unified_addresses_json()
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::transparent_addresses_json`].
     pub async fn transparent_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.transparent_addresses_json()
+        self.wallet().read().await.transparent_addresses_json()
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::account_balance`].
@@ -248,7 +290,7 @@ impl LightClient {
         &self,
         account_id: zip32::AccountId,
     ) -> Result<AccountBalance, BalanceError> {
-        self.wallet.read().await.account_balance(account_id)
+        self.wallet().read().await.account_balance(account_id)
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::transaction_summaries`].
@@ -256,7 +298,7 @@ impl LightClient {
         &self,
         reverse_sort: bool,
     ) -> Result<TransactionSummaries, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .transaction_summaries(reverse_sort)
@@ -268,7 +310,7 @@ impl LightClient {
         &self,
         sort_highest_to_lowest: bool,
     ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .value_transfers(sort_highest_to_lowest)
@@ -280,14 +322,14 @@ impl LightClient {
         &self,
         filter: Option<&str>,
     ) -> Result<ValueTransfers, SummaryError> {
-        self.wallet.read().await.messages_containing(filter).await
+        self.wallet().read().await.messages_containing(filter).await
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_memobytes_to_address`].
     pub async fn do_total_memobytes_to_address(
         &self,
     ) -> Result<TotalMemoBytesToAddress, SummaryError> {
-        self.wallet
+        self.wallet()
             .read()
             .await
             .do_total_memobytes_to_address()
@@ -296,12 +338,16 @@ impl LightClient {
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_spends_to_address`].
     pub async fn do_total_spends_to_address(&self) -> Result<TotalSendsToAddress, SummaryError> {
-        self.wallet.read().await.do_total_spends_to_address().await
+        self.wallet()
+            .read()
+            .await
+            .do_total_spends_to_address()
+            .await
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::do_total_value_to_address`].
     pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
-        self.wallet.read().await.do_total_value_to_address().await
+        self.wallet().read().await.do_total_value_to_address().await
     }
 }
 

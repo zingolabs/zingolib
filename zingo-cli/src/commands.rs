@@ -128,7 +128,7 @@ impl Command for BirthdayCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.wallet.read().await.birthday.to_string() })
+        RT.block_on(async move { lightclient.wallet().read().await.birthday.to_string() })
     }
 }
 
@@ -148,7 +148,7 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             if wallet.mnemonic().is_some() {
                 object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                         "transparent" => true,
@@ -412,7 +412,7 @@ impl Command for SyncCommand {
                 Err(e) => format!("Error: {e}"),
             },
             "status" => RT.block_on(async move {
-                match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
+                match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
                     Ok(status) => json::JsonValue::from(status).pretty(2),
                     Err(e) => format!("Error: {e}"),
                 }
@@ -479,7 +479,7 @@ impl Command for ClearCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            lightclient.wallet.write().await.clear_all();
+            lightclient.wallet().write().await.clear_all();
 
             let result = object! { "result" => "success" };
             result.pretty(2)
@@ -597,7 +597,7 @@ impl Command for CurrentPriceCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .write()
                 .await
                 .update_current_price(lightclient.tor_client())
@@ -650,7 +650,7 @@ impl Command for SpendableBalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             let spendable_balance =
                 match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, false) {
                     Ok(bal) => bal,
@@ -754,7 +754,7 @@ impl Command for NewUnifiedAddressCommand {
         }
 
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let mut wallet = lightclient.wallet().write().await;
             let network = wallet.network;
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
@@ -795,7 +795,7 @@ impl Command for NewTransparentAddressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let mut wallet = lightclient.wallet().write().await;
             let network = wallet.network;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
@@ -846,7 +846,7 @@ impl Command for NewTransparentAddressAllowGapCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             // Generate without enforcing the no-gap constraint
-            let mut wallet = lightclient.wallet.write().await;
+            let mut wallet = lightclient.wallet().write().await;
             let network = wallet.network;
 
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
@@ -932,7 +932,7 @@ impl Command for CheckAddressCommand {
         }
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .is_address_derived_by_keys(args[0])
@@ -1019,7 +1019,7 @@ impl Command for ExportUfvkCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             let ufvk: UnifiedFullViewingKey = match wallet
                 .unified_key_store
                 .get(&zip32::AccountId::ZERO)
@@ -1413,7 +1413,7 @@ impl Command for RecoveryInfoCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.read().await.recovery_info() {
+            match lightclient.wallet().read().await.recovery_info() {
                 Some(backup_info) => backup_info.to_string(),
                 None => "error: no mnemonic found. wallet loaded from key.".to_string(),
             }
@@ -1622,7 +1622,7 @@ impl Command for SettingsCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let mut wallet = lightclient.wallet().write().await;
 
             if args.is_empty() {
                 return format!(
@@ -1691,7 +1691,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet().read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
         })
     }
 }
@@ -1732,7 +1732,7 @@ impl Command for NotesCommand {
         };
 
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
 
             json::object! {
                 "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
@@ -1780,7 +1780,7 @@ impl Command for CoinsCommand {
 
         RT.block_on(async move {
             json::object! {
-                "transparent_coins" => json::JsonValue::from(lightclient.wallet.read().await.coin_summaries(all_coins)),
+                "transparent_coins" => json::JsonValue::from(lightclient.wallet().read().await.coin_summaries(all_coins)),
             }
             .pretty(2)
         })
@@ -1818,7 +1818,7 @@ impl Command for RemoveTransactionCommand {
 
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .write()
                 .await
                 .remove_failed_transaction(txid)

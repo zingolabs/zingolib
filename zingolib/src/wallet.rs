@@ -284,6 +284,12 @@ impl LightWallet {
         self.read_version
     }
 
+    /// Returns the chain type.
+    #[must_use]
+    pub fn chain_type(&self) -> ChainType {
+        self.network
+    }
+
     /// Returns the wallet's mnemonic (seed and phrase).
     #[must_use]
     pub fn mnemonic(&self) -> Option<&Mnemonic> {

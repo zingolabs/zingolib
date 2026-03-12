@@ -28,11 +28,11 @@ impl LightClient {
         }
 
         let client = zingo_netutils::get_client(self.config.indexer_uri()).await?;
-        let wallet_guard = self.wallet.read().await;
+        let wallet_guard = self.wallet().read().await;
         let network = wallet_guard.network;
         let sync_config = wallet_guard.wallet_settings.sync_config.clone();
         drop(wallet_guard);
-        let wallet = self.wallet.clone();
+        let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();
         let sync_handle = tokio::spawn(async move {
             pepper_sync::sync(client, &network, wallet, sync_mode, sync_config).await
@@ -56,7 +56,7 @@ impl LightClient {
                 interval.tick().await;
             }
         }
-        self.wallet.write().await.clear_all();
+        self.wallet().write().await.clear_all();
         self.sync().await
     }
 

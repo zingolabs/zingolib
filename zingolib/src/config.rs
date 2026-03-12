@@ -173,6 +173,18 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     .unwrap()
 }
 
+/// Parameters consumed during `LightClient` and `LightWallet` initialization
+/// that are not needed after construction.
+#[derive(Clone, Debug)]
+pub struct LightClientInitParams {
+    /// The chain type (network) for this client.
+    pub chain_type: ChainType,
+    /// Wallet settings.
+    pub wallet_settings: WalletSettings,
+    /// Number of accounts to initialize.
+    pub no_of_accounts: NonZeroU32,
+}
+
 /// Configuration data for the creation of a `LightClient`.
 // TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
 // lightclient or lightwallet if it needs to retained in memory.

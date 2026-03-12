@@ -230,7 +230,7 @@ pub async fn sync_to_target_height(
     client.sync_and_await().await?;
     while u32::from(
         client
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state

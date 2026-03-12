@@ -15,7 +15,7 @@ pub async fn new_client_from_save_buffer(
 ) -> Result<LightClient, LightClientError> {
     let mut wallet_bytes: Vec<u8> = vec![];
     template_client
-        .wallet
+        .wallet()
         .write()
         .await
         .write(&mut wallet_bytes, &template_client.config.network_type())
@@ -143,7 +143,7 @@ pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
-    let wallet = client.wallet.read().await;
+    let wallet = client.wallet().read().await;
 
     txids.map(|txid| {
         wallet

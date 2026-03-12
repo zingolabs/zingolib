@@ -469,7 +469,7 @@ mod fast {
             true,
             local_net.validator().get_activation_heights().await,
         );
-        let network = recipient.wallet.read().await.network;
+        let network = recipient.wallet().read().await.network;
 
         // create a range of UAs to be discovered when recipient is reset
         let orchard_only_addr = recipient
@@ -521,7 +521,7 @@ mod fast {
         );
         if let Some(_ua) =
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -534,7 +534,7 @@ mod fast {
         }
         if let Some(_ua) =
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -547,7 +547,7 @@ mod fast {
         }
         if let Some(_ua) =
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -563,7 +563,7 @@ mod fast {
         recipient.sync_and_await().await.unwrap();
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -577,7 +577,7 @@ mod fast {
         );
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -591,7 +591,7 @@ mod fast {
         );
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -619,7 +619,7 @@ mod fast {
 
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .spendable_balance::<OrchardNote>(zip32::AccountId::ZERO, false)
@@ -1007,7 +1007,7 @@ mod fast {
             let (ref local_net, ref faucet, mut sender, _txid) =
                 scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet.read().await);
+            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
                 Zatoshis::from_u64(100_000).unwrap(),
@@ -1023,7 +1023,7 @@ mod fast {
             let _sent_txids_according_to_broadcast =
                 sender.send_stored_proposal(true).await.unwrap();
             let _txids = sender
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .wallet_transactions
@@ -1033,7 +1033,10 @@ mod fast {
             increase_height_and_wait_for_client(local_net, &mut sender, 1)
                 .await
                 .unwrap();
-            assert_eq!(sender.wallet.read().await.wallet_transactions.len(), 3usize);
+            assert_eq!(
+                sender.wallet().read().await.wallet_transactions.len(),
+                3usize
+            );
 
             // FIXME: add tex addresses to encoded memos
             // let val_tranfers = sender.value_transfers(true).await.unwrap();
@@ -1109,7 +1112,7 @@ mod fast {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        let wallet = recipient.wallet.read().await;
+        let wallet = recipient.wallet().read().await;
         let preshield_utxos = wallet
             .wallet_outputs::<TransparentCoin>()
             .into_iter()
@@ -1131,7 +1134,7 @@ mod fast {
             .await
             .unwrap();
 
-        let wallet = recipient.wallet.read().await;
+        let wallet = recipient.wallet().read().await;
         let postshield_utxos = wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(postshield_utxos.len(), 1);
         assert!(
@@ -1199,7 +1202,7 @@ mod fast {
             false,
             local_net.validator().get_activation_heights().await,
         );
-        let network = recipient.wallet.read().await.network;
+        let network = recipient.wallet().read().await.network;
         let (new_address_id, new_address) = recipient
             .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
@@ -1311,7 +1314,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 .await;
 
         let unconfirmed_balance = faucet
-            .wallet
+            .wallet()
             .read()
             .await
             .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
@@ -1325,7 +1328,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
         assert_eq!(
             faucet
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .get_filtered_balance_mut::<TransparentCoin, _>(|_, _| true, AccountId::ZERO)
@@ -1541,7 +1544,7 @@ mod slow {
             .await
             .unwrap();
 
-        let recipient_wallet = recipient.wallet.read().await;
+        let recipient_wallet = recipient.wallet().read().await;
         let transparent_coins = recipient_wallet.wallet_outputs::<TransparentCoin>();
         assert_eq!(transparent_coins.len(), 0);
         let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
@@ -1843,7 +1846,7 @@ mod slow {
         check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
         // Extract viewing keys
-        let original_wallet = original_recipient.wallet.read().await;
+        let original_wallet = original_recipient.wallet().read().await;
         let [o_fvk, s_fvk, t_fvk] = build_fvks_from_unified_keystore(
             original_wallet
                 .unified_key_store
@@ -1877,7 +1880,7 @@ mod slow {
                 .await
                 .unwrap();
             {
-                let watch_wallet = watch_client.wallet.read().await;
+                let watch_wallet = watch_client.wallet().read().await;
                 let orchard_notes = watch_wallet.note_summaries::<OrchardNote>(true);
                 let sapling_notes = watch_wallet.note_summaries::<SaplingNote>(true);
                 let transparent_coin = watch_wallet.coin_summaries(true);
@@ -1933,7 +1936,7 @@ mod slow {
 
         // 3. Test the list
         let transaction = recipient
-            .wallet
+            .wallet()
             .read()
             .await
             .transaction_summaries(false)
@@ -2218,7 +2221,7 @@ mod slow {
             - (3 * u64::from(MARGINAL_FEE));
 
         {
-            let recipient_wallet = recipient.wallet.read().await;
+            let recipient_wallet = recipient.wallet().read().await;
             assert_eq!(
                 recipient_wallet
                     .unconfirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
@@ -2440,7 +2443,7 @@ TransactionSummary {
             - (5 * u64::from(MINIMUM_FEE));
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .confirmed_balance::<OrchardNote>(zip32::AccountId::ZERO)
@@ -2458,7 +2461,7 @@ TransactionSummary {
         // check start state
         faucet.sync_and_await().await.unwrap();
         let wallet_fully_scanned_height = faucet
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state
@@ -2709,7 +2712,7 @@ TransactionSummary {
                 None,
             )
             .await;
-        let network = recipient.wallet.read().await.network;
+        let network = recipient.wallet().read().await.network;
 
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
@@ -2727,7 +2730,7 @@ TransactionSummary {
             .unwrap();
 
         let transactions = recipient
-            .wallet
+            .wallet()
             .read()
             .await
             .transaction_summaries(false)
@@ -2787,7 +2790,7 @@ TransactionSummary {
 
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .sync_state
@@ -2807,7 +2810,7 @@ TransactionSummary {
 
         {
             let recipient_sapling_address = *recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -2818,7 +2821,7 @@ TransactionSummary {
                 .unwrap()
                 .sapling()
                 .unwrap();
-            let transactions = &recipient.wallet.read().await.wallet_transactions;
+            let transactions = &recipient.wallet().read().await.wallet_transactions;
             assert_eq!(transactions.len(), 1);
             let received_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&faucet_funding_txid).unwrap())
@@ -2864,14 +2867,14 @@ TransactionSummary {
         // 5.1 Check notes
 
         let sapling_notes = recipient
-            .wallet
+            .wallet()
             .read()
             .await
             .note_summaries::<SaplingNote>(true);
 
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .wallet_outputs::<OrchardNote>()
@@ -2908,7 +2911,7 @@ TransactionSummary {
 
         {
             // Check transaction list
-            let transactions = &recipient.wallet.read().await.wallet_transactions;
+            let transactions = &recipient.wallet().read().await.wallet_transactions;
             assert_eq!(transactions.len(), 2);
             let sent_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&sent_transaction_id).unwrap())
@@ -2920,7 +2923,7 @@ TransactionSummary {
             assert_eq!(sent_transaction.status().get_height(), 5.into());
 
             let faucet_sapling_address = faucet
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .unified_addresses()
@@ -2951,7 +2954,7 @@ TransactionSummary {
             .unwrap();
 
         {
-            let transactions = &recipient.wallet.read().await.wallet_transactions;
+            let transactions = &recipient.wallet().read().await.wallet_transactions;
             let sent_transaction = transactions
                 .get(&txid_from_hex_encoded_str(&sent_transaction_id).unwrap())
                 .unwrap();
@@ -2964,7 +2967,7 @@ TransactionSummary {
 
         // 7. Check the notes to see that we have one spent sapling note and one unspent sapling note (change)
         // Which is immediately spendable.
-        let recipient_wallet = recipient.wallet.read().await;
+        let recipient_wallet = recipient.wallet().read().await;
         let sapling_notes = recipient_wallet.note_summaries::<SaplingNote>(true);
         let orchard_notes = recipient_wallet.note_summaries::<OrchardNote>(true);
 
@@ -3841,7 +3844,7 @@ TransactionSummary {
 
         let sent_txid = txid_from_hex_encoded_str(&sent_transaction_id).unwrap();
         let orchard_note = recipient
-            .wallet
+            .wallet()
             .read()
             .await
             .wallet_transactions
@@ -3865,7 +3868,7 @@ TransactionSummary {
         .unwrap();
         recipient.sync_and_await().await.unwrap();
         {
-            let recipient_wallet = recipient.wallet.read().await;
+            let recipient_wallet = recipient.wallet().read().await;
             let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
@@ -3909,7 +3912,7 @@ TransactionSummary {
             .await
             .unwrap();
         {
-            let recipient_wallet = recipient.wallet.read().await;
+            let recipient_wallet = recipient.wallet().read().await;
             let sapling_notes = recipient_wallet.wallet_outputs::<SaplingNote>();
             assert_eq!(sapling_notes.len(), 0);
             let orchard_notes = recipient_wallet.wallet_outputs::<OrchardNote>();
@@ -4347,7 +4350,7 @@ async fn mine_to_transparent_coinbase_maturity() {
     // Balance should be 0 because coinbase needs 100 confirmations
     assert_eq!(
         faucet
-            .wallet
+            .wallet()
             .read()
             .await
             .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
@@ -4361,7 +4364,7 @@ async fn mine_to_transparent_coinbase_maturity() {
         .unwrap();
 
     let mature_balance = faucet
-        .wallet
+        .wallet()
         .read()
         .await
         .confirmed_balance_excluding_dust::<TransparentCoin>(zip32::AccountId::ZERO)
@@ -4500,7 +4503,7 @@ mod send_all {
 
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .confirmed_balance_excluding_dust::<SaplingNote>(zip32::AccountId::ZERO)
@@ -4510,7 +4513,7 @@ mod send_all {
         );
         assert_eq!(
             recipient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .confirmed_balance_excluding_dust::<OrchardNote>(zip32::AccountId::ZERO)
@@ -4619,7 +4622,7 @@ mod testnet_test {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await;
-            while sync_status(&*lightclient.wallet.read().await)
+            while sync_status(&*lightclient.wallet().read().await)
                 .await
                 .unwrap()
                 .percentage_total_outputs_scanned
