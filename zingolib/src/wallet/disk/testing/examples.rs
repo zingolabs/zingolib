@@ -10,7 +10,7 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfig, ZingoConfigBuilder};
+use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfigBuilder};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
@@ -293,13 +293,13 @@ impl NetworkSeedVersion {
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     })
                     .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
-                    .build()
+                    .create()
             }
             NetworkSeedVersion::Testnet(_) => crate::config::ZingoConfig::create_testnet(),
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let wallet = self.load_example_wallet(config.network_type());
+        let wallet = self.load_example_wallet(config.chain_type);
 
         LightClient::create_from_wallet(wallet, config, true).unwrap()
     }

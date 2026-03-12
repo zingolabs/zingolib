@@ -18,7 +18,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::config::{ChainType, ZingoConfigBuilder};
 use zingolib::lightclient::LightClient;
 
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
@@ -337,7 +337,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             .get_one::<http::Uri>("server")
             .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::construct_lightwalletd_uri(server);
+        // TODO: Handle NONE?!
+        let server = zingolib::config::parse_indexer_uri(server.expect("a uri string"));
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -381,9 +382,9 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    let config = ZingoConfig::builder()
+    let config = ZingoConfigBuilder::default()
         .set_indexer_uri(filled_template.server.clone())
-        .set_network_type(filled_template.chaintype)
+        .set_chain(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
         .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
@@ -394,12 +395,12 @@ pub fn startup(
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
         .set_wallet_name("".to_string())
-        .build();
+        .create();
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                         std::io::Error::new(

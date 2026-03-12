@@ -257,6 +257,7 @@ impl ZingoConfigBuilder {
         self
     }
 
+    /// TODO: Document this pub fn
     pub fn set_wallet_name(&mut self, wallet_name: String) -> &mut Self {
         self.wallet_name = Some(PathBuf::from(wallet_name));
         self
