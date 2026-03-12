@@ -7,7 +7,7 @@ use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::config::{ChainType, ZingoConfig, ZingoConfigBuilder, some_infallible_uri};
+use zingolib::config::{ChainType, ZingoConfigBuilder, some_infallible_uri};
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;

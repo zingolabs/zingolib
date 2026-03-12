@@ -1454,7 +1454,7 @@ mod slow {
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
-    use zingolib::config::{ChainType, ZingoConfig, ZingoConfigBuilder};
+    use zingolib::config::{ChainType, ZingoConfigBuilder};
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
@@ -4574,10 +4574,7 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{
-            ChainType, DEFAULT_TESTNET_INDEXER_URI, ZingoConfig, ZingoConfigBuilder,
-            some_infallible_uri,
-        },
+        config::{ChainType, DEFAULT_TESTNET_INDEXER_URI, ZingoConfigBuilder, some_infallible_uri},
         lightclient::LightClient,
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
