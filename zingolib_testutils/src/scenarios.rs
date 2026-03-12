@@ -134,7 +134,7 @@ async fn zebrad_shielded_funds<V, I>(
 /// Struct for building lightclients for integration testing
 pub struct ClientBuilder {
     /// Indexer URI
-    pub server_id: http::Uri,
+    pub indexer_uri: Option<http::Uri>,
     /// Directory for wallet files
     pub zingo_datadir: TempDir,
     client_number: u8,
@@ -142,10 +142,10 @@ pub struct ClientBuilder {
 
 impl ClientBuilder {
     /// TODO: Add Doc Comment Here!
-    pub fn new(server_id: http::Uri, zingo_datadir: TempDir) -> Self {
+    pub fn new(indexer_uri: Option<http::Uri>, zingo_datadir: TempDir) -> Self {
         let client_number = 0;
         ClientBuilder {
-            server_id,
+            indexer_uri,
             zingo_datadir,
             client_number,
         }
@@ -163,18 +163,17 @@ impl ClientBuilder {
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
+        self.create_lightclient_config(PathBuf::from(conf_path), configured_activation_heights)
     }
 
-    /// TODO: Add Doc Comment Here!
-    pub fn create_clientconfig(
+    pub fn create_lightclient_config(
         &self,
         conf_path: PathBuf,
         configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         ZingoConfig::builder()
-            .set_indexer_uri(self.server_id.clone())
+            .set_indexer_uri(self.indexer_uri.clone().unwrap())
             .set_network_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
             .set_wallet_name("".to_string())
@@ -185,7 +184,6 @@ impl ClientBuilder {
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             })
-            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
             .build()
     }
 
@@ -198,7 +196,7 @@ impl ClientBuilder {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
             seeds::ABANDON_ART_SEED.to_string(),
-            1,
+            0,
             overwrite,
             configured_activation_heights,
         )
@@ -459,7 +457,7 @@ pub async fn custom_clients(
     }
 
     let client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().listen_port()),
+        Some(port_to_localhost_uri(local_net.indexer().listen_port())),
         tempfile::tempdir().unwrap(),
     );
 
@@ -490,7 +488,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
 pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().port()),
+        Some(port_to_localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -519,7 +517,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().port()),
+        Some(port_to_localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -577,7 +575,7 @@ pub async fn funded_transparent_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().port()),
+        Some(port_to_localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -618,7 +616,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        port_to_localhost_uri(local_net.indexer().port()),
+        Some(port_to_localhost_uri(local_net.indexer().port())),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =

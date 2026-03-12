@@ -1781,7 +1781,7 @@ mod slow {
             local_net.validator().get_activation_heights().await,
         );
         let zingo_config = ZingoConfig::builder()
-            .set_indexer_uri(client_builder.server_id)
+            .set_indexer_uri(client_builder.indexer_uri.unwrap())
             .set_network_type(ChainType::Regtest(
                 local_net.validator().get_activation_heights().await,
             ))

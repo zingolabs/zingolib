@@ -65,7 +65,7 @@ pub(crate) mod conduct_chain {
 
         /// the mock chain is fed to the Client via lightwalletd. where is that server to be found?
         fn lightserver_uri(&self) -> Option<http::Uri> {
-            Some(self.client_builder.server_id.clone())
+            Some(self.client_builder.indexer_uri.clone().expect("some uri"))
         }
 
         async fn create_faucet(&mut self) -> LightClient {
@@ -124,7 +124,7 @@ pub(crate) mod conduct_chain {
 
             // trees
             let trees = zingolib::grpc_connector::get_trees(
-                self.client_builder.server_id.clone(),
+                self.client_builder.indexer_uri.clone().expect("some uri"),
                 height_before,
             )
             .await
