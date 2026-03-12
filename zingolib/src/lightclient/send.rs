@@ -24,15 +24,21 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet
-            .write()
-            .await
-            .calculate_transactions(proposal, sending_account)
-            .await
-            .map_err(SendError::CalculateSendError)?;
+        if let Some(uri) = self.indexer_uri() {
+            let calculated_txids = self
+                .wallet
+                .write()
+                .await
+                .calculate_transactions(proposal, sending_account)
+                .await
+                .map_err(SendError::CalculateSendError)?;
 
-        self.transmit_transactions(calculated_txids).await
+            self.transmit_transactions(calculated_txids).await
+        } else {
+            LightClientError::SendError(SendError::TransmissionError(TransmissionError::Offline(
+                "FOOL YOU ARE OFFLINE!",
+            )))
+        }
     }
 
     async fn shield(

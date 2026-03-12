@@ -73,4 +73,7 @@ pub enum TransmissionError {
         "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
     )]
     IncorrectTxidFromServer(TxId, TxId),
+    /// Attempt Offline Transmission
+    #[error("{0}")]
+    TransmissionFailed(String),
 }

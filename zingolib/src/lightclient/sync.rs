@@ -27,7 +27,8 @@ impl LightClient {
             ));
         }
 
-        let client = zingo_netutils::get_client(self.config.indexer_uri()).await?;
+        let client =
+            zingo_netutils::get_client(self.config.get_indexer_uri().expect("TO FIX THIS")).await?;
         let wallet_guard = self.wallet.read().await;
         let network = wallet_guard.network;
         let sync_config = wallet_guard.wallet_settings.sync_config.clone();

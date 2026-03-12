@@ -71,7 +71,7 @@ impl LightClient {
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         let sapling_activation_height = config
-            .network_type()
+            .chain_type()
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
         let birthday = sapling_activation_height.max(chain_height - 100);
@@ -157,13 +157,13 @@ impl LightClient {
     }
 
     /// Returns URI of the indexer the lightclient is connected to.
-    pub fn indexer_uri(&self) -> http::Uri {
-        self.config.indexer_uri()
+    pub fn indexer_uri(&self) -> Option<http::Uri> {
+        self.config.get_indexer_uri()
     }
 
     /// Set indexer uri.
     pub fn set_indexer_uri(&mut self, server: http::Uri) {
-        self.config.set_indexer_uri(server);
+        *self.config = Some(server);
     }
 
     /// Creates a tor client for current price updates.
@@ -173,7 +173,7 @@ impl LightClient {
         &mut self,
         tor_dir: Option<PathBuf>,
     ) -> Result<(), LightClientError> {
-        let tor_dir = tor_dir.unwrap_or_else(|| self.config.wallet_dir().join("tor"));
+        let tor_dir = tor_dir.unwrap_or_else(|| self.config.get_zingo_wallet_dir().join("tor"));
         tokio::fs::create_dir_all(tor_dir.as_path())
             .await
             .map_err(LightClientError::FileError)?;
@@ -190,22 +190,26 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        match crate::grpc_connector::get_info(self.indexer_uri()).await {
-            Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer_uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
+        if let Some(uri) = self.indexer_uri() {
+            match crate::grpc_connector::get_info(uri.clone()).await {
+                Ok(i) => {
+                    let o = json::object! {
+                        "version" => i.version,
+                        "git_commit" => i.git_commit,
+                        "server_uri" => uri.to_string(),
+                        "vendor" => i.vendor,
+                        "taddr_support" => i.taddr_support,
+                        "chain_name" => i.chain_name,
+                        "sapling_activation_height" => i.sapling_activation_height,
+                        "consensus_branch_id" => i.consensus_branch_id,
+                        "latest_block_height" => i.block_height
+                    };
+                    o.pretty(2)
+                }
+                Err(e) => e,
             }
-            Err(e) => e,
+        } else {
+            "NO SERVER FOR YOU FOOL!".to_string()
         }
     }
 
