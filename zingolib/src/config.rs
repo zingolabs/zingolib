@@ -57,15 +57,37 @@ pub enum ChainType {
     Regtest(ActivationHeights),
 }
 
+impl ChainType {
+    const TESTNET_STR: &str = "test";
+    const MAINNET_STR: &str = "main";
+    const REGTEST_STR: &str = "regtest";
+
+    /// Returns the string label for this chain type.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChainType::Testnet => Self::TESTNET_STR,
+            ChainType::Mainnet => Self::MAINNET_STR,
+            ChainType::Regtest(_) => Self::REGTEST_STR,
+        }
+    }
+}
+
 impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ChainType::{Mainnet, Regtest, Testnet};
-        let name = match self {
-            Testnet => "test",
-            Mainnet => "main",
-            Regtest(_) => "regtest",
-        };
-        write!(f, "{name}")
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ChainType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            ChainType::MAINNET_STR => Ok(ChainType::Mainnet),
+            ChainType::TESTNET_STR => Ok(ChainType::Testnet),
+            ChainType::REGTEST_STR => Ok(ChainType::Regtest(ActivationHeights::default())),
+            other => Err(format!("Unknown chain type: {other}")),
+        }
     }
 }
 

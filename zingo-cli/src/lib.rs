@@ -8,6 +8,7 @@ mod commands;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::str::FromStr as _;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use bip0039::Mnemonic;
@@ -338,19 +339,12 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         // TODO: Handle NONE?!
-        let server = zingolib::config::parse_indexer_uri(server.expect("a uri string"));
+        let server = zingolib::config::parse_indexer_uri(server.expect("a uri string"))?;
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
+            ChainType::from_str(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
-
-        // Test to make sure the server has all of scheme, host and port
-        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-            ));
-        }
 
         let sync = !matches.get_flag("nosync");
         let waitsync = matches.get_flag("waitsync");
