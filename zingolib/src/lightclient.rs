@@ -323,7 +323,7 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, ZingoConfig},
+        config::{ChainType, ZingoConfigBuilder},
         lightclient::error::LightClientError,
         wallet::LightWallet,
     };
@@ -337,19 +337,19 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::builder()
-            .set_network_type(ChainType::Regtest(ActivationHeights::default()))
+        let config = ZingoConfigBuilder::default()
+            .set_chain(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
-            .build();
+            .create();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts(),
+                    no_of_accounts: config.no_of_accounts,
                 },
                 1.into(),
-                config.wallet_settings(),
+                config.wallet_settings.clone(),
             )
             .unwrap(),
             config.clone(),
@@ -362,13 +362,13 @@ mod tests {
 
         let lc_file_exists_error = LightClient::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts(),
+                    no_of_accounts: config.no_of_accounts,
                 },
                 1.into(),
-                config.wallet_settings(),
+                config.wallet_settings.clone(),
             )
             .unwrap(),
             config,

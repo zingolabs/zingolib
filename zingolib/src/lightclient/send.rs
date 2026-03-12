@@ -243,7 +243,7 @@ mod test {
     use zingo_test_vectors::seeds::ABANDON_ART_SEED;
 
     use crate::{
-        config::ZingoConfig,
+        config::ZingoConfigBuilder,
         lightclient::{LightClient, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
         testutils::chain_generics::{
@@ -254,10 +254,10 @@ mod test {
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
-        let config = ZingoConfig::builder().build();
+        let config = ZingoConfigBuilder::default().create();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
                     no_of_accounts: 1.try_into().unwrap(),
