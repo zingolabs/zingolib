@@ -190,7 +190,7 @@ mod tests {
     };
 
     fn test_wallet() -> LightWallet {
-        let config = ZingoConfig::builder().build();
+        let config = ZingoConfigBuilder::default().create();
         LightWallet::new(
             config.network_type(),
             WalletBase::FreshEntropy {

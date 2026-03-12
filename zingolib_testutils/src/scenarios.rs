@@ -34,6 +34,7 @@ use network_combo::DefaultValidator;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
+use zingolib::config::ZingoConfigBuilder;
 use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
@@ -172,9 +173,9 @@ impl ClientBuilder {
         configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
-        ZingoConfig::builder()
-            .set_indexer_uri(self.indexer_uri.clone().unwrap())
-            .set_network_type(ChainType::Regtest(configured_activation_heights))
+        ZingoConfigBuilder::default()
+            .set_indexer_uri(self.indexer_uri.clone())
+            .set_chain(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
             .set_wallet_name("".to_string())
             .set_wallet_settings(WalletSettings {
@@ -184,7 +185,7 @@ impl ClientBuilder {
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             })
-            .build()
+            .create()
     }
 
     /// TODO: Add Doc Comment Here!
@@ -212,13 +213,13 @@ impl ClientBuilder {
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
         let mut wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),
             },
             (birthday as u32).into(),
-            config.wallet_settings(),
+            config.wallet_settings.clone(),
         )
         .unwrap();
         wallet
