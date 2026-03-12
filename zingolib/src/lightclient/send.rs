@@ -24,7 +24,7 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, OutputRef>,
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        if let Some(uri) = self.indexer_uri() {
+        if let Some(indexer_uri) = self.indexer_uri() {
             let calculated_txids = self
                 .wallet
                 .write()
@@ -33,10 +33,11 @@ impl LightClient {
                 .await
                 .map_err(SendError::CalculateSendError)?;
 
-            self.transmit_transactions(calculated_txids).await
+            self.transmit_transactions(indexer_uri, calculated_txids)
+                .await
         } else {
-            LightClientError::SendError(SendError::TransmissionError(TransmissionError::Offline(
-                "FOOL YOU ARE OFFLINE!",
+            Err(LightClientError::SendError(SendError::TransmissionError(
+                TransmissionError::OfflineMode("FOOL YOU ARE OFFLINE!".to_string()),
             )))
         }
     }
@@ -46,15 +47,22 @@ impl LightClient {
         proposal: Proposal<zip317::FeeRule, Infallible>,
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let calculated_txids = self
-            .wallet
-            .write()
-            .await
-            .calculate_transactions(proposal, shielding_account)
-            .await
-            .map_err(SendError::CalculateShieldError)?;
+        if let Some(indexer_uri) = self.indexer_uri() {
+            let calculated_txids = self
+                .wallet
+                .write()
+                .await
+                .calculate_transactions(proposal, shielding_account)
+                .await
+                .map_err(SendError::CalculateShieldError)?;
 
-        self.transmit_transactions(calculated_txids).await
+            self.transmit_transactions(indexer_uri, calculated_txids)
+                .await
+        } else {
+            Err(LightClientError::SendError(SendError::TransmissionError(
+                TransmissionError::OfflineMode("FOOL YOU ARE OFFLINE!".to_string()),
+            )))
+        }
     }
 
     /// Creates and transmits transactions from a stored proposal.
@@ -130,6 +138,7 @@ impl LightClient {
     /// Returns list of txids for successfully transmitted transactions.
     async fn transmit_transactions(
         &mut self,
+        indexer_uri: http::Uri,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let mut wallet = self.wallet.write().await;
@@ -166,7 +175,7 @@ impl LightClient {
             let mut retry_count = 0;
             let txid_from_server = loop {
                 let transmission_result = crate::grpc_connector::send_transaction(
-                    self.indexer_uri(),
+                    indexer_uri.clone(),
                     transaction_bytes.clone().into_boxed_slice(),
                 )
                 .await

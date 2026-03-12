@@ -10,7 +10,7 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
+use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfig, ZingoConfigBuilder};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
@@ -279,11 +279,11 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
+                let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
 
-                ZingoConfig::builder()
-                    .set_indexer_uri(lightwalletd_uri)
-                    .set_network_type(ChainType::Regtest(ActivationHeights::default()))
+                ZingoConfigBuilder::default()
+                    .set_indexer_uri(indexer_uri)
+                    .set_chain(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name("".to_string())
                     .set_wallet_settings(WalletSettings {
                         sync_config: SyncConfig {

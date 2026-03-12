@@ -71,19 +71,19 @@ impl LightClient {
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         let sapling_activation_height = config
-            .chain_type()
+            .chain_type
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
         let birthday = sapling_activation_height.max(chain_height - 100);
 
         Self::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::FreshEntropy {
-                    no_of_accounts: config.no_of_accounts(),
+                    no_of_accounts: config.no_of_accounts,
                 },
                 birthday,
-                config.wallet_settings(),
+                config.wallet_settings.clone(),
             )?,
             config,
             overwrite,
@@ -139,8 +139,7 @@ impl LightClient {
         let buffer = BufReader::new(File::open(wallet_path).map_err(LightClientError::FileError)?);
 
         Self::create_from_wallet(
-            LightWallet::read(buffer, config.network_type())
-                .map_err(LightClientError::FileError)?,
+            LightWallet::read(buffer, config.chain_type).map_err(LightClientError::FileError)?,
             config,
             true,
         )
@@ -163,7 +162,7 @@ impl LightClient {
 
     /// Set indexer uri.
     pub fn set_indexer_uri(&mut self, server: http::Uri) {
-        *self.config = Some(server);
+        *self.config.indexer_uri.write().unwrap() = Some(server);
     }
 
     /// Creates a tor client for current price updates.

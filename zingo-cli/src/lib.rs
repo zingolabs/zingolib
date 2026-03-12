@@ -66,7 +66,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")

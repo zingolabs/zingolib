@@ -111,7 +111,7 @@ pub const ZENNIES_FOR_ZINGO_DONATION_ADDRESS: &str = "u1p32nu0pgev5cr0u6t4ja9lcn
 pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 
 /// The lightserver that handles blockchain requests
-pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
+pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
 
 /// Default indexer uri for testnet.
 pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str = "https://testnet.zec.rocks";
@@ -237,8 +237,8 @@ impl ZingoConfigBuilder {
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
-    pub fn set_lightwalletd_uri(&mut self, lightwalletd_uri: http::Uri) -> &mut Self {
-        self.indexer_uri = Some(lightwalletd_uri);
+    pub fn set_indexer_uri(&mut self, indexer_uri: http::Uri) -> &mut Self {
+        self.indexer_uri = Some(indexer_uri);
         self
     }
 
@@ -254,6 +254,11 @@ impl ZingoConfigBuilder {
     /// ```
     pub fn set_chain(&mut self, chain: ChainType) -> &mut Self {
         self.chain_type = chain;
+        self
+    }
+
+    pub fn set_wallet_name(&mut self, wallet_name: String) -> &mut Self {
+        self.wallet_name = Some(PathBuf::from(wallet_name));
         self
     }
 
@@ -357,7 +362,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
-            .set_lightwalletd_uri(
+            .set_indexer_uri(
                 (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
                     .parse::<http::Uri>()
                     .unwrap(),
@@ -370,7 +375,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_lightwalletd_uri((DEFAULT_LIGHTWALLETD_SERVER).parse::<http::Uri>().unwrap())
+            .set_indexer_uri((DEFAULT_INDEXER_URI).parse::<http::Uri>().unwrap())
             .create()
     }
 
@@ -628,10 +633,9 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri = crate::config::parse_indexer_uri(
-            crate::config::DEFAULT_LIGHTWALLETD_SERVER.to_string(),
-        )
-        .unwrap();
+        let valid_uri =
+            crate::config::parse_indexer_uri(crate::config::DEFAULT_INDEXER_URI.to_string())
+                .unwrap();
         // let invalid_uri = construct_lightwalletd_uri(Some("Invalid URI".to_string()));
         let temp_dir = tempfile::TempDir::new().unwrap();
 
