@@ -177,31 +177,36 @@ mod shielding {
 
     use crate::{
         config::ZingoConfigBuilder,
-        lightclient::LightClient,
+        lightclient::{ClientWallet, LightClient},
         wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {
         let config = ZingoConfigBuilder::default().build();
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            419200.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
+                },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
+        )
+        .unwrap();
         LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string())
-                        .unwrap(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                },
-                419200.into(),
-                WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery:
-                            pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                },
-            )
-            .unwrap(),
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config,
             true,
         )

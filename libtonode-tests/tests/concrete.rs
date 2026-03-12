@@ -989,7 +989,7 @@ mod fast {
         fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
             let taddr = wallet.transparent_addresses().values().next().unwrap();
             let Address::Transparent(taddr) =
-                decode_address(&wallet.network, taddr.as_str()).unwrap()
+                decode_address(&wallet.chain_type(), taddr.as_str()).unwrap()
             else {
                 panic!("not t addr")
             };
@@ -998,7 +998,8 @@ mod fast {
                 TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
-            let tex_string = testutils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.network);
+            let tex_string =
+                testutils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.chain_type());
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
@@ -4578,7 +4579,7 @@ mod testnet_test {
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
         config::{ChainType, DEFAULT_TESTNET_LIGHTWALLETD_SERVER, ZingoConfig},
-        lightclient::LightClient,
+        lightclient::{ClientWallet, LightClient},
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
     };
@@ -4615,8 +4616,17 @@ mod testnet_test {
             )
             .unwrap();
 
-            let mut lightclient =
-                LightClient::create_from_wallet(wallet, config.clone(), true).unwrap();
+            let mut lightclient = LightClient::create_from_wallet(
+                ClientWallet::new(
+                    wallet.chain_type(),
+                    wallet.birthday(),
+                    wallet.mnemonic().cloned(),
+                    wallet,
+                ),
+                config.clone(),
+                true,
+            )
+            .unwrap();
             lightclient.save_task().await;
             lightclient.sync().await.unwrap();
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));

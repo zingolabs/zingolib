@@ -5,7 +5,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
-    lightclient::{LightClient, error::LightClientError},
+    lightclient::{ClientWallet, LightClient, error::LightClientError},
     wallet::LightWallet,
 };
 
@@ -21,12 +21,18 @@ pub async fn new_client_from_save_buffer(
         .write(&mut wallet_bytes, &template_client.config.network_type())
         .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
 
+    let wallet = LightWallet::read(
+        wallet_bytes.as_slice(),
+        template_client.config.network_type(),
+    )
+    .map_err(LightClientError::FileError)?;
     LightClient::create_from_wallet(
-        LightWallet::read(
-            wallet_bytes.as_slice(),
-            template_client.config.network_type(),
-        )
-        .map_err(LightClientError::FileError)?,
+        ClientWallet::new(
+            wallet.chain_type(),
+            wallet.birthday(),
+            wallet.mnemonic().cloned(),
+            wallet,
+        ),
         template_client.config.clone(),
         false,
     )

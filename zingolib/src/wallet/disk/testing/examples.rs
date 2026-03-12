@@ -11,7 +11,7 @@ use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
 use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
-use crate::lightclient::LightClient;
+use crate::lightclient::{ClientWallet, LightClient};
 use crate::wallet::WalletSettings;
 
 /// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
@@ -301,7 +301,17 @@ impl NetworkSeedVersion {
 
         let wallet = self.load_example_wallet(config.network_type());
 
-        LightClient::create_from_wallet(wallet, config, true).unwrap()
+        LightClient::create_from_wallet(
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
+            config,
+            true,
+        )
+        .unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]

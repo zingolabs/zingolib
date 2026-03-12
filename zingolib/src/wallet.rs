@@ -290,6 +290,12 @@ impl LightWallet {
         self.network
     }
 
+    /// Returns the wallet birthday height.
+    #[must_use]
+    pub fn birthday(&self) -> BlockHeight {
+        self.birthday
+    }
+
     /// Returns the wallet's mnemonic (seed and phrase).
     #[must_use]
     pub fn mnemonic(&self) -> Option<&Mnemonic> {

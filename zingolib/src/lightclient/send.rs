@@ -229,7 +229,7 @@ mod test {
 
     use crate::{
         config::ZingoConfig,
-        lightclient::{LightClient, sync::test::sync_example_wallet},
+        lightclient::{ClientWallet, LightClient, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
         testutils::chain_generics::{
             conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
@@ -240,24 +240,30 @@ mod test {
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let config = ZingoConfig::builder().build();
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            419_200.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
+                },
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
+        )
+        .unwrap();
         let mut lc = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
-                    no_of_accounts: 1.try_into().unwrap(),
-                },
-                419_200.into(),
-                WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery:
-                            pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                },
-            )
-            .unwrap(),
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config,
             true,
         )

@@ -39,6 +39,7 @@ pub(crate) mod conduct_chain {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
+    use zingolib::lightclient::ClientWallet;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::wallet::LightWallet;
@@ -74,17 +75,23 @@ pub(crate) mod conduct_chain {
             let config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
+            let wallet = LightWallet::new(
+                config.network_type(),
+                WalletBase::Mnemonic {
+                    mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
+                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                },
+                1.into(),
+                config.wallet_settings(),
+            )
+            .unwrap();
             let mut lightclient = LightClient::create_from_wallet(
-                LightWallet::new(
-                    config.network_type(),
-                    WalletBase::Mnemonic {
-                        mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
-                        no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                    },
-                    1.into(),
-                    config.wallet_settings(),
-                )
-                .unwrap(),
+                ClientWallet::new(
+                    wallet.chain_type(),
+                    wallet.birthday(),
+                    wallet.mnemonic().cloned(),
+                    wallet,
+                ),
                 config,
                 true,
             )

@@ -45,15 +45,33 @@ pub mod send;
 pub mod sync;
 
 /// Wallet owned by a [`LightClient`], with immutable metadata stored outside the lock.
-pub(crate) struct ClientWallet {
+pub struct ClientWallet {
     /// The chain type, extracted at construction for lock-free access.
-    pub(crate) chain_type: ChainType,
+    chain_type: ChainType,
     /// The wallet birthday height.
-    pub(crate) birthday: BlockHeight,
+    birthday: BlockHeight,
     /// The mnemonic seed phrase, if this is a spending wallet.
     mnemonic: Option<Mnemonic>,
     /// The locked mutable wallet state.
-    pub(crate) inner: Arc<RwLock<LightWallet>>,
+    inner: Arc<RwLock<LightWallet>>,
+}
+
+impl ClientWallet {
+    /// Creates a new `ClientWallet` by wrapping a [`LightWallet`] in a lock alongside
+    /// its immutable metadata.
+    pub fn new(
+        chain_type: ChainType,
+        birthday: BlockHeight,
+        mnemonic: Option<Mnemonic>,
+        wallet: LightWallet,
+    ) -> Self {
+        Self {
+            chain_type,
+            birthday,
+            mnemonic,
+            inner: Arc::new(RwLock::new(wallet)),
+        }
+    }
 }
 
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
@@ -89,25 +107,28 @@ impl LightClient {
             .expect("should have some sapling activation height");
         let birthday = sapling_activation_height.max(chain_height - 100);
 
+        let chain_type = config.network_type();
+        let wallet = LightWallet::new(
+            chain_type,
+            WalletBase::FreshEntropy {
+                no_of_accounts: config.no_of_accounts(),
+            },
+            birthday,
+            config.wallet_settings(),
+        )?;
+        let mnemonic = wallet.mnemonic().cloned();
         Self::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::FreshEntropy {
-                    no_of_accounts: config.no_of_accounts(),
-                },
-                birthday,
-                config.wallet_settings(),
-            )?,
+            ClientWallet::new(chain_type, birthday, mnemonic, wallet),
             config,
             overwrite,
         )
     }
 
-    /// Creates a `LightClient` from a `wallet` and `config`.
+    /// Creates a `LightClient` from a [`ClientWallet`] and `config`.
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet(
-        wallet: LightWallet,
+        client_wallet: ClientWallet,
         config: ZingoConfig,
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
@@ -123,19 +144,11 @@ impl LightClient {
                 )));
             }
         }
-        let chain_type = wallet.network;
-        let birthday = wallet.birthday;
-        let mnemonic = wallet.mnemonic().cloned();
 
         Ok(LightClient {
             config,
             tor_client: None,
-            client_wallet: ClientWallet {
-                chain_type,
-                birthday,
-                mnemonic,
-                inner: Arc::new(RwLock::new(wallet)),
-            },
+            client_wallet,
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -159,13 +172,16 @@ impl LightClient {
         };
 
         let buffer = BufReader::new(File::open(wallet_path).map_err(LightClientError::FileError)?);
+        let wallet = LightWallet::read(buffer, config.network_type())
+            .map_err(LightClientError::FileError)?;
+        let client_wallet = ClientWallet::new(
+            wallet.chain_type(),
+            wallet.birthday(),
+            wallet.mnemonic().cloned(),
+            wallet,
+        );
 
-        Self::create_from_wallet(
-            LightWallet::read(buffer, config.network_type())
-                .map_err(LightClientError::FileError)?,
-            config,
-            true,
-        )
+        Self::create_from_wallet(client_wallet, config, true)
     }
 
     /// Returns config used to create lightclient.
@@ -384,17 +400,25 @@ mod tests {
             .set_network_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .build();
+        use crate::lightclient::ClientWallet;
+
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                no_of_accounts: config.no_of_accounts(),
+            },
+            1.into(),
+            config.wallet_settings(),
+        )
+        .unwrap();
         let mut lc = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts(),
-                },
-                1.into(),
-                config.wallet_settings(),
-            )
-            .unwrap(),
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config.clone(),
             false,
         )
@@ -403,17 +427,23 @@ mod tests {
         lc.save_task().await;
         lc.wait_for_save().await;
 
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+                no_of_accounts: config.no_of_accounts(),
+            },
+            1.into(),
+            config.wallet_settings(),
+        )
+        .unwrap();
         let lc_file_exists_error = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                    no_of_accounts: config.no_of_accounts(),
-                },
-                1.into(),
-                config.wallet_settings(),
-            )
-            .unwrap(),
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config,
             false,
         )

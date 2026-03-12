@@ -19,6 +19,7 @@ use zcash_protocol::consensus::BlockHeight;
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::lightclient::ClientWallet;
 use zingolib::lightclient::LightClient;
 
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
@@ -397,36 +398,48 @@ pub fn startup(
         .build();
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Invalid seed phrase. {e}"),
+                    )
+                })?,
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
+            (filled_template.birthday as u32).into(),
+            config.wallet_settings(),
+        )
+        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
         LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!("Invalid seed phrase. {e}"),
-                        )
-                    })?,
-                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                },
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config.clone(),
             false,
         )
         .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Ufvk(ufvk),
+            (filled_template.birthday as u32).into(),
+            config.wallet_settings(),
+        )
+        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
         LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Ufvk(ufvk),
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
+            ClientWallet::new(
+                wallet.chain_type(),
+                wallet.birthday(),
+                wallet.mnemonic().cloned(),
+                wallet,
+            ),
             config.clone(),
             false,
         )

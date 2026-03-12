@@ -5,7 +5,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
     config::ZingoConfig,
-    lightclient::LightClient,
+    lightclient::{ClientWallet, LightClient},
     wallet::{
         LightWallet,
         disk::testing::{
@@ -238,8 +238,14 @@ async fn reload_wallet_from_buffer() {
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
+    let wallet = LightWallet::read(&mid_buffer[..], config.network_type()).unwrap();
     let client = LightClient::create_from_wallet(
-        LightWallet::read(&mid_buffer[..], config.network_type()).unwrap(),
+        ClientWallet::new(
+            wallet.chain_type(),
+            wallet.birthday(),
+            wallet.mnemonic().cloned(),
+            wallet,
+        ),
         config,
         true,
     )

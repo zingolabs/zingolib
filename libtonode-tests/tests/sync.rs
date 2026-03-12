@@ -14,7 +14,7 @@ use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri},
     get_base_address_macro,
-    lightclient::LightClient,
+    lightclient::{ClientWallet, LightClient},
     testutils::lightclient::from_inputs::{self},
     wallet::{LightWallet, WalletBase, WalletSettings},
 };
@@ -45,17 +45,23 @@ async fn sync_mainnet_test() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
+    let wallet = LightWallet::new(
+        config.network_type(),
+        WalletBase::Mnemonic {
+            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+        },
+        1_500_000.into(),
+        config.wallet_settings(),
+    )
+    .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            1_500_000.into(),
-            config.wallet_settings(),
-        )
-        .unwrap(),
+        ClientWallet::new(
+            wallet.chain_type(),
+            wallet.birthday(),
+            wallet.mnemonic().cloned(),
+            wallet,
+        ),
         config,
         true,
     )
@@ -114,17 +120,23 @@ async fn sync_status() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
+    let wallet = LightWallet::new(
+        config.network_type(),
+        WalletBase::Mnemonic {
+            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+        },
+        2_496_152.into(),
+        config.wallet_settings(),
+    )
+    .unwrap();
     let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            2_496_152.into(),
-            config.wallet_settings(),
-        )
-        .unwrap(),
+        ClientWallet::new(
+            wallet.chain_type(),
+            wallet.birthday(),
+            wallet.mnemonic().cloned(),
+            wallet,
+        ),
         config,
         true,
     )
