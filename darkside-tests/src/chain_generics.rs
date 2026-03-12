@@ -64,7 +64,7 @@ pub(crate) mod conduct_chain {
         }
 
         /// the mock chain is fed to the Client via lightwalletd. where is that server to be found?
-        fn lightserver_uri(&self) -> Option<http::Uri> {
+        fn indexer_uri(&self) -> Option<http::Uri> {
             Some(self.client_builder.indexer_uri.clone().expect("some uri"))
         }
 
@@ -105,7 +105,7 @@ pub(crate) mod conduct_chain {
 
         async fn increase_chain_height(&mut self) {
             let height_before =
-                zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+                zingolib::grpc_connector::get_latest_block(self.indexer_uri().unwrap())
                     .await
                     .unwrap()
                     .height;

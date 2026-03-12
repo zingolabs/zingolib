@@ -139,7 +139,7 @@ pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
 pub const DEFAULT_TESTNET_INDEXER_URI: &str = "https://testnet.zec.rocks";
 
 /// Parses a URI string into `Some(http::Uri)`.
-pub fn some_uri(s: &str) -> Option<http::Uri> {
+pub fn some_infallible_uri(s: &str) -> Option<http::Uri> {
     Some(s.parse().unwrap())
 }
 
@@ -155,7 +155,7 @@ pub use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 
 /// Creates a zingo config for lightclient construction.
 pub fn load_clientconfig(
-    lightwallet_uri: Option<http::Uri>,
+    indexer_uri: Option<http::Uri>,
     data_dir: Option<PathBuf>,
     chain: ChainType,
     wallet_settings: WalletSettings,
@@ -170,7 +170,7 @@ pub fn load_clientconfig(
         &wallet_name
     };
 
-    let config = match lightwallet_uri.clone() {
+    let config = match indexer_uri.clone() {
         None => {
             info!("Using offline mode");
             ZingoConfig {
@@ -368,7 +368,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
-            .set_indexer_uri(some_uri(DEFAULT_TESTNET_INDEXER_URI))
+            .set_indexer_uri(some_infallible_uri(DEFAULT_TESTNET_INDEXER_URI))
             .create()
     }
 
@@ -377,7 +377,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_indexer_uri(some_uri(DEFAULT_INDEXER_URI))
+            .set_indexer_uri(some_infallible_uri(DEFAULT_INDEXER_URI))
             .create()
     }
 
@@ -626,7 +626,10 @@ impl ZingoConfig {
 mod tests {
     use std::num::NonZeroU32;
 
-    use crate::wallet::WalletSettings;
+    use crate::{
+        config::{DEFAULT_INDEXER_URI, some_infallible_uri},
+        wallet::WalletSettings,
+    };
 
     #[tokio::test]
     async fn test_load_clientconfig_serverless() {
@@ -635,9 +638,7 @@ mod tests {
             .expect("Ring to work as a default");
         tracing_subscriber::fmt().init();
 
-        let valid_uri =
-            crate::config::parse_indexer_uri(crate::config::DEFAULT_INDEXER_URI.to_string())
-                .unwrap();
+        let valid_uri = some_infallible_uri(DEFAULT_INDEXER_URI);
         // let invalid_uri = construct_lightwalletd_uri(Some("Invalid URI".to_string()));
         let temp_dir = tempfile::TempDir::new().unwrap();
 
@@ -645,7 +646,7 @@ mod tests {
         // let temp_path_invalid = temp_dir.path().to_path_buf();
 
         let valid_config = crate::config::load_clientconfig(
-            Some(valid_uri.clone()),
+            valid_uri.clone(),
             Some(temp_path),
             crate::config::ChainType::Mainnet,
             WalletSettings {
@@ -662,7 +663,7 @@ mod tests {
         .unwrap();
 
         assert!(valid_config.get_indexer_uri().is_some());
-        assert_eq!(valid_config.get_indexer_uri().unwrap(), valid_uri);
+        assert_eq!(valid_config.get_indexer_uri(), valid_uri);
         assert_eq!(valid_config.chain_type, crate::config::ChainType::Mainnet);
     }
 }

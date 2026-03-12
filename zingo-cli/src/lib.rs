@@ -402,7 +402,7 @@ pub fn startup(
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 },
                 (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
+                config.wallet_settings.clone(),
             )
             .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
@@ -413,10 +413,10 @@ pub fn startup(
         // Create client from UFVK
         LightClient::create_from_wallet(
             LightWallet::new(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Ufvk(ufvk),
                 (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
+                config.wallet_settings.clone(),
             )
             .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
             config.clone(),
@@ -432,16 +432,16 @@ pub fn startup(
         println!("Creating a new wallet");
         // Call the lightwalletd server to get the current block-height
         // Do a getinfo first, before opening the wallet
-        let server_uri = config.indexer_uri();
-
-        let chain_height = RT
-            .block_on(async move {
+        let chain_height = if let Some(server_uri) = config.get_indexer_uri() {
+            RT.block_on(async move {
                 zingolib::grpc_connector::get_latest_block(server_uri)
                     .await
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
-
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        } else {
+            BlockHeight::from_u32(0) //NOTE: this will become sapling activation
+        };
         LightClient::new(config.clone(), chain_height, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
@@ -450,9 +450,13 @@ pub fn startup(
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Light Client config {config:?}");
+        info!("Light Client config {{config.clone():?}}");
 
-        info!("Lightclient connecting to {}", config.indexer_uri());
+        if let Some(uri) = config.clone().get_indexer_uri() {
+            info!("Lightclient connecting to {}", uri)
+        } else {
+            info!("Lightclient does not have an indexer configured")
+        };
     }
 
     if filled_template.sync {

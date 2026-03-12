@@ -4574,7 +4574,7 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, DEFAULT_TESTNET_INDEXER_URI, ZingoConfig, some_uri},
+        config::{ChainType, DEFAULT_TESTNET_INDEXER_URI, ZingoConfig, some_infallible_uri},
         lightclient::LightClient,
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
@@ -4594,7 +4594,7 @@ mod testnet_test {
             let wallet_dir = TempDir::new().unwrap();
             let config = ZingoConfig::builder()
                 .set_network_type(ChainType::Testnet)
-                .set_indexer_uri(some_uri(DEFAULT_TESTNET_INDEXER_URI))
+                .set_indexer_uri(some_infallible_uri(DEFAULT_TESTNET_INDEXER_URI))
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build();
             let wallet = LightWallet::new(
