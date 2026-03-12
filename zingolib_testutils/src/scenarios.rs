@@ -196,7 +196,7 @@ impl ClientBuilder {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
             seeds::ABANDON_ART_SEED.to_string(),
-            0,
+            1,
             overwrite,
             configured_activation_heights,
         )
