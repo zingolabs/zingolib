@@ -227,7 +227,7 @@ async fn reload_wallet_from_buffer() {
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
-    let mid_client_network = mid_client.wallet().read().await.network;
+    let mid_client_network = mid_client.chain_type();
 
     let mut mid_buffer: Vec<u8> = vec![];
     mid_client
@@ -287,12 +287,12 @@ async fn reload_wallet_from_buffer() {
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
-    let ufvk_string = ufvk.encode(&wallet.network);
+    let ufvk_string = ufvk.encode(&client.chain_type());
     let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
     let view_wallet = LightWallet::new(
-        wallet.network,
+        client.chain_type(),
         ufvk_base,
-        wallet.birthday,
+        client.birthday(),
         wallet.wallet_settings.clone(),
     )
     .unwrap();

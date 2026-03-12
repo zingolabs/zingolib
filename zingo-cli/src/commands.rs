@@ -128,7 +128,7 @@ impl Command for BirthdayCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.wallet().read().await.birthday.to_string() })
+        lightclient.birthday().to_string()
     }
 }
 
@@ -148,8 +148,7 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet().read().await;
-            if wallet.mnemonic().is_some() {
+            if lightclient.mnemonic().is_some() {
                 object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                         "transparent" => true,
                         "sapling" => true,
@@ -157,7 +156,10 @@ impl Command for WalletKindCommand {
                 }
                 .pretty(4)
             } else {
-                match wallet
+                match lightclient
+                    .wallet()
+                    .read()
+                    .await
                     .unified_key_store
                     .get(&zip32::AccountId::ZERO)
                     .expect("account 0 must always exist")
@@ -754,8 +756,8 @@ impl Command for NewUnifiedAddressCommand {
         }
 
         RT.block_on(async move {
+            let network = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
-            let network = wallet.network;
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
                 sapling: args[0].contains('z'),
@@ -795,8 +797,8 @@ impl Command for NewTransparentAddressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
+            let network = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
-            let network = wallet.network;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
@@ -846,8 +848,8 @@ impl Command for NewTransparentAddressAllowGapCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             // Generate without enforcing the no-gap constraint
+            let network = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
-            let network = wallet.network;
 
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
                 Ok((id, transparent_address)) => {
@@ -1019,8 +1021,10 @@ impl Command for ExportUfvkCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet().read().await;
-            let ufvk: UnifiedFullViewingKey = match wallet
+            let ufvk: UnifiedFullViewingKey = match lightclient
+                .wallet()
+                .read()
+                .await
                 .unified_key_store
                 .get(&zip32::AccountId::ZERO)
                 .expect("account 0 must always exist")
@@ -1030,8 +1034,8 @@ impl Command for ExportUfvkCommand {
                 Err(e) => return e.to_string(),
             };
             object! {
-                "ufvk" => ufvk.encode(&wallet.network),
-                "birthday" => u32::from(wallet.birthday)
+                "ufvk" => ufvk.encode(&lightclient.chain_type()),
+                "birthday" => u32::from(lightclient.birthday())
             }
             .pretty(2)
         })

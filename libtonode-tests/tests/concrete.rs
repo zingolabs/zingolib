@@ -469,7 +469,7 @@ mod fast {
             true,
             local_net.validator().get_activation_heights().await,
         );
-        let network = recipient.wallet().read().await.network;
+        let network = recipient.chain_type();
 
         // create a range of UAs to be discovered when recipient is reset
         let orchard_only_addr = recipient
@@ -1202,7 +1202,7 @@ mod fast {
             false,
             local_net.validator().get_activation_heights().await,
         );
-        let network = recipient.wallet().read().await.network;
+        let network = recipient.chain_type();
         let (new_address_id, new_address) = recipient
             .generate_unified_address(ReceiverSelection::all_shielded(), zip32::AccountId::ZERO)
             .await
@@ -2712,7 +2712,7 @@ TransactionSummary {
                 None,
             )
             .await;
-        let network = recipient.wallet().read().await.network;
+        let network = recipient.chain_type();
 
         let spent_value = 20_000;
         let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
