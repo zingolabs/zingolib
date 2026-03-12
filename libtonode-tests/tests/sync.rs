@@ -53,7 +53,7 @@ async fn sync_mainnet_test() {
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
             1_500_000.into(),
-            config.wallet_settings(),
+            config.wallet_settings.clone(),
         )
         .unwrap(),
         config,
@@ -97,12 +97,12 @@ async fn sync_status() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string()));
+    let uri = some_infallible_uri(DEFAULT_INDEXER_URI);
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-    let config = ZingoConfig::builder()
+    let config = ZingoConfigBuilder::default()
         .set_indexer_uri(uri.clone())
-        .set_network_type(ChainType::Mainnet)
+        .set_chain(ChainType::Mainnet)
         .set_wallet_dir(temp_path)
         .set_wallet_name("".to_string())
         .set_wallet_settings(WalletSettings {
@@ -113,16 +113,16 @@ async fn sync_status() {
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
-        .build();
+        .create();
     let mut lightclient = LightClient::create_from_wallet(
         LightWallet::new(
-            config.network_type(),
+            config.chain_type,
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
             },
             2_496_152.into(),
-            config.wallet_settings(),
+            config.wallet_settings.clone(),
         )
         .unwrap(),
         config,
