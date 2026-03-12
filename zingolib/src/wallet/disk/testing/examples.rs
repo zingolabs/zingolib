@@ -1,8 +1,6 @@
 use std::num::NonZeroU32;
 
 use bytes::Buf;
-use http::Uri;
-
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
@@ -10,7 +8,7 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use super::super::LightWallet;
-use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfigBuilder};
+use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfigBuilder, some_uri};
 use crate::lightclient::LightClient;
 use crate::wallet::WalletSettings;
 
@@ -279,10 +277,8 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let indexer_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
-
                 ZingoConfigBuilder::default()
-                    .set_indexer_uri(indexer_uri)
+                    .set_indexer_uri(some_uri(DEFAULT_INDEXER_URI))
                     .set_chain(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name("".to_string())
                     .set_wallet_settings(WalletSettings {

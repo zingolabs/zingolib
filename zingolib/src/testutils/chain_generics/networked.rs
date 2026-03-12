@@ -3,7 +3,7 @@
 use http::Uri;
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
+use crate::{config::DEFAULT_TESTNET_INDEXER_URI, lightclient::LightClient};
 
 use super::conduct_chain::ConductChain;
 
@@ -30,8 +30,7 @@ impl NetworkedTestEnvironment {
 impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {
-            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                .unwrap(),
+            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_INDEXER_URI).unwrap(),
             latest_known_server_height: None,
         }
     }

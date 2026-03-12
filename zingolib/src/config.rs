@@ -136,7 +136,12 @@ pub const ZENNIES_FOR_ZINGO_AMOUNT: u64 = 1_000_000;
 pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
 
 /// Default indexer uri for testnet.
-pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str = "https://testnet.zec.rocks";
+pub const DEFAULT_TESTNET_INDEXER_URI: &str = "https://testnet.zec.rocks";
+
+/// Parses a URI string into `Some(http::Uri)`.
+pub fn some_uri(s: &str) -> Option<http::Uri> {
+    Some(s.parse().unwrap())
+}
 
 /// The default wallet file name.
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
@@ -237,8 +242,8 @@ impl ZingoConfigBuilder {
     /// use http::Uri;
     /// assert_eq!(ZingoConfigBuilder::default().set_lightwalletd_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).lightwalletd_uri.clone().unwrap(), "https://zcash.mysideoftheweb.com:19067");
     /// ```
-    pub fn set_indexer_uri(&mut self, indexer_uri: http::Uri) -> &mut Self {
-        self.indexer_uri = Some(indexer_uri);
+    pub fn set_indexer_uri(&mut self, indexer_uri: Option<http::Uri>) -> &mut Self {
+        self.indexer_uri = indexer_uri;
         self
     }
 
@@ -363,11 +368,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_testnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Testnet)
-            .set_indexer_uri(
-                (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                    .parse::<http::Uri>()
-                    .unwrap(),
-            )
+            .set_indexer_uri(some_uri(DEFAULT_TESTNET_INDEXER_URI))
             .create()
     }
 
@@ -376,7 +377,7 @@ impl ZingoConfig {
     #[must_use]
     pub fn create_mainnet() -> ZingoConfig {
         ZingoConfig::build(ChainType::Mainnet)
-            .set_indexer_uri((DEFAULT_INDEXER_URI).parse::<http::Uri>().unwrap())
+            .set_indexer_uri(some_uri(DEFAULT_INDEXER_URI))
             .create()
     }
 
