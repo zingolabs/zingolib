@@ -272,7 +272,7 @@ pub fn command_loop(
 /// TODO: Add Doc Comment Here!
 pub struct ConfigTemplate {
     params: Vec<String>,
-    server: http::Uri,
+    server: Option<http::Uri>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -334,12 +334,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        let server = matches
-            .get_one::<http::Uri>("server")
-            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         // TODO: Handle NONE?!
-        let server = zingolib::config::parse_indexer_uri(server.expect("a uri string"))?;
+        let server = matches.get_one::<http::Uri>("server").cloned();
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::from_str(chain.as_str()).map_err(|e| e.to_string())?
         } else {

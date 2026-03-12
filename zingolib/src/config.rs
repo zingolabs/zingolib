@@ -203,28 +203,6 @@ pub fn load_clientconfig(
     Ok(config)
 }
 
-// TODO: Is this really necessary?
-// All this could be replaced by:
-// let uri: http::Uri = server.parse().unwrap();
-// ...
-/// lightly-DEPRECATED
-pub fn parse_indexer_uri(server: String) -> Result<http::Uri, String> {
-    if server.is_empty() {
-        Err("Invalid server uri".to_string())
-    } else {
-        let mut s = if server.starts_with("http") {
-            server
-        } else {
-            "http://".to_string() + &server
-        };
-        let uri: http::Uri = s.parse().unwrap();
-        if uri.port().is_none() {
-            s += ":9067";
-        }
-        Ok(s.parse().unwrap())
-    }
-}
-
 /// Builder for constructing a [`ZingoConfig`] for a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfigBuilder {
