@@ -15,7 +15,7 @@ resolver = "2"
 [workspace.dependencies]
 
 # Protocol
-bip0039 = { version = "0.13", features = ["rand"] }
+bip0039 = { version = "0.14", features = ["rand"] }
 bip32 = { version = "0.6.0-pre.1", default-features = false }
 zip32 = "0.2.0"
 
@@ -40,15 +40,12 @@ zcash_keys = { version = "0.12", features = [
 zcash_note_encryption = "0.4"
 zcash_primitives = "0.26"
 zcash_proofs = "0.26"
-zcash_protocol = "0.7"
+zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
 
-# Zebra
-zebra-chain = "5.0.0"
-
 # Zingo-common
-zingo-netutils = "2.0.1"
-zingo_common_components = "0.2.0"
+zingo-netutils = "2.0.2"
+zingo_common_components = "0.3.0"
 
 # Parallel processing
 crossbeam-channel = "0.5"
@@ -92,8 +89,8 @@ reqwest = { version = "0.12.15", default-features = false }
 ring = "0.17.14"
 rust_decimal = "1.37.2"
 rust-embed = "8"
-rustls = { version = "0.23", features = ["ring"] }
-rustyline = "11"
+rustls = { version = "0.23.37", features = ["ring"] }
+rustyline = "17.0.2"
 secp256k1 = "0.31.1"
 secrecy = "0.8"
 serde = "1"
@@ -121,9 +118,11 @@ zingo-status = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "for_zingolib_v3_release" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "for_zingolib_v3_release" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
 
 [profile.test]
 opt-level = 3
 
+[patch.crates-io]
+time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }

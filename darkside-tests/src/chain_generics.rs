@@ -76,13 +76,13 @@ pub(crate) mod conduct_chain {
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let mut lightclient = LightClient::create_from_wallet(
                 LightWallet::new(
-                    config.chain,
+                    config.network_type(),
                     WalletBase::Mnemonic {
                         mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                     },
                     1.into(),
-                    config.wallet_settings.clone(),
+                    config.wallet_settings(),
                 )
                 .unwrap(),
                 config,

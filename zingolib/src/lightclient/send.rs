@@ -160,7 +160,7 @@ impl LightClient {
             let mut retry_count = 0;
             let txid_from_server = loop {
                 let transmission_result = crate::grpc_connector::send_transaction(
-                    self.server_uri(),
+                    self.indexer_uri(),
                     transaction_bytes.clone().into_boxed_slice(),
                 )
                 .await
@@ -223,10 +223,14 @@ mod test {
     use std::num::NonZeroU32;
 
     use bip0039::Mnemonic;
+
     use pepper_sync::config::SyncConfig;
+    use zingo_test_vectors::seeds::ABANDON_ART_SEED;
 
     use crate::{
-        lightclient::sync::test::sync_example_wallet,
+        config::ZingoConfig,
+        lightclient::{LightClient, sync::test::sync_example_wallet},
+        mocks::proposal::ProposalBuilder,
         testutils::chain_generics::{
             conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
         },
@@ -235,15 +239,10 @@ mod test {
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
-        use crate::{
-            config::ZingoConfigBuilder, lightclient::LightClient, mocks::proposal::ProposalBuilder,
-        };
-        use zingo_test_vectors::seeds::ABANDON_ART_SEED;
-
-        let config = ZingoConfigBuilder::default().create();
+        let config = ZingoConfig::builder().build();
         let mut lc = LightClient::create_from_wallet(
             LightWallet::new(
-                config.chain,
+                config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
                     no_of_accounts: 1.try_into().unwrap(),

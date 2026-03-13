@@ -185,14 +185,14 @@ mod tests {
     use zingo_status::confirmation_status::ConfirmationStatus;
 
     use crate::{
-        config::ZingoConfigBuilder,
+        config::ZingoConfig,
         wallet::{LightWallet, WalletBase, WalletSettings, error::WalletError},
     };
 
     fn test_wallet() -> LightWallet {
-        let config = ZingoConfigBuilder::default().create();
+        let config = ZingoConfig::builder().build();
         LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::FreshEntropy {
                 no_of_accounts: 1.try_into().unwrap(),
             },

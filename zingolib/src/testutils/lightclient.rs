@@ -18,12 +18,15 @@ pub async fn new_client_from_save_buffer(
         .wallet
         .write()
         .await
-        .write(&mut wallet_bytes, &template_client.config.chain)
+        .write(&mut wallet_bytes, &template_client.config.network_type())
         .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
 
     LightClient::create_from_wallet(
-        LightWallet::read(wallet_bytes.as_slice(), template_client.config.chain)
-            .map_err(LightClientError::FileError)?,
+        LightWallet::read(
+            wallet_bytes.as_slice(),
+            template_client.config.network_type(),
+        )
+        .map_err(LightClientError::FileError)?,
         template_client.config.clone(),
         false,
     )
