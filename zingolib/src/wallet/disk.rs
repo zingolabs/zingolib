@@ -120,9 +120,10 @@ impl LightWallet {
         self.price_list.write(&mut writer)
     }
 
-    /// Deserialize into `reader`
+    /// Deserialize from `reader`. Prefer [`crate::lightclient::ClientWallet::read`] which
+    /// extracts immutable metadata before placing the wallet behind a lock.
     // TODO: update to return WalletError
-    pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+    pub(crate) fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
@@ -562,6 +563,18 @@ impl LightWallet {
             send_proposal: None,
             save_required: false,
         })
+    }
+}
+
+impl crate::lightclient::ClientWallet {
+    /// Deserializes a [`LightWallet`] and wraps it in a `ClientWallet`, extracting
+    /// immutable metadata before the wallet is placed behind the lock.
+    pub fn read<R: Read>(reader: R, network: ChainType) -> io::Result<Self> {
+        let wallet = LightWallet::read(reader, network)?;
+        let chain_type = wallet.network;
+        let birthday = wallet.birthday;
+        let mnemonic = wallet.mnemonic.clone();
+        Ok(Self::new(chain_type, birthday, mnemonic, wallet))
     }
 }
 

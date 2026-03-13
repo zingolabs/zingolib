@@ -178,12 +178,12 @@ mod shielding {
     use crate::{
         config::ZingoConfigBuilder,
         lightclient::{ClientWallet, LightClient},
-        wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
+        wallet::{WalletBase, WalletSettings, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {
         let config = ZingoConfigBuilder::default().build();
-        let wallet = LightWallet::new(
+        let client_wallet = ClientWallet::from_wallet_base(
             config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
@@ -200,17 +200,7 @@ mod shielding {
             },
         )
         .unwrap();
-        LightClient::create_from_wallet(
-            ClientWallet::new(
-                wallet.chain_type(),
-                wallet.birthday(),
-                wallet.mnemonic().cloned(),
-                wallet,
-            ),
-            config,
-            true,
-        )
-        .unwrap()
+        LightClient::create_from_wallet(client_wallet, config, true).unwrap()
     }
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {

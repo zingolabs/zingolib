@@ -23,7 +23,7 @@ use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
-use crate::wallet::{LightWallet, WalletBase, WalletSettings};
+use crate::wallet::{WalletBase, WalletSettings};
 
 pub mod assertions;
 pub mod chain_generics;
@@ -65,7 +65,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         .unwrap(),
         &zcash_protocol::consensus::NetworkType::Regtest,
     );
-    let wallet = LightWallet::new(
+    let client_wallet = ClientWallet::from_wallet_base(
         config.network_type(),
         WalletBase::Ufvk(ufvk),
         1.into(),
@@ -78,17 +78,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         },
     )
     .unwrap();
-    LightClient::create_from_wallet(
-        ClientWallet::new(
-            wallet.chain_type(),
-            wallet.birthday(),
-            wallet.mnemonic().cloned(),
-            wallet,
-        ),
-        config,
-        false,
-    )
-    .unwrap()
+    LightClient::create_from_wallet(client_wallet, config, false).unwrap()
 }
 
 /// TODO: doc comment

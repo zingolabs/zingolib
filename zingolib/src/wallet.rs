@@ -97,6 +97,63 @@ pub enum WalletBase {
     Usk(Vec<u8>),
 }
 
+impl WalletBase {
+    /// Resolves the wallet base into a unified key store and optional mnemonic.
+    ///
+    /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
+    #[allow(clippy::result_large_err)]
+    pub fn resolve_keys(
+        self,
+        network: &ChainType,
+    ) -> Result<
+        (
+            BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+            Option<Mnemonic>,
+        ),
+        WalletError,
+    > {
+        match self {
+            WalletBase::FreshEntropy { no_of_accounts } => WalletBase::Mnemonic {
+                mnemonic: Mnemonic::generate(bip0039::Count::Words24),
+                no_of_accounts,
+            }
+            .resolve_keys(network),
+            WalletBase::Mnemonic {
+                mnemonic,
+                no_of_accounts,
+            } => {
+                let no_of_accounts = u32::from(no_of_accounts);
+                let unified_key_store = (0..no_of_accounts)
+                    .map(|account_index| {
+                        let account_id = zip32::AccountId::try_from(account_index)?;
+                        Ok((
+                            account_id,
+                            UnifiedKeyStore::new_from_mnemonic(network, &mnemonic, account_id)?,
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
+                Ok((unified_key_store, Some(mnemonic)))
+            }
+            WalletBase::Ufvk(ufvk_encoded) => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_ufvk(network, ufvk_encoded)?,
+                );
+                Ok((unified_key_store, None))
+            }
+            WalletBase::Usk(unified_spending_key) => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
+                );
+                Ok((unified_key_store, None))
+            }
+        }
+    }
+}
+
 /// In-memory wallet data struct
 ///
 /// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
@@ -160,6 +217,25 @@ impl LightWallet {
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
+        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(&network)?;
+        Self::from_keys(
+            network,
+            unified_key_store,
+            mnemonic,
+            birthday,
+            wallet_settings,
+        )
+    }
+
+    /// Construct a wallet from pre-resolved keys.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn from_keys(
+        network: ChainType,
+        unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+        mnemonic: Option<Mnemonic>,
+        birthday: BlockHeight,
+        wallet_settings: WalletSettings,
+    ) -> Result<Self, WalletError> {
         let sapling_activation_height = network
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
@@ -169,52 +245,6 @@ impl LightWallet {
                 u32::from(sapling_activation_height),
             ));
         }
-
-        let (unified_key_store, mnemonic) = match wallet_base {
-            WalletBase::FreshEntropy { no_of_accounts } => {
-                return Self::new(
-                    network,
-                    WalletBase::Mnemonic {
-                        mnemonic: Mnemonic::generate(bip0039::Count::Words24),
-                        no_of_accounts,
-                    },
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::Mnemonic {
-                mnemonic,
-                no_of_accounts,
-            } => {
-                let no_of_accounts = u32::from(no_of_accounts);
-                let unified_key_store = (0..no_of_accounts)
-                    .map(|account_index| {
-                        let account_id = zip32::AccountId::try_from(account_index)?;
-                        Ok((
-                            account_id,
-                            UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_id)?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
-                (unified_key_store, Some(mnemonic))
-            }
-            WalletBase::Ufvk(ufvk_encoded) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_ufvk(&network, ufvk_encoded)?,
-                );
-                (unified_key_store, None)
-            }
-            WalletBase::Usk(unified_spending_key) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
-                );
-                (unified_key_store, None)
-            }
-        };
 
         let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
@@ -284,29 +314,10 @@ impl LightWallet {
         self.read_version
     }
 
-    /// Returns the chain type.
-    #[must_use]
-    pub fn chain_type(&self) -> ChainType {
-        self.network
-    }
-
-    /// Returns the wallet birthday height.
-    #[must_use]
-    pub fn birthday(&self) -> BlockHeight {
-        self.birthday
-    }
-
-    /// Returns the wallet's mnemonic (seed and phrase).
-    #[must_use]
-    pub fn mnemonic(&self) -> Option<&Mnemonic> {
-        self.mnemonic.as_ref()
-    }
-
-    /// Returns the wallet's mnemonic phrase.
+    /// Returns the wallet's mnemonic phrase as a string.
     #[must_use]
     pub fn mnemonic_phrase(&self) -> Option<String> {
-        self.mnemonic()
-            .map(|mnemonic| mnemonic.phrase().to_string())
+        self.mnemonic.as_ref().map(|m| m.phrase().to_string())
     }
 
     /// Returns unified addresses.
@@ -385,7 +396,9 @@ impl LightWallet {
             account_id,
             UnifiedKeyStore::new_from_mnemonic(
                 &self.network,
-                self.mnemonic().ok_or(WalletError::MnemonicNotFound)?,
+                self.mnemonic
+                    .as_ref()
+                    .ok_or(WalletError::MnemonicNotFound)?,
                 account_id,
             )?,
         );

@@ -234,13 +234,13 @@ mod test {
         testutils::chain_generics::{
             conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
         },
-        wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
+        wallet::{WalletBase, WalletSettings, disk::testing::examples},
     };
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let config = ZingoConfig::builder().build();
-        let wallet = LightWallet::new(
+        let client_wallet = ClientWallet::from_wallet_base(
             config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
@@ -257,17 +257,7 @@ mod test {
             },
         )
         .unwrap();
-        let mut lc = LightClient::create_from_wallet(
-            ClientWallet::new(
-                wallet.chain_type(),
-                wallet.birthday(),
-                wallet.mnemonic().cloned(),
-                wallet,
-            ),
-            config,
-            true,
-        )
-        .unwrap();
+        let mut lc = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error

@@ -16,7 +16,7 @@ use zingolib::{
     get_base_address_macro,
     lightclient::{ClientWallet, LightClient},
     testutils::lightclient::from_inputs::{self},
-    wallet::{LightWallet, WalletBase, WalletSettings},
+    wallet::{WalletBase, WalletSettings},
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
@@ -45,7 +45,7 @@ async fn sync_mainnet_test() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let wallet = LightWallet::new(
+    let client_wallet = ClientWallet::from_wallet_base(
         config.network_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
@@ -55,17 +55,7 @@ async fn sync_mainnet_test() {
         config.wallet_settings(),
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        ClientWallet::new(
-            wallet.chain_type(),
-            wallet.birthday(),
-            wallet.mnemonic().cloned(),
-            wallet,
-        ),
-        config,
-        true,
-    )
-    .unwrap();
+    let mut lightclient = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -120,7 +110,7 @@ async fn sync_status() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let wallet = LightWallet::new(
+    let client_wallet = ClientWallet::from_wallet_base(
         config.network_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
@@ -130,17 +120,7 @@ async fn sync_status() {
         config.wallet_settings(),
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        ClientWallet::new(
-            wallet.chain_type(),
-            wallet.birthday(),
-            wallet.mnemonic().cloned(),
-            wallet,
-        ),
-        config,
-        true,
-    )
-    .unwrap();
+    let mut lightclient = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }

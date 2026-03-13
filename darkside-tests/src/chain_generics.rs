@@ -42,7 +42,6 @@ pub(crate) mod conduct_chain {
     use zingolib::lightclient::ClientWallet;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
-    use zingolib::wallet::LightWallet;
     use zingolib::wallet::WalletBase;
     use zingolib::wallet::keys::unified::ReceiverSelection;
 
@@ -75,7 +74,7 @@ pub(crate) mod conduct_chain {
             let config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
-            let wallet = LightWallet::new(
+            let client_wallet = ClientWallet::from_wallet_base(
                 config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
@@ -85,17 +84,8 @@ pub(crate) mod conduct_chain {
                 config.wallet_settings(),
             )
             .unwrap();
-            let mut lightclient = LightClient::create_from_wallet(
-                ClientWallet::new(
-                    wallet.chain_type(),
-                    wallet.birthday(),
-                    wallet.mnemonic().cloned(),
-                    wallet,
-                ),
-                config,
-                true,
-            )
-            .unwrap();
+            let mut lightclient =
+                LightClient::create_from_wallet(client_wallet, config, true).unwrap();
 
             lightclient
                 .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)

@@ -9,7 +9,6 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use super::super::LightWallet;
 use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
 use crate::lightclient::{ClientWallet, LightClient};
 use crate::wallet::WalletSettings;
@@ -130,11 +129,11 @@ impl NetworkSeedVersion {
     /// Loads wallet from test wallet files.
     // TODO: improve with macro
     #[must_use]
-    pub fn load_example_wallet(&self, network: ChainType) -> LightWallet {
+    pub fn load_example_wallet(&self, network: ChainType) -> ClientWallet {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(version) => match version {
-                    HospitalMuseumVersion::V27 => LightWallet::read(
+                    HospitalMuseumVersion::V27 => ClientWallet::read(
                         include_bytes!(
                             "examples/regtest/hmvasmuvwmssvichcarbpoct/v27/zingo-wallet.dat"
                         )
@@ -144,7 +143,7 @@ impl NetworkSeedVersion {
                     .unwrap(),
                 },
                 RegtestSeedVersion::AbandonAbandon(version) => match version {
-                    AbandonAbandonVersion::V26 => LightWallet::read(
+                    AbandonAbandonVersion::V26 => ClientWallet::read(
                         include_bytes!(
                             "examples/regtest/aaaaaaaaaaaaaaaaaaaaaaaa/v26/zingo-wallet.dat"
                         )
@@ -154,7 +153,7 @@ impl NetworkSeedVersion {
                     .unwrap(),
                 },
                 RegtestSeedVersion::AbsurdAmount(version) => match version {
-                    AbsurdAmountVersion::OrchAndSapl => LightWallet::read(
+                    AbsurdAmountVersion::OrchAndSapl => ClientWallet::read(
                         include_bytes!(
                         "examples/regtest/aadaalacaadaalacaadaalac/orch_and_sapl/zingo-wallet.dat"
                     )
@@ -162,7 +161,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    AbsurdAmountVersion::OrchOnly => LightWallet::read(
+                    AbsurdAmountVersion::OrchOnly => ClientWallet::read(
                         include_bytes!(
                             "examples/regtest/aadaalacaadaalacaadaalac/orch_only/zingo-wallet.dat"
                         )
@@ -174,7 +173,7 @@ impl NetworkSeedVersion {
             },
             NetworkSeedVersion::Testnet(seed) => match seed {
                 TestnetSeedVersion::ChimneyBetter(version) => match version {
-                    ChimneyBetterVersion::V26 => LightWallet::read(
+                    ChimneyBetterVersion::V26 => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/cbbhrwiilgbrababsshsmtpr/v26/zingo-wallet.dat"
                         )
@@ -182,7 +181,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    ChimneyBetterVersion::V27 => LightWallet::read(
+                    ChimneyBetterVersion::V27 => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/cbbhrwiilgbrababsshsmtpr/v27/zingo-wallet.dat"
                         )
@@ -190,7 +189,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    ChimneyBetterVersion::V28 => LightWallet::read(
+                    ChimneyBetterVersion::V28 => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/cbbhrwiilgbrababsshsmtpr/v28/zingo-wallet.dat"
                         )
@@ -198,7 +197,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    ChimneyBetterVersion::Latest => LightWallet::read(
+                    ChimneyBetterVersion::Latest => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/cbbhrwiilgbrababsshsmtpr/latest/zingo-wallet.dat"
                         )
@@ -208,7 +207,7 @@ impl NetworkSeedVersion {
                     .unwrap(),
                 },
                 TestnetSeedVersion::MobileShuffle(version) => match version {
-                    MobileShuffleVersion::Gab72a38b => LightWallet::read(
+                    MobileShuffleVersion::Gab72a38b => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/mskmgdbhotbpetcjwcspgopp/Gab72a38b/zingo-wallet.dat"
                         )
@@ -216,7 +215,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    MobileShuffleVersion::G93738061a => LightWallet::read(
+                    MobileShuffleVersion::G93738061a => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/mskmgdbhotbpetcjwcspgopp/G93738061a/zingo-wallet.dat"
                         )
@@ -224,7 +223,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    MobileShuffleVersion::Latest => LightWallet::read(
+                    MobileShuffleVersion::Latest => ClientWallet::read(
                         include_bytes!(
                             "examples/testnet/mskmgdbhotbpetcjwcspgopp/latest/zingo-wallet.dat"
                         )
@@ -233,7 +232,7 @@ impl NetworkSeedVersion {
                     )
                     .unwrap(),
                 },
-                TestnetSeedVersion::GloryGoddess => LightWallet::read(
+                TestnetSeedVersion::GloryGoddess => ClientWallet::read(
                     include_bytes!("examples/testnet/glory_goddess/latest/zingo-wallet.dat")
                         .reader(),
                     network,
@@ -242,7 +241,7 @@ impl NetworkSeedVersion {
             },
             NetworkSeedVersion::Mainnet(seed) => match seed {
                 MainnetSeedVersion::VillageTarget(version) => match version {
-                    VillageTargetVersion::V28 => LightWallet::read(
+                    VillageTargetVersion::V28 => ClientWallet::read(
                         include_bytes!(
                             "examples/mainnet/vtfcorfbcbpctcfupmegmwbp/v28/zingo-wallet.dat"
                         )
@@ -252,7 +251,7 @@ impl NetworkSeedVersion {
                     .unwrap(),
                 },
                 MainnetSeedVersion::HotelHumor(version) => match version {
-                    HotelHumorVersion::Gf0aaf9347 => LightWallet::read(
+                    HotelHumorVersion::Gf0aaf9347 => ClientWallet::read(
                         include_bytes!(
                             "examples/mainnet/hhcclaltpcckcsslpcnetblr/gf0aaf9347/zingo-wallet.dat"
                         )
@@ -260,7 +259,7 @@ impl NetworkSeedVersion {
                         network,
                     )
                     .unwrap(),
-                    HotelHumorVersion::Latest => LightWallet::read(
+                    HotelHumorVersion::Latest => ClientWallet::read(
                         include_bytes!(
                             "examples/mainnet/hhcclaltpcckcsslpcnetblr/latest/zingo-wallet.dat"
                         )
@@ -299,19 +298,9 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let wallet = self.load_example_wallet(config.network_type());
+        let client_wallet = self.load_example_wallet(config.network_type());
 
-        LightClient::create_from_wallet(
-            ClientWallet::new(
-                wallet.chain_type(),
-                wallet.birthday(),
-                wallet.mnemonic().cloned(),
-                wallet,
-            ),
-            config,
-            true,
-        )
-        .unwrap()
+        LightClient::create_from_wallet(client_wallet, config, true).unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]

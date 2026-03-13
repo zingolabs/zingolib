@@ -982,14 +982,14 @@ mod fast {
         use zcash_client_backend::address::Address;
         use zcash_primitives::transaction::TxId;
         use zcash_transparent::address::TransparentAddress;
+        use zingolib::config::ChainType;
         use zingolib::{testutils, wallet::LightWallet};
 
         use super::*;
 
-        fn first_taddr_to_tex(wallet: &LightWallet) -> ZcashAddress {
+        fn first_taddr_to_tex(wallet: &LightWallet, network: &ChainType) -> ZcashAddress {
             let taddr = wallet.transparent_addresses().values().next().unwrap();
-            let Address::Transparent(taddr) =
-                decode_address(&wallet.chain_type(), taddr.as_str()).unwrap()
+            let Address::Transparent(taddr) = decode_address(network, taddr.as_str()).unwrap()
             else {
                 panic!("not t addr")
             };
@@ -998,8 +998,7 @@ mod fast {
                 TransparentAddress::PublicKeyHash(taddr_bytes) => taddr_bytes,
                 TransparentAddress::ScriptHash(_) => panic!(),
             };
-            let tex_string =
-                testutils::interpret_taddr_as_tex_addr(taddr_bytes, &wallet.chain_type());
+            let tex_string = testutils::interpret_taddr_as_tex_addr(taddr_bytes, network);
 
             ZcashAddress::try_from_encoded(&tex_string).unwrap()
         }
@@ -1008,7 +1007,8 @@ mod fast {
             let (ref local_net, ref faucet, mut sender, _txid) =
                 scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-            let tex_addr_from_first = first_taddr_to_tex(&*faucet.wallet().read().await);
+            let tex_addr_from_first =
+                first_taddr_to_tex(&*faucet.wallet().read().await, &faucet.chain_type());
             let payment = vec![Payment::without_memo(
                 tex_addr_from_first.clone(),
                 Zatoshis::from_u64(100_000).unwrap(),
@@ -4581,7 +4581,7 @@ mod testnet_test {
         config::{ChainType, DEFAULT_TESTNET_LIGHTWALLETD_SERVER, ZingoConfig},
         lightclient::{ClientWallet, LightClient},
         testutils::tempfile::TempDir,
-        wallet::{LightWallet, WalletBase},
+        wallet::WalletBase,
     };
 
     #[ignore = "testnet cannot be run offline"]
@@ -4605,7 +4605,7 @@ mod testnet_test {
                 )
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build();
-            let wallet = LightWallet::new(
+            let client_wallet = ClientWallet::from_wallet_base(
                 ChainType::Testnet,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED).unwrap(),
@@ -4616,17 +4616,8 @@ mod testnet_test {
             )
             .unwrap();
 
-            let mut lightclient = LightClient::create_from_wallet(
-                ClientWallet::new(
-                    wallet.chain_type(),
-                    wallet.birthday(),
-                    wallet.mnemonic().cloned(),
-                    wallet,
-                ),
-                config.clone(),
-                true,
-            )
-            .unwrap();
+            let mut lightclient =
+                LightClient::create_from_wallet(client_wallet, config.clone(), true).unwrap();
             lightclient.save_task().await;
             lightclient.sync().await.unwrap();
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
