@@ -316,7 +316,7 @@ impl LightWallet {
 
     /// Returns the wallet's mnemonic phrase as a string.
     #[must_use]
-    pub fn mnemonic_phrase(&self) -> Option<String> {
+    fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic.as_ref().map(|m| m.phrase().to_string())
     }
 
