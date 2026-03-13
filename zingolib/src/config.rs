@@ -292,13 +292,6 @@ impl ZingoConfig {
 
         Ok(backup_file_str)
     }
-
-    /// TEMPORARY
-    // TODO: this will be removed in following PR which deconstructs config fields into lightclient and lightwallet
-    // this method will only be a method on lightclient.
-    pub(crate) fn set_indexer_uri(&mut self, indexer_uri: http::Uri) {
-        self.indexer_uri = indexer_uri;
-    }
 }
 
 #[cfg(any(test, feature = "testutils"))]

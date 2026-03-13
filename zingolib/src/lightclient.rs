@@ -106,6 +106,8 @@ impl ClientWallet {
 pub struct LightClient {
     // TODO: split zingoconfig so data is not duplicated
     pub config: ZingoConfig,
+    /// Indexer connection
+    pub indexer: zingo_netutils::GrpcIndexer,
     /// Tor client
     tor_client: Option<tor::Client>,
     /// Wallet data
@@ -164,8 +166,10 @@ impl LightClient {
             }
         }
 
+        let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri());
         Ok(LightClient {
             config,
+            indexer,
             tor_client: None,
             client_wallet,
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
@@ -228,13 +232,13 @@ impl LightClient {
     }
 
     /// Returns URI of the indexer the lightclient is connected to.
-    pub fn indexer_uri(&self) -> http::Uri {
-        self.config.indexer_uri()
+    pub fn indexer_uri(&self) -> Option<&http::Uri> {
+        self.indexer.uri()
     }
 
     /// Set indexer uri.
     pub fn set_indexer_uri(&mut self, server: http::Uri) {
-        self.config.set_indexer_uri(server);
+        self.indexer.set_uri(server);
     }
 
     /// Creates a tor client for current price updates.
@@ -261,12 +265,13 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        match crate::grpc_connector::get_info(self.indexer_uri()).await {
+        use zingo_netutils::Indexer as _;
+        match self.indexer.get_info().await {
             Ok(i) => {
                 let o = json::object! {
                     "version" => i.version,
                     "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer_uri().to_string(),
+                    "server_uri" => self.indexer.uri().map(|u| u.to_string()).unwrap_or_default(),
                     "vendor" => i.vendor,
                     "taddr_support" => i.taddr_support,
                     "chain_name" => i.chain_name,
@@ -276,7 +281,7 @@ impl LightClient {
                 };
                 o.pretty(2)
             }
-            Err(e) => e,
+            Err(e) => format!("{e:?}"),
         }
     }
 

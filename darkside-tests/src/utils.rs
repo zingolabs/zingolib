@@ -118,7 +118,9 @@ pub async fn update_tree_states_for_transaction(
     raw_tx: RawTransaction,
     height: u64,
 ) -> TreeState {
-    let trees = zingolib::grpc_connector::get_trees(server_id.clone(), height - 1)
+    use zingo_netutils::Indexer as _;
+    let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
+        .get_trees(height - 1)
         .await
         .unwrap();
     let mut sapling_tree: sapling_crypto::CommitmentTree =

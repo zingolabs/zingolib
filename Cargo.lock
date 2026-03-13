@@ -9158,6 +9158,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
+ "zingo-netutils",
  "zingo_common_components",
  "zingolib",
  "zip32",
@@ -9189,9 +9190,9 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "2.0.2"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d2ca11c717feb94a0032da1e6cffb2928ce2c34aca3b430e85cac02fd0ab425"
+checksum = "49ecb14738ee40c0d21e91e7ebff3e108f179722f673f27773b1224db054b798"
 dependencies = [
  "http",
  "hyper",

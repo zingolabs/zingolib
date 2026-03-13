@@ -159,14 +159,16 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                let transmission_result = crate::grpc_connector::send_transaction(
-                    self.indexer_uri(),
-                    transaction_bytes.clone().into_boxed_slice(),
-                )
-                .await
-                .map_err(|e| {
-                    SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
-                });
+                use zingo_netutils::Indexer as _;
+                let transmission_result = self
+                    .indexer
+                    .send_transaction(transaction_bytes.clone().into_boxed_slice())
+                    .await
+                    .map_err(|e| {
+                        SendError::TransmissionError(TransmissionError::TransmissionFailed(
+                            format!("{e:?}"),
+                        ))
+                    });
 
                 match transmission_result {
                     Ok(txid) => {

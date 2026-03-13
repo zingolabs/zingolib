@@ -44,7 +44,7 @@ zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
 
 # Zingo-common
-zingo-netutils = "2.0.2"
+zingo-netutils = "3.0.0"
 zingo_common_components = "0.3.0"
 
 # Parallel processing

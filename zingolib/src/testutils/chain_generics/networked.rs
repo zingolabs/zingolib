@@ -16,10 +16,9 @@ pub struct NetworkedTestEnvironment {
 
 impl NetworkedTestEnvironment {
     async fn update_server_height(&mut self) {
-        let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
-            .await
-            .unwrap()
-            .height as u32;
+        use zingo_netutils::Indexer as _;
+        let indexer = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap());
+        let latest = indexer.get_latest_block().await.unwrap().height as u32;
         self.latest_known_server_height = Some(BlockHeight::from(latest));
         crate::testutils::timestamped_test_log(
             format!("Networked Test Chain is now at height {latest}").as_str(),

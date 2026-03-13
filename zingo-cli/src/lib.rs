@@ -439,9 +439,14 @@ pub fn startup(
 
         let chain_height = RT
             .block_on(async move {
-                zingolib::grpc_connector::get_latest_block(server_uri)
-                    .await
-                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                {
+                    use zingo_netutils::Indexer as _;
+                    zingo_netutils::GrpcIndexer::new(server_uri)
+                        .get_latest_block()
+                        .await
+                        .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                        .map_err(|e| format!("{e:?}"))
+                }
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 

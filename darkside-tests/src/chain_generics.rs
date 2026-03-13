@@ -101,11 +101,14 @@ pub(crate) mod conduct_chain {
         }
 
         async fn increase_chain_height(&mut self) {
-            let height_before =
-                zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+            let height_before = {
+                use zingo_netutils::Indexer as _;
+                zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
+                    .get_latest_block()
                     .await
                     .unwrap()
-                    .height;
+                    .height
+            };
 
             let blocks_to_add = 1;
 
@@ -120,12 +123,13 @@ pub(crate) mod conduct_chain {
                 .unwrap();
 
             // trees
-            let trees = zingolib::grpc_connector::get_trees(
-                self.client_builder.server_id.clone(),
-                height_before,
-            )
-            .await
-            .unwrap();
+            let trees = {
+                use zingo_netutils::Indexer as _;
+                zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
+                    .get_trees(height_before)
+                    .await
+                    .unwrap()
+            };
             let mut sapling_tree: sapling_crypto::CommitmentTree =
                 zcash_primitives::merkle_tree::read_commitment_tree(
                     hex::decode(trees.sapling_tree).unwrap().as_slice(),

@@ -27,7 +27,7 @@ impl LightClient {
             ));
         }
 
-        let client = zingo_netutils::get_client(self.config.indexer_uri()).await?;
+        let client = self.indexer.get_client().await?;
         let network = self.chain_type();
         let sync_config = self
             .wallet()
