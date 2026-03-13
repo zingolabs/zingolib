@@ -233,7 +233,7 @@ async fn reload_wallet_from_buffer() {
         .wallet()
         .write()
         .await
-        .write(&mut mid_buffer, &mid_client.config.network_type())
+        .write(&mut mid_buffer, &mid_client.chain_type())
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
