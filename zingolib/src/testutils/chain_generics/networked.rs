@@ -3,20 +3,23 @@
 use http::Uri;
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
+use crate::{
+    config::{DEFAULT_TESTNET_INDEXER_URI, some_infallible_uri},
+    lightclient::LightClient,
+};
 
 use super::conduct_chain::ConductChain;
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
 pub struct NetworkedTestEnvironment {
-    indexer_uri: Uri,
+    indexer_uri: Option<Uri>,
     latest_known_server_height: Option<BlockHeight>,
 }
 
 impl NetworkedTestEnvironment {
     async fn update_server_height(&mut self) {
-        let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+        let latest = crate::grpc_connector::get_latest_block(self.indexer_uri().unwrap())
             .await
             .unwrap()
             .height as u32;
@@ -30,8 +33,7 @@ impl NetworkedTestEnvironment {
 impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {
-            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                .unwrap(),
+            indexer_uri: some_infallible_uri(DEFAULT_TESTNET_INDEXER_URI),
             latest_known_server_height: None,
         }
     }
@@ -56,8 +58,8 @@ impl ConductChain for NetworkedTestEnvironment {
         }
     }
 
-    fn lightserver_uri(&self) -> Option<Uri> {
-        Some(self.indexer_uri.clone())
+    fn indexer_uri(&self) -> Option<Uri> {
+        self.indexer_uri.clone()
     }
 
     fn confirmation_patience_blocks(&self) -> usize {

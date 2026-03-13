@@ -27,7 +27,13 @@ impl LightClient {
             ));
         }
 
-        let client = zingo_netutils::get_client(self.config.indexer_uri()).await?;
+        let indexer_uri = self.indexer_uri().ok_or_else(|| {
+            LightClientError::FileError(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "No indexer URI configured. Cannot sync in offline mode.",
+            ))
+        })?;
+        let client = zingo_netutils::get_client(indexer_uri).await?;
         let network = self.chain_type();
         let sync_config = self
             .wallet()

@@ -64,8 +64,8 @@ pub(crate) mod conduct_chain {
         }
 
         /// the mock chain is fed to the Client via lightwalletd. where is that server to be found?
-        fn lightserver_uri(&self) -> Option<http::Uri> {
-            Some(self.client_builder.server_id.clone())
+        fn indexer_uri(&self) -> Option<http::Uri> {
+            Some(self.client_builder.indexer_uri.clone().expect("some uri"))
         }
 
         async fn create_faucet(&mut self) -> LightClient {
@@ -75,7 +75,7 @@ pub(crate) mod conduct_chain {
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let client_wallet = ClientWallet::from_wallet_base(
-                config.network_type(),
+                config.chain_type,
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -102,7 +102,7 @@ pub(crate) mod conduct_chain {
 
         async fn increase_chain_height(&mut self) {
             let height_before =
-                zingolib::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
+                zingolib::grpc_connector::get_latest_block(self.indexer_uri().unwrap())
                     .await
                     .unwrap()
                     .height;
@@ -121,7 +121,7 @@ pub(crate) mod conduct_chain {
 
             // trees
             let trees = zingolib::grpc_connector::get_trees(
-                self.client_builder.server_id.clone(),
+                self.client_builder.indexer_uri.clone().expect("some uri"),
                 height_before,
             )
             .await

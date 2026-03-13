@@ -15,7 +15,7 @@ pub async fn new_client_from_save_buffer(
         .wallet()
         .write()
         .await
-        .write(&mut wallet_bytes, &template_client.config.network_type())
+        .write(&mut wallet_bytes, &template_client.config.chain_type)
         .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
 
     let client_wallet = ClientWallet::read(

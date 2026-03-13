@@ -8,6 +8,7 @@ mod commands;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::str::FromStr as _;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use bip0039::Mnemonic;
@@ -18,7 +19,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::config::{ChainType, ZingoConfigBuilder};
 use zingolib::lightclient::ClientWallet;
 use zingolib::lightclient::LightClient;
 
@@ -67,7 +68,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -272,7 +273,7 @@ pub fn command_loop(
 /// TODO: Add Doc Comment Here!
 pub struct ConfigTemplate {
     params: Vec<String>,
-    server: http::Uri,
+    server: Option<http::Uri>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -334,23 +335,14 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        let server = matches
-            .get_one::<http::Uri>("server")
-            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::construct_lightwalletd_uri(server);
+        // TODO: Handle NONE?!
+        let server = matches.get_one::<http::Uri>("server").cloned();
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
-            ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
+            ChainType::from_str(chain.as_str()).map_err(|e| e.to_string())?
         } else {
             ChainType::Mainnet
         };
-
-        // Test to make sure the server has all of scheme, host and port
-        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(format!(
-                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {server}"
-            ));
-        }
 
         let sync = !matches.get_flag("nosync");
         let waitsync = matches.get_flag("waitsync");
@@ -382,9 +374,9 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    let config = ZingoConfig::builder()
+    let config = ZingoConfigBuilder::default()
         .set_indexer_uri(filled_template.server.clone())
-        .set_network_type(filled_template.chaintype)
+        .set_chain(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
         .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
@@ -395,7 +387,7 @@ pub fn startup(
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
         .set_wallet_name("".to_string())
-        .build();
+        .create();
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         let client_wallet = ClientWallet::from_wallet_base(
@@ -435,16 +427,16 @@ pub fn startup(
         println!("Creating a new wallet");
         // Call the lightwalletd server to get the current block-height
         // Do a getinfo first, before opening the wallet
-        let server_uri = config.indexer_uri();
-
-        let chain_height = RT
-            .block_on(async move {
+        let chain_height = if let Some(server_uri) = config.get_indexer_uri() {
+            RT.block_on(async move {
                 zingolib::grpc_connector::get_latest_block(server_uri)
                     .await
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
             })
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
-
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        } else {
+            BlockHeight::from_u32(0) //NOTE: this will become sapling activation
+        };
         LightClient::new(config.clone(), chain_height, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
@@ -453,9 +445,13 @@ pub fn startup(
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Light Client config {config:?}");
+        info!("Light Client config {{config.clone():?}}");
 
-        info!("Lightclient connecting to {}", config.indexer_uri());
+        if let Some(uri) = config.clone().get_indexer_uri() {
+            info!("Lightclient connecting to {}", uri)
+        } else {
+            info!("Lightclient does not have an indexer configured")
+        };
     }
 
     if filled_template.sync {

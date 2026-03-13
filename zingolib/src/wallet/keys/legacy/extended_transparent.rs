@@ -112,7 +112,7 @@ impl ExtendedPrivKey {
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
             .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.network_type().coin_type()).unwrap(),
+                KeyIndex::hardened_from_normalize_index(config.chain_type.coin_type()).unwrap(),
             )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())

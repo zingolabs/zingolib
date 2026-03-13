@@ -122,7 +122,7 @@ where
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
     let server_height_at_send = BlockHeight::from(
-        crate::grpc_connector::get_latest_block(environment.lightserver_uri().unwrap())
+        crate::grpc_connector::get_latest_block(environment.indexer_uri().unwrap())
             .await
             .unwrap()
             .height as u32,

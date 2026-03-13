@@ -119,6 +119,7 @@ pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 zingolib = { path = "zingolib" }
 zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
 zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "d5bc8427a7a78edec691d06043edfaef9bbaed58" }
 
 [profile.test]
 opt-level = 3

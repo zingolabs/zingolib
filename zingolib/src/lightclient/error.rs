@@ -65,6 +65,9 @@ pub enum TransmissionError {
     /// Transmission failed.
     #[error("Transmission failed. {0}")]
     TransmissionFailed(String),
+    /// Transmission failed.
+    #[error("No indexer configured {0}")]
+    OfflineMode(String),
     /// Transaction to transmit does not have `Calculated` status: {0}
     #[error("Transaction to transmit does not have `Calculated` status: {0}")]
     IncorrectTransactionStatus(TxId),

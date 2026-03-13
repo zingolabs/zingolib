@@ -1,15 +1,13 @@
 use std::num::NonZeroU32;
 
 use bytes::Buf;
-use http::Uri;
-
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
+use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfigBuilder, some_infallible_uri};
 use crate::lightclient::{ClientWallet, LightClient};
 use crate::wallet::WalletSettings;
 
@@ -278,11 +276,9 @@ impl NetworkSeedVersion {
         let config = match self {
             NetworkSeedVersion::Regtest(_) => {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
-                let lightwalletd_uri = DEFAULT_LIGHTWALLETD_SERVER.parse::<Uri>().unwrap();
-
-                ZingoConfig::builder()
-                    .set_indexer_uri(lightwalletd_uri)
-                    .set_network_type(ChainType::Regtest(ActivationHeights::default()))
+                ZingoConfigBuilder::default()
+                    .set_indexer_uri(some_infallible_uri(DEFAULT_INDEXER_URI))
+                    .set_chain(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name("".to_string())
                     .set_wallet_settings(WalletSettings {
                         sync_config: SyncConfig {
@@ -292,13 +288,13 @@ impl NetworkSeedVersion {
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     })
                     .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
-                    .build()
+                    .create()
             }
             NetworkSeedVersion::Testnet(_) => crate::config::ZingoConfig::create_testnet(),
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let client_wallet = self.load_example_wallet(config.network_type());
+        let client_wallet = self.load_example_wallet(config.chain_type);
 
         LightClient::create_from_wallet(client_wallet, config, true).unwrap()
     }
