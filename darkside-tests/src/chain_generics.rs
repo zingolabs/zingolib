@@ -201,7 +201,7 @@ pub(crate) mod conduct_chain {
             )
             .unwrap();
             let new_tree_state = TreeState {
-                height: new_height as u64,
+                height: new_height,
                 sapling_tree: hex::encode(sapling_tree_bytes),
                 orchard_tree: hex::encode(orchard_tree_bytes),
                 network: crate::constants::first_tree_state().network,
