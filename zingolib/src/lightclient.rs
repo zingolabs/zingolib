@@ -15,7 +15,7 @@ use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::consensus::{BlockHeight, BranchId, Parameters};
 use zcash_transparent::address::TransparentAddress;
 
 use pepper_sync::{
@@ -58,6 +58,19 @@ pub struct LightClient {
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     save_active: Arc<AtomicBool>,
     save_handle: Option<JoinHandle<std::io::Result<()>>>,
+}
+
+/// Contains information about the indexer this lighclient is connected to.
+pub struct IndexerInfo {
+    pub version: String,
+    pub git_commit: String,
+    pub indexer_uri: http::Uri,
+    pub vendor: String,
+    pub supports_transparent: bool,
+    pub chain_name: String,
+    pub sapling_activation_height: BlockHeight,
+    pub consensus_branch_id: BranchId,
+    pub latest_block_height: BlockHeight,
 }
 
 impl LightClient {
@@ -187,25 +200,25 @@ impl LightClient {
         self.tor_client = None;
     }
 
-    /// Returns server information.
-    // TODO: return concrete struct with from json impl
-    pub async fn do_info(&self) -> String {
+    /// Returns indexer information.
+    pub async fn get_indexer_info(&self) -> Result<IndexerInfo, String> {
         match crate::grpc_connector::get_info(self.indexer_uri()).await {
             Ok(i) => {
-                let o = json::object! {
-                    "version" => i.version,
-                    "git_commit" => i.git_commit,
-                    "server_uri" => self.indexer_uri().to_string(),
-                    "vendor" => i.vendor,
-                    "taddr_support" => i.taddr_support,
-                    "chain_name" => i.chain_name,
-                    "sapling_activation_height" => i.sapling_activation_height,
-                    "consensus_branch_id" => i.consensus_branch_id,
-                    "latest_block_height" => i.block_height
-                };
-                o.pretty(2)
+                let branch_id: u32 = i.consensus_branch_id.parse().unwrap();
+
+                return Ok(IndexerInfo {
+                    version: i.version,
+                    git_commit: i.git_commit,
+                    indexer_uri: self.indexer_uri(),
+                    vendor: i.vendor,
+                    supports_transparent: i.taddr_support,
+                    chain_name: i.chain_name,
+                    sapling_activation_height: i.sapling_activation_height.try_into().unwrap(),
+                    consensus_branch_id: BranchId::try_from(branch_id).unwrap(),
+                    latest_block_height: i.block_height.try_into().unwrap(),
+                });
             }
-            Err(e) => e,
+            Err(e) => Err(e),
         }
     }
 

@@ -570,7 +570,21 @@ impl Command for InfoCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.do_info().await })
+        RT.block_on(async move {
+            let info = lightclient.get_indexer_info().await;
+            return json::object! {
+                "version" => i.version,
+                "git_commit" => i.git_commit,
+                "server_uri" => self.indexer_uri().to_string(),
+                "vendor" => i.vendor,
+                "taddr_support" => i.taddr_support,
+                "chain_name" => i.chain_name,
+                "sapling_activation_height" => i.sapling_activation_height,
+                "consensus_branch_id" => i.consensus_branch_id,
+                "latest_block_height" => i.block_height
+            }
+            .pretty(2);
+        })
     }
 }
 
