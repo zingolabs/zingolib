@@ -9376,7 +9376,6 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "incrementalmerkletree",
- "json",
  "jubjub",
  "log",
  "log4rs",

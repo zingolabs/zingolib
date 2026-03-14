@@ -32,7 +32,7 @@ zingo_common_components = { workspace = true }
 zingo-netutils = { workspace = true }
 
 # Test
-zingo_test_vectors = { workspace = true, optional = true}
+zingo_test_vectors = { workspace = true, optional = true }
 
 # Zcash
 incrementalmerkletree = { workspace = true }
@@ -63,7 +63,6 @@ bech32 = { workspace = true }
 bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
 hex = { workspace = true }
-json = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

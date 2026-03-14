@@ -11,12 +11,22 @@ macro_rules! get_base_address_macro {
         match $address_protocol {
             "unified" => {
                 assert_eq!(
-                    $client.unified_addresses_json().await[0]["has_orchard"]
-                        .as_bool()
-                        .unwrap(),
+                    $client
+                        .unified_addresses()
+                        .await
+                        .first_entry()
+                        .unwrap()
+                        .get()
+                        .has_orchard(),
                     true
                 );
-                $client.unified_addresses_json().await[0]["encoded_address"]
+                $client
+                    .unified_addresses()
+                    .await
+                    .first_entry()
+                    .unwrap()
+                    .get()
+                    .encode(&$client.config().network_type())
                     .clone()
                     .to_string()
             }

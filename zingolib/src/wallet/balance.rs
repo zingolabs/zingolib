@@ -103,21 +103,21 @@ impl std::fmt::Display for AccountBalance {
     }
 }
 
-impl From<AccountBalance> for json::JsonValue {
-    fn from(value: AccountBalance) -> Self {
-        json::object! {
-            "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "total_orchard_balance" => value.total_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "unconfirmed_sapling_balance" => value.unconfirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "total_sapling_balance" => value.total_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "confirmed_transparent_balance" => value.confirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "unconfirmed_transparent_balance" => value.unconfirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-            "total_transparent_balance" => value.total_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
-        }
-    }
-}
+// impl From<AccountBalance> for json::JsonValue {
+//     fn from(value: AccountBalance) -> Self {
+//         json::object! {
+//             "confirmed_orchard_balance" => value.confirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "unconfirmed_orchard_balance" => value.unconfirmed_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "total_orchard_balance" => value.total_orchard_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "confirmed_sapling_balance" => value.confirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "unconfirmed_sapling_balance" => value.unconfirmed_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "total_sapling_balance" => value.total_sapling_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "confirmed_transparent_balance" => value.confirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "unconfirmed_transparent_balance" => value.unconfirmed_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//             "total_transparent_balance" => value.total_transparent_balance.map(zcash_protocol::value::Zatoshis::into_u64),
+//         }
+//     }
+// }
 
 fn format_zatoshis(zatoshis: Zatoshis) -> String {
     let zats = zatoshis.into_u64().to_string();

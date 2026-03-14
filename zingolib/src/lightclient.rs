@@ -1,6 +1,7 @@
 //! TODO: Add Mod Description Here!
 
 use std::{
+    collections::BTreeMap,
     fs::File,
     io::BufReader,
     path::PathBuf,
@@ -10,7 +11,6 @@ use std::{
     },
 };
 
-use json::JsonValue;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use zcash_client_backend::tor;
@@ -246,14 +246,14 @@ impl LightClient {
             .generate_transparent_address(account_id, enforce_no_gap)
     }
 
-    /// Wrapper for [`crate::wallet::LightWallet::unified_addresses_json`].
-    pub async fn unified_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.unified_addresses_json()
+    /// Wrapper for [`crate::wallet::LightWallet::unified_addresses`].
+    pub async fn unified_addresses(&self) -> BTreeMap<UnifiedAddressId, UnifiedAddress> {
+        self.wallet.read().await.unified_addresses().clone()
     }
 
-    /// Wrapper for [`crate::wallet::LightWallet::transparent_addresses_json`].
-    pub async fn transparent_addresses_json(&self) -> JsonValue {
-        self.wallet.read().await.transparent_addresses_json()
+    /// Wrapper for [`crate::wallet::LightWallet::transparent_addresses`].
+    pub async fn transparent_addresses(&self) -> BTreeMap<TransparentAddressId, String> {
+        self.wallet.read().await.transparent_addresses().clone()
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::account_balance`].
@@ -391,10 +391,17 @@ mod tests {
             LightClientError::FileError(_)
         ));
 
+        let first_encoded_address = lc
+            .transparent_addresses()
+            .await
+            .first()
+            .unwrap()
+            .encoded_address;
+
         // The first transparent address and unified address should be derived
         assert_eq!(
             "tmYd5GP6JxUxTUcz98NLPumEotvaMPaXytz".to_string(),
-            lc.transparent_addresses_json().await[0]["encoded_address"]
+            first_encoded_address
         );
         assert_eq!(
             "uregtest15en5x5cnsc7ye3wfy0prnh3ut34ns9w40htunlh9htfl6k5p004ja5gprxfz8fygjeax07a8489wzjk8gsx65thcp6d3ku8umgaka6f0"

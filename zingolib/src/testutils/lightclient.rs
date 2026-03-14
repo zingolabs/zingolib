@@ -36,32 +36,64 @@ pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> Strin
     match pooltype {
         PoolType::Shielded(ShieldedProtocol::Orchard) => {
             assert!(
-                client.unified_addresses_json().await[0]["has_orchard"]
-                    .as_bool()
+                client
+                    .unified_addresses()
+                    .await
+                    .first_entry()
                     .unwrap()
+                    .get()
+                    .has_orchard()
             );
-            client.unified_addresses_json().await[0]["encoded_address"]
+            client
+                .unified_addresses()
+                .await
+                .first_entry()
+                .unwrap()
+                .get()
+                .encode(&client.config().network_type())
                 .clone()
                 .to_string()
         }
         PoolType::Shielded(ShieldedProtocol::Sapling) => {
             assert!(
-                !client.unified_addresses_json().await[1]["has_orchard"]
-                    .as_bool()
+                !client
+                    .unified_addresses()
+                    .await
+                    .iter()
+                    .skip(1)
+                    .next()
                     .unwrap()
+                    .1
+                    .has_orchard()
             );
             assert!(
-                client.unified_addresses_json().await[1]["has_sapling"]
-                    .as_bool()
+                client
+                    .unified_addresses()
+                    .await
+                    .iter()
+                    .skip(1)
+                    .next()
                     .unwrap()
+                    .1
+                    .has_sapling()
             );
-            client.unified_addresses_json().await[1]["encoded_address"]
-                .clone()
-                .to_string()
+            client
+                .unified_addresses()
+                .await
+                .iter()
+                .skip(1)
+                .next()
+                .unwrap()
+                .1
+                .encode(&client.config().network_type())
         }
-        PoolType::Transparent => client.transparent_addresses_json().await[0]["encoded_address"]
-            .clone()
-            .to_string(),
+        PoolType::Transparent => client
+            .transparent_addresses()
+            .await
+            .first_entry()
+            .unwrap()
+            .get()
+            .clone(),
     }
 }
 /// Get the total fees paid by a given client (assumes 1 capability per client).
