@@ -206,7 +206,7 @@ impl LightClient {
             Ok(i) => {
                 let branch_id: u32 = i.consensus_branch_id.parse().unwrap();
 
-                return Ok(IndexerInfo {
+                Ok(IndexerInfo {
                     version: i.version,
                     git_commit: i.git_commit,
                     indexer_uri: self.indexer_uri(),
@@ -216,7 +216,7 @@ impl LightClient {
                     sapling_activation_height: i.sapling_activation_height.try_into().unwrap(),
                     consensus_branch_id: BranchId::try_from(branch_id).unwrap(),
                     latest_block_height: i.block_height.try_into().unwrap(),
-                });
+                })
             }
             Err(e) => Err(e),
         }
