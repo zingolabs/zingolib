@@ -13,3 +13,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - removed `dev` branch reference from `zingo_common_components` crate and pointed to version `0.2`
 ### Removed
+- `log4rs` workspace dependency
