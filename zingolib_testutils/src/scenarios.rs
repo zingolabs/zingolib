@@ -36,7 +36,6 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::get_base_address_macro;
-use zingolib::lightclient::ClientWallet;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
@@ -229,13 +228,7 @@ impl ClientBuilder {
         wallet
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .unwrap();
-
-        LightClient::create_from_wallet(
-            ClientWallet::new(config.network_type(), birthday, Some(mnemonic), wallet),
-            config,
-            overwrite,
-        )
-        .unwrap()
+        LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
     }
 }
 

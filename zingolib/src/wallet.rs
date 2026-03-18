@@ -314,9 +314,27 @@ impl LightWallet {
         self.read_version
     }
 
+    /// Returns wallet birthday height.
+    #[must_use]
+    pub fn birthday(&self) -> BlockHeight {
+        self.birthday
+    }
+
+    /// Returns chain type wallet is connected to.
+    #[must_use]
+    pub fn chain_type(&self) -> ChainType {
+        self.network
+    }
+
+    /// Returns the wallet's mnemonic for internal operations.
+    #[must_use]
+    pub(crate) fn mnemonic(&self) -> Option<Mnemonic> {
+        self.mnemonic.clone()
+    }
+
     /// Returns the wallet's mnemonic phrase as a string.
     #[must_use]
-    fn mnemonic_phrase(&self) -> Option<String> {
+    pub fn mnemonic_phrase(&self) -> Option<String> {
         self.mnemonic.as_ref().map(|m| m.phrase().to_string())
     }
 
