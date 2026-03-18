@@ -68,7 +68,7 @@ impl WalletMeta {
         Self {
             chain_type: wallet.chain_type(),
             birthday: wallet.birthday(),
-            mnemonic: wallet.mnemonic(),
+            mnemonic: wallet.mnemonic().cloned(),
             wallet_data: Arc::new(RwLock::new(wallet)),
         }
     }
