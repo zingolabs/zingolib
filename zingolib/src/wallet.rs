@@ -102,7 +102,7 @@ impl WalletBase {
     ///
     /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
     #[allow(clippy::result_large_err)]
-    pub fn resolve_keys(
+    fn resolve_keys(
         self,
         network: &ChainType,
     ) -> Result<
@@ -328,14 +328,14 @@ impl LightWallet {
 
     /// Returns the wallet's mnemonic for internal operations.
     #[must_use]
-    pub(crate) fn mnemonic(&self) -> Option<Mnemonic> {
-        self.mnemonic.clone()
+    pub(crate) fn mnemonic(&self) -> Option<&Mnemonic> {
+        self.mnemonic.as_ref()
     }
 
-    /// Returns the wallet's mnemonic phrase as a string.
+    /// Returns the wallet's mnemonic phrase.
     #[must_use]
     pub fn mnemonic_phrase(&self) -> Option<String> {
-        self.mnemonic.as_ref().map(|m| m.phrase().to_string())
+        self.mnemonic().map(|m| m.phrase().to_string())
     }
 
     /// Returns unified addresses.
@@ -414,9 +414,7 @@ impl LightWallet {
             account_id,
             UnifiedKeyStore::new_from_mnemonic(
                 &self.network,
-                self.mnemonic
-                    .as_ref()
-                    .ok_or(WalletError::MnemonicNotFound)?,
+                self.mnemonic().ok_or(WalletError::MnemonicNotFound)?,
                 account_id,
             )?,
         );

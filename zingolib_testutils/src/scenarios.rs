@@ -218,7 +218,7 @@ impl ClientBuilder {
         let mut wallet = LightWallet::new(
             config.network_type(),
             WalletBase::Mnemonic {
-                mnemonic: mnemonic.clone(),
+                mnemonic,
                 no_of_accounts: 1.try_into().unwrap(),
             },
             birthday,

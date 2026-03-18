@@ -13,25 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - impl TryFrom<&str> for `config::ChainType`
 - `config::InvalidChainType`
-- `lightclient::WalletMeta`: new public struct wrapping `LightWallet` with immutable metadata
-  stored outside the lock. Public constructors:
-  - `WalletMeta::new(chain_type, birthday, mnemonic, wallet)`
-  - `WalletMeta::from_wallet_base(network, wallet_base, birthday, wallet_settings)`
-  - `WalletMeta::read(reader, network)` (deserialization, replaces `LightWallet::read`)
+- `lightclient::WalletMeta`: new public struct wrapping `LightWallet` with metadata and immutable wallet data
+  stored outside the lock.
 - `lightclient::LightClient`:
-  - `chain_type()`: lock-free access to `ChainType`
-  - `birthday()`: lock-free access to wallet birthday `BlockHeight`
-  - `mnemonic()`: lock-free access to `Option<&Mnemonic>`
-  - `wallet()`: returns `&Arc<RwLock<LightWallet>>`, replacing the former public field
+  - `chain_type` method: lock-free access to `ChainType`
+  - `birthday` method: lock-free access to wallet birthday `BlockHeight`
+  - `mnemonic_phrase` method: lock-free access to the wallet's mnemonic phrase
+  - `wallet` method: returns `&Arc<RwLock<LightWallet>>`, replacing the former public field
   - `indexer: GrpcIndexer` field: owning the indexer connection directly
-- `wallet::WalletBase::resolve_keys(self, network)`: resolves a `WalletBase` into a
-  `(BTreeMap<AccountId, UnifiedKeyStore>, Option<Mnemonic>)`. Logic was previously inlined
-  inside `LightWallet::new`.
 
 ### Changed
 - `LightClient`:
   - `server_uri`: renamed `indexer_uri`
   - `set_server`: renamed `set_indexer_uri`
+  - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
 - `config::ChainType`: `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
 - `config::ZingoConfig`: reworked. public fields now private with public getter methods to constrain public API:
   - `wallet_dir` replaces `get_zingo_wallet_dir`
@@ -40,17 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `build` renamed `builder`
 - `config::ZingoConfigBuilder`: reworked. public fields now private with public setter methods to constrain public API:
   - `create` renamed `build`
-- `lightclient::LightClient`:
-  - `pub wallet: Arc<RwLock<LightWallet>>` field replaced by `pub(crate) client_wallet: ClientWallet`.
-    Use `client.wallet()` to obtain `&Arc<RwLock<LightWallet>>`.
-  - `create_from_wallet` now takes `ClientWallet` instead of `LightWallet`.
 - `wallet::LightWallet`:
   - `pub network: ChainType` field is now private. Use `LightClient::chain_type()`.
   - `pub birthday: BlockHeight` field is now private. Use `LightClient::birthday()`.
-  - `pub fn read()` is now `pub(crate)`. Use `ClientWallet::read()` instead.
-  - `pub fn mnemonic_phrase()` is now private.
-- `wallet::disk::testing::examples::NetworkSeedVersion::load_example_wallet` returns
-  `ClientWallet` instead of `LightWallet`.
 
 ### Removed
 - `regtest` feature: production binaries can now be tested in regtest mode.
@@ -62,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `wallet_with_name_path_exists`
   - `get_wallet_pathbuf`
   - `wallet_exists(`
-- `wallet::LightWallet::mnemonic()`
 - `config::DEFAULT_LOGFILE_NAME` constant.
 - `config::ZingoConfig`:
   - `logfile_name` field
@@ -70,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_log_config()` method
   - `get_log_path()` method
 - `config::ZingoConfigBuilder::set_logfile_name()` method.
-- `log4rs` dependency removed from `zingolib` and workspace.
+- `wallet::LightWallet::mnemonic()`
 
 ## [3.0.0] - 2026-03-02
 

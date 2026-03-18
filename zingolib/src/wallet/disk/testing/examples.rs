@@ -298,9 +298,9 @@ impl NetworkSeedVersion {
             NetworkSeedVersion::Mainnet(_) => crate::config::ZingoConfig::create_mainnet(),
         };
 
-        let client_wallet = self.load_example_wallet(config.network_type());
+        let wallet = self.load_example_wallet(config.network_type());
 
-        LightClient::create_from_wallet(client_wallet, config, true).unwrap()
+        LightClient::create_from_wallet(wallet, config, true).unwrap()
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]

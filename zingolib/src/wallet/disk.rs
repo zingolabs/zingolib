@@ -120,7 +120,7 @@ impl LightWallet {
         self.price_list.write(&mut writer)
     }
 
-    /// Deserialize from `reader`.
+    /// Deserialize into `reader`
     // TODO: update to return WalletError
     pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;

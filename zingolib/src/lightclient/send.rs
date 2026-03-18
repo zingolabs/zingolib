@@ -8,6 +8,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
+use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
@@ -159,7 +160,6 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                use zingo_netutils::Indexer as _;
                 let transmission_result = self
                     .indexer
                     .send_transaction(transaction_bytes.clone().into_boxed_slice())

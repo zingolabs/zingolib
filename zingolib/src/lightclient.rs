@@ -22,6 +22,7 @@ use zcash_transparent::address::TransparentAddress;
 use pepper_sync::{
     error::SyncError, keys::transparent::TransparentAddressId, sync::SyncResult, wallet::SyncMode,
 };
+use zingo_netutils::Indexer as _;
 
 use crate::{
     config::{ChainType, ZingoConfig},
@@ -116,7 +117,7 @@ impl LightClient {
         Self::create_from_wallet(wallet, config, overwrite)
     }
 
-    /// Creates a `LightClient` from a [`ClientWallet`] and `config`.
+    /// Creates a `LightClient` from a [`crate::wallet::LightWallet`] and [`crate::config::ZingoConfig`].
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
     #[allow(clippy::result_large_err)]
     pub fn create_from_wallet(
@@ -240,7 +241,6 @@ impl LightClient {
     /// Returns server information.
     // TODO: return concrete struct with from json impl
     pub async fn do_info(&self) -> String {
-        use zingo_netutils::Indexer as _;
         match self.indexer.get_info().await {
             Ok(i) => {
                 let o = json::object! {
