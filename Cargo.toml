@@ -45,7 +45,7 @@ zcash_transparent = "0.6"
 
 # Zingo-common
 zingo-netutils = { git = "https://github.com/zingolabs/zingo-common.git", rev = "54309fbb1a0c3d791b457667582c9c4a4da6c4bc" }
-zingo_common_components = "0.3.0"
+zingo_common_components = { git = "https://github.com/zingolabs/zingo-common.git", rev = "54309fbb1a0c3d791b457667582c9c4a4da6c4bc" }
 
 # Parallel processing
 crossbeam-channel = "0.5"

@@ -1451,7 +1451,7 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zingo-netutils",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc)",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -3355,7 +3355,7 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc)",
  "zingo_test_vectors",
  "zingolib",
  "zingolib_testutils",
@@ -8766,7 +8766,7 @@ dependencies = [
  "zebra-chain",
  "zebra-node-services",
  "zebra-rpc",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_test_vectors",
 ]
 
@@ -9292,7 +9292,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc)",
  "zingolib",
  "zip32",
 ]
@@ -9377,6 +9377,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7ed7ebc771980a59ec5f208d5dcf40c010dce2b5d493164c9d2f7baa73e9284"
 
 [[package]]
+name = "zingo_common_components"
+version = "0.3.0"
+source = "git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc#54309fbb1a0c3d791b457667582c9c4a4da6c4bc"
+
+[[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=87cb5ae58204ea8d566cc5f8373cd5765c3360b2#87cb5ae58204ea8d566cc5f8373cd5765c3360b2"
@@ -9443,7 +9448,7 @@ dependencies = [
  "zingo-netutils",
  "zingo-price",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc)",
  "zingo_test_vectors",
  "zingolib",
  "zip32",
@@ -9460,7 +9465,7 @@ dependencies = [
  "tempfile",
  "zcash_local_net",
  "zcash_protocol",
- "zingo_common_components",
+ "zingo_common_components 0.3.0 (git+https://github.com/zingolabs/zingo-common.git?rev=54309fbb1a0c3d791b457667582c9c4a4da6c4bc)",
  "zingo_test_vectors",
  "zingolib",
  "zip32",
