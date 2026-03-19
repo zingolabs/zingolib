@@ -117,8 +117,8 @@ zingo-status = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
 
 [profile.test]
 opt-level = 3
