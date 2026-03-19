@@ -21,23 +21,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `mnemonic_phrase` method: lock-free access to the wallet's mnemonic phrase
   - `wallet` method: returns `&Arc<RwLock<LightWallet>>`, replacing the former public field
   - `indexer: GrpcIndexer` field: owning the indexer connection directly
+- re-export `zingo_common_components::protocol::ActivationHeights` so test crates can unify zingo common types with
+  zingolib lightclient construction 
 
 ### Changed
 - `LightClient`:
   - `server_uri`: renamed `indexer_uri`
   - `set_server`: renamed `set_indexer_uri`
   - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
-- `config::ChainType`: `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
-- `config::ZingoConfig`: reworked. public fields now private with public getter methods to constrain public API:
-  - `wallet_dir` replaces `get_zingo_wallet_dir`
-  - `network_type` method replaces `chain` field
-  - `indexer_uri` method replaces `lightwalletd_uri` field and `get_lightwalletd_uri` method
-  - `build` renamed `builder`
-- `config::ZingoConfigBuilder`: reworked. public fields now private with public setter methods to constrain public API:
-  - `create` renamed `build`
+- `config` module:
+  - `ChainType`: `Regtest` activation heights tuple variant field changed from zebra type to zingo common components type.
+  - `ZingoConfig`: reworked. public fields now private with public getter methods to constrain public API:
+    - `wallet_dir` replaces `get_zingo_wallet_dir`
+    - `chain_type` method replaces `chain` field
+    - `indexer_uri` method replaces `lightwalletd_uri` field and `get_lightwalletd_uri` method
+    - `build` renamed `builder`
+  - `ZingoConfigBuilder`: reworked. public fields now private with public setter methods to constrain public API:
+    - `create` renamed `build`
+  - `DEFAULT_LIGHTWALLETD_SERVER` const: renamed `DEFAULT_INDEXER_URI`
+  - `DEFAULT_TESTNET_LIGHTWALLETD_SERVER` const: renamed `DEFAULT_INDEXER_URI_TESTNET`
+  - `DEVELOPER_DONATION_ADDRESS` const: moved to lib.rs
+  - `ZENNIES_FOR_ZINGO_DONATION_ADDRESS` const: moved to lib.rs
+  - `ZENNIES_FOR_ZINGO_TESTNET_ADDRESS` const: moved to lib.rs
+  - `ZENNIES_FOR_ZINGO_REGTEST_ADDRESS` const: moved to lib.rs
+  - `ZENNIES_FOR_ZINGO_AMOUNT` const: moved to lib.rs
+  - `get_donation_address_for_chain` fn moved to lib.rs and renamed `get_zennies_for_zingo_address`
+      now takes `ChainType` instead of `&ChainType`
+  - `construct_lightwalletd_uri` fn: now returns result for handling URI errors
 - `wallet::LightWallet`:
   - `pub network: ChainType` field is now private. Use `LightClient::chain_type()`.
   - `pub birthday: BlockHeight` field is now private. Use `LightClient::birthday()`.
+- `wallet::keys::unified::UnifiedKeyStore`:
+  - `new_from_seed` method: now takes `ChainType` instead of `&ChainType`
+  - `new_from_mnemonic` method: now takes `ChainType` instead of `&ChainType`
+  - `new_from_ufvk` method: now takes `ChainType` instead of `&ChainType`
 
 ### Removed
 - `log4rs` dependency

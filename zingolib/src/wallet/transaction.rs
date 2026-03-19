@@ -118,7 +118,7 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
     ) -> Result<TransactionKind, SpendError> {
-        let zfz_address = get_zennies_for_zingo_address(&self.chain_type);
+        let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
         let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
         let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;

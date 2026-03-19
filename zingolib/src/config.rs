@@ -1,4 +1,4 @@
-//! Module for configuration and construction of a lightclient.
+//! Module for configuration and construction of a [`crate::lightclient::LightClient`] and/or [`crate::wallet::LightWallet`].
 
 use std::{
     io,

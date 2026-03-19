@@ -248,7 +248,7 @@ async fn reload_wallet_from_buffer() {
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
-        &mid_client_network,
+        mid_client_network,
         &expected_mnemonic,
         zip32::AccountId::ZERO,
     )

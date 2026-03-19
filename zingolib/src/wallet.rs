@@ -104,7 +104,7 @@ impl WalletBase {
     #[allow(clippy::result_large_err)]
     fn resolve_keys(
         self,
-        network: &ChainType,
+        chain_type: ChainType,
     ) -> Result<
         (
             BTreeMap<zip32::AccountId, UnifiedKeyStore>,
@@ -117,7 +117,7 @@ impl WalletBase {
                 mnemonic: Mnemonic::generate(bip0039::Count::Words24),
                 no_of_accounts,
             }
-            .resolve_keys(network),
+            .resolve_keys(chain_type),
             WalletBase::Mnemonic {
                 mnemonic,
                 no_of_accounts,
@@ -128,7 +128,7 @@ impl WalletBase {
                         let account_id = zip32::AccountId::try_from(account_index)?;
                         Ok((
                             account_id,
-                            UnifiedKeyStore::new_from_mnemonic(network, &mnemonic, account_id)?,
+                            UnifiedKeyStore::new_from_mnemonic(chain_type, &mnemonic, account_id)?,
                         ))
                     })
                     .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
@@ -138,7 +138,7 @@ impl WalletBase {
                 let mut unified_key_store = BTreeMap::new();
                 unified_key_store.insert(
                     zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_ufvk(network, ufvk_encoded)?,
+                    UnifiedKeyStore::new_from_ufvk(chain_type, ufvk_encoded)?,
                 );
                 Ok((unified_key_store, None))
             }
@@ -217,7 +217,7 @@ impl LightWallet {
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(&chain_type)?;
+        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(chain_type)?;
         Self::from_keys(
             chain_type,
             unified_key_store,
@@ -413,7 +413,7 @@ impl LightWallet {
         self.unified_key_store.insert(
             account_id,
             UnifiedKeyStore::new_from_mnemonic(
-                &self.chain_type,
+                self.chain_type(),
                 self.mnemonic().ok_or(WalletError::MnemonicNotFound)?,
                 account_id,
             )?,
