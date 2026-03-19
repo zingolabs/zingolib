@@ -132,7 +132,7 @@ impl LightWallet {
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
-            32..=39 => Self::read_v32(reader, chain_type, version),
+            32..=40 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
