@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pub birthday: BlockHeight` field is now private. Use `LightClient::birthday()`.
 
 ### Removed
+- `log4rs` dependency
+- `config::DEFAULT_LOGFILE_NAME` constant
+- `config::ZingoConfig`:
+  - `logfile_name` method
+  - `get_log_config` method
+  - `get_log_path` method
+- `config::ZingoConfigBuilder`:
+  - `set_logfile_name` method
 - `regtest` feature: production binaries can now be tested in regtest mode.
 - `config::ChainFromStingError`: replaced by `InvalidChainType` error struct.
 - `config::chain_from_str`: replaced by impl TryFrom<&str> for `config::ChainType`
