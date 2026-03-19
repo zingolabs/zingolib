@@ -152,11 +152,21 @@ impl LightWallet {
             TxMap::read(&mut reader, &wallet_capability)?
         };
 
-        let chain_name = utils::read_string(&mut reader)?;
-        if chain_name != chain_type.to_string() {
+        let saved_network = match utils::read_string(&mut reader)?.as_str() {
+            "main" => "mainnet",
+            "test" => "testnet",
+            "regtest" => "regtest",
+            other => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid chain type stored in wallet file: {}", other,),
+                ));
+            }
+        };
+        if saved_network != chain_type.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Wallet chain name {chain_name} doesn't match expected {chain_type}"),
+                format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
             ));
         }
 

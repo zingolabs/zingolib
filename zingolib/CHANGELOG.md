@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zingolib lightclient construction 
 
 ### Changed
-- `LightClient`:
+- `lightclient::LightClient`:
   - `server_uri`: renamed `indexer_uri`
   - `set_server`: renamed `set_indexer_uri`
   - `pub wallet: Arc<RwLock<LightWallet>>` field is now private. replaced by `wallet` method.
@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::LightWallet`:
   - `pub network: ChainType` field is now private. Use `LightClient::chain_type()`.
   - `pub birthday: BlockHeight` field is now private. Use `LightClient::birthday()`.
+  - new wallet serialization version 40 due to changes to chain type fmt::Display. chain type is now encoded as u8.
 - `wallet::keys::unified::UnifiedKeyStore`:
   - `new_from_seed` method: now takes `ChainType` instead of `&ChainType`
   - `new_from_mnemonic` method: now takes `ChainType` instead of `&ChainType`
