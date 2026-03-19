@@ -21,6 +21,10 @@ use zcash_local_net::{
 use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
 use zcash_protocol::consensus::BranchId;
 
+use zingo_netutils::Indexer as _;
+
+use zingolib::testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri};
+
 use super::{
     constants,
     darkside_types::{RawTransaction, TreeState},
@@ -30,7 +34,6 @@ use crate::{
     darkside_connector::DarksideConnector,
     darkside_types::{self, Empty},
 };
-use zingolib::testutils::{paths::get_cargo_manifest_dir, port_to_localhost_uri};
 
 fn lightwalletd_config() -> LightwalletdConfig {
     LightwalletdConfig {
@@ -118,7 +121,8 @@ pub async fn update_tree_states_for_transaction(
     raw_tx: RawTransaction,
     height: u64,
 ) -> TreeState {
-    let trees = zingolib::grpc_connector::get_trees(server_id.clone(), height - 1)
+    let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
+        .get_trees(height - 1)
         .await
         .unwrap();
     let mut sapling_tree: sapling_crypto::CommitmentTree =

@@ -64,24 +64,20 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         .unwrap(),
         &zcash_protocol::consensus::NetworkType::Regtest,
     );
-    LightClient::create_from_wallet(
-        LightWallet::new(
-            config.network_type(),
-            WalletBase::Ufvk(ufvk),
-            1.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+    let wallet = LightWallet::new(
+        config.network_type(),
+        WalletBase::Ufvk(ufvk),
+        1.into(),
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                performance_level: PerformanceLevel::High,
             },
-        )
-        .unwrap(),
-        config,
-        false,
+            min_confirmations: NonZeroU32::try_from(1).unwrap(),
+        },
     )
-    .unwrap()
+    .unwrap();
+    LightClient::create_from_wallet(wallet, config, false).unwrap()
 }
 
 /// TODO: doc comment
@@ -230,7 +226,7 @@ pub async fn sync_to_target_height(
     client.sync_and_await().await?;
     while u32::from(
         client
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state

@@ -4,10 +4,8 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use crate::{
-    lightclient::{LightClient, error::LightClientError},
-    wallet::LightWallet,
-};
+use crate::lightclient::{LightClient, error::LightClientError};
+use crate::wallet::LightWallet;
 
 /// Create a lightclient from the buffer of another
 pub async fn new_client_from_save_buffer(
@@ -15,21 +13,15 @@ pub async fn new_client_from_save_buffer(
 ) -> Result<LightClient, LightClientError> {
     let mut wallet_bytes: Vec<u8> = vec![];
     template_client
-        .wallet
+        .wallet()
         .write()
         .await
-        .write(&mut wallet_bytes, &template_client.config.network_type())
+        .write(&mut wallet_bytes, &template_client.chain_type())
         .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
 
-    LightClient::create_from_wallet(
-        LightWallet::read(
-            wallet_bytes.as_slice(),
-            template_client.config.network_type(),
-        )
-        .map_err(LightClientError::FileError)?,
-        template_client.config.clone(),
-        false,
-    )
+    let wallet = LightWallet::read(wallet_bytes.as_slice(), template_client.chain_type())
+        .map_err(LightClientError::FileError)?;
+    LightClient::create_from_wallet(wallet, template_client.config.clone(), false)
 }
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
@@ -143,7 +135,7 @@ pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
-    let wallet = client.wallet.read().await;
+    let wallet = client.wallet().read().await;
 
     txids.map(|txid| {
         wallet

@@ -77,7 +77,7 @@ pub async fn for_each_proposed_transaction<N, Res>(
     txids: &NonEmpty<TxId>,
     f: fn(&LightWallet, &WalletTransaction, &Step<N>) -> Res,
 ) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
-    let wallet = client.wallet.read().await;
+    let wallet = client.wallet().read().await;
 
     let mut step_results = vec![];
     for (step_number, step) in proposal.steps().iter().enumerate() {

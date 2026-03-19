@@ -16,14 +16,13 @@ use log::{error, info};
 
 use zcash_protocol::consensus::BlockHeight;
 
-use commands::ShortCircuitedCommand;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
-
 use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
-use crate::commands::RT;
+use crate::commands::{RT, ShortCircuitedCommand};
 
 pub mod version;
 
@@ -397,40 +396,34 @@ pub fn startup(
         .build();
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
-        LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!("Invalid seed phrase. {e}"),
-                        )
-                    })?,
-                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                },
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
-            config.clone(),
-            false,
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Invalid seed phrase. {e}"),
+                    )
+                })?,
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            },
+            (filled_template.birthday as u32).into(),
+            config.wallet_settings(),
         )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
+        LightClient::create_from_wallet(wallet, config.clone(), false)
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
-        LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Ufvk(ufvk),
-                (filled_template.birthday as u32).into(),
-                config.wallet_settings(),
-            )
-            .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?,
-            config.clone(),
-            false,
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Ufvk(ufvk),
+            (filled_template.birthday as u32).into(),
+            config.wallet_settings(),
         )
-        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
+        LightClient::create_from_wallet(wallet, config.clone(), false)
+            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if config.get_wallet_path().exists() {
         // Open existing wallet from path
         LightClient::create_from_wallet_path(config.clone())
@@ -444,9 +437,11 @@ pub fn startup(
 
         let chain_height = RT
             .block_on(async move {
-                zingolib::grpc_connector::get_latest_block(server_uri)
+                zingo_netutils::GrpcIndexer::new(server_uri)
+                    .get_latest_block()
                     .await
                     .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                    .map_err(|e| format!("{e:?}"))
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 

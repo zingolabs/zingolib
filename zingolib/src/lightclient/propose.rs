@@ -17,7 +17,7 @@ use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
     fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
-        let zfz_address = get_donation_address_for_chain(&self.config().network_type());
+        let zfz_address = get_donation_address_for_chain(&self.chain_type());
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
             Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
@@ -33,7 +33,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeProposal, ProposeSendError> {
         let _ignore_error = self.pause_sync();
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_send_proposal(request, account_id)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
@@ -64,7 +64,7 @@ impl LightClient {
         let request = transaction_request_from_receivers(receivers)
             .map_err(ProposeSendError::TransactionRequestFailed)?;
         let _ignore_error = self.pause_sync();
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_send_proposal(request, account_id)?;
         wallet.store_proposal(ZingoProposal::Send {
             proposal: proposal.clone(),
@@ -79,7 +79,7 @@ impl LightClient {
         &mut self,
         account_id: zip32::AccountId,
     ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let proposal = wallet.create_shield_proposal(account_id)?;
         wallet.store_proposal(ZingoProposal::Shield {
             proposal: proposal.clone(),
@@ -108,7 +108,7 @@ impl LightClient {
         zennies_for_zingo: bool,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         let confirmed_balance = wallet.shielded_spendable_balance(account_id, false)?;
         let mut spendable_balance = confirmed_balance;
 
@@ -183,35 +183,30 @@ mod shielding {
 
     fn create_basic_client() -> LightClient {
         let config = ZingoConfigBuilder::default().build();
-        LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string())
-                        .unwrap(),
-                    no_of_accounts: 1.try_into().unwrap(),
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            419200.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
-                419200.into(),
-                WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery:
-                            pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                },
-            )
-            .unwrap(),
-            config,
-            true,
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
         )
-        .unwrap()
+        .unwrap();
+        LightClient::create_from_wallet(wallet, config, true).unwrap()
     }
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
         let basic_client = create_basic_client();
         let propose_shield_result = basic_client
-            .wallet
+            .wallet()
             .write()
             .await
             .create_shield_proposal(zip32::AccountId::ZERO);
@@ -225,11 +220,11 @@ mod shielding {
     #[tokio::test]
     async fn get_transparent_addresses() {
         let basic_client = create_basic_client();
-        let network = basic_client.wallet.read().await.network;
+        let network = basic_client.chain_type();
 
         // TODO: store t addrs as concrete types instead of encoded
         let transparent_addresses = basic_client
-            .wallet
+            .wallet()
             .read()
             .await
             .transparent_addresses()
