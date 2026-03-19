@@ -17,6 +17,7 @@ use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_price::PriceList;
 use zip32::AccountId;
 
@@ -45,7 +46,7 @@ impl LightWallet {
     /// - sync state updated serialized version
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        39
+        40
     }
 
     /// Serialize into `writer`
@@ -55,7 +56,11 @@ impl LightWallet {
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-        utils::write_string(&mut writer, &self.chain_type.to_string())?;
+        writer.write_u8(match self.chain_type() {
+            ChainType::Mainnet => 0,
+            ChainType::Testnet => 1,
+            ChainType::Regtest(_) => 2,
+        })?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),
             None => vec![],
@@ -345,12 +350,46 @@ impl LightWallet {
     }
 
     fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
-        let saved_network = utils::read_string(&mut reader)?;
-        if saved_network != chain_type.to_string() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
-            ));
+        if version >= 40 {
+            let saved_network = match reader.read_u8()? {
+                0 => ChainType::Mainnet,
+                1 => ChainType::Testnet,
+                2 => ChainType::Regtest(ActivationHeights::default()),
+                other => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid chain type index stored in wallet file: {}", other,),
+                    ));
+                }
+            };
+            if saved_network.to_string() != chain_type.to_string() {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
+                    ),
+                ));
+            }
+        } else {
+            let saved_network = match utils::read_string(&mut reader)?.as_str() {
+                "main" => "mainnet",
+                "test" => "testnet",
+                "regtest" => "regtest",
+                other => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid chain type stored in wallet file: {}", other,),
+                    ));
+                }
+            };
+            if saved_network != chain_type.to_string() {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
+                    ),
+                ));
+            }
         }
 
         let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
