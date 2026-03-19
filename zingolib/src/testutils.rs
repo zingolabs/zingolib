@@ -15,7 +15,6 @@ use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::config::ZingoConfig;
-use crate::lightclient::ClientWallet;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
 use crate::wallet::keys::unified::UnifiedKeyStore;
@@ -23,7 +22,7 @@ use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
-use crate::wallet::{WalletBase, WalletSettings};
+use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 
 pub mod assertions;
 pub mod chain_generics;
@@ -65,7 +64,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         .unwrap(),
         &zcash_protocol::consensus::NetworkType::Regtest,
     );
-    let client_wallet = ClientWallet::from_wallet_base(
+    let wallet = LightWallet::new(
         config.network_type(),
         WalletBase::Ufvk(ufvk),
         1.into(),
@@ -78,7 +77,7 @@ pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
         },
     )
     .unwrap();
-    LightClient::create_from_wallet(client_wallet, config, false).unwrap()
+    LightClient::create_from_wallet(wallet, config, false).unwrap()
 }
 
 /// TODO: doc comment

@@ -148,7 +148,7 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            if lightclient.mnemonic().is_some() {
+            if lightclient.mnemonic_phrase().is_some() {
                 object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                         "transparent" => true,
                         "sapling" => true,

@@ -5,8 +5,9 @@
 
 use crate::config::ZingoConfig;
 use crate::get_base_address_macro;
-use crate::lightclient::{ClientWallet, LightClient};
+use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
+use crate::wallet::LightWallet;
 use crate::wallet::keys::unified::ReceiverSelection;
 
 #[allow(async_fn_in_trait)]
@@ -43,8 +44,8 @@ pub trait ConductChain {
 
     /// loads a client from bytes
     fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        let client_wallet = ClientWallet::read(data, config.network_type()).unwrap();
-        LightClient::create_from_wallet(client_wallet, config, false).unwrap()
+        let wallet = LightWallet::read(data, config.network_type()).unwrap();
+        LightClient::create_from_wallet(wallet, config, false).unwrap()
     }
 
     /// moves the chain tip forward, creating 1 new block

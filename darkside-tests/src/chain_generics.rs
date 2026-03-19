@@ -39,9 +39,11 @@ pub(crate) mod conduct_chain {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
-    use zingolib::lightclient::ClientWallet;
+    use zingo_netutils::Indexer as _;
+
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+    use zingolib::wallet::LightWallet;
     use zingolib::wallet::WalletBase;
     use zingolib::wallet::keys::unified::ReceiverSelection;
 
@@ -74,7 +76,7 @@ pub(crate) mod conduct_chain {
             let config = self
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
-            let client_wallet = ClientWallet::from_wallet_base(
+            let wallet = LightWallet::new(
                 config.network_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
@@ -84,8 +86,7 @@ pub(crate) mod conduct_chain {
                 config.wallet_settings(),
             )
             .unwrap();
-            let mut lightclient =
-                LightClient::create_from_wallet(client_wallet, config, true).unwrap();
+            let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
 
             lightclient
                 .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
@@ -101,14 +102,11 @@ pub(crate) mod conduct_chain {
         }
 
         async fn increase_chain_height(&mut self) {
-            let height_before = {
-                use zingo_netutils::Indexer as _;
-                zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
-                    .get_latest_block()
-                    .await
-                    .unwrap()
-                    .height
-            };
+            let height_before = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
+                .get_latest_block()
+                .await
+                .unwrap()
+                .height;
 
             let blocks_to_add = 1;
 
@@ -123,13 +121,10 @@ pub(crate) mod conduct_chain {
                 .unwrap();
 
             // trees
-            let trees = {
-                use zingo_netutils::Indexer as _;
-                zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
-                    .get_trees(height_before)
-                    .await
-                    .unwrap()
-            };
+            let trees = zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
+                .get_trees(height_before)
+                .await
+                .unwrap();
             let mut sapling_tree: sapling_crypto::CommitmentTree =
                 zcash_primitives::merkle_tree::read_commitment_tree(
                     hex::decode(trees.sapling_tree).unwrap().as_slice(),

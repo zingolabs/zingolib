@@ -8,6 +8,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
+use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
@@ -159,7 +160,6 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                use zingo_netutils::Indexer as _;
                 let transmission_result = self
                     .indexer
                     .send_transaction(transaction_bytes.clone().into_boxed_slice())
@@ -231,18 +231,18 @@ mod test {
 
     use crate::{
         config::ZingoConfig,
-        lightclient::{ClientWallet, LightClient, sync::test::sync_example_wallet},
+        lightclient::{LightClient, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
         testutils::chain_generics::{
             conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
         },
-        wallet::{WalletBase, WalletSettings, disk::testing::examples},
+        wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
     };
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let config = ZingoConfig::builder().build();
-        let client_wallet = ClientWallet::from_wallet_base(
+        let wallet = LightWallet::new(
             config.network_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
@@ -259,7 +259,7 @@ mod test {
             },
         )
         .unwrap();
-        let mut lc = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
+        let mut lc = LightClient::create_from_wallet(wallet, config, true).unwrap();
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error

@@ -11,10 +11,11 @@ use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
+use zingolib::wallet::LightWallet;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri},
     get_base_address_macro,
-    lightclient::{ClientWallet, LightClient},
+    lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
     wallet::{WalletBase, WalletSettings},
 };
@@ -45,7 +46,7 @@ async fn sync_mainnet_test() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let client_wallet = ClientWallet::from_wallet_base(
+    let wallet = LightWallet::new(
         config.network_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
@@ -55,7 +56,7 @@ async fn sync_mainnet_test() {
         config.wallet_settings(),
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
+    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -110,7 +111,7 @@ async fn sync_status() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let client_wallet = ClientWallet::from_wallet_base(
+    let wallet = LightWallet::new(
         config.network_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
@@ -120,7 +121,7 @@ async fn sync_status() {
         config.wallet_settings(),
     )
     .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(client_wallet, config, true).unwrap();
+    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }
