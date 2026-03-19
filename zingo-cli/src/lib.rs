@@ -65,7 +65,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -336,7 +336,8 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             .get_one::<http::Uri>("server")
             .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::construct_lightwalletd_uri(server);
+        let server =
+            zingolib::config::construct_lightwalletd_uri(server).map_err(|e| e.to_string())?;
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -382,7 +383,7 @@ pub fn startup(
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
     let config = ZingoConfig::builder()
         .set_indexer_uri(filled_template.server.clone())
-        .set_network_type(filled_template.chaintype)
+        .set_chain_type(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
         .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
@@ -397,7 +398,7 @@ pub fn startup(
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
                     std::io::Error::new(
@@ -416,7 +417,7 @@ pub fn startup(
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Ufvk(ufvk),
             (filled_template.birthday as u32).into(),
             config.wallet_settings(),

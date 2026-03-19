@@ -101,13 +101,13 @@ impl LightClient {
         overwrite: bool,
     ) -> Result<Self, LightClientError> {
         let sapling_activation_height = config
-            .network_type()
+            .chain_type()
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
         let birthday = sapling_activation_height.max(chain_height - 100);
 
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::FreshEntropy {
                 no_of_accounts: config.no_of_accounts(),
             },
@@ -167,8 +167,8 @@ impl LightClient {
         };
 
         let buffer = BufReader::new(File::open(wallet_path).map_err(LightClientError::FileError)?);
-        let wallet = LightWallet::read(buffer, config.network_type())
-            .map_err(LightClientError::FileError)?;
+        let wallet =
+            LightWallet::read(buffer, config.chain_type()).map_err(LightClientError::FileError)?;
 
         Self::create_from_wallet(wallet, config, true)
     }
@@ -388,12 +388,12 @@ mod tests {
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
         let config = ZingoConfig::builder()
-            .set_network_type(ChainType::Regtest(ActivationHeights::default()))
+            .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
             .build();
 
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                 no_of_accounts: config.no_of_accounts(),
@@ -408,7 +408,7 @@ mod tests {
         lc.wait_for_save().await;
 
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
                 no_of_accounts: config.no_of_accounts(),
