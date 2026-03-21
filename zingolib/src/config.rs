@@ -250,8 +250,6 @@ pub struct ZingoConfig {
     wallet_base: WalletBase,
     /// Wallet settings.
     wallet_settings: WalletSettings,
-    /// Number of accounts.
-    no_of_accounts: NonZeroU32,
 }
 
 impl ZingoConfig {
@@ -295,12 +293,6 @@ impl ZingoConfig {
     #[must_use]
     pub fn wallet_settings(&self) -> WalletSettings {
         self.wallet_settings.clone()
-    }
-
-    /// Returns number of accounts.
-    #[must_use]
-    pub fn no_of_accounts(&self) -> NonZeroU32 {
-        self.no_of_accounts
     }
 
     /// Returns full path to wallet file.
@@ -356,7 +348,6 @@ pub struct ZingoConfigBuilder {
     wallet_name: Option<String>,
     wallet_base: WalletBase,
     wallet_settings: WalletSettings,
-    no_of_accounts: NonZeroU32,
 }
 
 impl ZingoConfigBuilder {
@@ -423,12 +414,6 @@ impl ZingoConfigBuilder {
         self
     }
 
-    /// Set number of accounts.
-    pub fn set_no_of_accounts(mut self, no_of_accounts: NonZeroU32) -> Self {
-        self.no_of_accounts = no_of_accounts;
-        self
-    }
-
     /// Build a [`ZingoConfig`] from the builder.
     pub fn build(self) -> ZingoConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
@@ -440,7 +425,6 @@ impl ZingoConfigBuilder {
             wallet_name,
             wallet_base: self.wallet_base,
             wallet_settings: self.wallet_settings,
-            no_of_accounts: self.no_of_accounts,
         }
     }
 }
@@ -464,7 +448,6 @@ impl Default for ZingoConfigBuilder {
                 },
                 min_confirmations: NonZeroU32::try_from(3).expect("hard coded non-zero integer"),
             },
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }
     }
 }

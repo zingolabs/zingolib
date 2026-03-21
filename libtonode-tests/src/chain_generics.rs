@@ -42,9 +42,10 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-        self.client_builder.make_unique_data_dir_and_load_config(
-            self.local_net.validator().get_activation_heights().await,
-        )
+        // self.client_builder.make_unique_data_dir_and_create_config(
+        //     self.local_net.validator().get_activation_heights().await,
+        // )
+        todo!()
     }
 
     async fn increase_chain_height(&mut self) {

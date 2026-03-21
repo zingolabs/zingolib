@@ -9,7 +9,7 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use crate::config::{ChainType, DEFAULT_INDEXER_URI, ZingoConfig};
+use crate::config::{ChainType, DEFAULT_INDEXER_URI, WalletBase, ZingoConfig};
 use crate::lightclient::LightClient;
 use crate::wallet::{LightWallet, WalletSettings};
 
@@ -284,6 +284,7 @@ impl NetworkSeedVersion {
                     .set_indexer_uri(lightwalletd_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name("".to_string())
+                    .set_wallet_base(WalletBase::Read)
                     .set_wallet_settings(WalletSettings {
                         sync_config: SyncConfig {
                             transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -291,7 +292,6 @@ impl NetworkSeedVersion {
                         },
                         min_confirmations: NonZeroU32::try_from(1).unwrap(),
                     })
-                    .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
                     .build()
             }
             NetworkSeedVersion::Testnet(_) => crate::config::ZingoConfig::create_testnet(),

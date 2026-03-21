@@ -151,9 +151,10 @@ impl ClientBuilder {
         }
     }
 
-    pub fn make_unique_data_dir_and_load_config(
+    pub fn make_unique_data_dir_and_create_config(
         &mut self,
         configured_activation_heights: ActivationHeights,
+        wallet_base: WalletBase,
     ) -> ZingoConfig {
         //! Each client requires a unique `data_dir`, we use the
         //! `client_number` counter for this.
@@ -163,7 +164,11 @@ impl ClientBuilder {
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
+        self.create_clientconfig(
+            PathBuf::from(conf_path),
+            configured_activation_heights,
+            wallet_base,
+        )
     }
 
     /// TODO: Add Doc Comment Here!
@@ -171,6 +176,7 @@ impl ClientBuilder {
         &self,
         conf_path: PathBuf,
         configured_activation_heights: ActivationHeights,
+        wallet_base: WalletBase,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
         ZingoConfig::builder()
@@ -178,6 +184,7 @@ impl ClientBuilder {
             .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
             .set_wallet_name("".to_string())
+            .set_wallet_base(wallet_base)
             .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -205,30 +212,21 @@ impl ClientBuilder {
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn build_client(
+    pub async fn build_client(
         &mut self,
-        mnemonic_phrase: String,
-        birthday: u64,
+        wallet_base: WalletBase,
         overwrite: bool,
         configured_activation_heights: ActivationHeights,
     ) -> LightClient {
-        let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
-        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase).unwrap();
-        let birthday = (birthday as u32).into();
-        let mut wallet = LightWallet::new(
-            config.chain_type(),
-            WalletBase::Mnemonic {
-                mnemonic,
-                no_of_accounts: 1.try_into().unwrap(),
-            },
-            birthday,
-            config.wallet_settings(),
-        )
-        .unwrap();
-        wallet
+        let config =
+            self.make_unique_data_dir_and_create_config(configured_activation_heights, wallet_base);
+        let lightclient = LightClient::new(config, overwrite).unwrap();
+        lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .await
             .unwrap();
-        LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
+
+        lightclient
     }
 }
 
