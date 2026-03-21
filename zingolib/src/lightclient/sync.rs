@@ -169,7 +169,7 @@ pub mod test {
             log::error!("Error installing crypto provider: {e:?}");
         }
 
-        let mut lc = wallet_case.load_example_wallet_with_client().await;
+        let mut lc = wallet_case.load_example_wallet().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
         tracing::info!("{sync_result}");

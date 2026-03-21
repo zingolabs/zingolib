@@ -305,40 +305,6 @@ impl ZingoConfig {
     }
 }
 
-#[cfg(any(test, feature = "testutils"))]
-impl ZingoConfig {
-    /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
-    #[must_use]
-    pub fn create_testnet() -> ZingoConfig {
-        ZingoConfig::builder()
-            .set_chain_type(ChainType::Testnet)
-            .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
-            .build()
-    }
-
-    /// create a `ZingoConfig` that helps a `LightClient` connect to a server.
-    #[must_use]
-    pub fn create_mainnet() -> ZingoConfig {
-        ZingoConfig::builder()
-            .set_chain_type(ChainType::Mainnet)
-            .set_indexer_uri((DEFAULT_INDEXER_URI).parse::<http::Uri>().unwrap())
-            .build()
-    }
-
-    /// create a `ZingoConfig` that signals a `LightClient` not to connect to a server.
-    #[must_use]
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
-        if let Some(dir) = dir {
-            ZingoConfig::builder()
-                .set_chain_type(chain)
-                .set_wallet_dir(dir)
-                .build()
-        } else {
-            ZingoConfig::builder().set_chain_type(chain).build()
-        }
-    }
-}
-
 /// Builder for [`ZingoConfig`].
 #[derive(Clone, Debug)]
 pub struct ZingoConfigBuilder {

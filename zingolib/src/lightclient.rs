@@ -103,22 +103,10 @@ pub struct LightClient {
 impl LightClient {
     /// Creates a `LightClient` from [`crate::config::ZingoConfig`].
     ///
-    /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true`.
+    /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true` or the
+    /// [`crate::config::WalletBase`] is of `Read` variant.
     #[allow(clippy::result_large_err)]
     pub fn new(config: ZingoConfig, overwrite: bool) -> Result<Self, LightClientError> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.get_wallet_path().exists() {
-                return Err(LightClientError::FileError(std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    format!(
-                        "Cannot save to given data directory as a wallet file already exists at:\n{}",
-                        config.get_wallet_path().display()
-                    ),
-                )));
-            }
-        }
-
         let wallet = match config.wallet_base() {
             WalletBase::Read => {
                 let buffer = BufReader::new(
@@ -128,11 +116,26 @@ impl LightClient {
                 LightWallet::read(buffer, config.chain_type())
                     .map_err(LightClientError::FileError)?
             }
-            _ => LightWallet::new(
-                config.chain_type(),
-                config.wallet_base(),
-                config.wallet_settings(),
-            )?,
+            _ => {
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    if !overwrite && config.get_wallet_path().exists() {
+                        return Err(LightClientError::FileError(std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            format!(
+                                "Cannot save to given data directory as a wallet file already exists at:\n{}",
+                                config.get_wallet_path().display()
+                            ),
+                        )));
+                    }
+                }
+
+                LightWallet::new(
+                    config.chain_type(),
+                    config.wallet_base(),
+                    config.wallet_settings(),
+                )?
+            }
         };
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri());

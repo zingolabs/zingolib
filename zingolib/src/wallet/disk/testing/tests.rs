@@ -24,7 +24,7 @@ use crate::{
 impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightClient {
-        let client = self.load_example_wallet_with_client().await;
+        let client = self.load_example_wallet().await;
         let wallet = client.wallet().read().await;
 
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
@@ -288,14 +288,12 @@ async fn reload_wallet_from_buffer() {
     let ufvk = usk.to_unified_full_viewing_key();
     let chain_type = client.chain_type();
     let ufvk_string = ufvk.encode(&chain_type);
-    let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
-    let view_wallet = LightWallet::new(
-        chain_type,
-        ufvk_base,
-        client.birthday(),
-        wallet.wallet_settings.clone(),
-    )
-    .unwrap();
+    let ufvk_base = WalletBase::Ufvk {
+        ufvk: ufvk_string.clone(),
+        birthday: client.birthday(),
+    };
+    let view_wallet =
+        LightWallet::new(chain_type, ufvk_base, wallet.wallet_settings.clone()).unwrap();
     let UnifiedKeyStore::View(v_ufvk) = &view_wallet
         .unified_key_store
         .get(&zip32::AccountId::ZERO)
