@@ -1382,7 +1382,7 @@ impl Command for DeleteCommand {
             match lightclient.do_delete().await {
                 Ok(()) => {
                     let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
+                    "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8") };
                     r.pretty(2)
                 }
                 Err(e) => {
