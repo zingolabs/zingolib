@@ -105,6 +105,7 @@ impl LightClient {
     ///
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true` or the
     /// [`crate::config::WalletBase`] is of `Read` variant.
+    /// `overwrite` has no effect if a wallet is read from file.
     #[allow(clippy::result_large_err)]
     pub fn new(config: ZingoConfig, overwrite: bool) -> Result<Self, LightClientError> {
         let wallet = match config.wallet_base() {

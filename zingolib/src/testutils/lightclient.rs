@@ -7,23 +7,6 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 use crate::lightclient::{LightClient, error::LightClientError};
 use crate::wallet::LightWallet;
 
-/// Create a lightclient from the buffer of another
-pub async fn new_client_from_save_buffer(
-    template_client: &mut LightClient,
-) -> Result<LightClient, LightClientError> {
-    let mut wallet_bytes: Vec<u8> = vec![];
-    template_client
-        .wallet()
-        .write()
-        .await
-        .write(&mut wallet_bytes, &template_client.chain_type())
-        .map_err(LightClientError::FileError)?; //TODO: improve read/write error variants
-
-    let wallet = LightWallet::read(wallet_bytes.as_slice(), template_client.chain_type())
-        .map_err(LightClientError::FileError)?;
-    LightClient::create_from_wallet(wallet, template_client.config.clone(), false)
-}
-
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {

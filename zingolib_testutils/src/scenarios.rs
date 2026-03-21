@@ -183,7 +183,6 @@ impl ClientBuilder {
             .set_indexer_uri(self.server_id.clone())
             .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
-            .set_wallet_name("".to_string())
             .set_wallet_base(wallet_base)
             .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
@@ -192,7 +191,6 @@ impl ClientBuilder {
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
             })
-            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
             .build()
     }
 

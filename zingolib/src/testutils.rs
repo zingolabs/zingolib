@@ -54,32 +54,6 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
     ]
 }
 
-/// TODO: Add Doc Comment Here!
-#[must_use]
-pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
-    let ufvk = zcash_address::unified::Encoding::encode(
-        &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.iter().copied().cloned().collect(),
-        )
-        .unwrap(),
-        &zcash_protocol::consensus::NetworkType::Regtest,
-    );
-    let wallet = LightWallet::new(
-        config.chain_type(),
-        WalletBase::Ufvk(ufvk),
-        1.into(),
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-    )
-    .unwrap();
-    LightClient::create_from_wallet(wallet, config, false).unwrap()
-}
-
 /// TODO: doc comment
 pub async fn assert_transaction_summary_exists(
     lightclient: &LightClient,
