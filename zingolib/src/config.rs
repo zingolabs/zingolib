@@ -1,7 +1,6 @@
 //! Module for configuration and construction of a [`crate::lightclient::LightClient`] and/or [`crate::wallet::LightWallet`].
 
 use std::{
-    io,
     net::ToSocketAddrs,
     num::NonZeroU32,
     path::{Path, PathBuf},
@@ -220,29 +219,6 @@ impl ZingoConfig {
         self.no_of_accounts
     }
 
-    /// Returns the directory that the Zcash proving parameters are located in.
-    pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        {
-            Ok(self.wallet_dir().into_boxed_path())
-        }
-
-        //TODO:  This fn is not correct for regtest mode
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if dirs::home_dir().is_none() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Couldn't determine home directory!",
-                ));
-            }
-
-            let zcash_params_dir = zcash_proofs::default_params_folder().unwrap();
-
-            Ok(zcash_params_dir.into_boxed_path())
-        }
-    }
-
     /// Returns full path to wallet file.
     #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
@@ -250,31 +226,6 @@ impl ZingoConfig {
         wallet_path.push(self.wallet_name());
 
         wallet_path.into_boxed_path()
-    }
-
-    /// Creates a backup file of the current wallet file in the wallet directory.
-    // TODO: move to lightclient or lightwallet
-    pub fn backup_existing_wallet(&self) -> Result<String, String> {
-        if !self.get_wallet_path().exists() {
-            return Err(format!(
-                "Couldn't find existing wallet to backup. Looked in {}",
-                self.get_wallet_path().display()
-            ));
-        }
-
-        let mut backup_file_path = self.wallet_dir();
-        backup_file_path.push(format!(
-            "zingo-wallet.backup.{}.dat",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("should never fail when comparing with an instant so far in the past")
-                .as_secs()
-        ));
-
-        let backup_file_str = backup_file_path.to_string_lossy().to_string();
-        std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{e}"))?;
-
-        Ok(backup_file_str)
     }
 }
 

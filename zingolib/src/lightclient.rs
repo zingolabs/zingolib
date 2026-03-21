@@ -3,7 +3,7 @@
 use std::{
     fs::File,
     io::BufReader,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
@@ -26,6 +26,7 @@ use zingo_netutils::Indexer as _;
 
 use crate::{
     config::{ChainType, ZingoConfig},
+    utils::now,
     wallet::{
         LightWallet, WalletBase,
         balance::AccountBalance,
@@ -47,8 +48,9 @@ pub mod sync;
 
 /// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
 /// the read/write lock.
-// TODO: add wallet specific metadata from zingo config such as wallet path
 struct WalletMeta {
+    /// Full path to wallet file.
+    wallet_path: PathBuf,
     /// The chain type, extracted at construction for lock-free access.
     chain_type: ChainType,
     /// The wallet birthday height.
@@ -59,13 +61,22 @@ struct WalletMeta {
     wallet_data: Arc<RwLock<LightWallet>>,
 }
 
+impl std::fmt::Debug for WalletMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalletMeta")
+            .field("wallet_path", &self.wallet_path)
+            .field("chain_type", &self.chain_type)
+            .field("birthday", &self.birthday)
+            .field("mnemonic", &self.mnemonic)
+            .finish()
+    }
+}
+
 impl WalletMeta {
     /// Creates a new `WalletMeta` by wrapping a [`crate::wallet::LightWallet`] in a lock alongside it's metadata.
-    fn new(
-        // TODO: add wallet path etc. from zingo config
-        wallet: LightWallet,
-    ) -> Self {
+    fn new(wallet_path: PathBuf, wallet: LightWallet) -> Self {
         Self {
+            wallet_path,
             chain_type: wallet.chain_type(),
             birthday: wallet.birthday(),
             mnemonic: wallet.mnemonic().cloned(),
@@ -79,8 +90,6 @@ impl WalletMeta {
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 pub struct LightClient {
-    // TODO: split zingoconfig so data is not duplicated
-    pub config: ZingoConfig,
     indexer: zingo_netutils::GrpcIndexer,
     tor_client: Option<tor::Client>,
     wallet: WalletMeta,
@@ -140,10 +149,9 @@ impl LightClient {
 
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri());
         Ok(LightClient {
-            config,
             indexer,
             tor_client: None,
-            wallet: WalletMeta::new(wallet),
+            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -173,11 +181,6 @@ impl LightClient {
         Self::create_from_wallet(wallet, config, true)
     }
 
-    /// Returns config used to create lightclient.
-    pub fn config(&self) -> &ZingoConfig {
-        &self.config
-    }
-
     /// Returns the chain type for lock-free access.
     pub fn chain_type(&self) -> ChainType {
         self.wallet.chain_type
@@ -194,6 +197,22 @@ impl LightClient {
             .mnemonic
             .as_ref()
             .map(|m| m.phrase().to_string())
+    }
+
+    /// Returns full path to wallet file.
+    pub fn wallet_path(&self) -> PathBuf {
+        self.wallet.wallet_path.clone()
+    }
+
+    /// Returns path to the directory which holds the wallet file.
+    pub fn wallet_dir(&self) -> Result<PathBuf, LightClientError> {
+        self.wallet
+            .wallet_path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| {
+                LightClientError::FileError(std::io::Error::other("wallet directory not found!"))
+            })
     }
 
     /// Returns a reference to the locked mutable wallet state.
@@ -219,12 +238,13 @@ impl LightClient {
 
     /// Creates a tor client for current price updates.
     ///
-    /// If `tor_dir` is `None` it will be set to the wallet's data directory.
+    /// If `tor_dir` is `None` it will be set to a directory named "tor" within the wallet's data directory.
     pub async fn create_tor_client(
         &mut self,
         tor_dir: Option<PathBuf>,
     ) -> Result<(), LightClientError> {
-        let tor_dir = tor_dir.unwrap_or_else(|| self.config.wallet_dir().join("tor"));
+        let wallet_dir = self.wallet_dir()?;
+        let tor_dir = tor_dir.unwrap_or_else(|| wallet_dir.join("tor"));
         tokio::fs::create_dir_all(tor_dir.as_path())
             .await
             .map_err(LightClientError::FileError)?;
@@ -358,12 +378,29 @@ impl LightClient {
     pub async fn do_total_value_to_address(&self) -> Result<TotalValueToAddress, SummaryError> {
         self.wallet().read().await.do_total_value_to_address().await
     }
+
+    /// Creates a backup file of the current wallet file in the wallet directory.
+    pub fn backup_wallet_file(&self) -> Result<(), LightClientError> {
+        let backup_time = now();
+        let backup_wallet_path = self.wallet_path().with_extension(
+            self.wallet_path()
+                .extension()
+                .map(|e| format!("backup.{}.{}", backup_time, e.to_string_lossy()))
+                .unwrap_or_else(|| format!("backup.{}.dat", backup_time)),
+        );
+
+        std::fs::copy(self.wallet_path(), backup_wallet_path)
+            .map_err(LightClientError::FileError)?;
+
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for LightClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LightClient")
-            .field("config", &self.config)
+            .field("indexer", &self.indexer)
+            .field("wallet_meta", &self.wallet)
             .field("sync_mode", &self.sync_mode())
             .field(
                 "save_active",
@@ -372,6 +409,7 @@ impl std::fmt::Debug for LightClient {
             .finish()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{
