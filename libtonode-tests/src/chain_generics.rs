@@ -4,6 +4,7 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 
+use zingolib::config::WalletBase;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::port_to_localhost_uri;
@@ -44,10 +45,13 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-        // self.client_builder.make_unique_data_dir_and_create_config(
-        //     self.local_net.validator().get_activation_heights().await,
-        // )
-        todo!()
+        self.client_builder.make_unique_data_dir_and_create_config(
+            self.local_net.validator().get_activation_heights().await,
+            WalletBase::FreshEntropy {
+                no_of_accounts: 1.try_into().unwrap(),
+                chain_height: 1.into(),
+            },
+        )
     }
 
     async fn increase_chain_height(&mut self) {

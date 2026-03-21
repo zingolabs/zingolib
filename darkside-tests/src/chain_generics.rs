@@ -94,9 +94,13 @@ pub(crate) mod conduct_chain {
         }
 
         async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-            // self.client_builder
-            //     .make_unique_data_dir_and_create_config(self.configured_activation_heights)
-            todo!()
+            self.client_builder.make_unique_data_dir_and_create_config(
+                self.configured_activation_heights,
+                WalletBase::FreshEntropy {
+                    no_of_accounts: 1.try_into().unwrap(),
+                    chain_height: 1.into(),
+                },
+            )
         }
 
         async fn increase_chain_height(&mut self) {

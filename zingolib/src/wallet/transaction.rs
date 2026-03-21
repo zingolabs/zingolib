@@ -175,7 +175,6 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-
     use pepper_sync::wallet::WalletTransaction;
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
