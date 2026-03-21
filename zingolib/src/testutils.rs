@@ -3,10 +3,8 @@
 
 #![warn(missing_docs)]
 
-use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
@@ -14,7 +12,6 @@ use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
-use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
 use crate::wallet::keys::unified::UnifiedKeyStore;
@@ -22,7 +19,6 @@ use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
-use crate::wallet::{LightWallet, WalletSettings};
 
 pub mod assertions;
 pub mod chain_generics;

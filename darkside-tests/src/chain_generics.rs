@@ -42,10 +42,10 @@ pub(crate) mod conduct_chain {
     use zcash_protocol::consensus::BlockHeight;
     use zingo_netutils::Indexer as _;
 
+    use zingolib::config::WalletBase;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
     use zingolib::wallet::LightWallet;
-    use zingolib::wallet::WalletBase;
     use zingolib::wallet::keys::unified::ReceiverSelection;
 
     use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
@@ -74,8 +74,8 @@ pub(crate) mod conduct_chain {
         async fn create_faucet(&mut self) -> LightClient {
             self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
                 .await;
-            let wallet_base = WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
+            let wallet_base = WalletBase::MnemonicPhrase {
+                mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 birthday: BlockHeight::from_u32(1),
             };

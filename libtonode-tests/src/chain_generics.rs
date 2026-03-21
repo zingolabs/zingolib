@@ -35,10 +35,12 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder.build_faucet(
-            false,
-            self.local_net.validator().get_activation_heights().await,
-        )
+        self.client_builder
+            .build_faucet(
+                false,
+                self.local_net.validator().get_activation_heights().await,
+            )
+            .await
     }
 
     async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {

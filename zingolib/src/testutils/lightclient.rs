@@ -4,8 +4,7 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use crate::lightclient::{LightClient, error::LightClientError};
-use crate::wallet::LightWallet;
+use crate::lightclient::LightClient;
 
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {

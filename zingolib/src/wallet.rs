@@ -54,6 +54,15 @@ pub struct WalletSettings {
     pub min_confirmations: NonZeroU32,
 }
 
+impl Default for WalletSettings {
+    fn default() -> Self {
+        Self {
+            sync_config: SyncConfig::default(),
+            min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
+        }
+    }
+}
+
 /// Provides necessary information to recover the wallet without the wallet file.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct RecoveryInfo {

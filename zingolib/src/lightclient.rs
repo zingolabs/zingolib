@@ -384,11 +384,9 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, ZingoConfig},
+        config::{ChainType, WalletBase, ZingoConfig},
         lightclient::{LightClient, error::LightClientError},
-        wallet::{LightWallet, WalletBase},
     };
-    use bip0039::Mnemonic;
     use tempfile::TempDir;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
@@ -399,35 +397,19 @@ mod tests {
         let config = ZingoConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
+            .set_wallet_base(WalletBase::MnemonicPhrase {
+                mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1.into(),
+            })
             .build();
 
-        let wallet = LightWallet::new(
-            config.chain_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                no_of_accounts: config.no_of_accounts(),
-                birthday: 1.into(),
-            },
-            config.wallet_settings(),
-        )
-        .unwrap();
-        let mut lc = LightClient::create_from_wallet(wallet, config.clone(), false).unwrap();
+        let mut lc = LightClient::new(config.clone(), false).unwrap();
 
         lc.save_task().await;
         lc.wait_for_save().await;
 
-        let wallet = LightWallet::new(
-            config.chain_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
-                no_of_accounts: config.no_of_accounts(),
-                birthday: 1.into(),
-            },
-            config.wallet_settings(),
-        )
-        .unwrap();
-        let lc_file_exists_error =
-            LightClient::create_from_wallet(wallet, config, false).unwrap_err();
+        let lc_file_exists_error = LightClient::new(config, false).unwrap_err();
 
         assert!(matches!(
             lc_file_exists_error,

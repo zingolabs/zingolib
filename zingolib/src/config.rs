@@ -2,14 +2,12 @@
 
 use std::{
     collections::BTreeMap,
-    net::ToSocketAddrs,
     num::NonZeroU32,
     path::{Path, PathBuf},
 };
 
 use bip0039::{English, Mnemonic};
 use http::uri::InvalidUri;
-use log::info;
 
 use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zingo_common_components::protocol::ActivationHeights;
@@ -141,6 +139,7 @@ impl WalletBase {
     ///
     /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
     #[allow(clippy::result_large_err)]
+    #[allow(clippy::type_complexity)]
     pub(crate) fn resolve_keys(
         self,
         chain_type: ChainType,
@@ -418,24 +417,6 @@ impl Default for ZingoConfigBuilder {
     }
 }
 
-// TODO: return errors
-fn check_indexer_uri(indexer_uri: &http::Uri) {
-    if let Some(host) = indexer_uri.host()
-        && let Some(port) = indexer_uri.port()
-    {
-        match format!("{}:{}", host, port,).to_socket_addrs() {
-            Ok(_) => {
-                info!("Connected to {indexer_uri}");
-            }
-            Err(e) => {
-                info!("Couldn't resolve server: {e}");
-            }
-        }
-    } else {
-        info!("Using offline mode");
-    }
-}
-
 fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     let wallet_name = opt_wallet_name.unwrap_or_else(|| DEFAULT_WALLET_NAME.into());
     if wallet_name.is_empty() {
@@ -491,56 +472,25 @@ fn wallet_dir_or_default(opt_wallet_dir: Option<PathBuf>, chain: ChainType) -> P
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-
-    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-
-    use crate::{
-        config::{ChainType, ZingoConfig},
-        wallet::WalletSettings,
-    };
+    use crate::config::{ChainType, ZingoConfig};
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Ring to work as a default");
-        tracing_subscriber::fmt().init();
-
         let valid_uri = crate::config::construct_lightwalletd_uri(Some(
             crate::config::DEFAULT_INDEXER_URI.to_string(),
         ))
         .unwrap();
-        // let invalid_uri = construct_lightwalletd_uri(Some("Invalid URI".to_string()));
-        let temp_dir = tempfile::TempDir::new().unwrap();
 
+        let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
-        // let temp_path_invalid = temp_dir.path().to_path_buf();
 
         let valid_config = ZingoConfig::builder()
             .set_indexer_uri(valid_uri.clone())
             .set_chain_type(ChainType::Mainnet)
             .set_wallet_dir(temp_path)
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            })
-            .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
-            .set_wallet_name("".to_string())
             .build();
 
         assert_eq!(valid_config.indexer_uri(), valid_uri);
-        assert_eq!(valid_config.chain_type, ChainType::Mainnet);
-
-        // let invalid_config = load_clientconfig_serverless(
-        //     invalid_uri.clone(),
-        //     Some(temp_path_invalid),
-        //     ChainType::Mainnet,
-        //     true,
-        // );
-        // assert_eq!(invalid_config.is_err(), true);
+        assert_eq!(valid_config.chain_type(), ChainType::Mainnet);
     }
 }

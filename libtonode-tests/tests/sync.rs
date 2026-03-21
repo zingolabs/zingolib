@@ -1,23 +1,21 @@
 use std::{num::NonZeroU32, time::Duration};
 
-use bip0039::Mnemonic;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::config::{ChainType, WalletBase, ZingoConfig};
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
-use zingolib::wallet::LightWallet;
 use zingolib::{
     config::{DEFAULT_INDEXER_URI, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
-    wallet::{WalletBase, WalletSettings},
+    wallet::WalletSettings,
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
@@ -36,7 +34,11 @@ async fn sync_mainnet_test() {
         .set_indexer_uri(uri.clone())
         .set_chain_type(ChainType::Mainnet)
         .set_wallet_dir(temp_path)
-        .set_wallet_name("".to_string())
+        .set_wallet_base(WalletBase::MnemonicPhrase {
+            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            birthday: 1_500_000.into(),
+        })
         .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -44,19 +46,8 @@ async fn sync_mainnet_test() {
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         })
-        .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let wallet = LightWallet::new(
-        config.chain_type(),
-        WalletBase::Mnemonic {
-            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-        },
-        1_500_000.into(),
-        config.wallet_settings(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
+    let mut lightclient = LightClient::new(config, true).unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -101,7 +92,11 @@ async fn sync_status() {
         .set_indexer_uri(uri.clone())
         .set_chain_type(ChainType::Mainnet)
         .set_wallet_dir(temp_path)
-        .set_wallet_name("".to_string())
+        .set_wallet_base(WalletBase::MnemonicPhrase {
+            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            birthday: 2_496_152.into(),
+        })
         .set_wallet_settings(WalletSettings {
             sync_config: SyncConfig {
                 transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -109,19 +104,8 @@ async fn sync_status() {
             },
             min_confirmations: NonZeroU32::try_from(1).unwrap(),
         })
-        .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let wallet = LightWallet::new(
-        config.chain_type(),
-        WalletBase::Mnemonic {
-            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-        },
-        2_496_152.into(),
-        config.wallet_settings(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
+    let mut lightclient = LightClient::new(config, true).unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }

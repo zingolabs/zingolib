@@ -175,35 +175,26 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
 
-    use pepper_sync::{
-        config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
-        wallet::WalletTransaction,
-    };
+    use pepper_sync::wallet::WalletTransaction;
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use crate::{
-        config::ZingoConfig,
-        wallet::{LightWallet, WalletBase, WalletSettings, error::WalletError},
+        config::{ChainType, WalletBase},
+        wallet::{LightWallet, WalletSettings, error::WalletError},
     };
 
     fn test_wallet() -> LightWallet {
-        let config = ZingoConfig::builder().build();
         LightWallet::new(
-            config.chain_type(),
-            WalletBase::FreshEntropy {
+            ChainType::Mainnet,
+            WalletBase::MnemonicPhrase {
+                mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419_200.into(),
             },
-            419_200.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
+            WalletSettings::default(),
         )
         .unwrap()
     }

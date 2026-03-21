@@ -327,12 +327,14 @@ fn write_transaction(transaction: Transaction, mut chainbuild_file: &File) {
 
 pub mod scenarios {
     use std::fs::File;
+    use std::num::NonZeroU32;
     use std::ops::Add;
 
     use zcash_local_net::indexer::lightwalletd::Lightwalletd;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_common_components::protocol::ActivationHeights;
+    use zingolib::config::WalletBase;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -342,7 +344,7 @@ pub mod scenarios {
         constants,
         darkside_types::{RawTransaction, TreeState},
     };
-    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+    use zingo_test_vectors::seeds::{DARKSIDE_SEED, HOSPITAL_MUSEUM_SEED};
     use zingolib::lightclient::LightClient;
     use zingolib_testutils::scenarios::ClientBuilder;
 
@@ -397,12 +399,19 @@ pub mod scenarios {
         /// The staged block with the funding transaction is not applied and the faucet is not synced
         pub async fn build_faucet(&mut self, funded_pool: PoolType) -> &mut DarksideEnvironment {
             assert!(self.faucet.is_none(), "Error: Faucet already exists!");
-            self.faucet = Some(self.client_builder.build_client(
-                zingo_test_vectors::seeds::DARKSIDE_SEED.to_string(),
-                1,
-                true,
-                self.configured_activation_heights,
-            ));
+            self.faucet = Some(
+                self.client_builder
+                    .build_client(
+                        WalletBase::MnemonicPhrase {
+                            mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                            birthday: BlockHeight::from_u32(1),
+                        },
+                        true,
+                        self.configured_activation_heights,
+                    )
+                    .await,
+            );
 
             let faucet_funding_transaction = match funded_pool {
                 PoolType::Shielded(ShieldedProtocol::Orchard) => {
@@ -426,12 +435,18 @@ pub mod scenarios {
             seed: String,
             birthday: u64,
         ) -> &mut DarksideEnvironment {
-            let lightclient = self.client_builder.build_client(
-                seed,
-                birthday,
-                true,
-                self.configured_activation_heights,
-            );
+            let lightclient = self
+                .client_builder
+                .build_client(
+                    WalletBase::MnemonicPhrase {
+                        mnemonic_phrase: seed,
+                        no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                        birthday: BlockHeight::from_u32(birthday as u32),
+                    },
+                    true,
+                    self.configured_activation_heights,
+                )
+                .await;
             self.lightclients.push(lightclient);
             self
         }

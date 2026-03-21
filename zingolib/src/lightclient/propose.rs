@@ -170,37 +170,33 @@ impl LightClient {
 mod shielding {
     use std::num::NonZeroU32;
 
-    use bip0039::Mnemonic;
     use pepper_sync::config::SyncConfig;
     use zcash_protocol::consensus::Parameters;
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::ZingoConfigBuilder,
+        config::{WalletBase, ZingoConfig},
         lightclient::LightClient,
-        wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
+        wallet::{WalletSettings, error::ProposeShieldError},
     };
 
     fn create_basic_client() -> LightClient {
-        let config = ZingoConfigBuilder::default().build();
-        let wallet = LightWallet::new(
-            config.chain_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+        let config = ZingoConfig::builder()
+            .set_wallet_base(WalletBase::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-            },
-            419200.into(),
-            WalletSettings {
+                birthday: 419200.into(),
+            })
+            .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery:
                         pepper_sync::config::TransparentAddressDiscovery::minimal(),
                     performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-        )
-        .unwrap();
-        LightClient::create_from_wallet(wallet, config, true).unwrap()
+            })
+            .build();
+        LightClient::new(config, true).unwrap()
     }
 
     #[tokio::test]
