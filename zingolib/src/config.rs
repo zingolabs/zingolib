@@ -120,13 +120,13 @@ pub enum WalletBase {
         no_of_accounts: NonZeroU32,
         chain_height: BlockHeight,
     },
-    /// Generate a wallet from a mnemonic (phrase or entropy) for a number of accounts.
+    /// Generate a wallet from a mnemonic phrase for a number of accounts.
     MnemonicPhrase {
         mnemonic_phrase: String,
         no_of_accounts: NonZeroU32,
         birthday: BlockHeight,
     },
-    /// Generate a wallet from a unified full viewing key.
+    /// Generate a wallet from an encoded unified full viewing key.
     // TODO: take concrete UFVK type
     Ufvk { ufvk: String, birthday: BlockHeight },
     /// Generate a wallet from a unified spending key.
