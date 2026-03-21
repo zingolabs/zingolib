@@ -1,17 +1,24 @@
 //! Module for configuration and construction of a [`crate::lightclient::LightClient`] and/or [`crate::wallet::LightWallet`].
 
 use std::{
+    collections::BTreeMap,
     net::ToSocketAddrs,
     num::NonZeroU32,
     path::{Path, PathBuf},
 };
 
+use bip0039::{English, Mnemonic};
 use http::uri::InvalidUri;
 use log::info;
 
+use zcash_protocol::consensus::{BlockHeight, Parameters};
 use zingo_common_components::protocol::ActivationHeights;
 
-use crate::wallet::WalletSettings;
+use crate::wallet::{
+    WalletSettings,
+    error::{KeyError, WalletError},
+    keys::unified::UnifiedKeyStore,
+};
 
 /// Default indexer uri
 pub const DEFAULT_INDEXER_URI: &str = "https://zec.rocks:443";
@@ -105,30 +112,101 @@ pub(crate) mod consealed {
 #[error("Invalid chain type '{0}'. Expected one of: 'mainnet', 'testnet' or 'regtest'.")]
 pub struct InvalidChainType(String);
 
-/// Creates a zingo config for lightclient construction.
-#[deprecated(note = "replaced by ZingoConfig builder pattern")]
-pub fn load_clientconfig(
-    indexer_uri: http::Uri,
-    data_dir: Option<PathBuf>,
-    chain_type: ChainType,
-    wallet_settings: WalletSettings,
-    no_of_accounts: NonZeroU32,
-    wallet_name: String,
-) -> std::io::Result<ZingoConfig> {
-    check_indexer_uri(&indexer_uri);
-    let wallet_name = wallet_name_or_default(Some(wallet_name));
-    let wallet_dir = wallet_dir_or_default(data_dir, chain_type);
+/// Base data used to construct a [`crate::wallet::LightWallet`].
+#[derive(Clone, Debug)]
+pub enum WalletBase {
+    /// Generate a wallet with a new seed for a number of accounts.
+    FreshEntropy {
+        no_of_accounts: NonZeroU32,
+        chain_height: BlockHeight,
+    },
+    /// Generate a wallet from a mnemonic (phrase or entropy) for a number of accounts.
+    MnemonicPhrase {
+        mnemonic_phrase: String,
+        no_of_accounts: NonZeroU32,
+        birthday: BlockHeight,
+    },
+    /// Generate a wallet from a unified full viewing key.
+    // TODO: take concrete UFVK type
+    Ufvk { ufvk: String, birthday: BlockHeight },
+    /// Generate a wallet from a unified spending key.
+    // TODO: take concrete USK type
+    Usk { usk: Vec<u8>, birthday: BlockHeight },
+    /// Read from wallet file.
+    Read,
+}
 
-    let config = ZingoConfig {
-        indexer_uri,
-        chain_type,
-        wallet_dir,
-        wallet_name,
-        wallet_settings,
-        no_of_accounts,
-    };
+impl WalletBase {
+    /// Resolves the wallet base into a unified key store, optional mnemonic and birthday.
+    ///
+    /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn resolve_keys(
+        self,
+        chain_type: ChainType,
+    ) -> Result<
+        (
+            BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+            Option<Mnemonic>,
+            BlockHeight,
+        ),
+        WalletError,
+    > {
+        match self {
+            WalletBase::FreshEntropy {
+                no_of_accounts,
+                chain_height,
+            } => {
+                let sapling_activation_height = chain_type
+                    .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+                    .expect("should have some sapling activation height");
+                let birthday = sapling_activation_height.max(chain_height - 100);
 
-    Ok(config)
+                WalletBase::MnemonicPhrase {
+                    mnemonic_phrase: Mnemonic::<English>::generate(bip0039::Count::Words24)
+                        .into_phrase(),
+                    no_of_accounts,
+                    birthday,
+                }
+                .resolve_keys(chain_type)
+            }
+            WalletBase::MnemonicPhrase {
+                mnemonic_phrase: mnemonic,
+                no_of_accounts,
+                birthday,
+            } => {
+                let mnemonic = Mnemonic::from_phrase(mnemonic)?;
+                let no_of_accounts = u32::from(no_of_accounts);
+                let unified_key_store = (0..no_of_accounts)
+                    .map(|account_index| {
+                        let account_id = zip32::AccountId::try_from(account_index)?;
+                        Ok((
+                            account_id,
+                            UnifiedKeyStore::new_from_mnemonic(chain_type, &mnemonic, account_id)?,
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
+                Ok((unified_key_store, Some(mnemonic), birthday))
+            }
+            WalletBase::Ufvk { ufvk, birthday } => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_ufvk(chain_type, ufvk)?,
+                );
+                Ok((unified_key_store, None, birthday))
+            }
+            WalletBase::Usk { usk, birthday } => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_usk(usk.as_slice())?,
+                );
+                Ok((unified_key_store, None, birthday))
+            }
+            WalletBase::Read => Err(WalletError::InvalidWalletBase),
+        }
+    }
 }
 
 /// Constructs a http::Uri from a `server` string. If `server` is `None` use the `DEFAULT_INDEXER_URI`.
@@ -158,8 +236,6 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> Result<http::Uri, I
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
-// TODO: this config should only be used to create a lightclient, the data should then be moved into fields of
-// lightclient or lightwallet if it needs to retained in memory.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     /// URI of the indexer the lightclient is connected to.
@@ -170,6 +246,8 @@ pub struct ZingoConfig {
     wallet_dir: PathBuf,
     /// Wallet file name. This will be created in the `wallet_dir`.
     wallet_name: String,
+    /// Wallet base
+    wallet_base: WalletBase,
     /// Wallet settings.
     wallet_settings: WalletSettings,
     /// Number of accounts.
@@ -207,13 +285,19 @@ impl ZingoConfig {
         &self.wallet_name
     }
 
-    /// Returns wallet settings..
+    /// Returns wallet base.
+    #[must_use]
+    pub fn wallet_base(&self) -> WalletBase {
+        self.wallet_base.clone()
+    }
+
+    /// Returns wallet settings.
     #[must_use]
     pub fn wallet_settings(&self) -> WalletSettings {
         self.wallet_settings.clone()
     }
 
-    /// Returns number of accounts..
+    /// Returns number of accounts.
     #[must_use]
     pub fn no_of_accounts(&self) -> NonZeroU32 {
         self.no_of_accounts
@@ -270,6 +354,7 @@ pub struct ZingoConfigBuilder {
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
+    wallet_base: WalletBase,
     wallet_settings: WalletSettings,
     no_of_accounts: NonZeroU32,
 }
@@ -326,6 +411,12 @@ impl ZingoConfigBuilder {
         self
     }
 
+    /// Set wallet base.
+    pub fn set_wallet_base(mut self, wallet_base: WalletBase) -> Self {
+        self.wallet_base = wallet_base;
+        self
+    }
+
     /// Set wallet settings.
     pub fn set_wallet_settings(mut self, wallet_settings: WalletSettings) -> Self {
         self.wallet_settings = wallet_settings;
@@ -347,6 +438,7 @@ impl ZingoConfigBuilder {
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
+            wallet_base: self.wallet_base,
             wallet_settings: self.wallet_settings,
             no_of_accounts: self.no_of_accounts,
         }
@@ -360,13 +452,17 @@ impl Default for ZingoConfigBuilder {
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
+            wallet_base: WalletBase::FreshEntropy {
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
+                chain_height: BlockHeight::from_u32(1),
+            },
             wallet_settings: WalletSettings {
                 sync_config: pepper_sync::config::SyncConfig {
                     transparent_address_discovery:
                         pepper_sync::config::TransparentAddressDiscovery::minimal(),
                     performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
-                min_confirmations: NonZeroU32::try_from(3).unwrap(),
+                min_confirmations: NonZeroU32::try_from(3).expect("hard coded non-zero integer"),
             },
             no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
         }

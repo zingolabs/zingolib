@@ -19,7 +19,7 @@ use pepper_sync::{
 };
 use zingo_price::PriceList;
 
-use crate::config::ChainType;
+use crate::config::{ChainType, WalletBase};
 use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
@@ -80,80 +80,6 @@ impl std::fmt::Display for RecoveryInfo {
     }
 }
 
-/// Data used to initialize new instance of `LightWallet`
-pub enum WalletBase {
-    /// Generate a wallet with a new seed for a number of accounts.
-    FreshEntropy { no_of_accounts: NonZeroU32 },
-    /// Generate a wallet from a mnemonic (phrase or entropy) for a number of accounts.
-    Mnemonic {
-        mnemonic: Mnemonic,
-        no_of_accounts: NonZeroU32,
-    },
-    /// Generate a wallet from a unified full viewing key.
-    // TODO: take concrete UFVK type
-    Ufvk(String),
-    /// Generate a wallet from a unified spending key.
-    // TODO: take concrete USK type
-    Usk(Vec<u8>),
-}
-
-impl WalletBase {
-    /// Resolves the wallet base into a unified key store and optional mnemonic.
-    ///
-    /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
-    #[allow(clippy::result_large_err)]
-    fn resolve_keys(
-        self,
-        chain_type: ChainType,
-    ) -> Result<
-        (
-            BTreeMap<zip32::AccountId, UnifiedKeyStore>,
-            Option<Mnemonic>,
-        ),
-        WalletError,
-    > {
-        match self {
-            WalletBase::FreshEntropy { no_of_accounts } => WalletBase::Mnemonic {
-                mnemonic: Mnemonic::generate(bip0039::Count::Words24),
-                no_of_accounts,
-            }
-            .resolve_keys(chain_type),
-            WalletBase::Mnemonic {
-                mnemonic,
-                no_of_accounts,
-            } => {
-                let no_of_accounts = u32::from(no_of_accounts);
-                let unified_key_store = (0..no_of_accounts)
-                    .map(|account_index| {
-                        let account_id = zip32::AccountId::try_from(account_index)?;
-                        Ok((
-                            account_id,
-                            UnifiedKeyStore::new_from_mnemonic(chain_type, &mnemonic, account_id)?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
-                Ok((unified_key_store, Some(mnemonic)))
-            }
-            WalletBase::Ufvk(ufvk_encoded) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_ufvk(chain_type, ufvk_encoded)?,
-                );
-                Ok((unified_key_store, None))
-            }
-            WalletBase::Usk(unified_spending_key) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
-                );
-                Ok((unified_key_store, None))
-            }
-        }
-    }
-}
-
 /// In-memory wallet data struct
 ///
 /// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
@@ -207,17 +133,13 @@ pub struct LightWallet {
 
 impl LightWallet {
     /// Create a new in-memory wallet.
-    ///
-    /// For wallets from fresh entropy, it is worth considering setting `birthday` to 100 blocks below current height
-    /// of block chain to protect from re-orgs.
     #[allow(clippy::result_large_err)]
     pub fn new(
         chain_type: ChainType,
         wallet_base: WalletBase,
-        birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(chain_type)?;
+        let (unified_key_store, mnemonic, birthday) = wallet_base.resolve_keys(chain_type)?;
         Self::from_keys(
             chain_type,
             unified_key_store,
