@@ -149,7 +149,13 @@ pub struct LightWallet {
 }
 
 impl LightWallet {
-    /// Create a new in-memory wallet.
+    /// Create a new in-memory wallet from [`crate::config::WalletConfig`].
+    ///
+    /// # Error
+    ///
+    /// An error will be returned if the wallet config is of `Read` variant as the wallet has already been created.
+    /// If is the responsbility of the struct that owns the [`crate::wallet::LightWallet`] to use the
+    /// `LightWallet::read` method instead.
     #[allow(clippy::result_large_err)]
     pub fn new(chain_type: ChainType, wallet_config: WalletConfig) -> Result<Self, WalletError> {
         let wallet_base = wallet_config.resolve(chain_type)?;
