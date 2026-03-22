@@ -528,7 +528,7 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet.write().await;
+                let wallet = lightclient.wallet.read().await;
                 object! { "height" => json::JsonValue::from(wallet.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
             }))
         } else {
@@ -1121,7 +1121,7 @@ pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
             .map_err(|_| ZingolibError::LightclientLockPoisoned)?;
         if let Some(lightclient) = &mut *guard {
             Ok(RT.block_on(async move {
-                let wallet = lightclient.wallet.write().await;
+                let wallet = lightclient.wallet.read().await;
                 let spendable_balance =
                     match wallet.shielded_spendable_balance(AccountId::ZERO, false) {
                         Ok(bal) => bal,
