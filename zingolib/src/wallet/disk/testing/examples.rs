@@ -1,31 +1,28 @@
-use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use http::Uri;
 
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
 use crate::config::{
-    ChainType, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletBase, ZingoConfig,
+    ChainType, ClientConfig, DEFAULT_INDEXER_URI, DEFAULT_INDEXER_URI_TESTNET, WalletConfig,
 };
 use crate::lightclient::LightClient;
 use crate::testutils::paths::get_cargo_manifest_dir;
-use crate::wallet::WalletSettings;
 
 /// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum NetworkSeedVersion {
-    /// /
+    /// Regtest seed version
     Regtest(RegtestSeedVersion),
-    /// /
+    /// Testnet seed version
     Testnet(TestnetSeedVersion),
-    /// Mainnet is a live chain
+    /// Mainnet seed version
     Mainnet(MainnetSeedVersion),
 }
 
@@ -194,7 +191,7 @@ impl NetworkSeedVersion {
                 // Probably should be undefined. For the purpose of these tests, I hope it doesnt matter.
                 let lightwalletd_uri = DEFAULT_INDEXER_URI.parse::<Uri>().unwrap();
 
-                ZingoConfig::builder()
+                ClientConfig::builder()
                     .set_indexer_uri(lightwalletd_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name(
@@ -205,17 +202,10 @@ impl NetworkSeedVersion {
                             .to_string(),
                     )
                     .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                    .set_wallet_base(WalletBase::Read)
-                    .set_wallet_settings(WalletSettings {
-                        sync_config: SyncConfig {
-                            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                            performance_level: PerformanceLevel::High,
-                        },
-                        min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                    })
+                    .set_wallet_config(WalletConfig::Read)
                     .build()
             }
-            NetworkSeedVersion::Testnet(_) => ZingoConfig::builder()
+            NetworkSeedVersion::Testnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI_TESTNET.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Testnet)
                 .set_wallet_name(
@@ -226,16 +216,9 @@ impl NetworkSeedVersion {
                         .to_string(),
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                .set_wallet_base(WalletBase::Read)
-                .set_wallet_settings(WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                        performance_level: PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                })
+                .set_wallet_config(WalletConfig::Read)
                 .build(),
-            NetworkSeedVersion::Mainnet(_) => ZingoConfig::builder()
+            NetworkSeedVersion::Mainnet(_) => ClientConfig::builder()
                 .set_indexer_uri(DEFAULT_INDEXER_URI.parse::<Uri>().unwrap())
                 .set_chain_type(ChainType::Mainnet)
                 .set_wallet_name(
@@ -246,14 +229,7 @@ impl NetworkSeedVersion {
                         .to_string(),
                 )
                 .set_wallet_dir(self.example_wallet_path().parent().unwrap().to_path_buf())
-                .set_wallet_base(WalletBase::Read)
-                .set_wallet_settings(WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                        performance_level: PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                })
+                .set_wallet_config(WalletConfig::Read)
                 .build(),
         };
 
@@ -261,7 +237,7 @@ impl NetworkSeedVersion {
     }
     /// picks the seed (or ufvk) string associated with an example wallet
     #[must_use]
-    pub fn example_wallet_base(&self) -> String {
+    pub fn example_wallet_seed(&self) -> String {
         match self {
             NetworkSeedVersion::Regtest(seed) => match seed {
                 RegtestSeedVersion::HospitalMuseum(_) => {

@@ -334,7 +334,8 @@ pub mod scenarios {
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zcash_protocol::{PoolType, ShieldedProtocol};
     use zingo_common_components::protocol::ActivationHeights;
-    use zingolib::config::WalletBase;
+    use zingolib::config::WalletConfig;
+    use zingolib::testutils::default_test_wallet_settings;
 
     use super::{
         DarksideConnector, init_darksidewalletd, update_tree_states_for_transaction,
@@ -402,10 +403,11 @@ pub mod scenarios {
             self.faucet = Some(
                 self.client_builder
                     .build_client(
-                        WalletBase::MnemonicPhrase {
+                        WalletConfig::MnemonicPhrase {
                             mnemonic_phrase: DARKSIDE_SEED.to_string(),
                             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                             birthday: BlockHeight::from_u32(1),
+                            wallet_settings: default_test_wallet_settings(),
                         },
                         true,
                         self.configured_activation_heights,
@@ -438,10 +440,11 @@ pub mod scenarios {
             let lightclient = self
                 .client_builder
                 .build_client(
-                    WalletBase::MnemonicPhrase {
+                    WalletConfig::MnemonicPhrase {
                         mnemonic_phrase: seed,
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                         birthday: BlockHeight::from_u32(birthday as u32),
+                        wallet_settings: default_test_wallet_settings(),
                     },
                     true,
                     self.configured_activation_heights,

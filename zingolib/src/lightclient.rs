@@ -25,7 +25,7 @@ use pepper_sync::{
 use zingo_netutils::Indexer as _;
 
 use crate::{
-    config::{ChainType, WalletBase, ZingoConfig},
+    config::{ChainType, ClientConfig, WalletConfig},
     utils::now,
     wallet::{
         LightWallet,
@@ -104,12 +104,12 @@ impl LightClient {
     /// Creates a `LightClient` from [`crate::config::ZingoConfig`].
     ///
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true` or the
-    /// [`crate::config::WalletBase`] is of `Read` variant.
-    /// `overwrite` has no effect if a wallet is read from file.
+    /// [`crate::config::WalletConfig`] is of `Read` variant.
+    /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
-    pub fn new(config: ZingoConfig, overwrite: bool) -> Result<Self, LightClientError> {
-        let wallet = match config.wallet_base() {
-            WalletBase::Read => {
+    pub fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
+        let wallet = match config.wallet_config() {
+            WalletConfig::Read => {
                 let buffer = BufReader::new(
                     File::open(config.get_wallet_path()).map_err(LightClientError::FileError)?,
                 );
@@ -131,11 +131,7 @@ impl LightClient {
                     }
                 }
 
-                LightWallet::new(
-                    config.chain_type(),
-                    config.wallet_base(),
-                    config.wallet_settings(),
-                )?
+                LightWallet::new(config.chain_type(), config.wallet_config())?
             }
         };
 
@@ -384,8 +380,9 @@ impl std::fmt::Debug for LightClient {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ChainType, WalletBase, ZingoConfig},
+        config::{ChainType, ClientConfig, WalletConfig},
         lightclient::{LightClient, error::LightClientError},
+        testutils::default_test_wallet_settings,
     };
     use tempfile::TempDir;
     use zingo_common_components::protocol::ActivationHeights;
@@ -394,13 +391,14 @@ mod tests {
     #[tokio::test]
     async fn new_wallet_from_phrase() {
         let temp_dir = TempDir::new().unwrap();
-        let config = ZingoConfig::builder()
+        let config = ClientConfig::builder()
             .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
             .set_wallet_dir(temp_dir.path().to_path_buf())
-            .set_wallet_base(WalletBase::MnemonicPhrase {
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 1.into(),
+                wallet_settings: default_test_wallet_settings(),
             })
             .build();
 

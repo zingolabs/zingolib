@@ -3,7 +3,7 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
-use crate::config::{WalletBase, ZingoConfig};
+use crate::config::{ClientConfig, WalletConfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
@@ -27,12 +27,12 @@ pub trait ConductChain {
     /// the server communicates some parameters (asyncronously)
     /// that are here compiled into an appropriate wallet configuration
     // super awful that this function has to exist, because the wallet should be able to communicate without 'test-only helpers'
-    async fn zingo_config(&mut self) -> crate::config::ZingoConfig;
+    async fn zingo_config(&mut self) -> crate::config::ClientConfig;
 
     /// builds an empty client
     async fn create_client(&mut self) -> LightClient {
         let config = self.zingo_config().await;
-        assert!(!matches!(config.wallet_base(), WalletBase::Read));
+        assert!(!matches!(config.wallet_config(), WalletConfig::Read));
         let mut lightclient = LightClient::new(config, false).unwrap();
         lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
@@ -43,8 +43,8 @@ pub trait ConductChain {
     }
 
     /// loads a client from bytes
-    fn load_client(&mut self, config: ZingoConfig) -> LightClient {
-        assert!(matches!(config.wallet_base(), WalletBase::Read));
+    fn load_client(&mut self, config: ClientConfig) -> LightClient {
+        assert!(matches!(config.wallet_config(), WalletConfig::Read));
         LightClient::new(config, false).unwrap()
     }
 

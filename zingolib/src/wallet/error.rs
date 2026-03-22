@@ -76,9 +76,11 @@ pub enum WalletError {
         "birthday {0} below sapling activation height {1}. pre-sapling wallets are not supported!"
     )]
     BirthdayBelowSapling(u32, u32),
-    /// Cannot create a new wallet with a wallet base of `Read` variant.
-    #[error("Cannot create a new wallet with a wallet base of `Read` variant.")]
-    InvalidWalletBase,
+    /// Cannot create a new wallet with a wallet base of `Read` variant as the wallet is already created and stored as bytes.
+    #[error(
+        "Cannot create a new wallet with a wallet base of `Read` variant as the wallet is already created and stored as bytes."
+    )]
+    WalletAlreadyCreated,
 }
 
 /// Price error

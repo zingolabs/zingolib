@@ -4,7 +4,7 @@ use zcash_keys::keys::Era;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
-    config::ZingoConfig,
+    config::ClientConfig,
     lightclient::LightClient,
     wallet::{
         disk::testing::{
@@ -27,7 +27,7 @@ impl NetworkSeedVersion {
         let client = self.load_example_wallet().await;
         let wallet = client.wallet().read().await;
 
-        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
+        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_seed()).await;
         for pool in [
             PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Orchard),
@@ -219,7 +219,7 @@ async fn loaded_wallet_assert(
 // todo: proptest enum
 #[tokio::test]
 async fn reload_wallet_from_file() {
-    use crate::wallet::{LightWallet, WalletBase};
+    use crate::wallet::{LightWallet, WalletConfig};
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     let mut mid_client =
@@ -232,11 +232,11 @@ async fn reload_wallet_from_file() {
     mid_client.wait_for_save().await;
     mid_client.shutdown_save_task().await.unwrap();
 
-    let config = ZingoConfig::builder()
+    let config = ClientConfig::builder()
         .set_indexer_uri(mid_client.indexer_uri().cloned().unwrap())
         .set_chain_type(mid_client_network)
         .set_wallet_dir(mid_client.wallet_dir().unwrap())
-        .set_wallet_base(WalletBase::Read)
+        .set_wallet_config(WalletConfig::Read)
         .build();
     let loaded_client = LightClient::new(config, true).unwrap();
     let loaded_wallet = loaded_client.wallet().read().await;
@@ -284,12 +284,12 @@ async fn reload_wallet_from_file() {
     let ufvk = usk.to_unified_full_viewing_key();
     let chain_type = loaded_client.chain_type();
     let ufvk_string = ufvk.encode(&chain_type);
-    let ufvk_base = WalletBase::Ufvk {
+    let wallet_config = WalletConfig::Ufvk {
         ufvk: ufvk_string.clone(),
         birthday: loaded_client.birthday(),
+        wallet_settings: loaded_wallet.wallet_settings.clone(),
     };
-    let view_wallet =
-        LightWallet::new(chain_type, ufvk_base, loaded_wallet.wallet_settings.clone()).unwrap();
+    let view_wallet = LightWallet::new(chain_type, wallet_config).unwrap();
     let UnifiedKeyStore::View(v_ufvk) = &view_wallet
         .unified_key_store
         .get(&zip32::AccountId::ZERO)

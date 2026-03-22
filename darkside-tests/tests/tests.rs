@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use darkside_tests::darkside_connector::DarksideConnector;
 use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
@@ -8,17 +6,14 @@ use zcash_local_net::indexer::Indexer;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::config::ChainType;
-use zingolib::config::WalletBase;
-use zingolib::config::ZingoConfig;
+use zingolib::config::ClientConfig;
+use zingolib::config::WalletConfig;
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::tempfile;
-use zingolib::wallet::PerformanceLevel;
-use zingolib::wallet::SyncConfig;
-use zingolib::wallet::TransparentAddressDiscovery;
-use zingolib::wallet::WalletSettings;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib_testutils::scenarios::ClientBuilder;
 
@@ -37,10 +32,11 @@ async fn simple_sync() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id, wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 1.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             activation_heights,
@@ -86,10 +82,11 @@ async fn reorg_receipt_sync_generic() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 1.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             activation_heights,
@@ -152,10 +149,11 @@ async fn sent_transaction_reorged_into_mempool() {
     let activation_heights = ActivationHeights::default();
     let mut light_client = client_manager
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 1.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             activation_heights,
@@ -163,10 +161,11 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let mut recipient = client_manager
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 1.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             activation_heights,
@@ -260,18 +259,11 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.wait_for_save().await;
     light_client.shutdown_save_task().await.unwrap();
 
-    let config = ZingoConfig::builder()
+    let config = ClientConfig::builder()
         .set_indexer_uri(client_manager.server_id.clone())
         .set_chain_type(ChainType::Regtest(activation_heights))
         .set_wallet_dir(light_client.wallet_dir().unwrap())
-        .set_wallet_base(WalletBase::Read)
-        .set_wallet_settings(WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        })
+        .set_wallet_config(WalletConfig::Read)
         .build();
     let mut loaded_client = LightClient::new(config, true).unwrap();
 

@@ -149,9 +149,10 @@ mod fast {
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
         ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
-        config::WalletBase,
+        config::WalletConfig,
         testutils::{
             chain_generics::conduct_chain::ConductChain,
+            default_test_wallet_settings,
             lightclient::{from_inputs, get_base_address},
         },
         wallet::{
@@ -467,10 +468,11 @@ mod fast {
             .await;
         let mut recipient = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 true,
                 local_net.validator().get_activation_heights().await,
@@ -522,10 +524,11 @@ mod fast {
         // rebuild recipient and check the UAs don't exist in the wallet
         let mut recipient = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 true,
                 local_net.validator().get_activation_heights().await,
@@ -1211,10 +1214,11 @@ mod fast {
             .to_string();
         let mut recipient = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: seed_phrase,
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 false,
                 local_net.validator().get_activation_heights().await,
@@ -1289,10 +1293,11 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
 
         let client_b = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 false,
                 local_net.validator().get_activation_heights().await,
@@ -1464,9 +1469,6 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
     }
 }
 mod slow {
-    use std::num::NonZeroU32;
-
-    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
     use pepper_sync::wallet::{
         NoteInterface, OrchardNote, OutgoingNoteInterface, OutputInterface, SaplingNote,
         TransparentCoin,
@@ -1480,23 +1482,24 @@ mod slow {
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::TEST_TXID;
-    use zingolib::config::{ChainType, WalletBase, ZingoConfig};
+    use zingolib::config::{ChainType, ClientConfig, WalletConfig};
     use zingolib::lightclient::LightClient;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::testutils::lightclient::{from_inputs, get_fees_paid_by_client};
     use zingolib::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists,
-        build_fvks_from_unified_keystore, encoded_sapling_address_from_ua,
+        build_fvks_from_unified_keystore, default_test_wallet_settings,
+        encoded_sapling_address_from_ua,
     };
     use zingolib::utils;
     use zingolib::utils::conversion::txid_from_hex_encoded_str;
     use zingolib::wallet::error::{CalculateTransactionError, ProposeSendError};
     use zingolib::wallet::keys::unified::UnifiedAddressId;
     use zingolib::wallet::output::SpendStatus;
+    use zingolib::wallet::summary;
     use zingolib::wallet::summary::data::{
         BasicNoteSummary, OutgoingNoteSummary, SendType, TransactionKind, TransactionSummary,
     };
-    use zingolib::wallet::{WalletSettings, summary};
     use zingolib_testutils::scenarios::increase_height_and_wait_for_client;
     use zip32::AccountId;
 
@@ -1803,10 +1806,11 @@ mod slow {
             .await;
         let mut original_recipient = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 false,
                 local_net.validator().get_activation_heights().await,
@@ -1887,22 +1891,16 @@ mod slow {
         .unwrap(),
         &zcash_protocol::consensus::NetworkType::Regtest,
     );
-            let zingo_config = ZingoConfig::builder()
+            let zingo_config = ClientConfig::builder()
                 .set_indexer_uri(client_builder.server_id.clone())
                 .set_chain_type(ChainType::Regtest(
                     local_net.validator().get_activation_heights().await,
                 ))
                 .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
-                .set_wallet_base(WalletBase::Ufvk {
+                .set_wallet_config(WalletConfig::Ufvk {
                     ufvk,
                     birthday: 1.into(),
-                })
-                .set_wallet_settings(WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                        performance_level: PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                    wallet_settings: default_test_wallet_settings(),
                 })
                 .build();
             let mut watch_client = LightClient::new(zingo_config, false).unwrap();
@@ -3438,10 +3436,11 @@ TransactionSummary {
             .await;
         let mut pool_migration_client = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 false,
                 local_net.validator().get_activation_heights().await,
@@ -3489,10 +3488,11 @@ TransactionSummary {
             .await;
         let mut client = client_builder
             .build_client(
-                WalletBase::MnemonicPhrase {
+                WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
                 false,
                 local_net.validator().get_activation_heights().await,
@@ -4626,9 +4626,9 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, DEFAULT_INDEXER_URI_TESTNET, WalletBase, ZingoConfig},
+        config::{ChainType, ClientConfig, DEFAULT_INDEXER_URI_TESTNET, WalletConfig},
         lightclient::LightClient,
-        testutils::tempfile::TempDir,
+        testutils::{default_test_wallet_settings, tempfile::TempDir},
     };
 
     #[ignore = "testnet cannot be run offline"]
@@ -4643,13 +4643,14 @@ mod testnet_test {
 
         while test_count < NUM_TESTS {
             let wallet_dir = TempDir::new().unwrap();
-            let config = ZingoConfig::builder()
+            let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
                 .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
-                .set_wallet_base(WalletBase::MnemonicPhrase {
+                .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
                     birthday: 2_000_000.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 })
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build();
@@ -4673,10 +4674,10 @@ mod testnet_test {
             lightclient.shutdown_save_task().await.unwrap();
 
             // will fail if there were any reload errors due to bad file write code i.e. no flushing or file syncing
-            let config = ZingoConfig::builder()
+            let config = ClientConfig::builder()
                 .set_chain_type(ChainType::Testnet)
                 .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
-                .set_wallet_base(WalletBase::Read)
+                .set_wallet_config(WalletConfig::Read)
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build();
             LightClient::new(config, true).unwrap();

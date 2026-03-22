@@ -16,11 +16,11 @@ use zcash_local_net::indexer::Indexer;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::wallet::summary::data::SentValueTransfer;
-use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
-    config::WalletBase,
+    config::WalletConfig,
     testutils::{port_to_localhost_uri, tempfile::TempDir},
 };
+use zingolib::{testutils::default_test_wallet_settings, wallet::summary::data::ValueTransferKind};
 use zingolib::{
     testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
@@ -41,10 +41,11 @@ async fn reorg_changes_incoming_tx_height() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),
@@ -204,10 +205,11 @@ async fn reorg_changes_incoming_tx_index() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),
@@ -367,10 +369,11 @@ async fn reorg_expires_incoming_tx() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),
@@ -552,10 +555,11 @@ async fn reorg_changes_outgoing_tx_height() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),
@@ -812,10 +816,11 @@ async fn reorg_expires_outgoing_tx_height() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),
@@ -1017,10 +1022,11 @@ async fn reorg_changes_outgoing_tx_index() {
     let wallet_dir = TempDir::new().unwrap();
     let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
         .build_client(
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 202.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
             true,
             ActivationHeights::default(),

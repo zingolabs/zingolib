@@ -42,8 +42,8 @@ use pepper_sync::{
 };
 
 impl LightWallet {
-    /// Changes in version 39:
-    /// - sync state updated serialized version
+    /// Changes in version 40:
+    /// `ChainType` serialized as u8 instead of string to decouple from fmt::Display and reduce bytes stored.
     #[must_use]
     pub const fn serialized_version() -> u64 {
         40

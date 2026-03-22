@@ -181,19 +181,20 @@ mod tests {
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use crate::{
-        config::{ChainType, WalletBase},
-        wallet::{LightWallet, WalletSettings, error::WalletError},
+        config::{ChainType, WalletConfig},
+        testutils::default_test_wallet_settings,
+        wallet::{LightWallet, error::WalletError},
     };
 
     fn test_wallet() -> LightWallet {
         LightWallet::new(
             ChainType::Mainnet,
-            WalletBase::MnemonicPhrase {
+            WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 419_200.into(),
+                wallet_settings: default_test_wallet_settings(),
             },
-            WalletSettings::default(),
         )
         .unwrap()
     }

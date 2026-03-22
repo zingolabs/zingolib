@@ -17,7 +17,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
-use zingolib::config::{ChainType, DEFAULT_WALLET_NAME, WalletBase, ZingoConfig};
+use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::WalletSettings;
 
@@ -383,59 +383,52 @@ pub fn startup(
     let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         // Create client from seed phrase
-        let config = ZingoConfig::builder()
+        let config = ClientConfig::builder()
             .set_indexer_uri(filled_template.server.clone())
             .set_chain_type(filled_template.chaintype)
             .set_wallet_dir(filled_template.data_dir.clone())
-            .set_wallet_base(WalletBase::MnemonicPhrase {
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seed_phrase,
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 birthday: BlockHeight::from_u32(filled_template.birthday as u32),
-            })
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
+                wallet_settings: WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        performance_level: PerformanceLevel::High,
+                    },
+                    min_confirmations: NonZeroU32::try_from(3).unwrap(),
                 },
-                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             })
             .build();
         LightClient::new(config, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
-        let config = ZingoConfig::builder()
+        let config = ClientConfig::builder()
             .set_indexer_uri(filled_template.server.clone())
             .set_chain_type(filled_template.chaintype)
             .set_wallet_dir(filled_template.data_dir.clone())
-            .set_wallet_base(WalletBase::Ufvk {
+            .set_wallet_config(WalletConfig::Ufvk {
                 ufvk,
                 birthday: BlockHeight::from_u32(filled_template.birthday as u32),
-            })
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
+                wallet_settings: WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        performance_level: PerformanceLevel::High,
+                    },
+                    min_confirmations: NonZeroU32::try_from(3).unwrap(),
                 },
-                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             })
             .build();
         LightClient::new(config, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     } else if wallet_path.exists() {
         // Create client from wallet file
-        let config = ZingoConfig::builder()
+        let config = ClientConfig::builder()
             .set_indexer_uri(filled_template.server.clone())
             .set_chain_type(filled_template.chaintype)
             .set_wallet_dir(filled_template.data_dir.clone())
-            .set_wallet_base(WalletBase::Read)
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(3).unwrap(),
-            })
+            .set_wallet_config(WalletConfig::Read)
             .build();
         LightClient::new(config, false)
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
@@ -452,20 +445,20 @@ pub fn startup(
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-        let config = ZingoConfig::builder()
+        let config = ClientConfig::builder()
             .set_indexer_uri(filled_template.server.clone())
             .set_chain_type(filled_template.chaintype)
             .set_wallet_dir(filled_template.data_dir.clone())
-            .set_wallet_base(WalletBase::FreshEntropy {
+            .set_wallet_config(WalletConfig::NewSeed {
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 chain_height,
-            })
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
+                wallet_settings: WalletSettings {
+                    sync_config: SyncConfig {
+                        transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                        performance_level: PerformanceLevel::High,
+                    },
+                    min_confirmations: NonZeroU32::try_from(3).unwrap(),
                 },
-                min_confirmations: NonZeroU32::try_from(3).unwrap(),
             })
             .build();
         LightClient::new(config, false)

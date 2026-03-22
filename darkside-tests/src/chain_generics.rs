@@ -42,9 +42,10 @@ pub(crate) mod conduct_chain {
     use zcash_protocol::consensus::BlockHeight;
     use zingo_netutils::Indexer as _;
 
-    use zingolib::config::WalletBase;
+    use zingolib::config::WalletConfig;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+    use zingolib::testutils::default_test_wallet_settings;
     use zingolib::wallet::LightWallet;
     use zingolib::wallet::keys::unified::ReceiverSelection;
 
@@ -74,14 +75,15 @@ pub(crate) mod conduct_chain {
         async fn create_faucet(&mut self) -> LightClient {
             self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
                 .await;
-            let wallet_base = WalletBase::MnemonicPhrase {
+            let wallet_config = WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
                 birthday: BlockHeight::from_u32(1),
+                wallet_settings: default_test_wallet_settings(),
             };
             let config = self.client_builder.make_unique_data_dir_and_create_config(
                 self.configured_activation_heights,
-                wallet_base,
+                wallet_config,
             );
             let mut lightclient = LightClient::new(config, true).unwrap();
 
@@ -93,12 +95,13 @@ pub(crate) mod conduct_chain {
             lightclient
         }
 
-        async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
+        async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
             self.client_builder.make_unique_data_dir_and_create_config(
                 self.configured_activation_heights,
-                WalletBase::FreshEntropy {
+                WalletConfig::NewSeed {
                     no_of_accounts: 1.try_into().unwrap(),
                     chain_height: 1.into(),
+                    wallet_settings: default_test_wallet_settings(),
                 },
             )
         }

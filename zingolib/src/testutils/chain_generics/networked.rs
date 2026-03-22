@@ -39,7 +39,7 @@ impl ConductChain for NetworkedTestEnvironment {
         unimplemented!()
     }
 
-    async fn zingo_config(&mut self) -> crate::config::ZingoConfig {
+    async fn zingo_config(&mut self) -> crate::config::ClientConfig {
         unimplemented!()
     }
 

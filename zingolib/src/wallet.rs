@@ -19,7 +19,7 @@ use pepper_sync::{
 };
 use zingo_price::PriceList;
 
-use crate::config::{ChainType, WalletBase};
+use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
@@ -89,6 +89,14 @@ impl std::fmt::Display for RecoveryInfo {
     }
 }
 
+/// Base data required to construct a new [`crate::wallet::LightWallet`].
+pub(crate) struct WalletBase {
+    pub(crate) unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+    pub(crate) mnemonic: Option<Mnemonic>,
+    pub(crate) birthday: BlockHeight,
+    pub(crate) wallet_settings: WalletSettings,
+}
+
 /// In-memory wallet data struct
 ///
 /// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
@@ -143,30 +151,24 @@ pub struct LightWallet {
 impl LightWallet {
     /// Create a new in-memory wallet.
     #[allow(clippy::result_large_err)]
-    pub fn new(
+    pub fn new(chain_type: ChainType, wallet_config: WalletConfig) -> Result<Self, WalletError> {
+        let wallet_base = wallet_config.resolve(chain_type)?;
+        Self::from_base(chain_type, wallet_base)
+    }
+
+    /// Construct a wallet from [`crate::wallet::WalletBase`], resolved from a [`crate::config::WalletConfig`].
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn from_base(
         chain_type: ChainType,
         wallet_base: WalletBase,
-        wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let (unified_key_store, mnemonic, birthday) = wallet_base.resolve_keys(chain_type)?;
-        Self::from_keys(
-            chain_type,
+        let WalletBase {
             unified_key_store,
             mnemonic,
             birthday,
             wallet_settings,
-        )
-    }
+        } = wallet_base;
 
-    /// Construct a wallet from pre-resolved keys.
-    #[allow(clippy::result_large_err)]
-    pub(crate) fn from_keys(
-        chain_type: ChainType,
-        unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
-        mnemonic: Option<Mnemonic>,
-        birthday: BlockHeight,
-        wallet_settings: WalletSettings,
-    ) -> Result<Self, WalletError> {
         let sapling_activation_height = chain_type
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");

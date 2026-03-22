@@ -222,35 +222,29 @@ impl LightClient {
 mod test {
     //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
-    use std::num::NonZeroU32;
-
-    use pepper_sync::config::SyncConfig;
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::{WalletBase, ZingoConfig},
+        config::{ClientConfig, WalletConfig},
         lightclient::{LightClient, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
-        testutils::chain_generics::{
-            conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
+        testutils::{
+            chain_generics::{
+                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                with_assertions,
+            },
+            default_test_wallet_settings,
         },
-        wallet::{WalletSettings, disk::testing::examples},
+        wallet::disk::testing::examples,
     };
 
     fn create_basic_client() -> LightClient {
-        let config = ZingoConfig::builder()
-            .set_wallet_base(WalletBase::MnemonicPhrase {
+        let config = ClientConfig::builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
                 birthday: 419200.into(),
-            })
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery:
-                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::config::PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                wallet_settings: default_test_wallet_settings(),
             })
             .build();
         LightClient::new(config, true).unwrap()

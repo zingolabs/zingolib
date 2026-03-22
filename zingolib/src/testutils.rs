@@ -3,8 +3,10 @@
 
 #![warn(missing_docs)]
 
+use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
@@ -14,6 +16,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
+use crate::wallet::WalletSettings;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
@@ -30,6 +33,17 @@ pub mod paths;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
+
+/// Default wallet settings for testing
+pub fn default_test_wallet_settings() -> WalletSettings {
+    WalletSettings {
+        sync_config: SyncConfig {
+            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            performance_level: PerformanceLevel::High,
+        },
+        min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
+    }
+}
 
 /// TODO: Add Doc Comment Here!
 #[must_use]
