@@ -50,7 +50,7 @@ impl ConductChain for LibtonodeEnvironment {
             self.local_net.validator().get_activation_heights().await,
             WalletConfig::NewSeed {
                 no_of_accounts: 1.try_into().unwrap(),
-                chain_height: 1.into(),
+                chain_height: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
         )

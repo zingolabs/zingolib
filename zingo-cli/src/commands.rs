@@ -1035,7 +1035,7 @@ impl Command for ExportUfvkCommand {
             };
             object! {
                 "ufvk" => ufvk.encode(&lightclient.chain_type()),
-                "birthday" => u32::from(lightclient.birthday())
+                "birthday" => lightclient.birthday()
             }
             .pretty(2)
         })

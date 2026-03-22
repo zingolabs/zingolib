@@ -44,7 +44,7 @@ async fn reorg_changes_incoming_tx_height() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -208,7 +208,7 @@ async fn reorg_changes_incoming_tx_index() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -372,7 +372,7 @@ async fn reorg_expires_incoming_tx() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -558,7 +558,7 @@ async fn reorg_changes_outgoing_tx_height() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -819,7 +819,7 @@ async fn reorg_expires_outgoing_tx_height() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -1025,7 +1025,7 @@ async fn reorg_changes_outgoing_tx_index() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 202.into(),
+                birthday: 202,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,

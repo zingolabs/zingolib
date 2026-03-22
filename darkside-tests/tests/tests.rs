@@ -35,7 +35,7 @@ async fn simple_sync() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -85,7 +85,7 @@ async fn reorg_receipt_sync_generic() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -152,7 +152,7 @@ async fn sent_transaction_reorged_into_mempool() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -164,7 +164,7 @@ async fn sent_transaction_reorged_into_mempool() {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,

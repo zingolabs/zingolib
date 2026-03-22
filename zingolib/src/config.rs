@@ -1,4 +1,4 @@
-//! Module for configuration and construction of a [`crate::lightclient::LightClient`] and/or [`crate::wallet::LightWallet`].
+//! Module for configuration and construction of [`crate::lightclient::LightClient`] and [`crate::wallet::LightWallet`].
 
 use std::{
     collections::BTreeMap,
@@ -9,8 +9,9 @@ use std::{
 use bip0039::{English, Mnemonic};
 use http::uri::InvalidUri;
 
-use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zcash_protocol::consensus::{BlockHeight, Parameters};
+
+use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 
 use crate::wallet::{
@@ -117,28 +118,28 @@ pub enum WalletConfig {
     /// Generate a wallet with a new seed for a number of accounts.
     NewSeed {
         no_of_accounts: NonZeroU32,
-        chain_height: BlockHeight,
+        chain_height: u32,
         wallet_settings: WalletSettings,
     },
     /// Generate a wallet from a mnemonic phrase for a number of accounts.
     MnemonicPhrase {
         mnemonic_phrase: String,
         no_of_accounts: NonZeroU32,
-        birthday: BlockHeight,
+        birthday: u32,
         wallet_settings: WalletSettings,
     },
     /// Generate a wallet from an encoded unified full viewing key.
     // TODO: take concrete UFVK type
     Ufvk {
         ufvk: String,
-        birthday: BlockHeight,
+        birthday: u32,
         wallet_settings: WalletSettings,
     },
     /// Generate a wallet from a unified spending key.
     // TODO: take concrete USK type
     Usk {
         usk: Vec<u8>,
-        birthday: BlockHeight,
+        birthday: u32,
         wallet_settings: WalletSettings,
     },
     /// Read from wallet file.
@@ -150,7 +151,6 @@ impl WalletConfig {
     ///
     /// `NewSeed` generates the wallet base data from a new 24-word mnemonic.
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::type_complexity)]
     pub(crate) fn resolve(self, chain_type: ChainType) -> Result<WalletBase, WalletError> {
         match self {
             WalletConfig::NewSeed {
@@ -161,13 +161,14 @@ impl WalletConfig {
                 let sapling_activation_height = chain_type
                     .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
                     .expect("should have some sapling activation height");
-                let birthday = sapling_activation_height.max(chain_height - 100);
+                let birthday =
+                    sapling_activation_height.max(BlockHeight::from_u32(chain_height) - 100);
 
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: Mnemonic::<English>::generate(bip0039::Count::Words24)
                         .into_phrase(),
                     no_of_accounts,
-                    birthday,
+                    birthday: u32::from(birthday),
                     wallet_settings,
                 }
                 .resolve(chain_type)
@@ -192,7 +193,7 @@ impl WalletConfig {
                 Ok(WalletBase {
                     unified_key_store,
                     mnemonic: Some(mnemonic),
-                    birthday,
+                    birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,
                 })
             }
@@ -209,7 +210,7 @@ impl WalletConfig {
                 Ok(WalletBase {
                     unified_key_store,
                     mnemonic: None,
-                    birthday,
+                    birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,
                 })
             }
@@ -226,7 +227,7 @@ impl WalletConfig {
                 Ok(WalletBase {
                     unified_key_store,
                     mnemonic: None,
-                    birthday,
+                    birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,
                 })
             }
@@ -414,7 +415,7 @@ impl Default for ClientConfigBuilder {
             chain_type: ChainType::Mainnet,
             wallet_config: WalletConfig::NewSeed {
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard coded non-zero integer"),
-                chain_height: BlockHeight::from_u32(1),
+                chain_height: 1,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),

@@ -154,8 +154,8 @@ impl LightClient {
     }
 
     /// Returns the wallet birthday height for lock-free access.
-    pub fn birthday(&self) -> BlockHeight {
-        self.wallet.birthday
+    pub fn birthday(&self) -> u32 {
+        u32::from(self.wallet.birthday)
     }
 
     /// Returns the wallet's mnemonic phrase as a string.
@@ -397,7 +397,7 @@ mod tests {
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: CHIMNEY_BETTER_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             })
             .build();

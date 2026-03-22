@@ -36,7 +36,7 @@ async fn sync_mainnet_test() {
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            birthday: 1_500_000.into(),
+            birthday: 1_500_000,
             wallet_settings: default_test_wallet_settings(),
         })
         .build();
@@ -88,7 +88,7 @@ async fn sync_status() {
         .set_wallet_config(WalletConfig::MnemonicPhrase {
             mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            birthday: 2_496_152.into(),
+            birthday: 2_496_152,
             wallet_settings: default_test_wallet_settings(),
         })
         .build();

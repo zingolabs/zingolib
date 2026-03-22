@@ -194,7 +194,7 @@ impl ClientBuilder {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::ABANDON_ART_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             overwrite,
@@ -239,7 +239,7 @@ pub async fn unfunded_client(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -314,7 +314,7 @@ pub async fn faucet_recipient(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -508,7 +508,7 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -544,7 +544,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -609,7 +609,7 @@ pub async fn funded_transparent_mobileclient(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,
@@ -657,7 +657,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 1.into(),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             },
             true,

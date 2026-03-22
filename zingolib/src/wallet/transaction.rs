@@ -192,7 +192,7 @@ mod tests {
             WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 419_200.into(),
+                birthday: 419_200,
                 wallet_settings: default_test_wallet_settings(),
             },
         )

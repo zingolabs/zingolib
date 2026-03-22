@@ -78,7 +78,7 @@ pub(crate) mod conduct_chain {
             let wallet_config = WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: DARKSIDE_SEED.to_string(),
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                birthday: BlockHeight::from_u32(1),
+                birthday: 1,
                 wallet_settings: default_test_wallet_settings(),
             };
             let config = self.client_builder.make_unique_data_dir_and_create_config(
@@ -100,7 +100,7 @@ pub(crate) mod conduct_chain {
                 self.configured_activation_heights,
                 WalletConfig::NewSeed {
                     no_of_accounts: 1.try_into().unwrap(),
-                    chain_height: 1.into(),
+                    chain_height: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
             )

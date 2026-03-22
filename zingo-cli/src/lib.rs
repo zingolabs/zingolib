@@ -13,8 +13,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use clap::{self, Arg};
 use log::{error, info};
 
-use zcash_protocol::consensus::BlockHeight;
-
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
@@ -390,7 +388,7 @@ pub fn startup(
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seed_phrase,
                 no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                birthday: BlockHeight::from_u32(filled_template.birthday as u32),
+                birthday: filled_template.birthday as u32,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -410,7 +408,7 @@ pub fn startup(
             .set_wallet_dir(filled_template.data_dir.clone())
             .set_wallet_config(WalletConfig::Ufvk {
                 ufvk,
-                birthday: BlockHeight::from_u32(filled_template.birthday as u32),
+                birthday: filled_template.birthday as u32,
                 wallet_settings: WalletSettings {
                     sync_config: SyncConfig {
                         transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -440,7 +438,7 @@ pub fn startup(
                 zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
                     .get_latest_block()
                     .await
-                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                    .map(|block_id| block_id.height as u32)
                     .map_err(|e| format!("{e:?}"))
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;

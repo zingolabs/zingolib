@@ -471,7 +471,7 @@ mod fast {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
@@ -527,7 +527,7 @@ mod fast {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 true,
@@ -1217,7 +1217,7 @@ mod fast {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: seed_phrase,
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
@@ -1296,7 +1296,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
@@ -1809,7 +1809,7 @@ mod slow {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
@@ -1899,7 +1899,7 @@ mod slow {
                 .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
                 .set_wallet_config(WalletConfig::Ufvk {
                     ufvk,
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 })
                 .build();
@@ -3439,7 +3439,7 @@ TransactionSummary {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
@@ -3491,7 +3491,7 @@ TransactionSummary {
                 WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 1.into(),
+                    birthday: 1,
                     wallet_settings: default_test_wallet_settings(),
                 },
                 false,
@@ -4649,7 +4649,7 @@ mod testnet_test {
                 .set_wallet_config(WalletConfig::MnemonicPhrase {
                     mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                     no_of_accounts: 1.try_into().unwrap(),
-                    birthday: 2_000_000.into(),
+                    birthday: 2_000_000,
                     wallet_settings: default_test_wallet_settings(),
                 })
                 .set_wallet_dir(wallet_dir.path().to_path_buf())

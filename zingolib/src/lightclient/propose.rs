@@ -183,7 +183,7 @@ mod shielding {
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-                birthday: 419200.into(),
+                birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
             .build();

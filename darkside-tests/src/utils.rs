@@ -406,7 +406,7 @@ pub mod scenarios {
                         WalletConfig::MnemonicPhrase {
                             mnemonic_phrase: DARKSIDE_SEED.to_string(),
                             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                            birthday: BlockHeight::from_u32(1),
+                            birthday: 1,
                             wallet_settings: default_test_wallet_settings(),
                         },
                         true,
@@ -443,7 +443,7 @@ pub mod scenarios {
                     WalletConfig::MnemonicPhrase {
                         mnemonic_phrase: seed,
                         no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                        birthday: BlockHeight::from_u32(birthday as u32),
+                        birthday: birthday as u32,
                         wallet_settings: default_test_wallet_settings(),
                     },
                     true,
