@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "libtonode-tests",
     "darkside-tests",
-    "zingo-cli",
-    "zingolib",
-    "zingo-memo",
+    "libtonode-tests",
     "pepper-sync",
+    "zingo-cli",
+    "zingo-memo",
     "zingo-price",
     "zingo-status",
+    "zingolib",
     "zingolib_testutils",
 ]
 resolver = "2"
