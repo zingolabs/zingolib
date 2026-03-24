@@ -101,7 +101,7 @@ pub struct LightClient {
 }
 
 impl LightClient {
-    /// Creates a `LightClient` from [`crate::config::ZingoConfig`].
+    /// Creates a `LightClient` from [`crate::config::ClientConfig`].
     ///
     /// Will fail if a wallet file already exists in the given data directory unless `overwrite` is `true` or the
     /// [`crate::config::WalletConfig`] is of `Read` variant.

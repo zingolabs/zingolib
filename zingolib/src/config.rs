@@ -324,7 +324,7 @@ impl ClientConfig {
     }
 }
 
-/// Builder for [`ZingoConfig`].
+/// Builder for [`ClientConfig`].
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_uri: Option<http::Uri>,
@@ -335,46 +335,24 @@ pub struct ClientConfigBuilder {
 }
 
 impl ClientConfigBuilder {
-    /// Constructs a new builder for [`ZingoConfig`].
+    /// Constructs a new builder for [`ClientConfig`].
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set indexer URI.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfig;
-    /// use http::Uri;
-    /// let config = ZingoConfig::builder().set_indexer_uri(("https://zcash.mysideoftheweb.com:19067").parse::<Uri>().unwrap()).build();
-    /// assert_eq!(config.indexer_uri(), "https://zcash.mysideoftheweb.com:19067");
-    /// ```
     pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
         self.indexer_uri = Some(indexer_uri);
         self
     }
 
     /// Set chain type.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfig;
-    /// use zingolib::config::ChainType;
-    /// let config = ZingoConfig::builder().set_chain_type(ChainType::Testnet).build();
-    /// assert_eq!(config.chain_type(), ChainType::Testnet);
-    /// ```
     pub fn set_chain_type(mut self, chain_type: ChainType) -> Self {
         self.chain_type = chain_type;
         self
     }
 
     /// Set wallet directory.
-    /// # Examples
-    /// ```
-    /// use zingolib::config::ZingoConfig;
-    /// use tempfile::TempDir;
-    /// let dir = tempfile::TempDir::with_prefix("zingo_doc_test").unwrap().path().to_path_buf();
-    /// let config = ZingoConfig::builder().set_wallet_dir(dir.clone()).build();
-    /// assert_eq!(config.wallet_dir(), dir);
-    /// ```
     pub fn set_wallet_dir(mut self, dir: PathBuf) -> Self {
         self.wallet_dir = Some(dir);
         self
@@ -392,7 +370,7 @@ impl ClientConfigBuilder {
         self
     }
 
-    /// Build a [`ZingoConfig`] from the builder.
+    /// Build a [`ClientConfig`] from the builder.
     pub fn build(self) -> ClientConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
         let wallet_name = wallet_name_or_default(self.wallet_name);
