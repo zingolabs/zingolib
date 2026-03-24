@@ -143,8 +143,8 @@ fn report_permission_error() {
 /// Polls the sync task and returns a string to embed in the interactive prompt.
 ///
 /// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Synced]"` when
-/// fully synced, `" [Sync error]"` on failure, or an empty string when sync
-/// has not been launched.
+/// fully synced, `" [Sync error]"` on failure, or `" [Not syncing X.X%]"` when
+/// no sync task is running and the wallet is not fully synced.
 fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
     let poll = send_command("sync".to_string(), vec!["poll".to_string()]);
     if poll.starts_with("Error:") {
@@ -159,7 +159,7 @@ fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) ->
             let pct = parsed["percentage_total_outputs_scanned"]
                 .as_f32()
                 .unwrap_or(0.0);
-            format!(" [Syncing {pct:.1}%]")
+            format!(" [Syncing {pct:.1}% complete]")
         } else {
             " [Syncing]".to_string()
         }
@@ -168,9 +168,10 @@ fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) ->
     }
 }
 
-/// Checks sync status to determine whether the wallet is fully synced.
+/// Checks sync status when no sync task is running.
 ///
-/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise an empty string.
+/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise
+/// `" [Not syncing X.X%]"` to indicate incomplete sync without an active task.
 fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
     let status = send_command("sync".to_string(), vec!["status".to_string()]);
     if let Ok(parsed) = json::parse(&status) {
@@ -178,10 +179,13 @@ fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> Str
             .as_f32()
             .unwrap_or(0.0);
         if pct >= 100.0 {
-            return " [Synced]".to_string();
+            " [Synced]".to_string()
+        } else {
+            format!(" [Not syncing {pct:.1}% complete]")
         }
+    } else {
+        " [Not syncing]".to_string()
     }
-    String::new()
 }
 
 /// TODO: `start_interactive` does not explicitly reference a wallet, do we need
@@ -261,7 +265,7 @@ fn start_interactive(
                 println!("{}", send_command(cmd, args));
 
                 // Special check for Quit command.
-                if line == "quit" {
+                if line == "quit" || line == "exit" {
                     break;
                 }
             }
@@ -297,7 +301,7 @@ pub fn command_loop(
             let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
             resp_transmitter.send(cmd_response).unwrap();
 
-            if cmd == "quit" {
+            if cmd == "quit" || cmd == "exit" {
                 info!("Quit");
                 break;
             }
@@ -645,7 +649,7 @@ mod tests {
         };
         assert_eq!(
             poll_sync_for_prompt_indicator(&send),
-            " [Syncing 45.2%]"
+            " [Syncing 45.2% complete]"
         );
     }
 
@@ -694,7 +698,10 @@ mod tests {
                 _ => panic!("unexpected call"),
             }
         };
-        assert_eq!(poll_sync_for_prompt_indicator(&send), "");
+        assert_eq!(
+            poll_sync_for_prompt_indicator(&send),
+            " [Not syncing 0.0% complete]"
+        );
     }
 
     #[test]
