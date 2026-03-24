@@ -9,6 +9,7 @@ members = [
     "zingo-price",
     "zingo-status",
     "zingolib_testutils",
+    "zingo_wallet",
 ]
 resolver = "2"
 
