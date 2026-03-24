@@ -999,10 +999,7 @@ impl ShardTrees {
         const SHARD_HEIGHT: u8,
     >(
         mut reader: R,
-    ) -> std::io::Result<ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>>
-    where
-        u32: From<C>,
-    {
+    ) -> std::io::Result<ShardTree<MemoryShardStore<H, C>, DEPTH, SHARD_HEIGHT>> {
         let shards = Vector::read(&mut reader, |r| {
             let level = incrementalmerkletree::Level::from(r.read_u8()?);
             let index = r.read_u64::<LittleEndian>()?;
@@ -1047,6 +1044,7 @@ impl ShardTrees {
                 .expect("Infallible");
         }
         store.put_cap(read_shard(reader)?).expect("Infallible");
+
         Ok(shardtree::ShardTree::new(
             store,
             MAX_REORG_ALLOWANCE as usize,
@@ -1177,12 +1175,18 @@ mod tests {
             shard_trees
                 .sapling
                 .store_mut()
-                .add_checkpoint(height, Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()))
+                .add_checkpoint(
+                    height,
+                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
+                )
                 .expect("infallible");
             shard_trees
                 .orchard
                 .store_mut()
-                .add_checkpoint(height, Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()))
+                .add_checkpoint(
+                    height,
+                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
+                )
                 .expect("infallible");
         }
 
