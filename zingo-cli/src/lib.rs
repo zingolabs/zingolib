@@ -621,8 +621,9 @@ mod tests {
 
     #[test]
     fn sync_poll_completed() {
-        let send =
-            |_cmd: String, _args: Vec<String>| "Sync completed succesfully: 1000 blocks".to_string();
+        let send = |_cmd: String, _args: Vec<String>| {
+            "Sync completed succesfully: 1000 blocks".to_string()
+        };
         assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
     }
 
