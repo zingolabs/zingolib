@@ -195,7 +195,7 @@ impl NetworkSeedVersion {
                     .set_indexer_uri(lightwalletd_uri)
                     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
                     .set_wallet_name(
-                        dbg!(self.example_wallet_path())
+                        self.example_wallet_path()
                             .file_name()
                             .unwrap()
                             .to_string_lossy()
