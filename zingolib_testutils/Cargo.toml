@@ -20,7 +20,6 @@ zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
 
 # zcash
-zebra-chain.workspace = true
 zcash_protocol.workspace = true
 
 # bitcoin

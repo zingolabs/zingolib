@@ -11,12 +11,10 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_primitives::consensus::{NetworkConstants, Parameters};
-use zcash_primitives::legacy::{
-    TransparentAddress,
-    keys::{IncomingViewingKey, NonHardenedChildIndex},
-};
-use zcash_primitives::zip32::{AccountId, DiversifierIndex};
+use zcash_protocol::consensus::{NetworkConstants, Parameters};
+use zcash_transparent::address::TransparentAddress;
+use zcash_transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
+use zip32::{AccountId, DiversifierIndex};
 
 use crate::config::ChainType;
 use crate::wallet::error::KeyError;
@@ -341,7 +339,7 @@ impl TryFrom<&UnifiedKeyStore> for sapling_crypto::zip32::ExtendedSpendingKey {
         Ok(usk.sapling().clone())
     }
 }
-impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPrivKey {
+impl TryFrom<&UnifiedKeyStore> for zcash_transparent::keys::AccountPrivKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         let usk = UnifiedSpendingKey::try_from(unified_key_store)?;
@@ -373,7 +371,7 @@ impl TryFrom<&UnifiedKeyStore> for sapling_crypto::zip32::DiversifiableFullViewi
         ufvk.sapling().ok_or(KeyError::NoViewCapability).cloned()
     }
 }
-impl TryFrom<&UnifiedKeyStore> for zcash_primitives::legacy::keys::AccountPubKey {
+impl TryFrom<&UnifiedKeyStore> for zcash_transparent::keys::AccountPubKey {
     type Error = KeyError;
     fn try_from(unified_key_store: &UnifiedKeyStore) -> Result<Self, Self::Error> {
         let ufvk = UnifiedFullViewingKey::try_from(unified_key_store)?;

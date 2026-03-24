@@ -7,8 +7,9 @@ use bip0039::Mnemonic;
 
 use zcash_client_backend::tor;
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::legacy::keys::NonHardenedChildIndex;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
+use zcash_protocol::consensus::Parameters;
+use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{self, TransparentScope};
 use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
@@ -19,9 +20,9 @@ use pepper_sync::{
 use zingo_price::PriceList;
 
 use crate::config::ChainType;
+use crate::data::proposal::ZingoProposal;
 use error::{KeyError, PriceError, WalletError};
 use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
-use send::SendProgress;
 
 pub mod error;
 pub(crate) mod legacy;
@@ -39,6 +40,10 @@ pub mod summary;
 pub mod sync;
 pub mod transaction;
 mod zcb_traits;
+
+pub use pepper_sync::config::{
+    PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
+};
 
 /// Wallet settings.
 #[derive(Debug, Clone)]
@@ -92,6 +97,63 @@ pub enum WalletBase {
     Usk(Vec<u8>),
 }
 
+impl WalletBase {
+    /// Resolves the wallet base into a unified key store and optional mnemonic.
+    ///
+    /// `FreshEntropy` generates a new 24-word mnemonic and then resolves as `Mnemonic`.
+    #[allow(clippy::result_large_err)]
+    fn resolve_keys(
+        self,
+        network: &ChainType,
+    ) -> Result<
+        (
+            BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+            Option<Mnemonic>,
+        ),
+        WalletError,
+    > {
+        match self {
+            WalletBase::FreshEntropy { no_of_accounts } => WalletBase::Mnemonic {
+                mnemonic: Mnemonic::generate(bip0039::Count::Words24),
+                no_of_accounts,
+            }
+            .resolve_keys(network),
+            WalletBase::Mnemonic {
+                mnemonic,
+                no_of_accounts,
+            } => {
+                let no_of_accounts = u32::from(no_of_accounts);
+                let unified_key_store = (0..no_of_accounts)
+                    .map(|account_index| {
+                        let account_id = zip32::AccountId::try_from(account_index)?;
+                        Ok((
+                            account_id,
+                            UnifiedKeyStore::new_from_mnemonic(network, &mnemonic, account_id)?,
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
+                Ok((unified_key_store, Some(mnemonic)))
+            }
+            WalletBase::Ufvk(ufvk_encoded) => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_ufvk(network, ufvk_encoded)?,
+                );
+                Ok((unified_key_store, None))
+            }
+            WalletBase::Usk(unified_spending_key) => {
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    zip32::AccountId::ZERO,
+                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
+                );
+                Ok((unified_key_store, None))
+            }
+        }
+    }
+}
+
 /// In-memory wallet data struct
 ///
 /// The `mnemonic` can be `None` in the case of a wallet created directly from UFVKs or USKs.
@@ -110,11 +172,11 @@ pub struct LightWallet {
     /// Wallet version that was read from on wallet load.
     read_version: u64,
     /// Network type
-    pub network: ChainType,
+    network: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
-    pub birthday: BlockHeight,
+    birthday: BlockHeight,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// `Unified_addresses`
@@ -133,12 +195,12 @@ pub struct LightWallet {
     pub shard_trees: ShardTrees,
     /// Sync state
     pub sync_state: SyncState,
-    /// Wallet settings.
+    /// Wallet settings
     pub wallet_settings: WalletSettings,
     /// The current and historical daily price of zec.
     pub price_list: PriceList,
-    /// Progress of an outgoing transaction
-    pub send_progress: SendProgress,
+    /// Send proposal
+    send_proposal: Option<ZingoProposal>,
     /// Boolean for tracking whether the wallet state has changed since last save.
     pub save_required: bool,
 }
@@ -155,51 +217,34 @@ impl LightWallet {
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let (unified_key_store, mnemonic) = match wallet_base {
-            WalletBase::FreshEntropy { no_of_accounts } => {
-                return Self::new(
-                    network,
-                    WalletBase::Mnemonic {
-                        mnemonic: Mnemonic::generate(bip0039::Count::Words24),
-                        no_of_accounts,
-                    },
-                    birthday,
-                    wallet_settings,
-                );
-            }
-            WalletBase::Mnemonic {
-                mnemonic,
-                no_of_accounts,
-            } => {
-                let no_of_accounts = u32::from(no_of_accounts);
-                let unified_key_store = (0..no_of_accounts)
-                    .map(|account_index| {
-                        let account_id = zip32::AccountId::try_from(account_index)?;
-                        Ok((
-                            account_id,
-                            UnifiedKeyStore::new_from_mnemonic(&network, &mnemonic, account_id)?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
-                (unified_key_store, Some(mnemonic))
-            }
-            WalletBase::Ufvk(ufvk_encoded) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_ufvk(&network, ufvk_encoded)?,
-                );
-                (unified_key_store, None)
-            }
-            WalletBase::Usk(unified_spending_key) => {
-                let mut unified_key_store = BTreeMap::new();
-                unified_key_store.insert(
-                    zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_usk(unified_spending_key.as_slice())?,
-                );
-                (unified_key_store, None)
-            }
-        };
+        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(&network)?;
+        Self::from_keys(
+            network,
+            unified_key_store,
+            mnemonic,
+            birthday,
+            wallet_settings,
+        )
+    }
+
+    /// Construct a wallet from pre-resolved keys.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn from_keys(
+        network: ChainType,
+        unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+        mnemonic: Option<Mnemonic>,
+        birthday: BlockHeight,
+        wallet_settings: WalletSettings,
+    ) -> Result<Self, WalletError> {
+        let sapling_activation_height = network
+            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
+            .expect("should have some sapling activation height");
+        if birthday < sapling_activation_height {
+            return Err(WalletError::BirthdayBelowSapling(
+                u32::from(birthday),
+                u32::from(sapling_activation_height),
+            ));
+        }
 
         let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
@@ -253,7 +298,7 @@ impl LightWallet {
             wallet_settings,
             price_list: PriceList::new(),
             save_required: true,
-            send_progress: SendProgress::new(0),
+            send_proposal: None,
         })
     }
 
@@ -269,17 +314,28 @@ impl LightWallet {
         self.read_version
     }
 
-    /// Returns the wallet's mnemonic (seed and phrase).
+    /// Returns wallet birthday height.
     #[must_use]
-    pub fn mnemonic(&self) -> Option<&Mnemonic> {
+    pub fn birthday(&self) -> BlockHeight {
+        self.birthday
+    }
+
+    /// Returns chain type wallet is connected to.
+    #[must_use]
+    pub fn chain_type(&self) -> ChainType {
+        self.network
+    }
+
+    /// Returns the wallet's mnemonic for internal operations.
+    #[must_use]
+    pub(crate) fn mnemonic(&self) -> Option<&Mnemonic> {
         self.mnemonic.as_ref()
     }
 
     /// Returns the wallet's mnemonic phrase.
     #[must_use]
     pub fn mnemonic_phrase(&self) -> Option<String> {
-        self.mnemonic()
-            .map(|mnemonic| mnemonic.phrase().to_string())
+        self.mnemonic().map(|m| m.phrase().to_string())
     }
 
     /// Returns unified addresses.
@@ -332,6 +388,11 @@ impl LightWallet {
         )
     }
 
+    /// Clears the proposal in the `send_proposal` field.
+    pub fn clear_proposal(&mut self) {
+        self.send_proposal = None;
+    }
+
     #[must_use]
     pub fn recovery_info(&self) -> Option<RecoveryInfo> {
         Some(RecoveryInfo {
@@ -359,12 +420,6 @@ impl LightWallet {
         );
 
         Ok(())
-    }
-
-    // Set the previous send's result as a JSON string.
-    pub(super) fn set_send_result(&mut self, result: String) {
-        self.send_progress.is_send_in_progress = false;
-        self.send_progress.last_result = Some(result);
     }
 
     /// If the wallet state has changed since last save, serializes the wallet and returns the wallet bytes.
@@ -401,36 +456,6 @@ impl LightWallet {
         self.save_required = true;
 
         Ok(current_price)
-    }
-
-    /// Updates historical daily price list.
-    /// Prunes any unused price data in the wallet after it's been updated.
-    /// If this is the first time update has been called, initialises the price list from the wallet data.
-    ///
-    /// Currently only USD is supported.
-    // TODO: under development
-    pub async fn update_historical_prices(&mut self) -> Result<(), PriceError> {
-        if self
-            .price_list
-            .time_historical_prices_last_updated()
-            .is_none()
-        {
-            let Some(birthday) = self.sync_state.wallet_birthday() else {
-                return Err(PriceError::NotInitialised);
-            };
-            let birthday_block = match self.wallet_blocks.get(&birthday) {
-                Some(block) => block.clone(),
-                None => {
-                    return Err(PriceError::NotInitialised);
-                }
-            };
-            self.price_list.set_start_time(birthday_block.time());
-        }
-        self.price_list.update_historical_price_list().await?;
-        self.prune_price_list();
-        self.save_required = true;
-
-        todo!()
     }
 
     /// Prunes historical prices to days containing transactions in the wallet.

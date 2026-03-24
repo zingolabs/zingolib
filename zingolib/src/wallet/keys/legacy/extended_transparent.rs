@@ -1,6 +1,6 @@
 //! BIP32 key derivation primitives
 use std::io;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 
 use crate::config::ZingoConfig;
 use ring::hmac::{self, Context, Key};
@@ -112,7 +112,7 @@ impl ExtendedPrivKey {
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
             .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.chain.coin_type()).unwrap(),
+                KeyIndex::hardened_from_normalize_index(config.network_type().coin_type()).unwrap(),
             )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())

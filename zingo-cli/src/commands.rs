@@ -23,8 +23,7 @@ use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
-#[cfg(feature = "regtest")]
-use zingo_common_components::protocol::activation_heights::for_test;
+use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::LightClient;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
@@ -91,17 +90,17 @@ impl Command for ChangeServerCommand {
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         match args.len() {
             0 => {
-                lightclient.set_server(http::Uri::default());
+                lightclient.set_indexer_uri(http::Uri::default());
                 "server set".to_string()
             }
             1 => match http::Uri::from_str(args[0]) {
                 Ok(uri) => {
-                    lightclient.set_server(uri);
+                    lightclient.set_indexer_uri(uri);
                     "server set"
                 }
                 Err(_) => match args[0] {
                     "" => {
-                        lightclient.set_server(http::Uri::default());
+                        lightclient.set_indexer_uri(http::Uri::default());
                         "server set"
                     }
                     _ => "invalid server uri",
@@ -129,7 +128,7 @@ impl Command for BirthdayCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(async move { lightclient.wallet.read().await.birthday.to_string() })
+        lightclient.birthday().to_string()
     }
 }
 
@@ -149,8 +148,7 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
-            if wallet.mnemonic().is_some() {
+            if lightclient.mnemonic_phrase().is_some() {
                 object! {"kind" => "Loaded from mnemonic (seed or phrase)",
                         "transparent" => true,
                         "sapling" => true,
@@ -158,7 +156,10 @@ impl Command for WalletKindCommand {
                 }
                 .pretty(4)
             } else {
-                match wallet
+                match lightclient
+                    .wallet()
+                    .read()
+                    .await
                     .unified_key_store
                     .get(&zip32::AccountId::ZERO)
                     .expect("account 0 must always exist")
@@ -220,8 +221,7 @@ impl Command for ParseAddressCommand {
             [
                 zingolib::config::ChainType::Mainnet,
                 zingolib::config::ChainType::Testnet,
-                #[cfg(feature = "regtest")]
-                zingolib::config::ChainType::Regtest(for_test::all_height_one_nus()),
+                zingolib::config::ChainType::Regtest(ActivationHeights::default()),
             ]
             .iter()
             .find_map(|chain| Address::decode(chain, address).zip(Some(*chain)))
@@ -231,7 +231,6 @@ impl Command for ParseAddressCommand {
             let chain_name_string = match chain_name {
                 zingolib::config::ChainType::Mainnet => "main",
                 zingolib::config::ChainType::Testnet => "test",
-                #[cfg(feature = "regtest")]
                 zingolib::config::ChainType::Regtest(_) => "regtest",
                 _ => unreachable!("Invalid chain type"),
             };
@@ -415,7 +414,7 @@ impl Command for SyncCommand {
                 Err(e) => format!("Error: {e}"),
             },
             "status" => RT.block_on(async move {
-                match pepper_sync::sync_status(&*lightclient.wallet.read().await).await {
+                match pepper_sync::sync_status(&*lightclient.wallet().read().await).await {
                     Ok(status) => json::JsonValue::from(status).pretty(2),
                     Err(e) => format!("Error: {e}"),
                 }
@@ -430,28 +429,6 @@ impl Command for SyncCommand {
             },
             _ => "Error: invalid sub-command. Type \"help sync\" for usage.".to_string(),
         }
-    }
-}
-
-struct SendProgressCommand {}
-impl Command for SendProgressCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r"
-            Get the progress of any send transactions that are currently computing
-
-            Usage:
-            send_progress
-        "}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Get the progress of any send transactions that are currently computing"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
-        RT.block_on(
-            async move { json::JsonValue::from(lightclient.send_progress().await).pretty(2) },
-        )
     }
 }
 
@@ -504,7 +481,7 @@ impl Command for ClearCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            lightclient.wallet.write().await.clear_all();
+            lightclient.wallet().write().await.clear_all();
 
             let result = object! { "result" => "success" };
             result.pretty(2)
@@ -622,7 +599,7 @@ impl Command for CurrentPriceCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .write()
                 .await
                 .update_current_price(lightclient.tor_client())
@@ -675,7 +652,7 @@ impl Command for SpendableBalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             let spendable_balance =
                 match wallet.shielded_spendable_balance(zip32::AccountId::ZERO, false) {
                     Ok(bal) => bal,
@@ -779,8 +756,8 @@ impl Command for NewUnifiedAddressCommand {
         }
 
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
-            let network = wallet.network;
+            let network = lightclient.chain_type();
+            let mut wallet = lightclient.wallet().write().await;
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
                 sapling: args[0].contains('z'),
@@ -820,8 +797,8 @@ impl Command for NewTransparentAddressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
-            let network = wallet.network;
+            let network = lightclient.chain_type();
+            let mut wallet = lightclient.wallet().write().await;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
                     json::object! {
@@ -871,8 +848,8 @@ impl Command for NewTransparentAddressAllowGapCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             // Generate without enforcing the no-gap constraint
-            let mut wallet = lightclient.wallet.write().await;
-            let network = wallet.network;
+            let network = lightclient.chain_type();
+            let mut wallet = lightclient.wallet().write().await;
 
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
                 Ok((id, transparent_address)) => {
@@ -957,7 +934,7 @@ impl Command for CheckAddressCommand {
         }
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .is_address_derived_by_keys(args[0])
@@ -1044,8 +1021,10 @@ impl Command for ExportUfvkCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
-            let ufvk: UnifiedFullViewingKey = match wallet
+            let ufvk: UnifiedFullViewingKey = match lightclient
+                .wallet()
+                .read()
+                .await
                 .unified_key_store
                 .get(&zip32::AccountId::ZERO)
                 .expect("account 0 must always exist")
@@ -1055,8 +1034,8 @@ impl Command for ExportUfvkCommand {
                 Err(e) => return e.to_string(),
             };
             object! {
-                "ufvk" => ufvk.encode(&wallet.network),
-                "birthday" => u32::from(wallet.birthday)
+                "ufvk" => ufvk.encode(&lightclient.chain_type()),
+                "birthday" => u32::from(lightclient.birthday())
             }
             .pretty(2)
         })
@@ -1338,7 +1317,7 @@ struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Confirms the latest proposal, completing and broadcasting the transaction(s) and resuming the sync task.
+            Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.
             Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
             Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
 
@@ -1352,7 +1331,7 @@ impl Command for ConfirmCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Confirms the latest proposal, completing and broadcasting the transaction(s)."
+        "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1375,44 +1354,6 @@ impl Command for ConfirmCommand {
                 }
             }
             .pretty(2)
-        })
-    }
-}
-
-struct ResendCommand {}
-impl Command for ResendCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Re_transmits a calculated transaction from the wallet with the given txid.
-            This is a manual operation so the user has the option to alternatively use the "remove_transaction" command
-            to remove the calculated transaction in the case of send failure.
-
-            usage:
-            resend <txid>
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Re_transmits a calculated transaction from the wallet with the given txid."
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
-        if args.len() != 1 {
-            return "Error: resend command expects 1 argument. Type \"help resend\" for usage."
-                .to_string();
-        }
-
-        let txid = match txid_from_hex_encoded_str(args[0]) {
-            Ok(txid) => txid,
-            Err(e) => return format!("Error: {e}"),
-        };
-
-        RT.block_on(async move {
-            match lightclient.resend(txid).await {
-                Ok(()) => "Successfully resent transaction.".to_string(),
-                Err(e) => format!("Error: {e}"),
-            }
         })
     }
 }
@@ -1476,7 +1417,7 @@ impl Command for RecoveryInfoCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            match lightclient.wallet.read().await.recovery_info() {
+            match lightclient.wallet().read().await.recovery_info() {
                 Some(backup_info) => backup_info.to_string(),
                 None => "error: no mnemonic found. wallet loaded from key.".to_string(),
             }
@@ -1685,7 +1626,7 @@ impl Command for SettingsCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let mut wallet = lightclient.wallet.write().await;
+            let mut wallet = lightclient.wallet().write().await;
 
             if args.is_empty() {
                 return format!(
@@ -1754,7 +1695,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            object! { "height" => json::JsonValue::from(lightclient.wallet.read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
+            object! { "height" => json::JsonValue::from(lightclient.wallet().read().await.sync_state.last_known_chain_height().map_or(0, u32::from))}.pretty(2)
         })
     }
 }
@@ -1795,7 +1736,7 @@ impl Command for NotesCommand {
         };
 
         RT.block_on(async move {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
 
             json::object! {
                 "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
@@ -1843,7 +1784,7 @@ impl Command for CoinsCommand {
 
         RT.block_on(async move {
             json::object! {
-                "transparent_coins" => json::JsonValue::from(lightclient.wallet.read().await.coin_summaries(all_coins)),
+                "transparent_coins" => json::JsonValue::from(lightclient.wallet().read().await.coin_summaries(all_coins)),
             }
             .pretty(2)
         })
@@ -1854,11 +1795,9 @@ struct RemoveTransactionCommand {}
 impl Command for RemoveTransactionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Removes an unconfirmed transaction from the wallet with the given txid.
-            This is useful when a send fails and the pending spent outputs should be reset to unspent instead of using
-            the "resend" command to attempt to re-transmit.
+            Removes a failed transaction from the wallet with the given txid.
             This is a manual operation so important information such as memos are retained in the case of send failure
-            until the user decides to remove them or resend.
+            until the user decides to remove them.
 
             usage:
             remove_transaction <txid>
@@ -1867,7 +1806,7 @@ impl Command for RemoveTransactionCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Removes an unconfirmed transaction from the wallet with the given txid."
+        "Removes a failed transaction from the wallet with the given txid."
     }
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
@@ -1883,12 +1822,12 @@ impl Command for RemoveTransactionCommand {
 
         RT.block_on(async move {
             match lightclient
-                .wallet
+                .wallet()
                 .write()
                 .await
-                .remove_unconfirmed_transaction(txid)
+                .remove_failed_transaction(txid)
             {
-                Ok(()) => "Successfully removed transaction.".to_string(),
+                Ok(()) => "Successfully removed failed transaction.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         })
@@ -1988,7 +1927,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("t_addresses", Box::new(TransparentAddressesCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("send_progress", Box::new(SendProgressCommand {})),
         ("value_transfers", Box::new(ValueTransfersCommand {})),
         ("transactions", Box::new(TransactionsCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
@@ -2002,7 +1940,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("info", Box::new(InfoCommand {})),
         ("current_price", Box::new(CurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
-        ("resend", Box::new(ResendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("settings", Box::new(SettingsCommand {})),

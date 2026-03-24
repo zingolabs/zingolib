@@ -3,18 +3,15 @@ name = "zingo-cli"
 version = "0.2.0"
 edition = "2024"
 
-[features]
-regtest = [ "zingolib/regtest", "zingo_common_components/for_test" ]
-
 [dependencies]
 pepper-sync = { workspace = true }
-zingo_common_components = { workspace = true, optional = true }
+zingo_common_components = { workspace = true }
+zingo-netutils = { workspace = true }
 zingolib = { workspace = true }
 
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_keys = { workspace = true }
-zcash_primitives = { workspace = true }
 zcash_protocol = { workspace = true }
 
 bip0039 = { workspace = true }

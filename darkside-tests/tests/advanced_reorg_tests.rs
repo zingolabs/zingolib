@@ -13,10 +13,9 @@ use darkside_tests::{
 
 use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::network::localhost_uri;
-use zcash_primitives::consensus::BlockHeight;
-use zingo_common_components::protocol::activation_heights::for_test;
-use zingolib::testutils::tempfile::TempDir;
+use zcash_protocol::consensus::BlockHeight;
+use zingo_common_components::protocol::ActivationHeights;
+use zingolib::testutils::{port_to_localhost_uri, tempfile::TempDir};
 use zingolib::wallet::summary::data::SentValueTransfer;
 use zingolib::wallet::summary::data::ValueTransferKind;
 use zingolib::{
@@ -30,7 +29,7 @@ use zingolib_testutils::scenarios::ClientBuilder;
 async fn reorg_changes_incoming_tx_height() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_height_change_reorg(server_id.clone())
         .await
@@ -41,7 +40,7 @@ async fn reorg_changes_incoming_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -188,7 +187,7 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 async fn reorg_changes_incoming_tx_index() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_before_tx_index_change_reorg(server_id.clone())
         .await
@@ -199,7 +198,7 @@ async fn reorg_changes_incoming_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -346,7 +345,7 @@ async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), Strin
 async fn reorg_expires_incoming_tx() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_expires_incoming_tx_before_reorg(server_id.clone())
         .await
@@ -357,7 +356,7 @@ async fn reorg_expires_incoming_tx() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -526,7 +525,7 @@ async fn prepare_expires_incoming_tx_after_reorg(uri: http::Uri) -> Result<(), S
 async fn reorg_changes_outgoing_tx_height() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
@@ -537,7 +536,7 @@ async fn reorg_changes_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();
@@ -781,7 +780,7 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
 async fn reorg_expires_outgoing_tx_height() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
@@ -792,7 +791,7 @@ async fn reorg_expires_outgoing_tx_height() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     let expected_initial_balance = AccountBalance {
@@ -981,7 +980,7 @@ async fn reorg_changes_outgoing_tx_index() {
 
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
 
     prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
         .await
@@ -992,7 +991,7 @@ async fn reorg_changes_outgoing_tx_index() {
         ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
         202,
         true,
-        for_test::all_height_one_nus(),
+        ActivationHeights::default(),
     );
 
     light_client.sync_and_await().await.unwrap();

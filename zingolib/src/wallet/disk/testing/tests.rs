@@ -7,7 +7,6 @@ use crate::{
     config::ZingoConfig,
     lightclient::LightClient,
     wallet::{
-        LightWallet,
         disk::testing::{
             assert_wallet_capability_matches_seed,
             examples::{
@@ -26,7 +25,7 @@ impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightClient {
         let client = self.load_example_wallet_with_client().await;
-        let wallet = client.wallet.read().await;
+        let wallet = client.wallet().read().await;
 
         assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
         for pool in [
@@ -179,7 +178,7 @@ async fn loaded_wallet_assert(
     expected_num_addresses: usize,
 ) {
     {
-        let wallet = lightclient.wallet.read().await;
+        let wallet = lightclient.wallet().read().await;
         assert_wallet_capability_matches_seed(&wallet, expected_seed_phrase).await;
 
         assert_eq!(wallet.unified_addresses.len(), expected_num_addresses);
@@ -220,31 +219,27 @@ async fn loaded_wallet_assert(
 // todo: proptest enum
 #[tokio::test]
 async fn reload_wallet_from_buffer() {
-    use crate::wallet::WalletBase;
+    use crate::wallet::{LightWallet, WalletBase};
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
     let mid_client =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
-    let mid_client_network = mid_client.wallet.read().await.network;
+    let mid_client_network = mid_client.chain_type();
 
     let mut mid_buffer: Vec<u8> = vec![];
     mid_client
-        .wallet
+        .wallet()
         .write()
         .await
-        .write(&mut mid_buffer, &mid_client.config.chain)
+        .write(&mut mid_buffer, &mid_client.chain_type())
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
-    let client = LightClient::create_from_wallet(
-        LightWallet::read(&mid_buffer[..], config.chain).unwrap(),
-        config,
-        true,
-    )
-    .unwrap();
-    let wallet = client.wallet.read().await;
+    let wallet = LightWallet::read(&mid_buffer[..], config.network_type()).unwrap();
+    let client = LightClient::create_from_wallet(wallet, config, true).unwrap();
+    let wallet = client.wallet().read().await;
 
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
@@ -287,12 +282,13 @@ async fn reload_wallet_from_buffer() {
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
-    let ufvk_string = ufvk.encode(&wallet.network);
+    let network = client.chain_type();
+    let ufvk_string = ufvk.encode(&network);
     let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
     let view_wallet = LightWallet::new(
-        wallet.network,
+        network,
         ufvk_base,
-        wallet.birthday,
+        client.birthday(),
         wallet.wallet_settings.clone(),
     )
     .unwrap();

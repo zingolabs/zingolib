@@ -26,27 +26,26 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::ProcessId;
 use zcash_local_net::indexer::{Indexer, IndexerConfig};
 use zcash_local_net::logs::LogsToStdoutAndStderr;
-use zcash_local_net::network::localhost_uri;
 use zcash_local_net::process::Process;
 use zcash_local_net::validator::{Validator, ValidatorConfig};
-use zebra_chain::parameters::testnet::ConfiguredActivationHeights;
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
-use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
-
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-use zingolib::config::{ChainType, ZingoConfig, load_clientconfig};
+use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingo_common_components::protocol::ActivationHeights;
+use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
+use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
+use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
 use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
 use zingolib::wallet::{LightWallet, WalletSettings};
+
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
 #[allow(missing_docs)]
@@ -88,7 +87,7 @@ pub mod network_combo {
 pub async fn launch_test<V, I>(
     indexer_listen_port: Option<Port>,
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> LocalNet<V, I>
 where
@@ -154,7 +153,7 @@ impl ClientBuilder {
 
     pub fn make_unique_data_dir_and_load_config(
         &mut self,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         //! Each client requires a unique `data_dir`, we use the
         //! `client_number` counter for this.
@@ -171,36 +170,35 @@ impl ClientBuilder {
     pub fn create_clientconfig(
         &self,
         conf_path: PathBuf,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> ZingoConfig {
         std::fs::create_dir(&conf_path).unwrap();
-        load_clientconfig(
-            self.server_id.clone(),
-            Some(conf_path),
-            ChainType::Regtest(configured_activation_heights),
-            WalletSettings {
+        ZingoConfig::builder()
+            .set_indexer_uri(self.server_id.clone())
+            .set_network_type(ChainType::Regtest(configured_activation_heights))
+            .set_wallet_dir(conf_path)
+            .set_wallet_name("".to_string())
+            .set_wallet_settings(WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
                     performance_level: PerformanceLevel::High,
                 },
                 min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-            1.try_into().unwrap(),
-            "".to_string(),
-        )
-        .unwrap()
+            })
+            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+            .build()
     }
 
     /// TODO: Add Doc Comment Here!
     pub fn build_faucet(
         &mut self,
         overwrite: bool,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
             seeds::ABANDON_ART_SEED.to_string(),
-            0,
+            1,
             overwrite,
             configured_activation_heights,
         )
@@ -212,30 +210,31 @@ impl ClientBuilder {
         mnemonic_phrase: String,
         birthday: u64,
         overwrite: bool,
-        configured_activation_heights: ConfiguredActivationHeights,
+        configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
+        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase).unwrap();
+        let birthday = (birthday as u32).into();
         let mut wallet = LightWallet::new(
-            config.chain,
+            config.network_type(),
             WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
+                mnemonic,
                 no_of_accounts: 1.try_into().unwrap(),
             },
-            (birthday as u32).into(),
-            config.wallet_settings.clone(),
+            birthday,
+            config.wallet_settings(),
         )
         .unwrap();
         wallet
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .unwrap();
-
         LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
     }
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client(
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) = custom_clients(
@@ -259,7 +258,7 @@ pub async fn unfunded_client(
 /// TODO: Add Doc Comment Here!
 pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient)
 {
-    unfunded_client(all_height_one_nus(), None).await
+    unfunded_client(ActivationHeights::default(), None).await
 }
 
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -274,7 +273,7 @@ pub async fn unfunded_client_default() -> (LocalNet<DefaultValidator, DefaultInd
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub async fn faucet(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
     let (local_net, mut client_builder) =
@@ -293,13 +292,13 @@ pub async fn faucet(
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, LightClient) {
-    faucet(PoolType::ORCHARD, all_height_one_nus(), None).await
+    faucet(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
 pub async fn faucet_recipient(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultValidator, DefaultIndexer>,
@@ -333,7 +332,7 @@ pub async fn faucet_recipient_default() -> (
     LightClient,
     LightClient,
 ) {
-    faucet_recipient(PoolType::ORCHARD, all_height_one_nus(), None).await
+    faucet_recipient(PoolType::ORCHARD, ActivationHeights::default(), None).await
 }
 
 /// TODO: Add Doc Comment Here!
@@ -342,7 +341,7 @@ pub async fn faucet_funded_recipient(
     sapling_funds: Option<u64>,
     transparent_funds: Option<u64>,
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (
     LocalNet<DefaultValidator, DefaultIndexer>,
@@ -434,7 +433,7 @@ pub async fn faucet_funded_recipient_default(
             None,
             None,
             PoolType::ORCHARD,
-            all_height_one_nus(),
+            ActivationHeights::default(),
             None,
         )
         .await;
@@ -445,7 +444,7 @@ pub async fn faucet_funded_recipient_default(
 /// TODO: Add Doc Comment Here!
 pub async fn custom_clients(
     mine_to_pool: PoolType,
-    configured_activation_heights: ConfiguredActivationHeights,
+    configured_activation_heights: ActivationHeights,
     chain_cache: Option<PathBuf>,
 ) -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder) {
     let local_net = launch_test::<DefaultValidator, DefaultIndexer>(
@@ -461,7 +460,7 @@ pub async fn custom_clients(
     }
 
     let client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().listen_port()),
+        port_to_localhost_uri(local_net.indexer().listen_port()),
         tempfile::tempdir().unwrap(),
     );
 
@@ -472,7 +471,7 @@ pub async fn custom_clients(
 pub async fn custom_clients_default() -> (LocalNet<DefaultValidator, DefaultIndexer>, ClientBuilder)
 {
     let (local_net, client_builder) =
-        custom_clients(PoolType::ORCHARD, all_height_one_nus(), None).await;
+        custom_clients(PoolType::ORCHARD, ActivationHeights::default(), None).await;
 
     (local_net, client_builder)
 }
@@ -482,7 +481,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
     launch_test::<DefaultValidator, DefaultIndexer>(
         Some(20_000),
         PoolType::SAPLING,
-        all_height_one_nus(),
+        ActivationHeights::default(),
         None,
     )
     .await
@@ -492,7 +491,7 @@ pub async fn unfunded_mobileclient() -> LocalNet<DefaultValidator, DefaultIndexe
 pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -521,7 +520,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -579,7 +578,7 @@ pub async fn funded_transparent_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =
@@ -620,7 +619,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
 ) -> LocalNet<DefaultValidator, DefaultIndexer> {
     let local_net = unfunded_mobileclient().await;
     let mut client_builder = ClientBuilder::new(
-        localhost_uri(local_net.indexer().port()),
+        port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
     let mut faucet =

@@ -1,11 +1,13 @@
 //! implementation of conduct chain for live chains
 
 use http::Uri;
+
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
+use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
+use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
@@ -16,10 +18,8 @@ pub struct TestnetEnvironment {
 
 impl TestnetEnvironment {
     async fn update_server_height(&mut self) {
-        let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
-            .await
-            .unwrap()
-            .height as u32;
+        let indexer = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap());
+        let latest = indexer.get_latest_block().await.unwrap().height as u32;
         self.latest_known_server_height = Some(BlockHeight::from(latest));
         crate::testutils::timestamped_test_log(
             format!("Networked Test Chain is now at height {latest}").as_str(),
