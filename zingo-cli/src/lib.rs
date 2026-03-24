@@ -142,8 +142,9 @@ fn report_permission_error() {
 
 /// Polls the sync task and returns a string to embed in the interactive prompt.
 ///
-/// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Sync error]"` on
-/// failure, or an empty string when sync is idle or just completed.
+/// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Synced]"` when
+/// fully synced, `" [Sync error]"` on failure, or an empty string when sync
+/// has not been launched.
 fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
     let poll = send_command("sync".to_string(), vec!["poll".to_string()]);
     if poll.starts_with("Error:") {
@@ -151,7 +152,7 @@ fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) ->
         " [Sync error]".to_string()
     } else if poll.starts_with("Sync completed succesfully:") {
         println!("{poll}");
-        String::new()
+        " [Synced]".to_string()
     } else if poll == "Sync task is not complete." {
         let status = send_command("sync".to_string(), vec!["status".to_string()]);
         if let Ok(parsed) = json::parse(&status) {
@@ -163,8 +164,24 @@ fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) ->
             " [Syncing]".to_string()
         }
     } else {
-        String::new()
+        sync_indicator_from_status(send_command)
     }
+}
+
+/// Checks sync status to determine whether the wallet is fully synced.
+///
+/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise an empty string.
+fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
+    let status = send_command("sync".to_string(), vec!["status".to_string()]);
+    if let Ok(parsed) = json::parse(&status) {
+        let pct = parsed["percentage_total_outputs_scanned"]
+            .as_f32()
+            .unwrap_or(0.0);
+        if pct >= 100.0 {
+            return " [Synced]".to_string();
+        }
+    }
+    String::new()
 }
 
 /// TODO: `start_interactive` does not explicitly reference a wallet, do we need
@@ -602,7 +619,7 @@ mod tests {
     fn sync_poll_completed() {
         let send =
             |_cmd: String, _args: Vec<String>| "Sync completed succesfully: 1000 blocks".to_string();
-        assert_eq!(poll_sync_for_prompt_indicator(&send), "");
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
     }
 
     #[test]
@@ -657,9 +674,50 @@ mod tests {
     }
 
     #[test]
-    fn sync_not_launched() {
-        let send =
-            |_cmd: String, _args: Vec<String>| "Sync task has not been launched.".to_string();
+    fn sync_not_launched_not_synced() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task has not been launched.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    r#"{"percentage_total_outputs_scanned": 0.0}"#.to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
         assert_eq!(poll_sync_for_prompt_indicator(&send), "");
+    }
+
+    #[test]
+    fn sync_not_launched_fully_synced() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task has not been launched.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    r#"{"percentage_total_outputs_scanned": 100.0}"#.to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
     }
 }
