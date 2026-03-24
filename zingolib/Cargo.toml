@@ -40,7 +40,6 @@ portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
-rusqlite = { version = "0.37.0", features = ["bundled"] }
 rust-embed = { workspace = true, features = ["debug-embed"] }
 rustls.workspace = true
 sapling-crypto.workspace = true
