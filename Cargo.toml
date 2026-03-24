@@ -13,13 +13,39 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+# groups ordered from most specific to least specific
 
-# Protocol
-bip0039 = { version = "0.14", features = ["rand"] }
-bip32 = { version = "0.6.0-pre.1", default-features = false }
-zip32 = "0.2.0"
+# Workspace
+# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
+zingo-memo = "0.1.0"
+zingo-price = { path = "zingo-price" }
+# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
+zingo-status = "0.2.0"
+pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
+# pepper-sync = "0.2.0"
+zingolib = { path = "zingolib" }
 
-# Zcash
+### Tests and Integration Tests
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+tempfile = "3"
+portpicker = "0.1"
+proptest = "1.6.0"
+test-log = "0.2"
+
+# Documentation
+simple-mermaid = "0.2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+log = "0.4"
+
+# Zingo-common
+zingo-netutils = "3.0.0"
+zingo_common_components = "0.3.0"
+
+# librustzcash
 incrementalmerkletree = "0.8.2"
 orchard = "0.11.0"
 sapling-crypto = "0.5.0"
@@ -43,19 +69,15 @@ zcash_proofs = "0.26"
 zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
 
-# Zingo-common
-zingo-netutils = "3.0.0"
-zingo_common_components = "0.3.0"
+# Blockchain Protocol
+bip0039 = { version = "0.14", features = ["rand"] }
+bip32 = { version = "0.6.0-pre.1", default-features = false }
+zip32 = "0.2.0"
 
 # Parallel processing
 crossbeam-channel = "0.5"
 rayon = "1"
 
-# Documentation
-simple-mermaid = "0.2.0"
-
-# Test Attributes
-test-log = "0.2"
 
 # Misc
 append-only-vec = "0.1.7"
@@ -77,11 +99,8 @@ indoc = "2"
 itertools = "0.14"
 json = "0.12"
 jubjub = "0.10"
-log = "0.4"
 memuse = "0.2"
 nonempty = "0.11.0"
-portpicker = "0.1"
-proptest = "1.6.0"
 prost = "0.14"
 rand = "0.8"
 reqwest = { version = "0.12.15", default-features = false }
@@ -96,7 +115,6 @@ serde = "1"
 serde_json = "1"
 shellwords = "1"
 subtle = "2"
-tempfile = "3"
 thiserror = "2"
 tokio = "1"
 tokio-rustls = "0.26"
@@ -104,21 +122,7 @@ tonic = { version = "0.14", features = ["tls-webpki-roots"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 tower = "0.5"
-tracing = "0.1"
-tracing-subscriber = "0.3"
 webpki-roots = "1.0.6"
-
-# Workspace
-# zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
-zingo-memo = "0.1.0"
-zingo-price = { path = "zingo-price" }
-# zingo-status = { path = "zingo-status" } # NOTE: for development between releases
-zingo-status = "0.2.0"
-pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
-# pepper-sync = "0.2.0"
-zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
 
 [profile.test]
 opt-level = 3
