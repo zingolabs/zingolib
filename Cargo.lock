@@ -1420,6 +1420,7 @@ name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
  "bip0039 0.14.0",
+ "futures-util",
  "hex",
  "http",
  "incrementalmerkletree",
@@ -1430,6 +1431,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tonic",
+ "tonic-prost",
  "tonic-prost-build",
  "tracing",
  "tracing-subscriber",
