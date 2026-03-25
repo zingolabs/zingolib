@@ -140,6 +140,54 @@ fn report_permission_error() {
     }
 }
 
+/// Polls the sync task and returns a string to embed in the interactive prompt.
+///
+/// Returns `" [Syncing X.X%]"` while sync is in progress, `" [Synced]"` when
+/// fully synced, `" [Sync error]"` on failure, or `" [Not syncing X.X%]"` when
+/// no sync task is running and the wallet is not fully synced.
+fn poll_sync_for_prompt_indicator(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
+    let poll = send_command("sync".to_string(), vec!["poll".to_string()]);
+    if poll.starts_with("Error:") {
+        eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.");
+        " [Sync error]".to_string()
+    } else if poll.starts_with("Sync completed succesfully:") {
+        println!("{poll}");
+        " [Synced]".to_string()
+    } else if poll == "Sync task is not complete." {
+        let status = send_command("sync".to_string(), vec!["status".to_string()]);
+        if let Ok(parsed) = json::parse(&status) {
+            let pct = parsed["percentage_total_outputs_scanned"]
+                .as_f32()
+                .unwrap_or(0.0);
+            format!(" [Syncing {pct:.1}% complete]")
+        } else {
+            " [Syncing]".to_string()
+        }
+    } else {
+        sync_indicator_from_status(send_command)
+    }
+}
+
+/// Checks sync status when no sync task is running.
+///
+/// Returns `" [Synced]"` if outputs are 100% scanned, otherwise
+/// `" [Not syncing X.X%]"` to indicate incomplete sync without an active task.
+fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> String) -> String {
+    let status = send_command("sync".to_string(), vec!["status".to_string()]);
+    if let Ok(parsed) = json::parse(&status) {
+        let pct = parsed["percentage_total_outputs_scanned"]
+            .as_f32()
+            .unwrap_or(0.0);
+        if pct >= 100.0 {
+            " [Synced]".to_string()
+        } else {
+            format!(" [Not syncing {pct:.1}% complete]")
+        }
+    } else {
+        " [Not syncing]".to_string()
+    }
+}
+
 /// TODO: `start_interactive` does not explicitly reference a wallet, do we need
 /// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
 /// the CLI?
@@ -185,20 +233,16 @@ fn start_interactive(
             .as_i64()
             .unwrap();
 
-        match send_command("sync".to_string(), vec!["poll".to_string()]) {
-            poll if poll.starts_with("Error:") => {
-                eprintln!("Sync error: {poll}\nPlease restart sync with `sync run`.");
-            }
-            poll if poll.starts_with("Sync completed succesfully:") => println!("{poll}"),
-            _ => (),
-        }
+        let sync_indicator = poll_sync_for_prompt_indicator(&send_command);
 
         match send_command("save".to_string(), vec!["check".to_string()]) {
             check if check.starts_with("Error:") => eprintln!("{check}"),
             _ => (),
         }
 
-        let readline = rl.readline(&format!("({chain_name}) Block:{height} (type 'help') >> "));
+        let readline = rl.readline(&format!(
+            "({chain_name}) Block:{height}{sync_indicator} >> "
+        ));
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())
@@ -221,7 +265,7 @@ fn start_interactive(
                 println!("{}", send_command(cmd, args));
 
                 // Special check for Quit command.
-                if line == "quit" {
+                if line == "quit" || line == "exit" {
                     break;
                 }
             }
@@ -257,7 +301,7 @@ pub fn command_loop(
             let cmd_response = commands::do_user_command(&cmd, &args[..], &mut lightclient);
             resp_transmitter.send(cmd_response).unwrap();
 
-            if cmd == "quit" {
+            if cmd == "quit" || cmd == "exit" {
                 info!("Quit");
                 break;
             }
@@ -562,4 +606,126 @@ fn short_circuit_on_help(params: Vec<String>) {
         println!("{h}");
     }
     std::process::exit(0x0100);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::poll_sync_for_prompt_indicator;
+    use std::cell::RefCell;
+
+    #[test]
+    fn sync_poll_error() {
+        let send = |_cmd: String, _args: Vec<String>| "Error: connection lost".to_string();
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Sync error]");
+    }
+
+    #[test]
+    fn sync_poll_completed() {
+        let send = |_cmd: String, _args: Vec<String>| {
+            "Sync completed succesfully: 1000 blocks".to_string()
+        };
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
+    }
+
+    #[test]
+    fn sync_in_progress_with_valid_status() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task is not complete.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    r#"{"percentage_total_outputs_scanned": 45.2}"#.to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
+        assert_eq!(
+            poll_sync_for_prompt_indicator(&send),
+            " [Syncing 45.2% complete]"
+        );
+    }
+
+    #[test]
+    fn sync_in_progress_with_unparseable_status() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task is not complete.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    "not json".to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Syncing]");
+    }
+
+    #[test]
+    fn sync_not_launched_not_synced() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task has not been launched.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    r#"{"percentage_total_outputs_scanned": 0.0}"#.to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
+        assert_eq!(
+            poll_sync_for_prompt_indicator(&send),
+            " [Not syncing 0.0% complete]"
+        );
+    }
+
+    #[test]
+    fn sync_not_launched_fully_synced() {
+        let call_count = RefCell::new(0);
+        let send = |_cmd: String, args: Vec<String>| {
+            let n = {
+                let mut c = call_count.borrow_mut();
+                *c += 1;
+                *c
+            };
+            match n {
+                1 => {
+                    assert_eq!(args, vec!["poll"]);
+                    "Sync task has not been launched.".to_string()
+                }
+                2 => {
+                    assert_eq!(args, vec!["status"]);
+                    r#"{"percentage_total_outputs_scanned": 100.0}"#.to_string()
+                }
+                _ => panic!("unexpected call"),
+            }
+        };
+        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
+    }
 }
