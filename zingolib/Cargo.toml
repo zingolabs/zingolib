@@ -78,6 +78,7 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
+zingo_test_vectors = { workspace = true }
 
 [badges]
 maintenance = { status = "actively-developed" }

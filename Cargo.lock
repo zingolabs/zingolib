@@ -9218,6 +9218,7 @@ name = "zingo-status"
 version = "0.2.0"
 dependencies = [
  "byteorder",
+ "zcash_primitives",
  "zcash_protocol",
 ]
 
