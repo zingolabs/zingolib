@@ -26,14 +26,9 @@ zip32.workspace = true
 
 tokio = { workspace = true, features = ["full"] }
 http = { workspace = true }
-hyper = { workspace = true }
-hyper-util = { workspace = true }
 tonic = { workspace = true }
-tonic-prost = { workspace = true }
 prost = { workspace = true }
-tower = { workspace = true }
 hex = { workspace = true }
-futures-util = { workspace = true }
 serde_json = { workspace = true }
 proptest = { workspace = true }
 

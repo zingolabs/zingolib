@@ -13,5 +13,4 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 zcash_protocol = { workspace = true }
-zcash_primitives = { workspace = true }
 byteorder = { workspace = true }

@@ -27,8 +27,6 @@ dirs.workspace = true
 futures = { workspace = true }
 hex = { workspace = true }
 http.workspace = true
-hyper-rustls = { workspace = true }
-hyper-util = { workspace = true }
 incrementalmerkletree = { workspace = true }
 json = { workspace = true }
 jubjub = { workspace = true }
@@ -46,17 +44,12 @@ sapling-crypto.workspace = true
 secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 shardtree = { workspace = true, features = ["legacy-api"] }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tokio-rustls = { workspace = true }
-tonic = { workspace = true }
-tower = { workspace = true }
 tracing.workspace = true
 tracing-subscriber = { workspace = true }
-webpki-roots = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
@@ -85,7 +78,6 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
-zingolib = { workspace = true, features = ["testutils"] }
 
 [badges]
 maintenance = { status = "actively-developed" }

@@ -1420,11 +1420,8 @@ name = "darkside-tests"
 version = "0.1.0"
 dependencies = [
  "bip0039 0.14.0",
- "futures-util",
  "hex",
  "http",
- "hyper",
- "hyper-util",
  "incrementalmerkletree",
  "orchard",
  "proptest",
@@ -1433,9 +1430,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tonic",
- "tonic-prost",
  "tonic-prost-build",
- "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
  "zcash_local_net",
@@ -4033,7 +4028,6 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo-netutils",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zip32",
 ]
@@ -9222,7 +9216,6 @@ name = "zingo-status"
 version = "0.2.0"
 dependencies = [
  "byteorder",
- "zcash_primitives",
  "zcash_protocol",
 ]
 
@@ -9267,8 +9260,6 @@ dependencies = [
  "futures",
  "hex",
  "http",
- "hyper-rustls",
- "hyper-util",
  "incrementalmerkletree",
  "json",
  "jubjub",
@@ -9286,17 +9277,12 @@ dependencies = [
  "secp256k1 0.31.1",
  "secrecy",
  "serde",
- "serde_json",
  "shardtree",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tokio-rustls",
- "tonic",
- "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 1.0.6",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -9311,7 +9297,6 @@ dependencies = [
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
  "zingo_test_vectors",
- "zingolib",
  "zip32",
 ]
 
