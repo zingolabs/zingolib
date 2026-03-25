@@ -177,7 +177,7 @@ pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mu
 
     let truncated_scan_ranges = sync_state.scan_ranges[..sync_state
         .scan_ranges()
-        .partition_point(|range| range.block_range().start > truncate_height)]
+        .partition_point(|range| range.block_range().start <= truncate_height)]
         .to_vec();
     sync_state.scan_ranges = truncated_scan_ranges;
 }
@@ -1064,6 +1064,33 @@ pub(super) fn update_found_note_shard_priority(
             sync_state,
             Some(shielded_protocol),
             wallet_transaction.status().get_height(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_scan_ranges() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+            ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+            ScanRange::from_parts(200.into()..299.into(), ScanPriority::Historic),
+            ScanRange::from_parts(300.into()..399.into(), ScanPriority::Historic),
+        ];
+
+        super::truncate_scan_ranges(250.into(), &mut sync_state);
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+                ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
+            ]
         );
     }
 }
