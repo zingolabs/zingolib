@@ -263,7 +263,7 @@ mod test {
         )
         .load_example_wallet_with_client()
         .await;
-        let mut wallet = client.wallet.write().await;
+        let mut wallet = client.wallet().write().await;
 
         let pool = PoolType::Shielded(ShieldedProtocol::Orchard);
         let self_address = wallet.get_address(pool);

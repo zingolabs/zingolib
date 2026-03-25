@@ -48,7 +48,7 @@ impl LightClient {
 
         self.save_active.store(true, atomic::Ordering::Release);
         let save_active = self.save_active.clone();
-        let wallet = self.wallet.clone();
+        let wallet = self.wallet().clone();
         let wallet_path = self.config.get_wallet_path();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -72,7 +72,7 @@ impl LightClient {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            if !self.wallet.read().await.save_required {
+            if !self.wallet().read().await.save_required {
                 return;
             }
         }

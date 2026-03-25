@@ -183,7 +183,7 @@ pub struct ZingoConfig {
     /// The network type of the blockchain the lightclient is connected to.
     // TODO: change for zingo common public API safe type
     network_type: ChainType,
-    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// The directory where the wallet will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     wallet_dir: PathBuf,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
     wallet_name: String,
@@ -291,13 +291,6 @@ impl ZingoConfig {
         std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{e}"))?;
 
         Ok(backup_file_str)
-    }
-
-    /// TEMPORARY
-    // TODO: this will be removed in following PR which deconstructs config fields into lightclient and lightwallet
-    // this method will only be a method on lightclient.
-    pub(crate) fn set_indexer_uri(&mut self, indexer_uri: http::Uri) {
-        self.indexer_uri = indexer_uri;
     }
 }
 

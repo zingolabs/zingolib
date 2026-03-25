@@ -25,7 +25,7 @@ impl SyncWallet for LightWallet {
     type Error = WalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
-        Ok(self.birthday)
+        Ok(self.birthday())
     }
 
     fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {
