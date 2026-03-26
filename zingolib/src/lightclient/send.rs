@@ -243,7 +243,7 @@ mod test {
     async fn complete_and_broadcast_unconnected_error() {
         let config = ZingoConfig::builder().build();
         let wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Mnemonic {
                 mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
                 no_of_accounts: 1.try_into().unwrap(),

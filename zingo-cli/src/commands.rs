@@ -762,7 +762,7 @@ impl Command for NewUnifiedAddressCommand {
         }
 
         RT.block_on(async move {
-            let network = lightclient.chain_type();
+            let chain_type = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
@@ -776,7 +776,7 @@ impl Command for NewUnifiedAddressCommand {
                         "has_orchard" => unified_address.has_orchard(),
                         "has_sapling" => unified_address.has_sapling(),
                         "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&network),
+                        "encoded_address" => unified_address.encode(&chain_type),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -803,7 +803,7 @@ impl Command for NewTransparentAddressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let network = lightclient.chain_type();
+            let chain_type = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
@@ -811,7 +811,7 @@ impl Command for NewTransparentAddressCommand {
                         "account" => u32::from(id.account_id()),
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent::encode_address(&network,  transparent_address),
+                        "encoded_address" => transparent::encode_address(&chain_type,  transparent_address),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -854,7 +854,7 @@ impl Command for NewTransparentAddressAllowGapCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             // Generate without enforcing the no-gap constraint
-            let network = lightclient.chain_type();
+            let chain_type= lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
 
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
@@ -863,7 +863,7 @@ impl Command for NewTransparentAddressAllowGapCommand {
                         "account" => u32::from(id.account_id()),
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent::encode_address(&network, transparent_address),
+                        "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },

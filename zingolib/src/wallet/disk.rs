@@ -17,6 +17,7 @@ use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_price::PriceList;
 use zip32::AccountId;
 
@@ -45,7 +46,7 @@ impl LightWallet {
     /// - sync state updated serialized version
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        39
+        40
     }
 
     /// Serialize into `writer`
@@ -55,7 +56,11 @@ impl LightWallet {
         consensus_parameters: &impl consensus::Parameters,
     ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-        utils::write_string(&mut writer, &self.network.to_string())?;
+        writer.write_u8(match self.chain_type() {
+            ChainType::Mainnet => 0,
+            ChainType::Testnet => 1,
+            ChainType::Regtest(_) => 2,
+        })?;
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.clone().into_entropy(),
             None => vec![],
@@ -67,7 +72,7 @@ impl LightWallet {
             &self.unified_key_store.iter().collect::<Vec<_>>(),
             |w, (account_id, unified_key)| {
                 w.write_u32::<LittleEndian>(u32::from(**account_id))?;
-                unified_key.write(w, self.network)
+                unified_key.write(w, self.chain_type)
             },
         )?;
         // TODO: also store receiver selections in encoded memos.
@@ -122,12 +127,12 @@ impl LightWallet {
 
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    pub fn read<R: Read>(mut reader: R, network: ChainType) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
-            ..32 => Self::read_v0(reader, network, version),
-            32..=39 => Self::read_v32(reader, network, version),
+            ..32 => Self::read_v0(reader, chain_type, version),
+            32..=40 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -138,8 +143,8 @@ impl LightWallet {
         }
     }
 
-    fn read_v0<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
-        let mut wallet_capability = WalletCapability::read(&mut reader, network)?;
+    fn read_v0<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
+        let mut wallet_capability = WalletCapability::read(&mut reader, chain_type)?;
         let mut _blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         let transactions = if version <= 14 {
             TxMap::read_old(&mut reader, &wallet_capability)?
@@ -147,11 +152,21 @@ impl LightWallet {
             TxMap::read(&mut reader, &wallet_capability)?
         };
 
-        let chain_name = utils::read_string(&mut reader)?;
-        if chain_name != network.to_string() {
+        let saved_network = match utils::read_string(&mut reader)?.as_str() {
+            "main" => "mainnet",
+            "test" => "testnet",
+            "regtest" => "regtest",
+            other => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid chain type stored in wallet file: {}", other,),
+                ));
+            }
+        };
+        if saved_network != chain_type.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Wallet chain name {chain_name} doesn't match expected {network}"),
+                format!("wallet chain name {saved_network} doesn't match expected {chain_type}"),
             ));
         }
 
@@ -231,7 +246,7 @@ impl LightWallet {
             if let Some(mnemonic) = mnemonic.as_ref() {
                 wallet_capability.unified_key_store = UnifiedKeyStore::Spend(Box::new(
                     UnifiedSpendingKey::from_seed(
-                        &network,
+                        &chain_type,
                         &mnemonic.to_seed(""),
                         AccountId::ZERO,
                     )
@@ -281,7 +296,7 @@ impl LightWallet {
             Ok(first_transparent_address) => {
                 transparent_addresses.insert(
                     transparent_address_id,
-                    transparent::encode_address(&network, first_transparent_address),
+                    transparent::encode_address(&chain_type, first_transparent_address),
                 );
             }
             Err(KeyError::NoViewCapability) => (),
@@ -329,7 +344,7 @@ impl LightWallet {
             sync_state,
             transparent_addresses,
             unified_addresses,
-            network,
+            chain_type,
             send_proposal: None,
             save_required: false,
             wallet_settings: WalletSettings {
@@ -344,13 +359,47 @@ impl LightWallet {
         Ok(lw)
     }
 
-    fn read_v32<R: Read>(mut reader: R, network: ChainType, version: u64) -> io::Result<Self> {
-        let saved_network = utils::read_string(&mut reader)?;
-        if saved_network != network.to_string() {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("wallet chain name {saved_network} doesn't match expected {network}"),
-            ));
+    fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
+        if version >= 40 {
+            let saved_network = match reader.read_u8()? {
+                0 => ChainType::Mainnet,
+                1 => ChainType::Testnet,
+                2 => ChainType::Regtest(ActivationHeights::default()),
+                other => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid chain type index stored in wallet file: {}", other,),
+                    ));
+                }
+            };
+            if saved_network.to_string() != chain_type.to_string() {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
+                    ),
+                ));
+            }
+        } else {
+            let saved_network = match utils::read_string(&mut reader)?.as_str() {
+                "main" => "mainnet",
+                "test" => "testnet",
+                "regtest" => "regtest",
+                other => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid chain type stored in wallet file: {}", other,),
+                    ));
+                }
+            };
+            if saved_network != chain_type.to_string() {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "wallet chain name {saved_network} doesn't match expected {chain_type}"
+                    ),
+                ));
+            }
         }
 
         let seed_bytes = Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?;
@@ -372,7 +421,7 @@ impl LightWallet {
                 Ok((
                     zip32::AccountId::try_from(r.read_u32::<LittleEndian>()?)
                         .expect("only valid account ids are stored"),
-                    UnifiedKeyStore::read(r, network)?,
+                    UnifiedKeyStore::read(r, chain_type)?,
                 ))
             })?
             .into_iter()
@@ -381,7 +430,7 @@ impl LightWallet {
             let mut keys = BTreeMap::new();
             keys.insert(
                 zip32::AccountId::ZERO,
-                UnifiedKeyStore::read(&mut reader, network)?,
+                UnifiedKeyStore::read(&mut reader, chain_type)?,
             );
             keys
         };
@@ -422,7 +471,7 @@ impl LightWallet {
             Ok((
                 TransparentAddressId::new(account_id, scope, address_index),
                 transparent::encode_address(
-                    &network,
+                    &chain_type,
                     unified_key_store
                         .get(&account_id)
                         .ok_or(Error::new(
@@ -470,7 +519,7 @@ impl LightWallet {
                 Ok(first_transparent_address) => {
                     transparent_addresses.insert(
                         transparent_address_id,
-                        transparent::encode_address(&network, first_transparent_address),
+                        transparent::encode_address(&chain_type, first_transparent_address),
                     );
                 }
                 Err(KeyError::NoViewCapability) => (),
@@ -488,7 +537,7 @@ impl LightWallet {
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
         let wallet_transactions =
-            Vector::read(&mut reader, |r| WalletTransaction::read(r, &network))?
+            Vector::read(&mut reader, |r| WalletTransaction::read(r, &chain_type))?
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect::<HashMap<_, _>>();
@@ -545,7 +594,7 @@ impl LightWallet {
         Ok(Self {
             current_version: LightWallet::serialized_version(),
             read_version: version,
-            network,
+            chain_type,
             mnemonic,
             birthday,
             unified_key_store,

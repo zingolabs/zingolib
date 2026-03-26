@@ -7,7 +7,7 @@ use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
-use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
+use crate::{config::DEFAULT_INDEXER_URI_TESTNET, lightclient::LightClient};
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
@@ -30,8 +30,7 @@ impl NetworkedTestEnvironment {
 impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {
-            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                .unwrap(),
+            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_INDEXER_URI_TESTNET).unwrap(),
             latest_known_server_height: None,
         }
     }
