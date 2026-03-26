@@ -362,6 +362,9 @@ enum CommunicationMode {
     /// Connected to a remote indexer for sync, send, etc.
     Online,
     /// Operating without network access — local-only commands.
+    /// Will be used by offline wallet support:
+    /// <https://github.com/zingolabs/zingolib/issues/2286>
+    #[allow(dead_code)]
     Offline,
 }
 
@@ -377,6 +380,9 @@ fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
+    /// Will be read by offline wallet support:
+    /// <https://github.com/zingolabs/zingolib/issues/2286>
+    #[allow(dead_code)]
     communication_mode: CommunicationMode,
     server: http::Uri,
     seed: Option<String>,
