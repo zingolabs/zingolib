@@ -353,10 +353,31 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
     }
 }
 
+/// Whether the CLI communicates with a remote indexer or operates locally.
+///
+/// Currently always [`Online`](CommunicationMode::Online). The [`Offline`](CommunicationMode::Offline)
+/// variant exists so that offline wallet support has a clean place to land.
+#[derive(Debug, PartialEq)]
+enum CommunicationMode {
+    /// Connected to a remote indexer for sync, send, etc.
+    Online,
+    /// Operating without network access — local-only commands.
+    Offline,
+}
+
+/// Determines the communication mode from parsed CLI arguments.
+///
+/// Currently always returns [`CommunicationMode::Online`]. When offline mode
+/// is added, this will inspect a CLI flag (e.g. `--offline`).
+fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
+    CommunicationMode::Online
+}
+
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
+    communication_mode: CommunicationMode,
     server: http::Uri,
     seed: Option<String>,
     ufvk: Option<String>,
@@ -369,7 +390,11 @@ pub(crate) struct ConfigTemplate {
 }
 
 impl ConfigTemplate {
-    fn fill(mode: ModeOfOperation, matches: clap::ArgMatches) -> Result<Self, String> {
+    fn fill(
+        mode: ModeOfOperation,
+        communication_mode: CommunicationMode,
+        matches: clap::ArgMatches,
+    ) -> Result<Self, String> {
         let tor_enabled = matches.get_flag("tor");
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
@@ -427,6 +452,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             mode,
+            communication_mode,
             server,
             seed,
             ufvk,
@@ -625,7 +651,9 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 /// The caller (the binary entry point) is responsible for parsing arguments,
 /// handling the help short-circuit, and process-level setup.
 pub fn run_cli(matches: clap::ArgMatches) {
-    match ConfigTemplate::fill(get_mode_of_operation(&matches), matches) {
+    let mode = get_mode_of_operation(&matches);
+    let communication_mode = get_communication_mode(&matches);
+    match ConfigTemplate::fill(mode, communication_mode, matches) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {e:?}"),
     }

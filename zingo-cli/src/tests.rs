@@ -279,6 +279,17 @@ mod mode_of_operation {
     }
 }
 
+mod communication_mode {
+    use super::*;
+    use crate::{CommunicationMode, get_communication_mode};
+
+    #[test]
+    fn default_is_online() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
+    }
+}
+
 mod sync {
     use crate::poll_sync_for_prompt_indicator;
     use std::cell::RefCell;
@@ -364,15 +375,19 @@ mod sync {
 
 mod config_template {
     use super::*;
-    use crate::{ConfigTemplate, ModeOfOperation, build_zingo_config, get_mode_of_operation};
+    use crate::{
+        ConfigTemplate, ModeOfOperation, build_zingo_config, get_communication_mode,
+        get_mode_of_operation,
+    };
     use std::path::PathBuf;
     use zingolib::config::ChainType;
 
-    /// Helper: parse args, determine mode, and call fill.
+    /// Helper: parse args, determine mode and communication mode, and call fill.
     fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        ConfigTemplate::fill(mode, matches)
+        let communication_mode = get_communication_mode(&matches);
+        ConfigTemplate::fill(mode, communication_mode, matches)
     }
 
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
@@ -382,12 +397,14 @@ mod config_template {
 
     mod happy_paths {
         use super::*;
+        use crate::CommunicationMode;
 
         #[test]
         fn defaults() {
             let config = fill(&[examples::BIN_NAME]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
+            assert_eq!(config.communication_mode, CommunicationMode::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
             assert!(!config.tor_enabled);
