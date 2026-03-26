@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `lightclient::LightClient::poll_sync_recovery()` — polls the sync task and,
+  if it failed, returns `(SyncRecoveryObservables, String)` with the recommended
+  recovery action and error description. Primary entry point for consumers
+  (CLI, mobile, PC) to handle sync failures.
 - impl TryFrom<&str> for `config::ChainType`
 - `config::InvalidChainType`
 - `lightclient::WalletMeta`: new public struct wrapping `LightWallet` with metadata and immutable wallet data

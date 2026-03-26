@@ -438,7 +438,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     }
 }
 
-/// Builds a [`ZingoConfig`] from the filled config template.
+/// Builds a `ClientConfig` from the filled config template.
 ///
 /// This is a pure function — no I/O or side effects — and is the
 /// first testable seam inside the startup sequence.

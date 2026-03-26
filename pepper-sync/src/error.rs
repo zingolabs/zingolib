@@ -100,6 +100,67 @@ impl ServerError {
     }
 }
 
+/// Recommended action when sync fails.
+///
+/// Returned by [`SyncError::recovery_recommendation`] to give callers (zingo-cli,
+/// zingo-mobile, etc.) a concrete decision without needing to match on
+/// error internals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncRecoveryObservables {
+    /// The error is transient (e.g. timeout, connection drop).
+    /// Retrying sync with the same server may succeed.
+    MaybeRecoverableServer,
+    /// The server returned invalid or unverifiable data.
+    /// A different server should be tried if available.
+    ServerUnavailable,
+    /// The error is not recoverable by retrying or switching servers.
+    /// User intervention is required (e.g. rescan, fix config).
+    Abort,
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
+    /// Returns the recommended recovery action for this error.
+    ///
+    /// This is the primary entry point for callers that need to decide
+    /// whether to retry, switch servers, or give up.
+    pub fn recovery_recommendation(&self) -> SyncRecoveryObservables {
+        match self {
+            SyncError::ServerError(e) => e.recovery_recommendation(),
+            SyncError::MempoolError(_) => SyncRecoveryObservables::MaybeRecoverableServer,
+
+            SyncError::ScanError(ScanError::ServerError(e)) => e.recovery_recommendation(),
+            SyncError::ScanError(_) => SyncRecoveryObservables::Abort,
+
+            SyncError::SyncModeError(_)
+            | SyncError::ChainError(..)
+            | SyncError::BirthdayBelowSapling(..)
+            | SyncError::ShardTreeError(_)
+            | SyncError::TruncationError(..)
+            | SyncError::TransparentAddressDerivationError(_)
+            | SyncError::WalletError(_) => SyncRecoveryObservables::Abort,
+        }
+    }
+}
+
+impl ServerError {
+    /// Returns the recommended recovery action for this server error.
+    pub fn recovery_recommendation(&self) -> SyncRecoveryObservables {
+        match self {
+            // Transport failure — same server might recover.
+            ServerError::RequestFailed(_) | ServerError::FetcherDropped => {
+                SyncRecoveryObservables::MaybeRecoverableServer
+            }
+            // Bad data from server — try a different one.
+            ServerError::InvalidFrontier(_)
+            | ServerError::InvalidTransaction(_)
+            | ServerError::InvalidSubtreeRoot
+            | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
+            // Empty chain — no point retrying anywhere.
+            ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
+        }
+    }
+}
+
 /// Sync status errors.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncStatusError<E>
@@ -366,6 +427,138 @@ mod tests {
             fn wallet_error() {
                 let e: TestSyncError = SyncError::WalletError("db locked".to_string());
                 assert!(!e.is_retryable());
+            }
+        }
+    }
+
+    mod recovery_recommendation {
+        use super::*;
+
+        mod retry_same_server {
+            use super::*;
+
+            #[test]
+            fn request_failed() {
+                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            #[test]
+            fn fetcher_dropped() {
+                assert_eq!(
+                    ServerError::FetcherDropped.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            #[test]
+            fn sync_error_from_request_failed() {
+                let e: TestSyncError =
+                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+
+            #[test]
+            fn mempool_error() {
+                let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::MaybeRecoverableServer
+                );
+            }
+        }
+
+        mod try_different_server {
+            use super::*;
+
+            #[test]
+            fn invalid_frontier() {
+                let e = ServerError::InvalidFrontier(std::io::Error::other("bad"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn invalid_transaction() {
+                let e = ServerError::InvalidTransaction(std::io::Error::other("bad"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn invalid_subtree_root() {
+                assert_eq!(
+                    ServerError::InvalidSubtreeRoot.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn chain_verification_error() {
+                assert_eq!(
+                    ServerError::ChainVerificationError.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn sync_error_from_invalid_frontier() {
+                let e: TestSyncError =
+                    ServerError::InvalidFrontier(std::io::Error::other("bad")).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn scan_error_wrapping_server_error() {
+                let e: TestSyncError =
+                    ScanError::ServerError(ServerError::InvalidSubtreeRoot).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+        }
+
+        mod abort {
+            use super::*;
+
+            #[test]
+            fn genesis_block_only() {
+                assert_eq!(
+                    ServerError::GenesisBlockOnly.recovery_recommendation(),
+                    SyncRecoveryObservables::Abort
+                );
+            }
+
+            #[test]
+            fn sync_mode_error() {
+                let e: TestSyncError = SyncModeError::SyncAlreadyRunning.into();
+                assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+            }
+
+            #[test]
+            fn chain_error() {
+                let e: TestSyncError = SyncError::ChainError(100, 50, 50);
+                assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+            }
+
+            #[test]
+            fn wallet_error() {
+                let e: TestSyncError = SyncError::WalletError("db locked".to_string());
+                assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
             }
         }
     }
