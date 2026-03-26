@@ -28,7 +28,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest@0.9.86
+          tool: nextest@0.9.132
 
       - name: Install system deps
         run: |
