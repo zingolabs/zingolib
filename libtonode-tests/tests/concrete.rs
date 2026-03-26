@@ -148,7 +148,7 @@ mod fast {
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingolib::{
-        config::ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
+        ZENNIES_FOR_ZINGO_REGTEST_ADDRESS,
         testutils::{
             chain_generics::conduct_chain::ConductChain,
             lightclient::{from_inputs, get_base_address},
@@ -1786,7 +1786,7 @@ mod slow {
         );
         let zingo_config = ZingoConfig::builder()
             .set_indexer_uri(client_builder.server_id)
-            .set_network_type(ChainType::Regtest(
+            .set_chain_type(ChainType::Regtest(
                 local_net.validator().get_activation_heights().await,
             ))
             .set_wallet_dir(client_builder.zingo_datadir.path().to_path_buf())
@@ -4578,7 +4578,7 @@ mod testnet_test {
     use pepper_sync::sync_status;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
     use zingolib::{
-        config::{ChainType, DEFAULT_TESTNET_LIGHTWALLETD_SERVER, ZingoConfig},
+        config::{ChainType, DEFAULT_INDEXER_URI_TESTNET, ZingoConfig},
         lightclient::LightClient,
         testutils::tempfile::TempDir,
         wallet::{LightWallet, WalletBase},
@@ -4597,12 +4597,8 @@ mod testnet_test {
         while test_count < NUM_TESTS {
             let wallet_dir = TempDir::new().unwrap();
             let config = ZingoConfig::builder()
-                .set_network_type(ChainType::Testnet)
-                .set_indexer_uri(
-                    (DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                        .parse::<http::Uri>()
-                        .unwrap(),
-                )
+                .set_chain_type(ChainType::Testnet)
+                .set_indexer_uri((DEFAULT_INDEXER_URI_TESTNET).parse::<http::Uri>().unwrap())
                 .set_wallet_dir(wallet_dir.path().to_path_buf())
                 .build();
             let wallet = LightWallet::new(

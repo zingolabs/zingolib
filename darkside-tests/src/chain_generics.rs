@@ -77,7 +77,7 @@ pub(crate) mod conduct_chain {
                 .client_builder
                 .make_unique_data_dir_and_load_config(self.configured_activation_heights);
             let wallet = LightWallet::new(
-                config.network_type(),
+                config.chain_type(),
                 WalletBase::Mnemonic {
                     mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
                     no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),

@@ -9,7 +9,7 @@ use pepper_sync::wallet::{
 use super::LightWallet;
 use super::error::{FeeError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
-use crate::config::get_donation_address_for_chain;
+use crate::get_zennies_for_zingo_address;
 use crate::wallet::error::WalletError;
 
 impl LightWallet {
@@ -118,7 +118,7 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
     ) -> Result<TransactionKind, SpendError> {
-        let zfz_address = get_donation_address_for_chain(&self.network);
+        let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
         let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
         let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
@@ -151,7 +151,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
             && transaction
@@ -162,7 +162,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
         {
@@ -192,7 +192,7 @@ mod tests {
     fn test_wallet() -> LightWallet {
         let config = ZingoConfig::builder().build();
         LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::FreshEntropy {
                 no_of_accounts: 1.try_into().unwrap(),
             },

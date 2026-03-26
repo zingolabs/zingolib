@@ -175,7 +175,7 @@ impl ClientBuilder {
         std::fs::create_dir(&conf_path).unwrap();
         ZingoConfig::builder()
             .set_indexer_uri(self.server_id.clone())
-            .set_network_type(ChainType::Regtest(configured_activation_heights))
+            .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
             .set_wallet_name("".to_string())
             .set_wallet_settings(WalletSettings {
@@ -216,7 +216,7 @@ impl ClientBuilder {
         let mnemonic = Mnemonic::from_phrase(mnemonic_phrase).unwrap();
         let birthday = (birthday as u32).into();
         let mut wallet = LightWallet::new(
-            config.network_type(),
+            config.chain_type(),
             WalletBase::Mnemonic {
                 mnemonic,
                 no_of_accounts: 1.try_into().unwrap(),

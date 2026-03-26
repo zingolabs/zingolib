@@ -104,7 +104,7 @@ impl WalletBase {
     #[allow(clippy::result_large_err)]
     fn resolve_keys(
         self,
-        network: &ChainType,
+        chain_type: ChainType,
     ) -> Result<
         (
             BTreeMap<zip32::AccountId, UnifiedKeyStore>,
@@ -117,7 +117,7 @@ impl WalletBase {
                 mnemonic: Mnemonic::generate(bip0039::Count::Words24),
                 no_of_accounts,
             }
-            .resolve_keys(network),
+            .resolve_keys(chain_type),
             WalletBase::Mnemonic {
                 mnemonic,
                 no_of_accounts,
@@ -128,7 +128,7 @@ impl WalletBase {
                         let account_id = zip32::AccountId::try_from(account_index)?;
                         Ok((
                             account_id,
-                            UnifiedKeyStore::new_from_mnemonic(network, &mnemonic, account_id)?,
+                            UnifiedKeyStore::new_from_mnemonic(chain_type, &mnemonic, account_id)?,
                         ))
                     })
                     .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
@@ -138,7 +138,7 @@ impl WalletBase {
                 let mut unified_key_store = BTreeMap::new();
                 unified_key_store.insert(
                     zip32::AccountId::ZERO,
-                    UnifiedKeyStore::new_from_ufvk(network, ufvk_encoded)?,
+                    UnifiedKeyStore::new_from_ufvk(chain_type, ufvk_encoded)?,
                 );
                 Ok((unified_key_store, None))
             }
@@ -171,8 +171,8 @@ pub struct LightWallet {
     current_version: u64,
     /// Wallet version that was read from on wallet load.
     read_version: u64,
-    /// Network type
-    network: ChainType,
+    /// Blockchain network type
+    chain_type: ChainType,
     /// The seed for the wallet, stored as a zip339 Mnemonic, and the account index.
     mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
@@ -212,14 +212,14 @@ impl LightWallet {
     /// of block chain to protect from re-orgs.
     #[allow(clippy::result_large_err)]
     pub fn new(
-        network: ChainType,
+        chain_type: ChainType,
         wallet_base: WalletBase,
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(&network)?;
+        let (unified_key_store, mnemonic) = wallet_base.resolve_keys(chain_type)?;
         Self::from_keys(
-            network,
+            chain_type,
             unified_key_store,
             mnemonic,
             birthday,
@@ -230,13 +230,13 @@ impl LightWallet {
     /// Construct a wallet from pre-resolved keys.
     #[allow(clippy::result_large_err)]
     pub(crate) fn from_keys(
-        network: ChainType,
+        chain_type: ChainType,
         unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
         mnemonic: Option<Mnemonic>,
         birthday: BlockHeight,
         wallet_settings: WalletSettings,
     ) -> Result<Self, WalletError> {
-        let sapling_activation_height = network
+        let sapling_activation_height = chain_type
             .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
             .expect("should have some sapling activation height");
         if birthday < sapling_activation_height {
@@ -273,7 +273,7 @@ impl LightWallet {
             Ok(first_transparent_address) => {
                 transparent_addresses.insert(
                     transparent_address_id,
-                    transparent::encode_address(&network, first_transparent_address),
+                    transparent::encode_address(&chain_type, first_transparent_address),
                 );
             }
             Err(KeyError::NoViewCapability) => (),
@@ -283,7 +283,7 @@ impl LightWallet {
         Ok(Self {
             current_version: LightWallet::serialized_version(),
             read_version: LightWallet::serialized_version(),
-            network,
+            chain_type,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
             unified_key_store,
@@ -323,7 +323,7 @@ impl LightWallet {
     /// Returns chain type wallet is connected to.
     #[must_use]
     pub fn chain_type(&self) -> ChainType {
-        self.network
+        self.chain_type
     }
 
     /// Returns the wallet's mnemonic for internal operations.
@@ -357,7 +357,7 @@ impl LightWallet {
                         "has_orchard" => unified_address.has_orchard(),
                         "has_sapling" => unified_address.has_sapling(),
                         "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&self.network),
+                        "encoded_address" => unified_address.encode(&self.chain_type),
                     }
                 })
                 .collect::<Vec<_>>(),
@@ -413,7 +413,7 @@ impl LightWallet {
         self.unified_key_store.insert(
             account_id,
             UnifiedKeyStore::new_from_mnemonic(
-                &self.network,
+                self.chain_type(),
                 self.mnemonic().ok_or(WalletError::MnemonicNotFound)?,
                 account_id,
             )?,
@@ -430,9 +430,9 @@ impl LightWallet {
     /// `self.save_required` status, writing the returned wallet bytes to persistance.
     pub fn save(&mut self) -> std::io::Result<Option<Vec<u8>>> {
         if self.save_required {
-            let network = self.network;
+            let chain_type = self.chain_type;
             let mut wallet_bytes: Vec<u8> = vec![];
-            self.write(&mut wallet_bytes, &network)?;
+            self.write(&mut wallet_bytes, &chain_type)?;
             self.save_required = false;
             Ok(Some(wallet_bytes))
         } else {
