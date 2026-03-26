@@ -45,11 +45,11 @@ pub enum UnifiedKeyStore {
 impl UnifiedKeyStore {
     /// Create a unified key store from raw entropy (64-byte seed).
     pub fn new_from_seed(
-        network: &ChainType,
+        chain_type: ChainType,
         seed: &[u8; 64],
         account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
-        let usk = UnifiedSpendingKey::from_seed(network, seed, account_index)
+        let usk = UnifiedSpendingKey::from_seed(&chain_type, seed, account_index)
             .map_err(KeyError::KeyDerivationError)?;
 
         Ok(UnifiedKeyStore::Spend(Box::new(usk)))
@@ -59,12 +59,12 @@ impl UnifiedKeyStore {
     ///
     /// Refer to BIP-0039 for details on seed generation from mnemonic phrases.
     pub fn new_from_mnemonic(
-        network: &ChainType,
+        chain_type: ChainType,
         mnemonic: &Mnemonic,
         account_index: zip32::AccountId,
     ) -> Result<Self, KeyError> {
         let seed = mnemonic.to_seed("");
-        Self::new_from_seed(network, &seed, account_index)
+        Self::new_from_seed(chain_type, &seed, account_index)
     }
 
     /// Create a unified key store from unified spending key bytes.
@@ -76,13 +76,13 @@ impl UnifiedKeyStore {
     }
 
     /// Create a unified key store from unified full viewing key encoded string.
-    pub fn new_from_ufvk(network: &ChainType, ufvk_encoded: String) -> Result<Self, KeyError> {
-        if ufvk_encoded.starts_with(network.hrp_sapling_extended_full_viewing_key()) {
+    pub fn new_from_ufvk(chain_type: ChainType, ufvk_encoded: String) -> Result<Self, KeyError> {
+        if ufvk_encoded.starts_with(chain_type.hrp_sapling_extended_full_viewing_key()) {
             return Err(KeyError::InvalidFormat);
         }
         let (network_type, ufvk) =
             Ufvk::decode(&ufvk_encoded).map_err(|_| KeyError::KeyDecodingError)?;
-        if network_type != network.network_type() {
+        if network_type != chain_type.network_type() {
             return Err(KeyError::NetworkMismatch);
         }
         let ufvk = UnifiedFullViewingKey::parse(&ufvk).map_err(|_| KeyError::KeyDecodingError)?;

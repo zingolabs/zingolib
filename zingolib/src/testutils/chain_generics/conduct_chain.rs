@@ -44,7 +44,7 @@ pub trait ConductChain {
 
     /// loads a client from bytes
     fn load_client(&mut self, config: ZingoConfig, data: &[u8]) -> LightClient {
-        let wallet = LightWallet::read(data, config.network_type()).unwrap();
+        let wallet = LightWallet::read(data, config.chain_type()).unwrap();
         LightClient::create_from_wallet(wallet, config, false).unwrap()
     }
 

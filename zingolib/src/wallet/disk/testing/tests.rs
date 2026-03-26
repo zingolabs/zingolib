@@ -237,14 +237,18 @@ async fn reload_wallet_from_buffer() {
         .unwrap();
 
     let config = ZingoConfig::create_testnet();
-    let wallet = LightWallet::read(&mid_buffer[..], config.network_type()).unwrap();
-    let client = LightClient::create_from_wallet(wallet, config, true).unwrap();
+    let client = LightClient::create_from_wallet(
+        LightWallet::read(&mid_buffer[..], config.chain_type()).unwrap(),
+        config,
+        true,
+    )
+    .unwrap();
     let wallet = client.wallet().read().await;
 
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
-        &mid_client_network,
+        mid_client_network,
         &expected_mnemonic,
         zip32::AccountId::ZERO,
     )
@@ -282,11 +286,11 @@ async fn reload_wallet_from_buffer() {
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
-    let network = client.chain_type();
-    let ufvk_string = ufvk.encode(&network);
+    let chain_type = client.chain_type();
+    let ufvk_string = ufvk.encode(&chain_type);
     let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
     let view_wallet = LightWallet::new(
-        network,
+        chain_type,
         ufvk_base,
         client.birthday(),
         wallet.wallet_settings.clone(),
@@ -299,7 +303,7 @@ async fn reload_wallet_from_buffer() {
     else {
         panic!("should be viewing key!");
     };
-    let v_ufvk_string = v_ufvk.encode(&view_wallet.network);
+    let v_ufvk_string = v_ufvk.encode(&view_wallet.chain_type);
     assert_eq!(ufvk_string, v_ufvk_string);
 
     // NOTE: removed balance check as need to sync to restore transaction data.

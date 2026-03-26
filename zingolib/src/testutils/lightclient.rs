@@ -23,6 +23,7 @@ pub async fn new_client_from_save_buffer(
         .map_err(LightClientError::FileError)?;
     LightClient::create_from_wallet(wallet, template_client.config.clone(), false)
 }
+
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
