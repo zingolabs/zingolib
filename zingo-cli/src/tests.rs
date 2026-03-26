@@ -442,7 +442,7 @@ mod config_template {
 
         #[test]
         fn defaults() {
-            let config = fill(&[examples::BIN_NAME]).unwrap();
+            let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
             assert_eq!(config.communication_mode, CommunicationMode::Online);
@@ -566,17 +566,7 @@ mod config_template {
         use std::num::NonZeroU32;
 
         #[test]
-        fn default_server_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME]);
-            let uri = zc.indexer_uri().to_string();
-            assert!(
-                uri.starts_with(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER),
-                "expected URI to start with default server, got: {uri}"
-            );
-        }
-
-        #[test]
-        fn custom_server_is_propagated() {
+        fn explicit_server_is_propagated() {
             let zc = fill_and_build(&[examples::BIN_NAME, "--server", examples::SERVER_URI]);
             let uri = zc.indexer_uri().to_string();
             assert!(

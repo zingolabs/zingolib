@@ -425,11 +425,19 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        let server = matches
-            .get_one::<http::Uri>("server")
-            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::construct_lightwalletd_uri(server);
+        let server = if let Some(explicit) = matches.get_one::<http::Uri>("server") {
+            zingolib::config::construct_lightwalletd_uri(Some(explicit.to_string()))
+        } else {
+            // No --server specified: probe curated indexers and pick the fastest.
+            let ranked = server_select::select_servers();
+            if let Some(best) = ranked.into_iter().next() {
+                best.uri
+            } else {
+                // Fallback if nothing responded.
+                zingolib::config::construct_lightwalletd_uri(None)
+            }
+        };
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
