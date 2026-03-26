@@ -23,7 +23,7 @@ include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
 #[macro_use]
 extern crate rust_embed;
-/// Embedded zcash-params for mobile devices.
+/// Embedded zcash-params.
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;

@@ -261,7 +261,7 @@ mod test {
         let client = examples::NetworkSeedVersion::Mainnet(
             examples::MainnetSeedVersion::HotelHumor(examples::HotelHumorVersion::Latest),
         )
-        .load_example_wallet_with_client()
+        .load_example_wallet()
         .await;
         let mut wallet = client.wallet().write().await;
 

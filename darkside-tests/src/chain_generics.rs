@@ -39,12 +39,14 @@ pub(crate) mod conduct_chain {
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
 
+    use zcash_protocol::consensus::BlockHeight;
     use zingo_netutils::Indexer as _;
 
+    use zingolib::config::WalletConfig;
     use zingolib::lightclient::LightClient;
     use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+    use zingolib::testutils::default_test_wallet_settings;
     use zingolib::wallet::LightWallet;
-    use zingolib::wallet::WalletBase;
     use zingolib::wallet::keys::unified::ReceiverSelection;
 
     use crate::constants::ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT;
@@ -73,20 +75,17 @@ pub(crate) mod conduct_chain {
         async fn create_faucet(&mut self) -> LightClient {
             self.stage_transaction(ABANDON_TO_DARKSIDE_SAP_10_000_000_ZAT)
                 .await;
-            let config = self
-                .client_builder
-                .make_unique_data_dir_and_load_config(self.configured_activation_heights);
-            let wallet = LightWallet::new(
-                config.chain_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(DARKSIDE_SEED.to_string()).unwrap(),
-                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-                },
-                1.into(),
-                config.wallet_settings(),
-            )
-            .unwrap();
-            let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
+            let wallet_config = WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            };
+            let config = self.client_builder.make_unique_data_dir_and_create_config(
+                self.configured_activation_heights,
+                wallet_config,
+            );
+            let mut lightclient = LightClient::new(config, true).unwrap();
 
             lightclient
                 .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
@@ -96,9 +95,15 @@ pub(crate) mod conduct_chain {
             lightclient
         }
 
-        async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-            self.client_builder
-                .make_unique_data_dir_and_load_config(self.configured_activation_heights)
+        async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
+            self.client_builder.make_unique_data_dir_and_create_config(
+                self.configured_activation_heights,
+                WalletConfig::NewSeed {
+                    no_of_accounts: 1.try_into().unwrap(),
+                    chain_height: 1,
+                    wallet_settings: default_test_wallet_settings(),
+                },
+            )
         }
 
         async fn increase_chain_height(&mut self) {

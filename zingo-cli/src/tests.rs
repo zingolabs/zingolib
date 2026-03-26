@@ -376,8 +376,8 @@ mod config_template {
     }
 
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
-    fn fill_and_build(args: &[&str]) -> zingolib::config::ZingoConfig {
-        build_zingo_config(&fill(args).unwrap())
+    fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
+        build_zingo_config(&fill(args).unwrap()).unwrap()
     }
 
     mod happy_paths {
@@ -506,20 +506,42 @@ mod config_template {
         use super::*;
         use pepper_sync::config::PerformanceLevel;
         use std::num::NonZeroU32;
+        use zingolib::{
+            config::WalletConfig,
+            wallet::{SyncConfig, TransparentAddressDiscovery},
+        };
+
+        const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
+     unfold vocal weird milk scale social vessel identify \
+     crowd hospital control album rib bulb path oven civil tank";
 
         #[test]
         fn default_server_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             let uri = zc.indexer_uri().to_string();
             assert!(
-                uri.starts_with(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER),
+                uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
             );
         }
 
         #[test]
         fn custom_server_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--server", examples::SERVER_URI]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--server",
+                examples::SERVER_URI,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             let uri = zc.indexer_uri().to_string();
             assert!(
                 uri.starts_with(examples::SERVER_URI),
@@ -530,25 +552,57 @@ mod config_template {
 
         #[test]
         fn chain_type_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--chain", "testnet"]);
-            assert_eq!(zc.network_type(), ChainType::Testnet);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--chain",
+                "testnet",
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
+            assert_eq!(zc.chain_type(), ChainType::Testnet);
         }
 
         #[test]
         fn data_dir_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--data-dir", examples::DATA_DIR]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--data-dir",
+                examples::DATA_DIR,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             assert_eq!(zc.wallet_dir(), PathBuf::from(examples::DATA_DIR));
         }
 
         #[test]
-        fn default_wallet_settings() {
-            let zc = fill_and_build(&[examples::BIN_NAME]);
-            let ws = zc.wallet_settings();
-            assert!(matches!(
-                ws.sync_config.performance_level,
-                PerformanceLevel::High
-            ));
-            assert_eq!(ws.min_confirmations, NonZeroU32::new(3).unwrap());
+        fn default_wallet_config() {
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
+            let ws = zc.wallet_config();
+            assert_eq!(
+                ws,
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                    birthday: 1,
+                    wallet_settings: zingolib::wallet::WalletSettings {
+                        sync_config: SyncConfig {
+                            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                            performance_level: PerformanceLevel::High,
+                        },
+                        min_confirmations: NonZeroU32::try_from(3).unwrap(),
+                    },
+                }
+            );
         }
     }
 }

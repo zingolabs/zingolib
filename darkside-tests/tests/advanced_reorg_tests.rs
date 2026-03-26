@@ -15,9 +15,12 @@ use tokio::time::sleep;
 use zcash_local_net::indexer::Indexer;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
-use zingolib::testutils::{port_to_localhost_uri, tempfile::TempDir};
 use zingolib::wallet::summary::data::SentValueTransfer;
-use zingolib::wallet::summary::data::ValueTransferKind;
+use zingolib::{
+    config::WalletConfig,
+    testutils::{port_to_localhost_uri, tempfile::TempDir},
+};
+use zingolib::{testutils::default_test_wallet_settings, wallet::summary::data::ValueTransferKind};
 use zingolib::{
     testutils::{lightclient::from_inputs, paths::get_cargo_manifest_dir},
     wallet::balance::AccountBalance,
@@ -36,12 +39,18 @@ async fn reorg_changes_incoming_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -194,12 +203,18 @@ async fn reorg_changes_incoming_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -352,12 +367,18 @@ async fn reorg_expires_incoming_tx() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -532,12 +553,18 @@ async fn reorg_changes_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -787,12 +814,18 @@ async fn reorg_expires_outgoing_tx_height() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     let expected_initial_balance = AccountBalance {
         total_sapling_balance: Some(0.try_into().unwrap()),
@@ -987,12 +1020,18 @@ async fn reorg_changes_outgoing_tx_index() {
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
-        202,
-        true,
-        ActivationHeights::default(),
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 202,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            ActivationHeights::default(),
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
