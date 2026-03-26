@@ -13,7 +13,7 @@ use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::wallet::LightWallet;
 use zingolib::{
-    config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri},
+    config::{DEFAULT_INDEXER_URI, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
@@ -29,12 +29,12 @@ async fn sync_mainnet_test() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ZingoConfig::builder()
         .set_indexer_uri(uri.clone())
-        .set_network_type(ChainType::Mainnet)
+        .set_chain_type(ChainType::Mainnet)
         .set_wallet_dir(temp_path)
         .set_wallet_name("".to_string())
         .set_wallet_settings(WalletSettings {
@@ -47,7 +47,7 @@ async fn sync_mainnet_test() {
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
     let wallet = LightWallet::new(
-        config.network_type(),
+        config.chain_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
@@ -94,12 +94,12 @@ async fn sync_status() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
     let config = ZingoConfig::builder()
         .set_indexer_uri(uri.clone())
-        .set_network_type(ChainType::Mainnet)
+        .set_chain_type(ChainType::Mainnet)
         .set_wallet_dir(temp_path)
         .set_wallet_name("".to_string())
         .set_wallet_settings(WalletSettings {
@@ -112,7 +112,7 @@ async fn sync_status() {
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
     let wallet = LightWallet::new(
-        config.network_type(),
+        config.chain_type(),
         WalletBase::Mnemonic {
             mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
             no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
