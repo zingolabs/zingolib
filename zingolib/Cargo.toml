@@ -8,11 +8,6 @@ repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[badges]
-maintenance = { status = "actively-developed" }
-
 [features]
 default = []
 ci = []
@@ -20,25 +15,41 @@ darkside_tests = ["pepper-sync/darkside_test"]
 testutils = ["portpicker", "zingo_test_vectors", "tempfile"]
 
 [dependencies]
-
-# Zingo
-zingo-memo = { workspace = true }
-zingo-status = { workspace = true }
-pepper-sync = { workspace = true }
-zingo-price = { workspace = true }
-
-# Zingo-common
-zingo_common_components = { workspace = true }
-zingo-netutils = { workspace = true }
-
-# Test
-zingo_test_vectors = { workspace = true, optional = true}
-
-# Zcash
+append-only-vec = { workspace = true }
+bech32 = { workspace = true }
+bip0039.workspace = true
+bip32 = { workspace = true, features = ["secp256k1-ffi"] }
+bs58 = { workspace = true, features = ["check"] }
+byteorder = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+dirs.workspace = true
+futures = { workspace = true }
+hex = { workspace = true }
+http.workspace = true
 incrementalmerkletree = { workspace = true }
+json = { workspace = true }
+jubjub = { workspace = true }
+log = { workspace = true }
+nonempty.workspace = true
 orchard = { workspace = true }
+pepper-sync = { workspace = true }
+portpicker = { workspace = true, optional = true }
+prost = { workspace = true }
+rand = { workspace = true }
+ring = { workspace = true }
+rust-embed = { workspace = true, features = ["debug-embed"] }
+rustls.workspace = true
 sapling-crypto.workspace = true
+secp256k1 = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 shardtree = { workspace = true, features = ["legacy-api"] }
+tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
@@ -52,69 +63,22 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true, features = ["download-params"] }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true }
-
-# Protocol
+zingo-memo = { workspace = true }
+zingo-netutils = { workspace = true }
+zingo-price = { workspace = true }
+zingo-status = { workspace = true }
+zingo_common_components = { workspace = true }
+zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
-bip0039.workspace = true
-bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 
-# Encoding
-bech32 = { workspace = true }
-bs58 = { workspace = true, features = ["check"] }
-byteorder = { workspace = true }
-hex = { workspace = true }
-json = { workspace = true }
-prost = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-
-# Network
-http.workspace = true
-hyper-rustls = { workspace = true }
-hyper-util = { workspace = true }
-portpicker = { workspace = true, optional = true }
-rustls.workspace = true
-tokio-rustls = { workspace = true }
-tonic = { workspace = true }
-tower = { workspace = true }
-webpki-roots = { workspace = true }
-
-# Async
-futures = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-
-# Crypto
-jubjub = { workspace = true }
-ring = { workspace = true }
-secp256k1 = { workspace = true }
-secrecy = { workspace = true }
-
-# Logging
-log = { workspace = true }
-tracing.workspace = true
-tracing-subscriber = { workspace = true }
-
-# Error
-thiserror = { workspace = true }
-
-# Misc
-append-only-vec = { workspace = true }
-bytes = { workspace = true }
-chrono = { workspace = true }
-dirs.workspace = true
-nonempty.workspace = true
-rand = { workspace = true }
-tempfile = { workspace = true, optional = true }
-rust-embed = { workspace = true, features = ["debug-embed"] }
-
-# Windows compatible
-rusqlite = { version = "0.37.0", features = ["bundled"] }
+[build-dependencies]
+zcash_proofs = { workspace = true, features = ["download-params"] }
 
 [dev-dependencies]
 pepper-sync = { workspace = true, features = ["test-features"] }
 portpicker = { workspace = true }
 tempfile = { workspace = true }
-zingolib = { workspace = true, features = ["testutils"] }
+zingo_test_vectors = { workspace = true }
 
-[build-dependencies]
-zcash_proofs = { workspace = true, features = ["download-params"] }
+[badges]
+maintenance = { status = "actively-developed" }
