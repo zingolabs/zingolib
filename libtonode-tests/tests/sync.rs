@@ -11,12 +11,13 @@ use zingolib::config::{ChainType, ZingoConfig};
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
+use zingolib::wallet::LightWallet;
 use zingolib::{
     config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
-    wallet::{LightWallet, WalletBase, WalletSettings},
+    wallet::{WalletBase, WalletSettings},
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
@@ -45,28 +46,24 @@ async fn sync_mainnet_test() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            1_500_000.into(),
-            config.wallet_settings(),
-        )
-        .unwrap(),
-        config,
-        true,
+    let wallet = LightWallet::new(
+        config.network_type(),
+        WalletBase::Mnemonic {
+            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+        },
+        1_500_000.into(),
+        config.wallet_settings(),
     )
     .unwrap();
+    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
     loop {
         interval.tick().await;
         {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             tracing::info!(
                 "{}",
                 json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
@@ -80,7 +77,7 @@ async fn sync_mainnet_test() {
             tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
             tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
-        lightclient.wallet.write().await.save().unwrap();
+        lightclient.wallet().write().await.save().unwrap();
     }
 
     // let wallet = lightclient.wallet.read().await;
@@ -114,21 +111,17 @@ async fn sync_status() {
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
         .build();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            2_496_152.into(),
-            config.wallet_settings(),
-        )
-        .unwrap(),
-        config,
-        true,
+    let wallet = LightWallet::new(
+        config.network_type(),
+        WalletBase::Mnemonic {
+            mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+        },
+        2_496_152.into(),
+        config.wallet_settings(),
     )
     .unwrap();
+    let mut lightclient = LightClient::create_from_wallet(wallet, config, true).unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }
@@ -234,7 +227,7 @@ async fn store_all_checkpoints_in_verification_window() {
     for height in 12..112 {
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees
@@ -247,7 +240,7 @@ async fn store_all_checkpoints_in_verification_window() {
         );
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees

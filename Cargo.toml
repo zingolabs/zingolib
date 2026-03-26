@@ -44,7 +44,7 @@ zcash_protocol = "0.7" # public API (TODO: remove from public API)
 zcash_transparent = "0.6"
 
 # Zingo-common
-zingo-netutils = "2.0.2"
+zingo-netutils = "3.0.0"
 zingo_common_components = "0.3.0"
 
 # Parallel processing
@@ -78,7 +78,6 @@ itertools = "0.14"
 json = "0.12"
 jubjub = "0.10"
 log = "0.4"
-log4rs = "1"
 memuse = "0.2"
 nonempty = "0.11.0"
 portpicker = "0.1"
@@ -118,8 +117,8 @@ zingo-status = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # pepper-sync = "0.2.0"
 zingolib = { path = "zingolib" }
-zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
-zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", tag = "zcash_local_net_v0.4.0" }
+zcash_local_net = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
+zingo_test_vectors = { git = "https://github.com/zingolabs/infrastructure.git", rev = "69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f" }
 
 [profile.test]
 opt-level = 3

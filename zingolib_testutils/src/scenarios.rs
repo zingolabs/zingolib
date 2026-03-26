@@ -213,20 +213,21 @@ impl ClientBuilder {
         configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
+        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase).unwrap();
+        let birthday = (birthday as u32).into();
         let mut wallet = LightWallet::new(
             config.network_type(),
             WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(mnemonic_phrase).unwrap(),
+                mnemonic,
                 no_of_accounts: 1.try_into().unwrap(),
             },
-            (birthday as u32).into(),
+            birthday,
             config.wallet_settings(),
         )
         .unwrap();
         wallet
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
             .unwrap();
-
         LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
     }
 }

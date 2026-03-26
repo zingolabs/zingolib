@@ -9,10 +9,9 @@ use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscov
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
 
-use super::super::LightWallet;
 use crate::config::{ChainType, DEFAULT_LIGHTWALLETD_SERVER, ZingoConfig};
 use crate::lightclient::LightClient;
-use crate::wallet::WalletSettings;
+use crate::wallet::{LightWallet, WalletSettings};
 
 /// `ExampleWalletNetworkCase` sorts first by Network, then seed, then last saved version.
 /// It is public so that any consumer can select and load any example wallet.

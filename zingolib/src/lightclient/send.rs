@@ -8,6 +8,7 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 
+use zingo_netutils::Indexer as _;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::data::proposal::ZingoProposal;
@@ -25,7 +26,7 @@ impl LightClient {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let calculated_txids = self
-            .wallet
+            .wallet()
             .write()
             .await
             .calculate_transactions(proposal, sending_account)
@@ -41,7 +42,7 @@ impl LightClient {
         shielding_account: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let calculated_txids = self
-            .wallet
+            .wallet()
             .write()
             .await
             .calculate_transactions(proposal, shielding_account)
@@ -58,7 +59,7 @@ impl LightClient {
         &mut self,
         resume_sync: bool,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let opt_proposal = self.wallet.write().await.take_proposal();
+        let opt_proposal = self.wallet().write().await.take_proposal();
         if let Some(proposal) = opt_proposal {
             let txids = match proposal {
                 ZingoProposal::Send {
@@ -92,7 +93,7 @@ impl LightClient {
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let _ignore_error = self.pause_sync();
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_send_proposal(request, account_id)
@@ -111,7 +112,7 @@ impl LightClient {
         account_id: zip32::AccountId,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
         let proposal = self
-            .wallet
+            .wallet()
             .write()
             .await
             .create_shield_proposal(account_id)
@@ -126,7 +127,7 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TxId>, LightClientError> {
-        let mut wallet = self.wallet.write().await;
+        let mut wallet = self.wallet().write().await;
         for txid in calculated_txids.iter() {
             let calculated_transaction = wallet
                 .wallet_transactions
@@ -159,14 +160,15 @@ impl LightClient {
 
             let mut retry_count = 0;
             let txid_from_server = loop {
-                let transmission_result = crate::grpc_connector::send_transaction(
-                    self.indexer_uri(),
-                    transaction_bytes.clone().into_boxed_slice(),
-                )
-                .await
-                .map_err(|e| {
-                    SendError::TransmissionError(TransmissionError::TransmissionFailed(e))
-                });
+                let transmission_result = self
+                    .indexer
+                    .send_transaction(transaction_bytes.clone().into_boxed_slice())
+                    .await
+                    .map_err(|e| {
+                        SendError::TransmissionError(TransmissionError::TransmissionFailed(
+                            format!("{e:?}"),
+                        ))
+                    });
 
                 match transmission_result {
                     Ok(txid) => {
@@ -240,28 +242,24 @@ mod test {
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
         let config = ZingoConfig::builder().build();
-        let mut lc = LightClient::create_from_wallet(
-            LightWallet::new(
-                config.network_type(),
-                WalletBase::Mnemonic {
-                    mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
-                    no_of_accounts: 1.try_into().unwrap(),
+        let wallet = LightWallet::new(
+            config.network_type(),
+            WalletBase::Mnemonic {
+                mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
+                no_of_accounts: 1.try_into().unwrap(),
+            },
+            419_200.into(),
+            WalletSettings {
+                sync_config: SyncConfig {
+                    transparent_address_discovery:
+                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
+                    performance_level: pepper_sync::config::PerformanceLevel::High,
                 },
-                419_200.into(),
-                WalletSettings {
-                    sync_config: SyncConfig {
-                        transparent_address_discovery:
-                            pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                        performance_level: pepper_sync::config::PerformanceLevel::High,
-                    },
-                    min_confirmations: NonZeroU32::try_from(1).unwrap(),
-                },
-            )
-            .unwrap(),
-            config,
-            true,
+                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+            },
         )
         .unwrap();
+        let mut lc = LightClient::create_from_wallet(wallet, config, true).unwrap();
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error

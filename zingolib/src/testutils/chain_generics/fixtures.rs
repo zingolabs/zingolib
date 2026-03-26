@@ -369,7 +369,7 @@ where
     );
 
     let received_change_from_transaction_2 = secondary
-        .wallet
+        .wallet()
         .read()
         .await
         .sum_queried_output_values(OutputQuery {
@@ -379,7 +379,7 @@ where
     // if 10_000 or more change, would have used a smaller note
     assert!(received_change_from_transaction_2 < 10_000);
 
-    let secondary_wallet = secondary.wallet.read().await;
+    let secondary_wallet = secondary.wallet().read().await;
     let spent_sapling_outputs = secondary_wallet
         .wallet_outputs::<SaplingNote>()
         .into_iter()
@@ -428,7 +428,7 @@ pub async fn shpool_to_pool_insufficient_error<CC>(
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary.wallet.read().await.get_address(pool).as_str(),
+                tertiary.wallet().read().await.get_address(pool).as_str(),
                 tertiary_fund,
                 None,
             )],
@@ -462,7 +462,7 @@ where
         from_inputs::propose(
             &mut secondary,
             vec![(
-                tertiary.wallet.read().await.get_address(pool).as_str(),
+                tertiary.wallet().read().await.get_address(pool).as_str(),
                 try_amount,
                 None,
             )],

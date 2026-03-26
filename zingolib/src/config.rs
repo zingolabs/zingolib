@@ -2,25 +2,13 @@
 //! TODO: Add Crate Description Here!
 
 use std::{
-    io::{self, Error},
+    io,
     net::ToSocketAddrs,
     num::NonZeroU32,
     path::{Path, PathBuf},
 };
 
-use log::{LevelFilter, info};
-use log4rs::{
-    Config,
-    append::rolling_file::{
-        RollingFileAppender,
-        policy::compound::{
-            CompoundPolicy, roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger,
-        },
-    },
-    config::{Appender, Root},
-    encode::pattern::PatternEncoder,
-    filter::threshold::ThresholdFilter,
-};
+use log::info;
 
 use zcash_protocol::consensus::{
     BlockHeight, MAIN_NETWORK, NetworkType, NetworkUpgrade, Parameters, TEST_NETWORK,
@@ -46,8 +34,6 @@ pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://zec.rocks:443";
 pub const DEFAULT_TESTNET_LIGHTWALLETD_SERVER: &str = "https://testnet.zec.rocks";
 /// TODO: Add Doc Comment Here!
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
-/// TODO: Add Doc Comment Here!
-pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 
 /// Gets the appropriate donation address for the given chain type
 #[must_use]
@@ -151,7 +137,6 @@ pub fn load_clientconfig(
         network_type: chain,
         wallet_dir,
         wallet_name,
-        logfile_name: DEFAULT_LOGFILE_NAME.into(),
         wallet_settings,
         no_of_accounts,
     };
@@ -198,12 +183,10 @@ pub struct ZingoConfig {
     /// The network type of the blockchain the lightclient is connected to.
     // TODO: change for zingo common public API safe type
     network_type: ChainType,
-    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// The directory where the wallet will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
     wallet_dir: PathBuf,
     /// The filename of the wallet. This will be created in the `wallet_dir`.
     wallet_name: String,
-    /// The filename of the logfile. This will be created in the `wallet_dir`.
-    logfile_name: String,
     /// Wallet settings.
     wallet_settings: WalletSettings,
     /// Number of accounts
@@ -241,12 +224,6 @@ impl ZingoConfig {
         &self.wallet_name
     }
 
-    /// Returns log file name.
-    #[must_use]
-    pub fn logfile_name(&self) -> &str {
-        &self.logfile_name
-    }
-
     /// Returns wallet settings..
     #[must_use]
     pub fn wallet_settings(&self) -> WalletSettings {
@@ -257,38 +234,6 @@ impl ZingoConfig {
     #[must_use]
     pub fn no_of_accounts(&self) -> NonZeroU32 {
         self.no_of_accounts
-    }
-
-    /// Build the Logging config
-    pub fn get_log_config(&self) -> io::Result<Config> {
-        let window_size = 3; // log0, log1, log2
-        let fixed_window_roller = FixedWindowRoller::builder()
-            .build("zingo-wallet-log{}", window_size)
-            .unwrap();
-        let size_limit = 5 * 1024 * 1024; // 5MB as max log file size to roll
-        let size_trigger = SizeTrigger::new(size_limit);
-        let compound_policy =
-            CompoundPolicy::new(Box::new(size_trigger), Box::new(fixed_window_roller));
-
-        Config::builder()
-            .appender(
-                Appender::builder()
-                    .filter(Box::new(ThresholdFilter::new(LevelFilter::Info)))
-                    .build(
-                        "logfile",
-                        Box::new(
-                            RollingFileAppender::builder()
-                                .encoder(Box::new(PatternEncoder::new("{d} {l}::{m}{n}")))
-                                .build(self.get_log_path(), Box::new(compound_policy))?,
-                        ),
-                    ),
-            )
-            .build(
-                Root::builder()
-                    .appender("logfile")
-                    .build(LevelFilter::Debug),
-            )
-            .map_err(|e| Error::other(format!("{e}")))
     }
 
     /// Returns the directory that the Zcash proving parameters are located in.
@@ -323,15 +268,6 @@ impl ZingoConfig {
         wallet_path.into_boxed_path()
     }
 
-    /// Returns full path to the log file.
-    #[must_use]
-    pub fn get_log_path(&self) -> Box<Path> {
-        let mut log_path = self.wallet_dir();
-        log_path.push(&self.logfile_name);
-
-        log_path.into_boxed_path()
-    }
-
     /// Creates a backup file of the current wallet file in the wallet directory.
     // TODO: move to lightclient or lightwallet
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
@@ -355,13 +291,6 @@ impl ZingoConfig {
         std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{e}"))?;
 
         Ok(backup_file_str)
-    }
-
-    /// TEMPORARY
-    // TODO: this will be removed in following PR which deconstructs config fields into lightclient and lightwallet
-    // this method will only be a method on lightclient.
-    pub(crate) fn set_indexer_uri(&mut self, indexer_uri: http::Uri) {
-        self.indexer_uri = indexer_uri;
     }
 }
 
@@ -410,7 +339,6 @@ pub struct ZingoConfigBuilder {
     network_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
-    logfile_name: Option<String>,
     wallet_settings: WalletSettings,
     no_of_accounts: NonZeroU32,
 }
@@ -422,7 +350,6 @@ impl ZingoConfigBuilder {
             indexer_uri: None,
             wallet_dir: None,
             wallet_name: None,
-            logfile_name: None,
             network_type: ChainType::Mainnet,
             wallet_settings: WalletSettings {
                 sync_config: pepper_sync::config::SyncConfig {
@@ -482,12 +409,6 @@ impl ZingoConfigBuilder {
         self
     }
 
-    /// Set log file name.
-    pub fn set_logfile_name(mut self, logfile_name: String) -> Self {
-        self.logfile_name = Some(logfile_name);
-        self
-    }
-
     /// Set wallet settings.
     pub fn set_wallet_settings(mut self, wallet_settings: WalletSettings) -> Self {
         self.wallet_settings = wallet_settings;
@@ -504,14 +425,11 @@ impl ZingoConfigBuilder {
     pub fn build(self) -> ZingoConfig {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.network_type);
         let wallet_name = wallet_name_or_default(self.wallet_name);
-        let logfile_name = logfile_name_or_default(self.logfile_name);
-
         ZingoConfig {
             indexer_uri: self.indexer_uri.clone().unwrap_or_default(),
             network_type: self.network_type,
             wallet_dir,
             wallet_name,
-            logfile_name,
             wallet_settings: self.wallet_settings,
             no_of_accounts: self.no_of_accounts,
         }
@@ -548,15 +466,6 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
         DEFAULT_WALLET_NAME.into()
     } else {
         wallet_name
-    }
-}
-
-fn logfile_name_or_default(opt_logfile_name: Option<String>) -> String {
-    let logfile_name = opt_logfile_name.unwrap_or_else(|| DEFAULT_LOGFILE_NAME.into());
-    if logfile_name.is_empty() {
-        DEFAULT_LOGFILE_NAME.into()
-    } else {
-        logfile_name
     }
 }
 
