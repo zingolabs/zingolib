@@ -7,6 +7,7 @@
 mod commands;
 mod examples;
 mod most_up_indexer_uris;
+mod server_select;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -65,9 +66,8 @@ pub fn build_clap_app() -> clap::Command {
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Lightwalletd server to connect to.")
-                .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+                .help("Lightwalletd server to connect to. If not specified, the fastest responding server from a curated list is selected automatically.")
+                .value_parser(parse_uri))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
