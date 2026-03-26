@@ -4,8 +4,10 @@ use zcash_local_net::LocalNet;
 use zcash_local_net::indexer::Indexer;
 use zcash_local_net::validator::Validator;
 
+use zingolib::config::WalletConfig;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::timestamped_test_log;
 
@@ -35,15 +37,22 @@ impl ConductChain for LibtonodeEnvironment {
     }
 
     async fn create_faucet(&mut self) -> LightClient {
-        self.client_builder.build_faucet(
-            false,
-            self.local_net.validator().get_activation_heights().await,
-        )
+        self.client_builder
+            .build_faucet(
+                false,
+                self.local_net.validator().get_activation_heights().await,
+            )
+            .await
     }
 
-    async fn zingo_config(&mut self) -> zingolib::config::ZingoConfig {
-        self.client_builder.make_unique_data_dir_and_load_config(
+    async fn zingo_config(&mut self) -> zingolib::config::ClientConfig {
+        self.client_builder.make_unique_data_dir_and_create_config(
             self.local_net.validator().get_activation_heights().await,
+            WalletConfig::NewSeed {
+                no_of_accounts: 1.try_into().unwrap(),
+                chain_height: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
         )
     }
 

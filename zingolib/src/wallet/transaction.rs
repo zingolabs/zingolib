@@ -9,7 +9,7 @@ use pepper_sync::wallet::{
 use super::LightWallet;
 use super::error::{FeeError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
-use crate::config::get_donation_address_for_chain;
+use crate::get_zennies_for_zingo_address;
 use crate::wallet::error::WalletError;
 
 impl LightWallet {
@@ -118,7 +118,7 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
     ) -> Result<TransactionKind, SpendError> {
-        let zfz_address = get_donation_address_for_chain(&self.network);
+        let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
         let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
         let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
@@ -151,7 +151,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
             && transaction
@@ -162,7 +162,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
         {
@@ -175,34 +175,25 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-
-    use pepper_sync::{
-        config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
-        wallet::WalletTransaction,
-    };
+    use pepper_sync::wallet::WalletTransaction;
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 
     use crate::{
-        config::ZingoConfig,
-        wallet::{LightWallet, WalletBase, WalletSettings, error::WalletError},
+        config::{ChainType, WalletConfig},
+        testutils::default_test_wallet_settings,
+        wallet::{LightWallet, error::WalletError},
     };
 
     fn test_wallet() -> LightWallet {
-        let config = ZingoConfig::builder().build();
         LightWallet::new(
-            config.network_type(),
-            WalletBase::FreshEntropy {
+            ChainType::Mainnet,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-            },
-            419_200.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
+                birthday: 419_200,
+                wallet_settings: default_test_wallet_settings(),
             },
         )
         .unwrap()

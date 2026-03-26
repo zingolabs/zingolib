@@ -72,15 +72,17 @@ impl Command for GetVersionCommand {
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
-        indoc! {r"
-            Change the lightwalletd server to receive blockchain data from
-
-            Usage:
-            change_server [server_uri]
-
-            Example:
-            change_server https://mainnet.lightwalletd.com:9067
-        "}
+        concat!(
+            "Change the lightwalletd server to receive blockchain data from\n",
+            "\n",
+            "Usage:\n",
+            "change_server [server_uri]\n",
+            "\n",
+            "Example:\n",
+            "change_server ",
+            crate::examples::server_uri!(),
+            "\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -194,14 +196,16 @@ impl Command for WalletKindCommand {
 struct ParseAddressCommand {}
 impl Command for ParseAddressCommand {
     fn help(&self) -> &'static str {
-        indoc! {r"
-            Parse an address
-            Usage:
-            parse_address <address>
-
-            Example
-            parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
-        "}
+        concat!(
+            "Parse an address\n",
+            "Usage:\n",
+            "parse_address <address>\n",
+            "\n",
+            "Example\n",
+            "parse_address ",
+            crate::examples::transparent_address!(),
+            "\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -296,14 +300,16 @@ impl Command for ParseAddressCommand {
 struct ParseViewKeyCommand {}
 impl Command for ParseViewKeyCommand {
     fn help(&self) -> &'static str {
-        indoc! {r"
-            Parse a View Key
-            Usage:
-            parse_viewkey viewing_key
-
-            Example
-            parse_viewkey uviewregtest1l6s73mncrefycjhksvcp3zd6x2rpwddewv852ms8w0j828wu77h8v07fs6ph68kyp0ujwk4qmr3w4v9js4mr3ufqyasr0sddgumzyjamcgreda44kxtv4ar084szez337ld58avd9at4r5lptltgkn6uayzd055upf8cnlkarnxp69kz0vzelfww08xxhm0q0azdsplxff0mn2yyve88jyl8ujfau66pnc37skvl9528zazztf6xgk8aeewswjg4eeahpml77cxh57spgywdsc99h99twmp8sqhmp7g78l3g90equ2l4vh9vy0va6r8p568qr7nm5l5y96qgwmw9j2j788lalpeywy0af86krh4td69xqrrye6dvfx0uff84s3pm50kqx3tg3ktx88j2ujswe25s7pqvv3w4x382x07w0dp5gguqu757wlyf80f5nu9uw7wqttxmvrjhkl22x43de960c7kt97ge0dkt52j7uckht54eq768
-        "}
+        concat!(
+            "Parse a View Key\n",
+            "Usage:\n",
+            "parse_viewkey viewing_key\n",
+            "\n",
+            "Example\n",
+            "parse_viewkey ",
+            crate::examples::unified_viewing_key!(),
+            "\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -756,7 +762,7 @@ impl Command for NewUnifiedAddressCommand {
         }
 
         RT.block_on(async move {
-            let network = lightclient.chain_type();
+            let chain_type = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
             let receivers = ReceiverSelection {
                 orchard: args[0].contains('o'),
@@ -770,7 +776,7 @@ impl Command for NewUnifiedAddressCommand {
                         "has_orchard" => unified_address.has_orchard(),
                         "has_sapling" => unified_address.has_sapling(),
                         "has_transparent" => unified_address.has_transparent(),
-                        "encoded_address" => unified_address.encode(&network),
+                        "encoded_address" => unified_address.encode(&chain_type),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -797,7 +803,7 @@ impl Command for NewTransparentAddressCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
-            let network = lightclient.chain_type();
+            let chain_type = lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, true) {
                 Ok((id, transparent_address)) => {
@@ -805,7 +811,7 @@ impl Command for NewTransparentAddressCommand {
                         "account" => u32::from(id.account_id()),
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent::encode_address(&network,  transparent_address),
+                        "encoded_address" => transparent::encode_address(&chain_type,  transparent_address),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -848,7 +854,7 @@ impl Command for NewTransparentAddressAllowGapCommand {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String {
         RT.block_on(async move {
             // Generate without enforcing the no-gap constraint
-            let network = lightclient.chain_type();
+            let chain_type= lightclient.chain_type();
             let mut wallet = lightclient.wallet().write().await;
 
             match wallet.generate_transparent_address(zip32::AccountId::ZERO, false) {
@@ -857,7 +863,7 @@ impl Command for NewTransparentAddressAllowGapCommand {
                         "account" => u32::from(id.account_id()),
                         "address_index" => id.address_index().index(),
                         "scope" => id.scope().to_string(),
-                        "encoded_address" => transparent::encode_address(&network, transparent_address),
+                        "encoded_address" => transparent::encode_address(&chain_type, transparent_address),
                     }
                 }
                 Err(e) => object! { "error" => e.to_string() },
@@ -1035,7 +1041,7 @@ impl Command for ExportUfvkCommand {
             };
             object! {
                 "ufvk" => ufvk.encode(&lightclient.chain_type()),
-                "birthday" => u32::from(lightclient.birthday())
+                "birthday" => lightclient.birthday()
             }
             .pretty(2)
         })
@@ -1045,20 +1051,25 @@ impl Command for ExportUfvkCommand {
 struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Propose a transfer of ZEC to the given address(es).
-            The fee required to send this transaction will be added to the proposal and displayed to the user.
-            The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
-
-            Usage:
-                send <address> <amount in zatoshis> "<optional memo>"
-                OR
-                send '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-            Example:
-                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-                confirm
-
-        "#}
+        concat!(
+            "Propose a transfer of ZEC to the given address(es).\n",
+            "The fee required to send this transaction will be added to the proposal and displayed to the user.\n",
+            "The 'confirm' command must be called to complete and broadcast the proposed transaction(s).\n",
+            "\n",
+            "Usage:\n",
+            "    send <address> <amount in zatoshis> \"<optional memo>\"\n",
+            "    OR\n",
+            "    send '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "Example:\n",
+            "    send ",
+            crate::examples::sapling_address!(),
+            " ",
+            crate::examples::amount_zatoshis!(),
+            " \"",
+            crate::examples::memo!(),
+            "\"\n",
+            "    confirm\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -1103,24 +1114,27 @@ impl Command for SendCommand {
 struct SendAllCommand {}
 impl Command for SendAllCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Propose to transfer all ZEC from shielded pools to a given address.
-            The fee required to send this transaction will be added to the proposal and displayed to the user.
-            The 'confirm' command must be called to complete and broadcast the proposed transaction(s).
-            If invoked with a JSON arg "zennies_for_zingo" must be specified, if set to 'true' 1_000_000 ZAT
-            will be sent to the zingolabs developer address with each transaction.
-
-            Warning:
-                Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.
-            Usage:
-                send_all <address> "<optional memo>"
-                OR
-                send_all '{ "address": "<address>", "memo": "<optional memo>", "zennies_for_zingo": <true|false> }'
-            Example:
-                send_all ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Sending all funds"
-                confirm
-
-        "#}
+        concat!(
+            "Propose to transfer all ZEC from shielded pools to a given address.\n",
+            "The fee required to send this transaction will be added to the proposal and displayed to the user.\n",
+            "The 'confirm' command must be called to complete and broadcast the proposed transaction(s).\n",
+            "If invoked with a JSON arg \"zennies_for_zingo\" must be specified, if set to 'true' 1_000_000 ZAT\n",
+            "will be sent to the zingolabs developer address with each transaction.\n",
+            "\n",
+            "Warning:\n",
+            "    Does not send transparent funds. These funds must be shielded first. Type `help shield` for more information.\n",
+            "Usage:\n",
+            "    send_all <address> \"<optional memo>\"\n",
+            "    OR\n",
+            "    send_all '{ \"address\": \"<address>\", \"memo\": \"<optional memo>\", \"zennies_for_zingo\": <true|false> }'\n",
+            "Example:\n",
+            "    send_all ",
+            crate::examples::sapling_address!(),
+            " \"",
+            crate::examples::send_all_memo!(),
+            "\"\n",
+            "    confirm\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -1165,19 +1179,24 @@ impl Command for SendAllCommand {
 struct QuickSendCommand {}
 impl Command for QuickSendCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Send ZEC to the given address(es). Combines `send` and `confirm` into a single command.
-            The fee required to send this transaction is additionally deducted from your balance.
-            Warning:
-                Transaction(s) will be sent without the user being aware of the fee amount.
-            Usage:
-                quicksend <address> <amount in zatoshis> "<optional memo>"
-                OR
-                quicksend '[{"address":"<address>", "amount":<amount in zatoshis>, "memo":"<optional memo>"}, ...]'
-            Example:
-                quicksend ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-
-        "#}
+        concat!(
+            "Send ZEC to the given address(es). Combines `send` and `confirm` into a single command.\n",
+            "The fee required to send this transaction is additionally deducted from your balance.\n",
+            "Warning:\n",
+            "    Transaction(s) will be sent without the user being aware of the fee amount.\n",
+            "Usage:\n",
+            "    quicksend <address> <amount in zatoshis> \"<optional memo>\"\n",
+            "    OR\n",
+            "    quicksend '[{\"address\":\"<address>\", \"amount\":<amount in zatoshis>, \"memo\":\"<optional memo>\"}, ...]'\n",
+            "Example:\n",
+            "    quicksend ",
+            crate::examples::sapling_address!(),
+            " ",
+            crate::examples::amount_zatoshis!(),
+            " \"",
+            crate::examples::memo!(),
+            "\"\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -1316,18 +1335,23 @@ impl Command for QuickShieldCommand {
 struct ConfirmCommand {}
 impl Command for ConfirmCommand {
     fn help(&self) -> &'static str {
-        indoc! {r#"
-            Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.
-            Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.
-            Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.
-
-            Usage:
-                confirm
-            Example:
-                send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
-                confirm
-
-        "#}
+        concat!(
+            "Confirms the latest proposal, constructing and transmitting the transaction(s) and resuming the sync task.\n",
+            "Fails if a proposal has not already been created with the 'send', 'send_all' or 'shield' commands.\n",
+            "Type 'help send', 'help sendall' or 'help shield' for more information on creating proposals.\n",
+            "\n",
+            "Usage:\n",
+            "    confirm\n",
+            "Example:\n",
+            "    send ",
+            crate::examples::sapling_address!(),
+            " ",
+            crate::examples::amount_zatoshis!(),
+            " \"",
+            crate::examples::memo!(),
+            "\"\n",
+            "    confirm\n",
+        )
     }
 
     fn short_help(&self) -> &'static str {
@@ -1382,7 +1406,7 @@ impl Command for DeleteCommand {
             match lightclient.do_delete().await {
                 Ok(()) => {
                     let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().expect("should be valid UTF-8") };
+                    "wallet_path" => lightclient.wallet_path().to_str().expect("should be valid UTF-8") };
                     r.pretty(2)
                 }
                 Err(e) => {

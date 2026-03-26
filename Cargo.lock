@@ -594,7 +594,7 @@ dependencies = [
  "anyhow",
  "hmac 0.12.1",
  "pbkdf2",
- "phf",
+ "phf 0.13.1",
  "phf_codegen",
  "rand 0.10.0",
  "sha2 0.10.9",
@@ -1158,6 +1158,15 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "convert_case"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baaaa0ecca5b51987b9423ccdc971514dd8b0bb7b4060b983d3664dad3f1f89f"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
@@ -1653,7 +1662,7 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
 dependencies = [
- "convert_case",
+ "convert_case 0.10.0",
  "proc-macro2",
  "quote",
  "rustc_version",
@@ -1732,6 +1741,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "documented"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed6b3e31251e87acd1b74911aed84071c8364fc9087972748ade2f1094ccce34"
+dependencies = [
+ "documented-macros",
+ "phf 0.12.1",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "documented-macros"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1149cf7462e5e79e17a3c05fd5b1f9055092bbfa95e04c319395c3beacc9370f"
+dependencies = [
+ "convert_case 0.8.0",
+ "itertools 0.14.0",
+ "optfield",
+ "proc-macro2",
+ "quote",
+ "strum",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3764,10 +3799,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "openrpsee"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21f88ef83e8c454c2da7822db74ab2bbe3f03efac05bfb5dd0523afbdeb99799"
+dependencies = [
+ "documented",
+ "jsonrpsee",
+ "quote",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+
+[[package]]
+name = "optfield"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "969ccca8ffc4fb105bd131a228107d5c9dd89d9d627edf3295cbe979156f9712"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "option-ext"
@@ -4053,12 +4114,23 @@ dependencies = [
 
 [[package]]
 name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_macros 0.12.1",
+ "phf_shared 0.12.1",
+ "serde",
+]
+
+[[package]]
+name = "phf"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
 dependencies = [
- "phf_macros",
- "phf_shared",
+ "phf_macros 0.13.1",
+ "phf_shared 0.13.1",
  "serde",
 ]
 
@@ -4068,8 +4140,18 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49aa7f9d80421bca176ca8dbfebe668cc7a2684708594ec9f3c0db0805d5d6e1"
 dependencies = [
- "phf_generator",
- "phf_shared",
+ "phf_generator 0.13.1",
+ "phf_shared 0.13.1",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cbb1126afed61dd6368748dae63b1ee7dc480191c6262a3b4ff1e29d86a6c5b"
+dependencies = [
+ "fastrand",
+ "phf_shared 0.12.1",
 ]
 
 [[package]]
@@ -4079,7 +4161,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
 dependencies = [
  "fastrand",
- "phf_shared",
+ "phf_shared 0.13.1",
+]
+
+[[package]]
+name = "phf_macros"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d713258393a82f091ead52047ca779d37e5766226d009de21696c4e667044368"
+dependencies = [
+ "phf_generator 0.12.1",
+ "phf_shared 0.12.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -4088,11 +4183,20 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
 dependencies = [
- "phf_generator",
- "phf_shared",
+ "phf_generator 0.13.1",
+ "phf_shared 0.13.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
+dependencies = [
+ "siphasher",
 ]
 
 [[package]]
@@ -5383,8 +5487,21 @@ checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -5543,6 +5660,17 @@ name = "serde_derive"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7095,7 +7223,7 @@ dependencies = [
  "itertools 0.14.0",
  "memchr",
  "paste",
- "phf",
+ "phf 0.13.1",
  "serde",
  "serde_with",
  "signature",
@@ -8618,7 +8746,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.4.0#8341661f2f2cbd8a1ddc2ea85b3660114ec09e66"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f#69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f"
 dependencies = [
  "getset",
  "hex",
@@ -8784,9 +8912,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "5.0.0"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a15c1b579eb4d25214fa15839a74f4b9599806bc8addb910cfbec50dd59fb97f"
+checksum = "1fcb0012bac23be72f1827ae14bccb2028bc7c9e2020e887a5f92232a42973d0"
 dependencies = [
  "bech32",
  "bitflags 2.11.0",
@@ -8820,6 +8948,7 @@ dependencies = [
  "redjubjub",
  "ripemd 0.1.3",
  "sapling-crypto",
+ "schemars 1.2.1",
  "secp256k1 0.29.1",
  "serde",
  "serde-big-array",
@@ -8828,6 +8957,7 @@ dependencies = [
  "sha2 0.10.9",
  "sinsemilla",
  "static_assertions",
+ "strum",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -8846,9 +8976,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-consensus"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dacc49c94870e0c956b11a21aa4e0422f5aa77ca67927d7c45c389c6b80e9201"
+checksum = "26a2cded2bfdd3019e7f20ab705061c7013128db3dab0956587471ed95a61c11"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -8885,9 +9015,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-network"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90569b97fa9ce8d09f4b8e9dfe97c36fb673aa5869191d17abf69e880034a8e9"
+checksum = "456c7afee9c651c8db90970db9ab86d42a313016457271fdf3340ae0b6bc4b2d"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -8907,6 +9037,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "regex",
+ "schemars 1.2.1",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
@@ -8922,9 +9053,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-node-services"
-version = "3.0.0"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18f8ad0371557d76c8ed0f81c3e2762082b57cb9c1b9bc1069b4a0bc897bd266"
+checksum = "608b55b6cd9ddecc73a7a20d801847e0461ea5178e17cac5734b1b0e6d21aa5f"
 dependencies = [
  "color-eyre",
  "jsonrpsee-types",
@@ -8938,9 +9069,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-rpc"
-version = "5.0.0"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7365982d89029998aa37f69b055a260d3e9da208fd76f5b48179a1c5a1410096"
+checksum = "ba8b0d44ea2372962f61552dce40b8261ad6c48dfecc50bea572f930b28a3b28"
 dependencies = [
  "base64",
  "chrono",
@@ -8957,9 +9088,12 @@ dependencies = [
  "jsonrpsee-types",
  "metrics",
  "nix",
+ "openrpsee",
+ "phf 0.12.1",
  "prost",
  "rand 0.8.5",
  "sapling-crypto",
+ "schemars 1.2.1",
  "semver",
  "serde",
  "serde_json",
@@ -8989,9 +9123,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-script"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2857e5d0692ad1fd597b096ccc700107489c72a9c7e2e7a883479aa0d02ec173"
+checksum = "86811347886796806663c5e66cfef8085ba5bbc04bb9f94adf5fcb54e3ef76c6"
 dependencies = [
  "libzcash_script",
  "thiserror 2.0.18",
@@ -9002,9 +9136,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-state"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47f0e0b14ced6153d21aa65a23b9b3f90080c3b434d93384a3395ae658657733"
+checksum = "cd379520336d750a75d22e0aaaf9f48d16f03b31db86fe2629993ce219071fe0"
 dependencies = [
  "bincode 1.3.3",
  "chrono",
@@ -9242,7 +9376,7 @@ checksum = "b7ed7ebc771980a59ec5f208d5dcf40c010dce2b5d493164c9d2f7baa73e9284"
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?tag=zcash_local_net_v0.4.0#8341661f2f2cbd8a1ddc2ea85b3660114ec09e66"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f#69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f"
 dependencies = [
  "bip0039 0.12.0",
 ]
