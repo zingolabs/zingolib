@@ -55,12 +55,12 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
     /// (possibly against a different server) may succeed.
     ///
     /// Server errors from failed gRPC requests and mempool stream failures
-    /// are retryable. Configuration errors, wallet corruption, and data
+    /// are recommend_same_server. Configuration errors, wallet corruption, and data
     /// integrity failures are not.
-    pub fn is_retryable(&self) -> bool {
+    pub fn recommend_same_server(&self) -> bool {
         match self {
             // Network/server issues — retry may help, especially with a different server.
-            SyncError::ServerError(e) => e.is_retryable(),
+            SyncError::ServerError(e) => e.recommend_same_server(),
             SyncError::MempoolError(_) => true,
 
             // Local or configuration errors — retrying won't help.
@@ -79,18 +79,19 @@ impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
 impl ServerError {
     /// Returns `true` if this server error is likely transient.
     ///
-    /// gRPC request failures (timeouts, connection drops) are retryable.
+    /// gRPC request failures (timeouts, connection drops) are recommend_same_server.
     /// Invalid data from the server suggests a bad server that should be
     /// avoided rather than retried.
-    pub fn is_retryable(&self) -> bool {
+    pub fn recommend_same_server(&self) -> bool {
         match self {
-            // Transport-level failure — retry with same or different server.
-            ServerError::RequestFailed(_) => true,
             // Internal channel issue — retry may help after restart.
             ServerError::FetcherDropped => true,
 
+            // gRPC request failure — the server may be down or overloaded.
+            // Switch to a different server rather than retrying the same one.
+            ServerError::RequestFailed(_) => false,
+
             // Bad data from server — retrying the same server won't help.
-            // A different server might, but that's a failover decision, not a retry.
             ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
@@ -146,12 +147,11 @@ impl ServerError {
     /// Returns the recommended recovery action for this server error.
     pub fn recovery_recommendation(&self) -> SyncRecoveryObservables {
         match self {
-            // Transport failure — same server might recover.
-            ServerError::RequestFailed(_) | ServerError::FetcherDropped => {
-                SyncRecoveryObservables::MaybeRecoverableServer
-            }
-            // Bad data from server — try a different one.
-            ServerError::InvalidFrontier(_)
+            // Internal channel issue — same server may work after restart.
+            ServerError::FetcherDropped => SyncRecoveryObservables::MaybeRecoverableServer,
+            // gRPC request failure or bad data — try a different server.
+            ServerError::RequestFailed(_)
+            | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError => SyncRecoveryObservables::ServerUnavailable,
@@ -332,7 +332,30 @@ mod tests {
     /// Use `String` as the wallet error type for testing.
     type TestSyncError = SyncError<String>;
 
-    mod retryable {
+    mod recommend_same_server {
+        use super::*;
+
+        mod server_error {
+            use super::*;
+
+            #[test]
+            fn fetcher_dropped() {
+                assert!(ServerError::FetcherDropped.recommend_same_server());
+            }
+        }
+
+        mod sync_error {
+            use super::*;
+
+            #[test]
+            fn mempool_error() {
+                let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert!(e.recommend_same_server());
+            }
+        }
+    }
+
+    mod recommend_change_server {
         use super::*;
 
         mod server_error {
@@ -341,64 +364,34 @@ mod tests {
             #[test]
             fn request_failed() {
                 let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
-                assert!(e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
-
-            #[test]
-            fn fetcher_dropped() {
-                assert!(ServerError::FetcherDropped.is_retryable());
-            }
-        }
-
-        mod sync_error {
-            use super::*;
-
-            #[test]
-            fn server_error() {
-                let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout")).into();
-                assert!(e.is_retryable());
-            }
-
-            #[test]
-            fn mempool_error() {
-                let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
-                assert!(e.is_retryable());
-            }
-        }
-    }
-
-    mod not_retryable {
-        use super::*;
-
-        mod server_error {
-            use super::*;
 
             #[test]
             fn invalid_frontier() {
                 let e = ServerError::InvalidFrontier(std::io::Error::other("bad frontier"));
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
 
             #[test]
             fn invalid_transaction() {
                 let e = ServerError::InvalidTransaction(std::io::Error::other("bad tx"));
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
 
             #[test]
             fn invalid_subtree_root() {
-                assert!(!ServerError::InvalidSubtreeRoot.is_retryable());
+                assert!(!ServerError::InvalidSubtreeRoot.recommend_same_server());
             }
 
             #[test]
             fn chain_verification_error() {
-                assert!(!ServerError::ChainVerificationError.is_retryable());
+                assert!(!ServerError::ChainVerificationError.recommend_same_server());
             }
 
             #[test]
             fn genesis_block_only() {
-                assert!(!ServerError::GenesisBlockOnly.is_retryable());
+                assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
             }
         }
 
@@ -406,27 +399,34 @@ mod tests {
             use super::*;
 
             #[test]
+            fn server_request_failed() {
+                let e: TestSyncError =
+                    ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout")).into();
+                assert!(!e.recommend_same_server());
+            }
+
+            #[test]
             fn sync_mode_error() {
                 let e: TestSyncError = SyncModeError::SyncAlreadyRunning.into();
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
 
             #[test]
             fn chain_error() {
                 let e: TestSyncError = SyncError::ChainError(100, 50, 50);
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
 
             #[test]
             fn birthday_below_sapling() {
                 let e: TestSyncError = SyncError::BirthdayBelowSapling(100, 419200);
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
 
             #[test]
             fn wallet_error() {
                 let e: TestSyncError = SyncError::WalletError("db locked".to_string());
-                assert!(!e.is_retryable());
+                assert!(!e.recommend_same_server());
             }
         }
     }
@@ -438,28 +438,9 @@ mod tests {
             use super::*;
 
             #[test]
-            fn request_failed() {
-                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
-                assert_eq!(
-                    e.recovery_recommendation(),
-                    SyncRecoveryObservables::MaybeRecoverableServer
-                );
-            }
-
-            #[test]
             fn fetcher_dropped() {
                 assert_eq!(
                     ServerError::FetcherDropped.recovery_recommendation(),
-                    SyncRecoveryObservables::MaybeRecoverableServer
-                );
-            }
-
-            #[test]
-            fn sync_error_from_request_failed() {
-                let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
-                assert_eq!(
-                    e.recovery_recommendation(),
                     SyncRecoveryObservables::MaybeRecoverableServer
                 );
             }
@@ -476,6 +457,25 @@ mod tests {
 
         mod try_different_server {
             use super::*;
+
+            #[test]
+            fn request_failed() {
+                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn sync_error_from_request_failed() {
+                let e: TestSyncError =
+                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
 
             #[test]
             fn invalid_frontier() {
