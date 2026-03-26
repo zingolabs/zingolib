@@ -113,7 +113,7 @@ pub(crate) mod consealed {
 pub struct InvalidChainType(String);
 
 /// Configuration data for the construction of a [`crate::wallet::LightWallet`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WalletConfig {
     /// Generate a wallet with a new seed for a number of accounts.
     NewSeed {

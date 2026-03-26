@@ -46,7 +46,7 @@ pub use pepper_sync::config::{
 };
 
 /// Wallet settings.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalletSettings {
     /// Sync configuration.
     pub sync_config: pepper_sync::config::SyncConfig,
