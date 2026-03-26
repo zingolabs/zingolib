@@ -32,7 +32,6 @@ use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
 use zingolib::config::WalletConfig;
 use zingolib::config::{ChainType, ClientConfig};
-use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
 use zingolib::testutils::default_test_wallet_settings;
@@ -367,7 +366,11 @@ pub async fn faucet_funded_recipient(
         Some(
             quick_send(
                 &mut faucet,
-                vec![(&get_base_address_macro!(recipient, "unified"), funds, None)],
+                vec![(
+                    &get_base_address(&recipient, PoolType::ORCHARD).await,
+                    funds,
+                    None,
+                )],
             )
             .await
             .unwrap()
@@ -381,7 +384,11 @@ pub async fn faucet_funded_recipient(
         Some(
             quick_send(
                 &mut faucet,
-                vec![(&get_base_address_macro!(recipient, "sapling"), funds, None)],
+                vec![(
+                    &get_base_address(&recipient, PoolType::SAPLING).await,
+                    funds,
+                    None,
+                )],
             )
             .await
             .unwrap()
@@ -396,7 +403,7 @@ pub async fn faucet_funded_recipient(
             quick_send(
                 &mut faucet,
                 vec![(
-                    &get_base_address_macro!(recipient, "transparent"),
+                    &get_base_address(&recipient, PoolType::TRANSPARENT).await,
                     funds,
                     None,
                 )],
@@ -518,7 +525,11 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
     faucet.sync_and_await().await.unwrap();
     quick_send(
         &mut faucet,
-        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+        vec![(
+            &get_base_address(&recipient, PoolType::ORCHARD).await,
+            value,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -556,7 +567,11 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         .unwrap();
     quick_send(
         &mut faucet,
-        vec![(&get_base_address_macro!(recipient, "unified"), value, None)],
+        vec![(
+            &get_base_address(&recipient, PoolType::ORCHARD).await,
+            value,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -566,7 +581,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     quick_send(
         &mut recipient,
         vec![(
-            &get_base_address_macro!(faucet, "unified"),
+            &get_base_address(&faucet, PoolType::ORCHARD).await,
             value.checked_div(10).unwrap(),
             None,
         )],
@@ -576,7 +591,7 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
     increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
         .await
         .unwrap();
-    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
+    let recipient_sapling_address = get_base_address(&recipient, PoolType::SAPLING).await;
     quick_send(
         &mut recipient,
         vec![(
@@ -624,7 +639,7 @@ pub async fn funded_transparent_mobileclient(
     quick_send(
         &mut faucet,
         vec![(
-            &get_base_address_macro!(recipient, "transparent"),
+            &get_base_address(&recipient, PoolType::TRANSPARENT).await,
             value.checked_div(4).unwrap(),
             None,
         )],
@@ -672,7 +687,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     quick_send(
         &mut faucet,
         vec![(
-            &get_base_address_macro!(recipient, "unified"),
+            &get_base_address(&recipient, PoolType::ORCHARD).await,
             value.checked_div(2).unwrap(),
             None,
         )],
@@ -687,7 +702,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     quick_send(
         &mut faucet,
         vec![(
-            &get_base_address_macro!(recipient, "sapling"),
+            &get_base_address(&recipient, PoolType::SAPLING).await,
             value.checked_div(4).unwrap(),
             None,
         )],
@@ -702,7 +717,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     quick_send(
         &mut faucet,
         vec![(
-            &get_base_address_macro!(recipient, "transparent"),
+            &get_base_address(&recipient, PoolType::TRANSPARENT).await,
             value.checked_div(4).unwrap(),
             None,
         )],
@@ -717,7 +732,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
     quick_send(
         &mut recipient,
         vec![(
-            &get_base_address_macro!(faucet, "unified"),
+            &get_base_address(&faucet, PoolType::ORCHARD).await,
             value.checked_div(10).unwrap(),
             None,
         )],
@@ -729,7 +744,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to self orchard
-    let recipient_unified_address = get_base_address_macro!(recipient, "unified");
+    let recipient_unified_address = get_base_address(&recipient, PoolType::ORCHARD).await;
     quick_send(
         &mut recipient,
         vec![(
@@ -745,7 +760,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to self sapling
-    let recipient_sapling_address = get_base_address_macro!(recipient, "sapling");
+    let recipient_sapling_address = get_base_address(&recipient, PoolType::SAPLING).await;
     quick_send(
         &mut recipient,
         vec![(
@@ -761,7 +776,7 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         .unwrap();
 
     // // send to self transparent
-    let recipient_transparent_address = get_base_address_macro!(recipient, "transparent");
+    let recipient_transparent_address = get_base_address(&recipient, PoolType::TRANSPARENT).await;
     quick_send(
         &mut recipient,
         vec![(

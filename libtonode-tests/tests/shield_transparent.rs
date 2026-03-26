@@ -1,5 +1,6 @@
-use zingolib::get_base_address_macro;
+use zcash_protocol::PoolType;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::lightclient::get_base_address;
 use zingolib_testutils::scenarios::{
     faucet_recipient_default, increase_height_and_wait_for_client,
 };
@@ -26,7 +27,7 @@ async fn shield_transparent() {
     let proposal = from_inputs::quick_send(
         &mut faucet,
         vec![(
-            &get_base_address_macro!(recipient, "transparent"),
+            &get_base_address(&recipient, PoolType::TRANSPARENT).await,
             transparent_funds,
             None,
         )],

@@ -2,17 +2,18 @@ use std::{num::NonZeroU32, time::Duration};
 
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
+use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig};
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
+use zingolib::testutils::lightclient::get_base_address;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
     config::{DEFAULT_INDEXER_URI, construct_lightwalletd_uri},
-    get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
 };
@@ -107,8 +108,8 @@ async fn sync_test() {
     let (_local_net, mut faucet, mut recipient, _txid) =
         scenarios::faucet_funded_recipient_default(5_000_000).await;
 
-    // let recipient_ua = get_base_address_macro!(&recipient, "unified");
-    let recipient_taddr = get_base_address_macro!(&recipient, "transparent");
+    // let recipient_ua = get_base_address(&&recipient, PoolType::ORCHARD).await;
+    let recipient_taddr = get_base_address(&recipient, PoolType::TRANSPARENT).await;
     from_inputs::quick_send(&mut faucet, vec![(&recipient_taddr, 100_000, None)])
         .await
         .unwrap();
@@ -152,8 +153,8 @@ async fn sync_test() {
 async fn store_all_checkpoints_in_verification_window_chain_cache() {
     let (mut local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
 
-    let recipient_orchard_addr = get_base_address_macro!(recipient, "unified");
-    let recipient_sapling_addr = get_base_address_macro!(recipient, "sapling");
+    let recipient_orchard_addr = get_base_address(&recipient, PoolType::ORCHARD).await;
+    let recipient_sapling_addr = get_base_address(&recipient, PoolType::SAPLING).await;
 
     for _ in 0..27 {
         quick_send(&mut faucet, vec![(&recipient_orchard_addr, 10_000, None)])

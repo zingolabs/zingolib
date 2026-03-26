@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 mod load_wallet {
     use zcash_local_net::validator::Validator as _;
-    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zcash_protocol::PoolType;
+    use zingolib::testutils::lightclient::{from_inputs, get_base_address};
     use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
     // FIXME: sync integration semi-complete, need to transribe all the old do_list_transactions printouts to new types
@@ -153,7 +154,7 @@ mod load_wallet {
     //     assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
     //     let missing_output_index = from_inputs::quick_send(
     //         &recipient,
-    //         vec![(&get_base_address_macro!(faucet, "unified"), 14000, None)],
+    //         vec![(&get_base_address(&faucet, PoolType::ORCHARD).await, 14000, None)],
     //     )
     //     .await;
     //     if let Err(QuickSendError::ProposeSend(Proposal(
@@ -204,7 +205,7 @@ mod load_wallet {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 10_000,
                 Some("Interrupting sync!!"),
             )],

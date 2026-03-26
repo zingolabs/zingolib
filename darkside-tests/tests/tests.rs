@@ -3,15 +3,16 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
+use zcash_protocol::PoolType;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
 use zingolib::config::ChainType;
 use zingolib::config::ClientConfig;
 use zingolib::config::WalletConfig;
-use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::lightclient::get_base_address;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::tempfile;
 use zingolib::wallet::balance::AccountBalance;
@@ -192,7 +193,11 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     let one_txid = from_inputs::quick_send(
         &mut light_client,
-        vec![(&get_base_address_macro!(recipient, "unified"), 10_000, None)],
+        vec![(
+            &get_base_address(&recipient, PoolType::ORCHARD).await,
+            10_000,
+            None,
+        )],
     )
     .await
     .unwrap();

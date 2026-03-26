@@ -6,6 +6,7 @@ use zcash_protocol::{PoolType, ShieldedProtocol};
 use crate::{
     config::ClientConfig,
     lightclient::LightClient,
+    testutils::lightclient::get_base_address,
     wallet::{
         disk::testing::{
             assert_wallet_capability_matches_seed,
@@ -198,7 +199,7 @@ async fn loaded_wallet_assert(
         );
     }
     if expected_balance > 0 {
-        let sapling_address = crate::get_base_address_macro!(lightclient, "sapling");
+        let sapling_address = get_base_address(&lightclient, PoolType::SAPLING).await;
         crate::testutils::lightclient::from_inputs::quick_send(
             &mut lightclient,
             vec![(&sapling_address, 11011, None)],
@@ -206,7 +207,7 @@ async fn loaded_wallet_assert(
         .await
         .unwrap();
         lightclient.sync_and_await().await.unwrap();
-        let transparent_address = crate::get_base_address_macro!(lightclient, "transparent");
+        let transparent_address = get_base_address(&lightclient, PoolType::TRANSPARENT).await;
         crate::testutils::lightclient::from_inputs::quick_send(
             &mut lightclient,
             vec![(&transparent_address, 28000, None)],

@@ -9,12 +9,12 @@ use zcash_protocol::PoolType;
 use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{BASE_HEIGHT, block_rewards, seeds::HOSPITAL_MUSEUM_SEED};
-use zingolib::testutils::lightclient::from_inputs;
+use zingolib::check_client_balances;
+use zingolib::testutils::lightclient::{from_inputs, get_base_address};
 use zingolib::utils::conversion::address_from_str;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib::wallet::keys::unified::UnifiedKeyStore;
 use zingolib::wallet::summary::data::{CoinSummary, NoteSummary};
-use zingolib::{check_client_balances, get_base_address_macro};
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
 fn check_expected_balance_with_fvks(
@@ -274,7 +274,7 @@ mod fast {
     //     let sent_transaction_id = from_inputs::quick_send(
     //         &recipient,
     //         vec![(
-    //             &get_base_address_macro!(faucet, "sapling"),
+    //             &get_base_address(&faucet, PoolType::SAPLING).await,
     //             sent_value,
     //             Some(outgoing_memo),
     //         )],
@@ -660,7 +660,7 @@ mod fast {
 
         recipient
             .propose_send_all(
-                address_from_str(&get_base_address_macro!(&recipient, "sapling")).unwrap(),
+                address_from_str(&get_base_address(&recipient, PoolType::SAPLING).await).unwrap(),
                 false,
                 None,
                 zip32::AccountId::ZERO,
@@ -678,7 +678,7 @@ mod fast {
 
         recipient
             .propose_send_all(
-                address_from_str(&get_base_address_macro!(&recipient, "unified")).unwrap(),
+                address_from_str(&get_base_address(&recipient, PoolType::ORCHARD).await).unwrap(),
                 true,
                 None,
                 zip32::AccountId::ZERO,
@@ -716,12 +716,16 @@ mod fast {
             &mut faucet,
             vec![
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some(""),
                 ),
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some(""),
                 ),
@@ -741,12 +745,16 @@ mod fast {
             &mut faucet,
             vec![
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some("Hello"),
                 ),
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some(""),
                 ),
@@ -948,22 +956,30 @@ mod fast {
             &mut faucet,
             vec![
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some("Message #1"),
                 ),
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some("Message #2"),
                 ),
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some("Message #3"),
                 ),
                 (
-                    get_base_address_macro!(recipient, "unified").as_str(),
+                    get_base_address(&recipient, PoolType::ORCHARD)
+                        .await
+                        .as_str(),
                     5_000,
                     Some("Message #4"),
                 ),
@@ -1073,8 +1089,8 @@ mod fast {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(&recipient, "unified"),
-                // &get_base_address_macro!(&recipient, "sapling"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
+                // &get_base_address(&&recipient, PoolType::SAPLING).await,
                 20_000,
                 None,
             )],
@@ -1118,7 +1134,7 @@ mod fast {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "transparent"),
+                &get_base_address(&recipient, PoolType::TRANSPARENT).await,
                 100_000,
                 None,
             )],
@@ -1305,7 +1321,7 @@ tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr"
             .await;
 
         assert_eq!(
-            get_base_address_macro!(client_b, "transparent"),
+            get_base_address(&client_b, PoolType::TRANSPARENT).await,
             transparent_address
         );
     }
@@ -1514,7 +1530,7 @@ mod slow {
         let _sent_transaction_id = from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 sent_value,
                 None,
             )],
@@ -1527,7 +1543,11 @@ mod slow {
             .unwrap();
         let _sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
-            vec![(&get_base_address_macro!(faucet, "unified"), 1000, None)],
+            vec![(
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
+                1000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -1557,7 +1577,7 @@ mod slow {
         let sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 sent_value,
                 None,
             )],
@@ -1627,7 +1647,7 @@ mod slow {
     //     let sent_value = 2000;
     //     let outgoing_memo = "Outgoing Memo";
 
-    //     let faucet_ua = get_base_address_macro!(faucet, "unified");
+    //     let faucet_ua = get_base_address(&faucet, PoolType::ORCHARD).await;
 
     //     let _sent_transaction_id = from_inputs::quick_send(
     //         &recipient,
@@ -1818,9 +1838,9 @@ mod slow {
             .await;
 
         let (recipient_taddr, recipient_sapling, recipient_unified) = (
-            get_base_address_macro!(original_recipient, "transparent"),
-            get_base_address_macro!(original_recipient, "sapling"),
-            get_base_address_macro!(original_recipient, "unified"),
+            get_base_address(&original_recipient, PoolType::TRANSPARENT).await,
+            get_base_address(&original_recipient, PoolType::SAPLING).await,
+            get_base_address(&original_recipient, PoolType::ORCHARD).await,
         );
         let addr_amount_memos = vec![
             (recipient_taddr.as_str(), 10_000u64, None),
@@ -1958,7 +1978,7 @@ mod slow {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
 
         // 2. Get an incoming transaction to a t address
-        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
+        let recipient_taddr = get_base_address(&recipient, PoolType::TRANSPARENT).await;
         let value = 100_000;
 
         from_inputs::quick_send(&mut faucet, vec![(recipient_taddr.as_str(), value, None)])
@@ -2017,7 +2037,7 @@ mod slow {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "transparent"),
+                &get_base_address(&recipient, PoolType::TRANSPARENT).await,
                 transparent_funding,
                 None,
             )],
@@ -2065,7 +2085,7 @@ mod slow {
     async fn send_to_ua_saves_full_ua_in_wallet() {
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
         //utils::increase_height_and_wait_for_client(&local_net, &faucet, 5).await;
-        let recipient_unified_address = get_base_address_macro!(recipient, "unified");
+        let recipient_unified_address = get_base_address(&recipient, PoolType::ORCHARD).await;
         let sent_value = 50_000;
         from_inputs::quick_send(
             &mut faucet,
@@ -2141,7 +2161,7 @@ mod slow {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "sapling"),
+                &get_base_address(&faucet, PoolType::SAPLING).await,
                 first_send_to_sapling,
                 None,
             )],
@@ -2226,7 +2246,7 @@ mod slow {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "transparent"),
+                &get_base_address(&faucet, PoolType::TRANSPARENT).await,
                 first_send_to_transparent,
                 None,
             )],
@@ -2304,7 +2324,7 @@ mod slow {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 recipient_second_funding,
                 Some("Second wave incoming"),
             )],
@@ -2351,7 +2371,7 @@ mod slow {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "transparent"),
+                &get_base_address(&faucet, PoolType::TRANSPARENT).await,
                 second_send_to_transparent,
                 None,
             )],
@@ -2403,7 +2423,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "sapling"),
+                &get_base_address(&faucet, PoolType::SAPLING).await,
                 second_send_to_sapling,
                 None,
             )],
@@ -2450,7 +2470,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "transparent"),
+                &get_base_address(&faucet, PoolType::TRANSPARENT).await,
                 external_transparent_3,
                 None,
             )],
@@ -2513,7 +2533,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 faucet_to_recipient_amount,
                 Some("Orcharding"),
             )],
@@ -2547,7 +2567,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 recipient_to_faucet_amount,
                 Some("Sending back"),
             )],
@@ -2582,7 +2602,7 @@ TransactionSummary {
             scenarios::faucet(PoolType::SAPLING, ActivationHeights::default(), None).await;
 
         let amount_to_send = 10_000;
-        let faucet_ua = get_base_address_macro!(faucet, "unified");
+        let faucet_ua = get_base_address(&faucet, PoolType::ORCHARD).await;
         from_inputs::quick_send(
             &mut faucet,
             vec![(&faucet_ua, amount_to_send, Some("Scenario test: engage!"))],
@@ -2635,7 +2655,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 3_499_960_000u64,
                 None,
             )],
@@ -2665,7 +2685,7 @@ TransactionSummary {
     #[tokio::test]
     async fn self_send_to_t_displays_as_one_transaction() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        let recipient_unified_address = get_base_address_macro!(recipient, "unified");
+        let recipient_unified_address = get_base_address(&recipient, PoolType::ORCHARD).await;
         let sent_value = 80_000;
         from_inputs::quick_send(
             &mut faucet,
@@ -2676,8 +2696,8 @@ TransactionSummary {
         increase_height_and_wait_for_client(&local_net, &mut recipient, 1)
             .await
             .unwrap();
-        let recipient_taddr = get_base_address_macro!(recipient, "transparent");
-        let recipient_zaddr = get_base_address_macro!(recipient, "sapling");
+        let recipient_taddr = get_base_address(&recipient, PoolType::TRANSPARENT).await;
+        let recipient_zaddr = get_base_address(&recipient, PoolType::SAPLING).await;
         let sent_to_taddr_value = 5_000;
         let sent_to_zaddr_value = 11_000;
         let sent_to_self_orchard_value = 1_000;
@@ -2751,7 +2771,7 @@ TransactionSummary {
         let network = recipient.chain_type();
 
         let spent_value = 20_000;
-        let faucet_sapling_address = get_base_address_macro!(faucet, "sapling");
+        let faucet_sapling_address = get_base_address(&faucet, PoolType::SAPLING).await;
         let spent_txid = from_inputs::quick_send(
             &mut recipient,
             vec![(&faucet_sapling_address, spent_value, None)],
@@ -2814,7 +2834,11 @@ TransactionSummary {
         // 2. Send an incoming transaction to fill the wallet
         let faucet_funding_txid = from_inputs::quick_send(
             &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "sapling"), value, None)],
+            vec![(
+                &get_base_address(&recipient, PoolType::SAPLING).await,
+                value,
+                None,
+            )],
         )
         .await
         .unwrap()
@@ -2889,7 +2913,7 @@ TransactionSummary {
         let sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "sapling"),
+                &get_base_address(&faucet, PoolType::SAPLING).await,
                 sent_value,
                 Some(outgoing_memo),
             )],
@@ -3049,8 +3073,8 @@ TransactionSummary {
     #[tokio::test]
     async fn sapling_dust_fee_collection() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
-        let recipient_sapling = get_base_address_macro!(recipient, "sapling");
-        let recipient_unified = get_base_address_macro!(recipient, "unified");
+        let recipient_sapling = get_base_address(&recipient, PoolType::SAPLING).await;
+        let recipient_unified = get_base_address(&recipient, PoolType::ORCHARD).await;
         check_client_balances!(recipient, o: 0 s: 0 t: 0);
         let fee = u64::from(MINIMUM_FEE);
         let for_orchard = dbg!(fee * 10);
@@ -3072,7 +3096,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 fee * 5,
                 Some("Five times fee."),
             )],
@@ -3109,7 +3133,7 @@ TransactionSummary {
     //     tracing::info!("creating vec");
     //     from_inputs::quick_send(
     //         faucet,
-    //         vec![(&get_base_address_macro!(faucet, "unified"), 10, None); 15],
+    //         vec![(&get_base_address(&faucet, PoolType::ORCHARD).await, 10, None); 15],
     //     )
     //     .await
     //     .unwrap();
@@ -3118,7 +3142,7 @@ TransactionSummary {
     //         .unwrap();
     //     from_inputs::quick_send(
     //         recipient,
-    //         vec![(&get_base_address_macro!(faucet, "unified"), 10, None)],
+    //         vec![(&get_base_address(&faucet, PoolType::ORCHARD).await, 10, None)],
     //     )
     //     .await
     //     .unwrap();
@@ -3156,7 +3180,7 @@ TransactionSummary {
         #[tokio::test]
         async fn self_send() {
             let (local_net, mut faucet) = scenarios::faucet_default().await;
-            let faucet_sapling_addr = get_base_address_macro!(faucet, "sapling");
+            let faucet_sapling_addr = get_base_address(&faucet, PoolType::SAPLING).await;
             let mut txids = vec![];
             for memo in [None, Some("Second Transaction")] {
                 txids.push(
@@ -3184,7 +3208,9 @@ TransactionSummary {
             let _external_send_txid_with_memo = *from_inputs::quick_send(
                 &mut faucet,
                 vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    get_base_address(&recipient, PoolType::SAPLING)
+                        .await
+                        .as_str(),
                     1_000,
                     Some("foo"),
                 )],
@@ -3195,7 +3221,9 @@ TransactionSummary {
             let _external_send_txid_no_memo = *from_inputs::quick_send(
                 &mut faucet,
                 vec![(
-                    get_base_address_macro!(recipient, "sapling").as_str(),
+                    get_base_address(&recipient, PoolType::SAPLING)
+                        .await
+                        .as_str(),
                     1_000,
                     None,
                 )],
@@ -3221,7 +3249,14 @@ TransactionSummary {
                 scenarios::faucet_funded_recipient_default(inital_value).await;
             from_inputs::quick_send(
                 &mut recipient,
-                vec![(&get_base_address_macro!(faucet, "unified"), 10_000, None); 2],
+                vec![
+                    (
+                        &get_base_address(&faucet, PoolType::ORCHARD).await,
+                        10_000,
+                        None
+                    );
+                    2
+                ],
             )
             .await
             .unwrap();
@@ -3249,7 +3284,7 @@ TransactionSummary {
             .await
             .unwrap();
 
-        let client_2_saplingaddress = get_base_address_macro!(recipient, "sapling");
+        let client_2_saplingaddress = get_base_address(&recipient, PoolType::SAPLING).await;
         // Send three transfers in increasing 10_000 zat increments
         // These are sent from the coinbase funded client which will
         // subsequently receive funding via it's orchard-packed UA.
@@ -3278,7 +3313,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 30_000,
                 Some("Sending back, should have 2 inputs"),
             )],
@@ -3391,7 +3426,7 @@ TransactionSummary {
         let _sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 sent_value,
                 Some(outgoing_memo),
             )],
@@ -3446,9 +3481,9 @@ TransactionSummary {
                 local_net.validator().get_activation_heights().await,
             )
             .await;
-        let pmc_taddr = get_base_address_macro!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address_macro!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address_macro!(pool_migration_client, "unified");
+        let pmc_taddr = get_base_address(&pool_migration_client, PoolType::TRANSPARENT).await;
+        let pmc_sapling = get_base_address(&pool_migration_client, PoolType::SAPLING).await;
+        let pmc_unified = get_base_address(&pool_migration_client, PoolType::ORCHARD).await;
         // Ensure that the client has confirmed spendable funds
         increase_height_and_wait_for_client(&local_net, &mut faucet, 3)
             .await
@@ -3498,9 +3533,9 @@ TransactionSummary {
                 local_net.validator().get_activation_heights().await,
             )
             .await;
-        let pmc_taddr = get_base_address_macro!(client, "transparent");
-        let pmc_sapling = get_base_address_macro!(client, "sapling");
-        let pmc_unified = get_base_address_macro!(client, "unified");
+        let pmc_taddr = get_base_address(&client, PoolType::TRANSPARENT).await;
+        let pmc_sapling = get_base_address(&client, PoolType::SAPLING).await;
+        let pmc_unified = get_base_address(&client, PoolType::ORCHARD).await;
 
         // Ensure that the faucet has confirmed spendable funds
         increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
@@ -3796,7 +3831,7 @@ TransactionSummary {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(recipient, "transparent"),
+                &get_base_address(&recipient, PoolType::TRANSPARENT).await,
                 1_000u64,
                 None,
             )],
@@ -3815,7 +3850,7 @@ TransactionSummary {
         let _sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "unified"),
+                &get_base_address(&faucet, PoolType::ORCHARD).await,
                 sent_value,
                 None,
             )],
@@ -3827,7 +3862,7 @@ TransactionSummary {
     #[tokio::test]
     async fn by_address_finsight() {
         let (local_net, mut faucet, recipient) = scenarios::faucet_recipient_default().await;
-        let base_uaddress = get_base_address_macro!(recipient, "unified");
+        let base_uaddress = get_base_address(&recipient, PoolType::ORCHARD).await;
         increase_height_and_wait_for_client(&local_net, &mut faucet, 2)
             .await
             .unwrap();
@@ -3877,7 +3912,7 @@ TransactionSummary {
         let sent_transaction_id = from_inputs::quick_send(
             &mut recipient,
             vec![(
-                &get_base_address_macro!(faucet, "sapling"),
+                &get_base_address(&faucet, PoolType::SAPLING).await,
                 sent_zvalue,
                 Some(sent_zmemo),
             )],
@@ -3912,7 +3947,11 @@ TransactionSummary {
             scenarios::faucet_funded_recipient_default(1_000_000).await;
         let sent_txids = from_inputs::quick_send(
             &mut recipient,
-            vec![(&get_base_address_macro!(faucet, "sapling"), 100_000, None)],
+            vec![(
+                &get_base_address(&faucet, PoolType::SAPLING).await,
+                100_000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -4006,15 +4045,16 @@ TransactionSummary {
 }
 
 mod basic_transactions {
-    use zingolib::{get_base_address_macro, testutils::lightclient::from_inputs};
+    use zcash_protocol::PoolType;
+    use zingolib::testutils::lightclient::{from_inputs, get_base_address};
     use zingolib_testutils::scenarios::{self, generate_n_blocks_return_new_height};
 
     #[tokio::test]
     async fn send_and_sync_with_multiple_notes_no_panic() {
         let (local_net, mut faucet, mut recipient) = scenarios::faucet_recipient_default().await;
 
-        let recipient_addr_ua = get_base_address_macro!(recipient, "unified");
-        let faucet_addr_ua = get_base_address_macro!(faucet, "unified");
+        let recipient_addr_ua = get_base_address(&recipient, PoolType::ORCHARD).await;
+        let faucet_addr_ua = get_base_address(&faucet, PoolType::ORCHARD).await;
 
         generate_n_blocks_return_new_height(&local_net, 2).await;
 
@@ -4057,7 +4097,7 @@ mod basic_transactions {
     //     let txid1 = from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "unified").as_str(),
+    //             get_base_address(&recipient, PoolType::ORCHARD).await.as_str(),
     //             40_000,
     //             None,
     //         )],
@@ -4070,7 +4110,7 @@ mod basic_transactions {
     //     let txid2 = from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "sapling").as_str(),
+    //             get_base_address(&recipient, PoolType::SAPLING).await.as_str(),
     //             40_000,
     //             None,
     //         )],
@@ -4083,7 +4123,7 @@ mod basic_transactions {
     //     let txid3 = from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
+    //             get_base_address(&recipient, PoolType::TRANSPARENT).await.as_str(),
     //             40_000,
     //             None,
     //         )],
@@ -4199,7 +4239,7 @@ mod basic_transactions {
     //     let txid4 = lightclient::from_inputs::quick_send(
     //         &recipient,
     //         vec![(
-    //             get_base_address_macro!(faucet, "transparent").as_str(),
+    //             get_base_address(&faucet, PoolType::TRANSPARENT).await.as_str(),
     //             55_000,
     //             None,
     //         )],
@@ -4257,7 +4297,7 @@ mod basic_transactions {
     //     let txid1 = lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "unified").as_str(),
+    //             get_base_address(&recipient, PoolType::ORCHARD).await.as_str(),
     //             0,
     //             None,
     //         )],
@@ -4315,7 +4355,7 @@ mod basic_transactions {
     //     lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
+    //             get_base_address(&recipient, PoolType::TRANSPARENT).await.as_str(),
     //             40_000,
     //             None,
     //         )],
@@ -4370,7 +4410,7 @@ mod basic_transactions {
     //     lightclient::from_inputs::quick_send(
     //         &faucet,
     //         vec![(
-    //             get_base_address_macro!(recipient, "transparent").as_str(),
+    //             get_base_address(&recipient, PoolType::TRANSPARENT).await.as_str(),
     //             40_000,
     //             None,
     //         )],
@@ -4433,7 +4473,11 @@ async fn propose_orchard_dust_to_sapling() {
 
     from_inputs::quick_send(
         &mut faucet,
-        vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
+        vec![(
+            &get_base_address(&recipient, PoolType::ORCHARD).await,
+            4_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -4443,7 +4487,11 @@ async fn propose_orchard_dust_to_sapling() {
 
     from_inputs::propose(
         &mut recipient,
-        vec![(&get_base_address_macro!(faucet, "sapling"), 10_000, None)],
+        vec![(
+            &get_base_address(&faucet, PoolType::SAPLING).await,
+            10_000,
+            None,
+        )],
     )
     .await
     .unwrap();
@@ -4453,7 +4501,10 @@ mod send_all {
 
     use pepper_sync::wallet::{OrchardNote, SaplingNote};
     use zcash_protocol::value::Zatoshis;
-    use zingolib::{testutils::lightclient::from_inputs, wallet::error::ProposeSendError};
+    use zingolib::{
+        testutils::lightclient::{from_inputs, get_base_address},
+        wallet::error::ProposeSendError,
+    };
 
     use super::*;
     #[tokio::test]
@@ -4466,7 +4517,7 @@ mod send_all {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(&recipient, "unified"),
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
                 initial_funds,
                 None,
             )],
@@ -4477,7 +4528,7 @@ mod send_all {
             .await
             .unwrap();
         let external_uaddress =
-            address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap();
+            address_from_str(&get_base_address(&faucet, PoolType::ORCHARD).await).unwrap();
         let expected_balance =
             Zatoshis::from_u64(initial_funds - zennies_magnitude - expected_fee).unwrap();
         assert_eq!(
@@ -4496,7 +4547,11 @@ mod send_all {
 
         from_inputs::quick_send(
             &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "unified"), 5_000, None)],
+            vec![(
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
+                5_000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -4506,7 +4561,7 @@ mod send_all {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                &get_base_address_macro!(&recipient, "sapling"),
+                &get_base_address(&recipient, PoolType::SAPLING).await,
                 50_000,
                 None,
             )],
@@ -4518,7 +4573,11 @@ mod send_all {
             .unwrap();
         from_inputs::quick_send(
             &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "sapling"), 4_000, None)],
+            vec![(
+                &get_base_address(&recipient, PoolType::SAPLING).await,
+                4_000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -4527,7 +4586,11 @@ mod send_all {
             .unwrap();
         from_inputs::quick_send(
             &mut faucet,
-            vec![(&get_base_address_macro!(&recipient, "unified"), 4_000, None)],
+            vec![(
+                &get_base_address(&recipient, PoolType::ORCHARD).await,
+                4_000,
+                None,
+            )],
         )
         .await
         .unwrap();
@@ -4538,7 +4601,7 @@ mod send_all {
 
         recipient
             .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
+                address_from_str(&get_base_address(&faucet, PoolType::SAPLING).await).unwrap(),
                 false,
                 None,
                 zip32::AccountId::ZERO,
@@ -4580,7 +4643,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "sapling")).unwrap(),
+                address_from_str(&get_base_address(&faucet, PoolType::SAPLING).await).unwrap(),
                 false,
                 None,
                 zip32::AccountId::ZERO,
@@ -4608,7 +4671,7 @@ mod send_all {
 
         let proposal_error = recipient
             .propose_send_all(
-                address_from_str(&get_base_address_macro!(faucet, "unified")).unwrap(),
+                address_from_str(&get_base_address(&faucet, PoolType::ORCHARD).await).unwrap(),
                 false,
                 None,
                 zip32::AccountId::ZERO,

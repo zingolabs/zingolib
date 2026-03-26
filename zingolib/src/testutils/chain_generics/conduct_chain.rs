@@ -3,10 +3,11 @@
 //! lib-to-node, which links a lightserver to a zcashd in regtest mode. see `impl ConductChain for LibtoNode
 //! darkside, a mode for the lightserver which mocks zcashd. search 'impl ConductChain for DarksideScenario
 
+use zcash_protocol::PoolType;
+
 use crate::config::{ClientConfig, WalletConfig};
-use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
-use crate::testutils::lightclient::from_inputs;
+use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::wallet::keys::unified::ReceiverSelection;
 
 #[allow(async_fn_in_trait)]
@@ -63,7 +64,7 @@ pub trait ConductChain {
         from_inputs::quick_send(
             &mut faucet,
             vec![(
-                (get_base_address_macro!(recipient, "unified")).as_str(),
+                (get_base_address(&recipient, PoolType::ORCHARD).await).as_str(),
                 value,
                 None,
             )],
