@@ -1,5 +1,12 @@
-//! `ZingoCli`
-//! TODO: Add Crate Description Here!
+//! `ZingoCli` — a command-line interface for the Zingo Zcash light wallet.
+//!
+//! This crate provides the library half of `zingo-cli`. It owns argument
+//! parsing ([`build_clap_app`]), configuration assembly ([`ConfigTemplate`]),
+//! wallet startup, the interactive REPL, and single-command dispatch.
+//!
+//! The binary entry point (`main.rs`) is intentionally thin: it handles
+//! process-level concerns (tracing, crypto-provider installation, error
+//! reporting) and delegates all wallet logic here via [`run_cli`].
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -307,7 +314,11 @@ struct CommandChannel {
     receiver: Receiver<String>,
 }
 
-/// TODO: Add Doc Comment Here!
+/// Spawns a background thread that listens for `(command, args)` messages,
+/// executes each command against the [`LightClient`], and sends the
+/// string response back through the returned [`CommandChannel`].
+///
+/// The loop exits when it receives a `"quit"` or `"exit"` command.
 pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
@@ -392,7 +403,11 @@ fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
     CommunicationMode::Online
 }
 
-/// TODO: Add Doc Comment Here!
+/// All CLI-derived configuration needed to start a wallet session.
+///
+/// Built by [`ConfigTemplate::fill`] from parsed [`clap::ArgMatches`],
+/// then consumed by [`build_zingo_config`] and [`startup`] to create
+/// the [`LightClient`] and command channel.
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
