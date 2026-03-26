@@ -16,7 +16,7 @@ use zingolib_testutils::scenarios::custom_clients_default;
 use zingolib_testutils::scenarios::network_combo::{DefaultIndexer, DefaultValidator};
 
 /// includes utilities for connecting to zcashd regtest
-pub struct LibtonodeEnvironment {
+pub struct RegtestEnvironment {
     /// Local network
     pub local_net: LocalNet<DefaultValidator, DefaultIndexer>,
     /// Client builder
@@ -25,12 +25,12 @@ pub struct LibtonodeEnvironment {
 
 /// known issues include --slow
 /// these tests cannot portray the full range of network weather.
-impl ConductChain for LibtonodeEnvironment {
+impl ConductChain for RegtestEnvironment {
     async fn setup() -> Self {
         timestamped_test_log("starting mock libtonode network");
         let (local_net, client_builder) = custom_clients_default().await;
 
-        LibtonodeEnvironment {
+        RegtestEnvironment {
             local_net,
             client_builder,
         }
