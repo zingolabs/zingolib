@@ -50,6 +50,56 @@ where
     WalletError(E),
 }
 
+impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
+    /// Returns `true` if this error is likely transient and retrying sync
+    /// (possibly against a different server) may succeed.
+    ///
+    /// Server errors from failed gRPC requests and mempool stream failures
+    /// are retryable. Configuration errors, wallet corruption, and data
+    /// integrity failures are not.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            // Network/server issues — retry may help, especially with a different server.
+            SyncError::ServerError(e) => e.is_retryable(),
+            SyncError::MempoolError(_) => true,
+
+            // Local or configuration errors — retrying won't help.
+            SyncError::ScanError(_)
+            | SyncError::SyncModeError(_)
+            | SyncError::ChainError(..)
+            | SyncError::BirthdayBelowSapling(..)
+            | SyncError::ShardTreeError(_)
+            | SyncError::TruncationError(..)
+            | SyncError::TransparentAddressDerivationError(_)
+            | SyncError::WalletError(_) => false,
+        }
+    }
+}
+
+impl ServerError {
+    /// Returns `true` if this server error is likely transient.
+    ///
+    /// gRPC request failures (timeouts, connection drops) are retryable.
+    /// Invalid data from the server suggests a bad server that should be
+    /// avoided rather than retried.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            // Transport-level failure — retry with same or different server.
+            ServerError::RequestFailed(_) => true,
+            // Internal channel issue — retry may help after restart.
+            ServerError::FetcherDropped => true,
+
+            // Bad data from server — retrying the same server won't help.
+            // A different server might, but that's a failover decision, not a retry.
+            ServerError::InvalidFrontier(_)
+            | ServerError::InvalidTransaction(_)
+            | ServerError::InvalidSubtreeRoot
+            | ServerError::ChainVerificationError
+            | ServerError::GenesisBlockOnly => false,
+        }
+    }
+}
+
 /// Sync status errors.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncStatusError<E>
@@ -212,4 +262,111 @@ pub enum SyncModeError {
     /// Sync is not paused.
     #[error("sync is not paused")]
     SyncNotPaused,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Use `String` as the wallet error type for testing.
+    type TestSyncError = SyncError<String>;
+
+    mod retryable {
+        use super::*;
+
+        mod server_error {
+            use super::*;
+
+            #[test]
+            fn request_failed() {
+                let e = ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout"));
+                assert!(e.is_retryable());
+            }
+
+            #[test]
+            fn fetcher_dropped() {
+                assert!(ServerError::FetcherDropped.is_retryable());
+            }
+        }
+
+        mod sync_error {
+            use super::*;
+
+            #[test]
+            fn server_error() {
+                let e: TestSyncError =
+                    ServerError::RequestFailed(tonic::Status::deadline_exceeded("timeout")).into();
+                assert!(e.is_retryable());
+            }
+
+            #[test]
+            fn mempool_error() {
+                let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
+                assert!(e.is_retryable());
+            }
+        }
+    }
+
+    mod not_retryable {
+        use super::*;
+
+        mod server_error {
+            use super::*;
+
+            #[test]
+            fn invalid_frontier() {
+                let e = ServerError::InvalidFrontier(std::io::Error::other("bad frontier"));
+                assert!(!e.is_retryable());
+            }
+
+            #[test]
+            fn invalid_transaction() {
+                let e = ServerError::InvalidTransaction(std::io::Error::other("bad tx"));
+                assert!(!e.is_retryable());
+            }
+
+            #[test]
+            fn invalid_subtree_root() {
+                assert!(!ServerError::InvalidSubtreeRoot.is_retryable());
+            }
+
+            #[test]
+            fn chain_verification_error() {
+                assert!(!ServerError::ChainVerificationError.is_retryable());
+            }
+
+            #[test]
+            fn genesis_block_only() {
+                assert!(!ServerError::GenesisBlockOnly.is_retryable());
+            }
+        }
+
+        mod sync_error {
+            use super::*;
+
+            #[test]
+            fn sync_mode_error() {
+                let e: TestSyncError = SyncModeError::SyncAlreadyRunning.into();
+                assert!(!e.is_retryable());
+            }
+
+            #[test]
+            fn chain_error() {
+                let e: TestSyncError = SyncError::ChainError(100, 50, 50);
+                assert!(!e.is_retryable());
+            }
+
+            #[test]
+            fn birthday_below_sapling() {
+                let e: TestSyncError = SyncError::BirthdayBelowSapling(100, 419200);
+                assert!(!e.is_retryable());
+            }
+
+            #[test]
+            fn wallet_error() {
+                let e: TestSyncError = SyncError::WalletError("db locked".to_string());
+                assert!(!e.is_retryable());
+            }
+        }
+    }
 }
