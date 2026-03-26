@@ -124,22 +124,6 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
         Err(_) => Err("Unexpected failure to parse String!!".to_string()),
     }
 }
-#[cfg(target_os = "linux")]
-/// This function is only tested against Linux.
-fn report_permission_error() {
-    let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
-    let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
-    let current_executable =
-        std::env::current_exe().expect("Unexpected error reporting executable path!");
-    eprintln!("USER: {user}");
-    eprintln!("HOME: {home}");
-    eprintln!("Executable: {}", current_executable.display());
-    if home == "/" {
-        eprintln!("User {user} must have permission to write to '{home}.zcash/' .");
-    } else {
-        eprintln!("User {user} must have permission to write to '{home}/.zcash/' .");
-    }
-}
 
 /// Polls the sync task and returns a string to embed in the interactive prompt.
 ///
@@ -591,28 +575,10 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     // Start the command loop
     Ok(command_loop(lightclient))
 }
-fn start_cli_service(cli_config: &ConfigTemplate) -> CommandChannel {
-    match startup(cli_config) {
-        Ok(ch) => ch,
-        Err(e) => {
-            let emsg = format!("Error during startup:\n{e}\n");
-            eprintln!("{emsg}");
-            error!("{emsg}");
-            #[cfg(target_os = "linux")]
-            // TODO: Test report_permission_error() for macos and change to target_family = "unix"
-            if let Some(13) = e.raw_os_error() {
-                report_permission_error();
-            }
-            panic!();
-        }
-    }
-}
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
-    let ch = start_cli_service(cli_config);
+fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
+    let ch = startup(cli_config)?;
     match &cli_config.mode {
-        ModeOfOperation::Interactive => {
-            start_interactive(ch);
-        }
+        ModeOfOperation::Interactive => start_interactive(ch),
         ModeOfOperation::Command { name, args } => {
             ch.transmitter.send((name.clone(), args.clone())).unwrap();
 
@@ -634,6 +600,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
             }
         }
     }
+    Ok(())
 }
 
 /// Returns help text if the parsed arguments indicate the `help` command,
@@ -655,14 +622,13 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 ///
 /// This function never calls `std::process::exit` or reads `std::env::args`.
 /// The caller (the binary entry point) is responsible for parsing arguments,
-/// handling the help short-circuit, and process-level setup.
-pub fn run_cli(matches: clap::ArgMatches) {
+/// handling the help short-circuit, process-level setup, and error reporting.
+pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<()> {
     let mode = get_mode_of_operation(&matches);
     let communication_mode = get_communication_mode(&matches);
-    match ConfigTemplate::fill(mode, communication_mode, matches) {
-        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {e:?}"),
-    }
+    let cli_config =
+        ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
+    dispatch_command_or_start_interactive(&cli_config)
 }
 
 #[cfg(test)]
