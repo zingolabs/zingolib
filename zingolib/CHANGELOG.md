@@ -118,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `create_from_wallet` constructor: no longer needed as now covered by `new` due to config rework
   - `create_from_wallet_path` constructor: no longer needed as now covered by `new` due to config rework
 - `testutils::build_fvk_client`
+- `get_base_address_macro`: fully replaced with `get_base_address` function
 
 ## [3.0.0] - 2026-03-02
 
