@@ -290,6 +290,47 @@ mod communication_mode {
     }
 }
 
+mod is_interactive {
+    use super::*;
+    use crate::is_interactive;
+
+    #[test]
+    fn no_command_is_interactive() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert!(is_interactive(&matches));
+    }
+
+    #[test]
+    fn with_command_is_not_interactive() {
+        let matches = parse(&[examples::BIN_NAME, "balance"]);
+        assert!(!is_interactive(&matches));
+    }
+
+    #[test]
+    fn flags_without_command_is_interactive() {
+        let matches = parse(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        assert!(is_interactive(&matches));
+    }
+}
+
+mod log_file_path {
+    use super::*;
+    use crate::log_file_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn default_path() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert_eq!(log_file_path(&matches), PathBuf::from(".zingo-cli/cli.log"));
+    }
+
+    #[test]
+    fn custom_path() {
+        let matches = parse(&[examples::BIN_NAME, "--log-file", "/tmp/my.log"]);
+        assert_eq!(log_file_path(&matches), PathBuf::from("/tmp/my.log"));
+    }
+}
+
 mod sync {
     use crate::poll_sync_for_prompt_indicator;
     use std::cell::RefCell;

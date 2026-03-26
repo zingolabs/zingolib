@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
 /// Parses CLI arguments and handles the help short-circuit.
@@ -15,6 +16,44 @@ fn parse_args_or_exit_for_help() -> clap::ArgMatches {
         std::process::exit(0x0100);
     }
     matches
+}
+
+/// Initializes tracing based on the mode of operation.
+///
+/// In interactive mode, logs are written to a file so error-level tracing
+/// output does not pollute the terminal. In command mode, logs go to stderr.
+fn init_tracing(matches: &clap::ArgMatches) {
+    let env_filter = EnvFilter::from_default_env();
+
+    if zingo_cli::is_interactive(matches) {
+        let log_path = zingo_cli::log_file_path(matches);
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_env_filter(env_filter)
+                    .with_writer(Mutex::new(file))
+                    .with_ansi(false)
+                    .init();
+                return;
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not open log file {}: {e}. Logging to stderr.",
+                    log_path.display()
+                );
+            }
+        }
+    }
+
+    // Command mode or file-creation fallback: log to stderr
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 }
 
 #[cfg(target_os = "linux")]
@@ -43,14 +82,12 @@ fn handle_error(e: std::io::Error) {
 }
 
 pub fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
     // install default crypto provider (ring)
     if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
         eprintln!("Error installing crypto provider: {e:?}");
     }
     let matches = parse_args_or_exit_for_help();
+    init_tracing(&matches);
     if let Err(e) = zingo_cli::run_cli(matches) {
         handle_error(e);
     }

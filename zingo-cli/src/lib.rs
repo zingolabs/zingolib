@@ -75,6 +75,10 @@ pub fn build_clap_app() -> clap::Command {
                 .long("tor")
                 .help("Enable tor for price fetching")
                 .action(clap::ArgAction::SetTrue) )
+            .arg(Arg::new("log-file")
+                .long("log-file")
+                .value_name("PATH")
+                .help("Path to the log file for interactive mode. Defaults to .zingo-cli/cli.log"))
             .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -601,6 +605,29 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io
         }
     }
     Ok(())
+}
+
+/// Returns `true` if the CLI will start the interactive REPL
+/// (i.e. no COMMAND was given).
+///
+/// This is a thin wrapper around [`ModeOfOperation`] so that the binary
+/// entry point can query the mode without exposing the enum publicly.
+pub fn is_interactive(matches: &clap::ArgMatches) -> bool {
+    matches!(get_mode_of_operation(matches), ModeOfOperation::Interactive)
+}
+
+/// Default log file directory.
+const LOG_DIR: &str = ".zingo-cli";
+/// Default log file name within the log directory.
+const LOG_FILE: &str = "cli.log";
+
+/// Returns the log file path from `--log-file` or the default `.zingo-cli/cli.log`.
+pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
+    if let Some(path) = matches.get_one::<String>("log-file") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(LOG_DIR).join(LOG_FILE)
+    }
 }
 
 /// Returns help text if the parsed arguments indicate the `help` command,
