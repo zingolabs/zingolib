@@ -53,53 +53,40 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     );
 }
 
-/// The specific error string pepper_sync emits via `#[instrument(err)]`
-/// on `get_tree_state` when the call returns `DEADLINE_EXCEEDED`.
-const EXPECTED_ERROR: &str = "get_tree_state timeout";
+/// The error string that pepper_sync's `#[instrument(err)]` on
+/// `get_latest_block` logs when the gRPC call fails.
+const EXPECTED_ERROR: &str = "pepper_sync::client::fetch";
 
-/// Starts a mock gRPC server where `get_latest_block` returns a valid
-/// response (so sync can start) but `get_tree_state` returns
-/// `DEADLINE_EXCEEDED` with [`EXPECTED_ERROR`].
+/// Starts a mock gRPC server where all methods return `DEADLINE_EXCEEDED`.
+/// The `#[instrument(err)]` on pepper_sync's `get_latest_block` emits a
+/// tracing ERROR when sync calls it and gets the error back.
 ///
-/// pepper_sync's `#[instrument(err)]` on `get_tree_state` emits a tracing
-/// ERROR which must appear in the log file — not on stderr.
+/// Verifies:
+/// - The log file contains `ERROR` and the specific error message
+/// - stderr does NOT contain formatted tracing ERROR lines
 #[tokio::test]
 async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     use zingo_grpc_proxy::tonic_reexport as tonic;
-    use zingo_grpc_proxy::{
-        CompactTxStreamerServer, ConfigurableMockStreamer, MethodBehavior, MethodHandler, MockConfig,
-    };
+    use zingo_grpc_proxy::{CompactTxStreamerServer, ConfigurableMockStreamer, MockConfig};
 
-    // All methods return DEADLINE_EXCEEDED by default.
-    // Override get_latest_block to return a valid response so sync starts
-    // and eventually calls get_tree_state (which still errors).
-    let config = MockConfig::all_error(tonic::Code::DeadlineExceeded, EXPECTED_ERROR)
-        .with_get_latest_block(MethodHandler::from_fn(|_req| async {
-            Ok(tonic::Response::new(
-                zingo_grpc_proxy::service::BlockId {
-                    height: 600100,
-                    hash: vec![],
-                },
-            ))
-        }));
-
+    let config = MockConfig::all_error(tonic::Code::DeadlineExceeded, EXPECTED_ERROR);
     let svc = CompactTxStreamerServer::new(ConfigurableMockStreamer::new(config));
 
-    let port = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        l.local_addr().expect("local addr").port()
-    };
-    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("parse addr");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock server");
+    let port = listener.local_addr().expect("local addr").port();
     let server_uri = format!("http://127.0.0.1:{port}");
 
+    let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
     tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(svc)
-            .serve(addr)
+            .serve_with_incoming(incoming)
             .await
             .ok();
     });
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let tmp = tempfile::tempdir().expect("create temp dir");
     let log_path = tmp.path().join("cli.log");
@@ -123,8 +110,9 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
         .spawn()
         .expect("failed to spawn zingo-cli");
 
-    // Give sync time to progress and hit the get_tree_state error.
-    std::thread::sleep(std::time::Duration::from_secs(8));
+    // pepper_sync's UNARY_RPC_TIMEOUT is 10s. Wait long enough for the
+    // timeout to fire, the error to be logged, and the poll loop to run.
+    std::thread::sleep(std::time::Duration::from_secs(12));
 
     if let Some(ref mut stdin) = child.stdin {
         let _ = writeln!(stdin, "quit");

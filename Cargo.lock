@@ -9301,6 +9301,7 @@ dependencies = [
  "shellwords",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing-subscriber",
  "zcash_address",
