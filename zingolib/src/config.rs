@@ -54,8 +54,8 @@ impl TryFrom<&str> for ChainType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "mainnet" => Ok(ChainType::Mainnet),
-            "testnet" => Ok(ChainType::Testnet),
+            "mainnet" | "main" => Ok(ChainType::Mainnet),
+            "testnet" | "test" => Ok(ChainType::Testnet),
             "regtest" => Ok(ChainType::Regtest(ActivationHeights::default())),
             _ => Err(InvalidChainType(value.to_string())),
         }
