@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 
 mod commands;
+mod examples;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -24,10 +25,10 @@ use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
 
 use crate::commands::{RT, ShortCircuitedCommand};
 
-pub mod version;
+pub(crate) mod version;
 
-/// TODO: Add Doc Comment Here!
-pub fn build_clap_app() -> clap::ArgMatches {
+/// Builds the clap `Command` definition for the CLI.
+pub fn build_clap_app() -> clap::Command {
     clap::Command::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
@@ -84,7 +85,7 @@ pub fn build_clap_app() -> clap::ArgMatches {
                 .num_args(1..)
                 .index(2)
                 .action(clap::ArgAction::Append)
-        ).get_matches()
+        )
 }
 
 /// Custom function to parse a string into an `http::Uri`
@@ -191,18 +192,15 @@ fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> Str
 /// TODO: `start_interactive` does not explicitly reference a wallet, do we need
 /// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
 /// the CLI?
-fn start_interactive(
-    command_transmitter: Sender<(String, Vec<String>)>,
-    resp_receiver: Receiver<String>,
-) {
+fn start_interactive(ch: CommandChannel) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
     log::debug!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
-        command_transmitter.send((cmd.clone(), args)).unwrap();
-        match resp_receiver.recv() {
+        ch.transmitter.send((cmd.clone(), args)).unwrap();
+        match ch.receiver.recv() {
             Ok(s) => s,
             Err(e) => {
                 let e = format!("Error executing command {cmd}: {e}");
@@ -287,10 +285,14 @@ fn start_interactive(
     }
 }
 
+/// A paired command/response channel for communicating with the background command loop.
+struct CommandChannel {
+    transmitter: Sender<(String, Vec<String>)>,
+    receiver: Receiver<String>,
+}
+
 /// TODO: Add Doc Comment Here!
-pub fn command_loop(
-    mut lightclient: LightClient,
-) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+pub(crate) fn command_loop(mut lightclient: LightClient) -> CommandChannel {
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
@@ -308,12 +310,53 @@ pub fn command_loop(
         }
     });
 
-    (command_transmitter, resp_receiver)
+    CommandChannel {
+        transmitter: command_transmitter,
+        receiver: resp_receiver,
+    }
+}
+
+/// The CLI operates in one of two mutually exclusive modes,
+/// determined at the earliest possible moment from the parsed CLI arguments.
+#[derive(Debug, PartialEq)]
+enum ModeOfOperation {
+    /// Start the interactive REPL.
+    Interactive,
+    /// Execute a single command and exit.
+    Command {
+        /// The command name (e.g. "balance", "send").
+        name: String,
+        /// Additional positional arguments for the command.
+        args: Vec<String>,
+    },
+}
+
+/// Determines the mode of operation from parsed CLI arguments.
+///
+/// Returns [`ModeOfOperation::Command`] if a command is given, or
+/// [`ModeOfOperation::Interactive`] when no command is given.
+///
+/// The `help` command is handled separately before this function is called,
+/// so it will never appear as a [`ModeOfOperation::Command`].
+fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
+    if let Some(cmd_name) = matches.get_one::<String>("COMMAND") {
+        let args = matches
+            .get_many::<String>("extra_args")
+            .map(|v| v.cloned().collect())
+            .unwrap_or_default();
+        ModeOfOperation::Command {
+            name: cmd_name.clone(),
+            args,
+        }
+    } else {
+        ModeOfOperation::Interactive
+    }
 }
 
 /// TODO: Add Doc Comment Here!
-pub struct ConfigTemplate {
-    params: Vec<String>,
+#[derive(Debug)]
+pub(crate) struct ConfigTemplate {
+    mode: ModeOfOperation,
     server: http::Uri,
     seed: Option<String>,
     ufvk: Option<String>,
@@ -321,27 +364,13 @@ pub struct ConfigTemplate {
     data_dir: PathBuf,
     sync: bool,
     waitsync: bool,
-    command: Option<String>,
     chaintype: ChainType,
     tor_enabled: bool,
 }
 
 impl ConfigTemplate {
-    fn fill(matches: clap::ArgMatches) -> Result<Self, String> {
+    fn fill(mode: ModeOfOperation, matches: clap::ArgMatches) -> Result<Self, String> {
         let tor_enabled = matches.get_flag("tor");
-        let params = if let Some(vals) = matches.get_many::<String>("extra_args") {
-            vals.cloned().collect()
-        } else {
-            vec![]
-        };
-        let command = if let Some(refstr) = matches.get_one::<String>("COMMAND") {
-            if refstr == &"help".to_string() {
-                short_circuit_on_help(params.clone());
-            }
-            Some(refstr.to_string())
-        } else {
-            None
-        };
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
         if seed.is_some() && ufvk.is_some() {
@@ -398,7 +427,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let sync = !matches.get_flag("nosync");
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
-            params,
+            mode,
             server,
             seed,
             ufvk,
@@ -406,26 +435,21 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             data_dir,
             sync,
             waitsync,
-            command,
             chaintype,
             tor_enabled,
         })
     }
 }
 
-/// A (command, args) request
-pub type CommandRequest = (String, Vec<String>);
-
-/// Command responses are strings
-pub type CommandResponse = String;
-
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
-pub fn startup(
-    filled_template: &ConfigTemplate,
-) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    let config = ZingoConfig::builder()
+/// Builds a [`ZingoConfig`] from the filled config template.
+///
+/// This is a pure function — no I/O or side effects — and is the
+/// first testable seam inside the startup sequence.
+fn build_zingo_config(filled_template: &ConfigTemplate) -> ZingoConfig {
+    ZingoConfig::builder()
         .set_indexer_uri(filled_template.server.clone())
         .set_chain_type(filled_template.chaintype)
         .set_wallet_dir(filled_template.data_dir.clone())
@@ -438,7 +462,11 @@ pub fn startup(
         })
         .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
         .set_wallet_name("".to_string())
-        .build();
+        .build()
+}
+
+pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
+    let config = build_zingo_config(filled_template);
 
     let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
         let wallet = LightWallet::new(
@@ -494,7 +522,7 @@ pub fn startup(
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
     };
 
-    if filled_template.command.is_none() {
+    if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
@@ -530,15 +558,11 @@ pub fn startup(
     });
 
     // Start the command loop
-    let (command_transmitter, resp_receiver) = command_loop(lightclient);
-
-    Ok((command_transmitter, resp_receiver))
+    Ok(command_loop(lightclient))
 }
-fn start_cli_service(
-    cli_config: &ConfigTemplate,
-) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+fn start_cli_service(cli_config: &ConfigTemplate) -> CommandChannel {
     match startup(cli_config) {
-        Ok(c) => c,
+        Ok(ch) => ch,
         Err(e) => {
             let emsg = format!("Error during startup:\n{e}\n");
             eprintln!("{emsg}");
@@ -553,180 +577,60 @@ fn start_cli_service(
     }
 }
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
-    let (command_transmitter, resp_receiver) = start_cli_service(cli_config);
-    if cli_config.command.is_none() {
-        start_interactive(command_transmitter, resp_receiver);
-    } else {
-        command_transmitter
-            .send((
-                cli_config.command.clone().unwrap(),
-                cli_config
-                    .params
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>(),
-            ))
-            .unwrap();
-
-        match resp_receiver.recv() {
-            Ok(s) => println!("{s}"),
-            Err(e) => {
-                let e = format!(
-                    "Error executing command {}: {}",
-                    cli_config.command.clone().unwrap(),
-                    e
-                );
-                eprintln!("{e}");
-                error!("{e}");
-            }
+    let ch = start_cli_service(cli_config);
+    match &cli_config.mode {
+        ModeOfOperation::Interactive => {
+            start_interactive(ch);
         }
+        ModeOfOperation::Command { name, args } => {
+            ch.transmitter.send((name.clone(), args.clone())).unwrap();
 
-        command_transmitter
-            .send(("quit".to_string(), vec![]))
-            .unwrap();
-        match resp_receiver.recv() {
-            Ok(s) => println!("{s}"),
-            Err(e) => {
-                eprintln!("{e}");
+            match ch.receiver.recv() {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    let e = format!("Error executing command {name}: {e}");
+                    eprintln!("{e}");
+                    error!("{e}");
+                }
+            }
+
+            ch.transmitter.send(("quit".to_string(), vec![])).unwrap();
+            match ch.receiver.recv() {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                }
             }
         }
     }
 }
 
-/// TODO: Add Doc Comment Here!
-pub fn run_cli() {
-    // Initialize logging
-    match ConfigTemplate::fill(build_clap_app()) {
+/// Returns help text if the parsed arguments indicate the `help` command,
+/// or `None` for all other modes. The caller is responsible for printing
+/// the text and exiting the process.
+pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
+    if matches.get_one::<String>("COMMAND").map(String::as_str) == Some("help") {
+        let args: Vec<String> = matches
+            .get_many::<String>("extra_args")
+            .map(|v| v.cloned().collect())
+            .unwrap_or_default();
+        Some(commands::HelpCommand::exec_without_lc(args))
+    } else {
+        None
+    }
+}
+
+/// Runs the CLI from pre-parsed arguments.
+///
+/// This function never calls `std::process::exit` or reads `std::env::args`.
+/// The caller (the binary entry point) is responsible for parsing arguments,
+/// handling the help short-circuit, and process-level setup.
+pub fn run_cli(matches: clap::ArgMatches) {
+    match ConfigTemplate::fill(get_mode_of_operation(&matches), matches) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
         Err(e) => eprintln!("Error filling config template: {e:?}"),
     }
 }
 
-fn short_circuit_on_help(params: Vec<String>) {
-    for h in commands::HelpCommand::exec_without_lc(params).lines() {
-        println!("{h}");
-    }
-    std::process::exit(0x0100);
-}
-
 #[cfg(test)]
-mod tests {
-    use super::poll_sync_for_prompt_indicator;
-    use std::cell::RefCell;
-
-    #[test]
-    fn sync_poll_error() {
-        let send = |_cmd: String, _args: Vec<String>| "Error: connection lost".to_string();
-        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Sync error]");
-    }
-
-    #[test]
-    fn sync_poll_completed() {
-        let send = |_cmd: String, _args: Vec<String>| {
-            "Sync completed succesfully: 1000 blocks".to_string()
-        };
-        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
-    }
-
-    #[test]
-    fn sync_in_progress_with_valid_status() {
-        let call_count = RefCell::new(0);
-        let send = |_cmd: String, args: Vec<String>| {
-            let n = {
-                let mut c = call_count.borrow_mut();
-                *c += 1;
-                *c
-            };
-            match n {
-                1 => {
-                    assert_eq!(args, vec!["poll"]);
-                    "Sync task is not complete.".to_string()
-                }
-                2 => {
-                    assert_eq!(args, vec!["status"]);
-                    r#"{"percentage_total_outputs_scanned": 45.2}"#.to_string()
-                }
-                _ => panic!("unexpected call"),
-            }
-        };
-        assert_eq!(
-            poll_sync_for_prompt_indicator(&send),
-            " [Syncing 45.2% complete]"
-        );
-    }
-
-    #[test]
-    fn sync_in_progress_with_unparseable_status() {
-        let call_count = RefCell::new(0);
-        let send = |_cmd: String, args: Vec<String>| {
-            let n = {
-                let mut c = call_count.borrow_mut();
-                *c += 1;
-                *c
-            };
-            match n {
-                1 => {
-                    assert_eq!(args, vec!["poll"]);
-                    "Sync task is not complete.".to_string()
-                }
-                2 => {
-                    assert_eq!(args, vec!["status"]);
-                    "not json".to_string()
-                }
-                _ => panic!("unexpected call"),
-            }
-        };
-        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Syncing]");
-    }
-
-    #[test]
-    fn sync_not_launched_not_synced() {
-        let call_count = RefCell::new(0);
-        let send = |_cmd: String, args: Vec<String>| {
-            let n = {
-                let mut c = call_count.borrow_mut();
-                *c += 1;
-                *c
-            };
-            match n {
-                1 => {
-                    assert_eq!(args, vec!["poll"]);
-                    "Sync task has not been launched.".to_string()
-                }
-                2 => {
-                    assert_eq!(args, vec!["status"]);
-                    r#"{"percentage_total_outputs_scanned": 0.0}"#.to_string()
-                }
-                _ => panic!("unexpected call"),
-            }
-        };
-        assert_eq!(
-            poll_sync_for_prompt_indicator(&send),
-            " [Not syncing 0.0% complete]"
-        );
-    }
-
-    #[test]
-    fn sync_not_launched_fully_synced() {
-        let call_count = RefCell::new(0);
-        let send = |_cmd: String, args: Vec<String>| {
-            let n = {
-                let mut c = call_count.borrow_mut();
-                *c += 1;
-                *c
-            };
-            match n {
-                1 => {
-                    assert_eq!(args, vec!["poll"]);
-                    "Sync task has not been launched.".to_string()
-                }
-                2 => {
-                    assert_eq!(args, vec!["status"]);
-                    r#"{"percentage_total_outputs_scanned": 100.0}"#.to_string()
-                }
-                _ => panic!("unexpected call"),
-            }
-        };
-        assert_eq!(poll_sync_for_prompt_indicator(&send), " [Synced]");
-    }
-}
+mod tests;
