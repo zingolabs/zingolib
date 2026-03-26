@@ -6,6 +6,7 @@
 
 mod commands;
 mod examples;
+mod most_up_indexer_uris;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
