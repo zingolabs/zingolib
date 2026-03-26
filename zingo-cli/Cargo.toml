@@ -29,3 +29,6 @@ zip32 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros"] }
+tonic = { workspace = true }
+zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }
