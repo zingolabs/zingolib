@@ -9286,6 +9286,7 @@ dependencies = [
  "rustls 0.23.37",
  "rustyline",
  "shellwords",
+ "tempfile",
  "tokio",
  "tracing-subscriber",
  "zcash_address",
