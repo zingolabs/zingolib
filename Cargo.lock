@@ -5299,7 +5299,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.9",
+ "rustls-webpki 0.103.10",
  "subtle",
  "zeroize",
 ]
@@ -5338,9 +5338,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.9"
+version = "0.103.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7df23109aa6c1567d1c575b9952556388da57401e4ace1d15f79eedad0d8f53"
+checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -7384,7 +7384,7 @@ dependencies = [
  "paste",
  "pin-project",
  "rustls-pki-types",
- "rustls-webpki 0.103.9",
+ "rustls-webpki 0.103.10",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -8746,7 +8746,7 @@ dependencies = [
 [[package]]
 name = "zcash_local_net"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f#69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc#5bcbf53d680542c247d01585c12085c1be831adc"
 dependencies = [
  "getset",
  "hex",
@@ -8912,9 +8912,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "6.0.0"
+version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fcb0012bac23be72f1827ae14bccb2028bc7c9e2020e887a5f92232a42973d0"
+checksum = "0eebcd0ad0160d7bbc7f8ed26e6d00e257adf17c6d136628ea8ae979c027eced"
 dependencies = [
  "bech32",
  "bitflags 2.11.0",
@@ -8976,9 +8976,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-consensus"
-version = "5.0.0"
+version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26a2cded2bfdd3019e7f20ab705061c7013128db3dab0956587471ed95a61c11"
+checksum = "c3f9fb46b7fb3d7065fdf6d36f11cd48aa0fd7c0efc5294311dc756d06275348"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -9069,9 +9069,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-rpc"
-version = "6.0.0"
+version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba8b0d44ea2372962f61552dce40b8261ad6c48dfecc50bea572f930b28a3b28"
+checksum = "5465db3b35a3c894567f32036c84d6ff1aacdfa300f87ddfa237d29ac9f120df"
 dependencies = [
  "base64",
  "chrono",
@@ -9376,7 +9376,7 @@ checksum = "b7ed7ebc771980a59ec5f208d5dcf40c010dce2b5d493164c9d2f7baa73e9284"
 [[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
-source = "git+https://github.com/zingolabs/infrastructure.git?rev=69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f#69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f"
+source = "git+https://github.com/zingolabs/infrastructure.git?rev=5bcbf53d680542c247d01585c12085c1be831adc#5bcbf53d680542c247d01585c12085c1be831adc"
 dependencies = [
  "bip0039 0.12.0",
 ]
