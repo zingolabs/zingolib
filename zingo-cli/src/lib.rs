@@ -374,6 +374,11 @@ pub(crate) struct ConfigTemplate {
     #[allow(dead_code)]
     communication_mode: CommunicationMode,
     server: http::Uri,
+    /// All servers that responded to `get_info()` during dynamic selection,
+    /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
+    /// Will be used for automatic failover when sync fails.
+    #[allow(dead_code)]
+    ranked_servers: Vec<server_select::RankedServer>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -426,18 +431,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = if let Some(explicit) = matches.get_one::<http::Uri>("server") {
-            zingolib::config::construct_lightwalletd_uri(Some(explicit.to_string()))
-        } else {
-            // No --server specified: probe curated indexers and pick the fastest.
-            let ranked = server_select::select_servers();
-            if let Some(best) = ranked.into_iter().next() {
-                best.uri
-            } else {
-                // Fallback if nothing responded.
-                zingolib::config::construct_lightwalletd_uri(None)
-            }
-        };
+        let (server, ranked_servers) = server_select::resolve_server(&matches);
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -457,6 +451,7 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
             mode,
             communication_mode,
             server,
+            ranked_servers,
             seed,
             ufvk,
             birthday,

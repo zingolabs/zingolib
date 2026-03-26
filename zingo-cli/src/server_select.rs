@@ -74,3 +74,25 @@ pub(crate) fn select_servers() -> Vec<RankedServer> {
 
     ranked
 }
+
+/// Resolves the indexer server from CLI arguments.
+///
+/// If `--server` was provided explicitly, uses that URI and returns an
+/// empty ranked list. Otherwise, probes curated indexers with `get_info()`
+/// and returns the fastest responder along with the full ranked list.
+pub(crate) fn resolve_server(matches: &clap::ArgMatches) -> (http::Uri, Vec<RankedServer>) {
+    if let Some(explicit) = matches.get_one::<http::Uri>("server") {
+        (
+            zingolib::config::construct_lightwalletd_uri(Some(explicit.to_string())),
+            vec![],
+        )
+    } else {
+        let ranked = select_servers();
+        let server = if let Some(best) = ranked.first() {
+            best.uri.clone()
+        } else {
+            zingolib::config::construct_lightwalletd_uri(None)
+        };
+        (server, ranked)
+    }
+}
