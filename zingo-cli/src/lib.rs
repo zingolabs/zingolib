@@ -398,7 +398,16 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         };
 
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
-            PathBuf::from(dir.clone())
+            let path = PathBuf::from(dir.clone());
+            if path.is_file() {
+                return Err(format!(
+                    "--data-dir must be a directory, not a file.\n\
+                     You provided: {dir}\n\
+                     Hint: use the parent directory instead, e.g. --data-dir {}",
+                    path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".into())
+                ));
+            }
+            path
         } else {
             PathBuf::from("wallets")
         };

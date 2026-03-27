@@ -500,6 +500,14 @@ mod config_template {
             let err = fill(&[examples::BIN_NAME, "--server", "https://example.com"]).unwrap_err();
             assert!(err.contains("scheme"));
         }
+
+        #[test]
+        fn data_dir_is_a_file() {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let file_path = tmp.path().to_str().unwrap();
+            let err = fill(&[examples::BIN_NAME, "--data-dir", file_path]).unwrap_err();
+            assert!(err.contains("must be a directory, not a file"));
+        }
     }
 
     mod zingo_config {
