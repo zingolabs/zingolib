@@ -129,7 +129,10 @@ pub(crate) mod conduct_chain {
             // trees
             let trees = zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
                 .unwrap()
-                .get_trees(height_before)
+                .get_tree_state(zingo_netutils::lightwallet_protocol::BlockId {
+                    height: height_before,
+                    hash: vec![],
+                })
                 .await
                 .unwrap();
             let mut sapling_tree: sapling_crypto::CommitmentTree =
