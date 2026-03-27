@@ -122,6 +122,7 @@ pub async fn update_tree_states_for_transaction(
     height: u64,
 ) -> TreeState {
     let trees = zingo_netutils::GrpcIndexer::new(server_id.clone())
+        .unwrap()
         .get_trees(height - 1)
         .await
         .unwrap();

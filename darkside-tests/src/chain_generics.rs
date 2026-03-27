@@ -108,6 +108,7 @@ pub(crate) mod conduct_chain {
 
         async fn increase_chain_height(&mut self) {
             let height_before = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap())
+                .unwrap()
                 .get_latest_block()
                 .await
                 .unwrap()
@@ -127,6 +128,7 @@ pub(crate) mod conduct_chain {
 
             // trees
             let trees = zingo_netutils::GrpcIndexer::new(self.client_builder.server_id.clone())
+                .unwrap()
                 .get_trees(height_before)
                 .await
                 .unwrap();
