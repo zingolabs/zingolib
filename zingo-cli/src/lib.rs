@@ -603,6 +603,12 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
     }
 }
 
+/// Returns `true` if the CLI will start the interactive REPL
+/// (i.e. no COMMAND was given).
+pub fn is_interactive(matches: &clap::ArgMatches) -> bool {
+    matches!(get_mode_of_operation(matches), ModeOfOperation::Interactive)
+}
+
 /// Runs the CLI from pre-parsed arguments.
 ///
 /// This function never calls `std::process::exit` or reads `std::env::args`.
