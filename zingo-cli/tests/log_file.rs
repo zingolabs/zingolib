@@ -1,5 +1,32 @@
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
+
+/// Resolves the `zingo-cli` binary path.
+///
+/// First tries the compile-time path from `CARGO_BIN_EXE_zingo-cli`.
+/// If that doesn't exist (e.g. nextest archive on a different machine),
+/// falls back to locating it relative to the current test binary,
+/// which is in `target/debug/deps/` — the `zingo-cli` binary is in
+/// `target/debug/`.
+fn zingo_cli_binary() -> PathBuf {
+    let compile_time = PathBuf::from(env!("CARGO_BIN_EXE_zingo-cli"));
+    if compile_time.exists() {
+        return compile_time;
+    }
+    // Fallback: resolve relative to the test binary location.
+    let test_exe = std::env::current_exe().expect("current_exe");
+    let deps_dir = test_exe.parent().expect("deps dir");
+    let target_dir = deps_dir.parent().expect("target dir");
+    let candidate = target_dir.join("zingo-cli");
+    assert!(
+        candidate.exists(),
+        "Could not find zingo-cli binary at {} or {}",
+        compile_time.display(),
+        candidate.display()
+    );
+    candidate
+}
 
 /// Launches zingo-cli in interactive mode with a local-only wallet
 /// (seed + birthday, nosync) and verifies that the tracing subscriber
@@ -13,7 +40,7 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_zingo-cli"))
+    let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "info")
         .arg("--server")
         .arg("https://127.0.0.1:1")
@@ -92,7 +119,7 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
     let log_path = tmp.path().join("cli.log");
     let data_dir = tmp.path().join("wallets");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_zingo-cli"))
+    let mut child = Command::new(zingo_cli_binary())
         .env("RUST_LOG", "error")
         .arg("--server")
         .arg(&server_uri)
