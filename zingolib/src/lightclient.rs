@@ -203,6 +203,9 @@ impl LightClient {
     }
 
     /// Set indexer uri.
+    ///
+    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
+    /// `zingo-netutils` instead of `http::Uri`.
     pub fn set_indexer_uri(
         &mut self,
         server: http::Uri,
