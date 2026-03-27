@@ -5,8 +5,7 @@ use std::sync::atomic;
 use std::time::Duration;
 
 use futures::FutureExt;
-use pepper_sync::error::SyncError;
-use pepper_sync::error::SyncModeError;
+use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
 use pepper_sync::wallet::SyncMode;
 
 use crate::data::PollReport;
@@ -151,6 +150,26 @@ impl LightClient {
     pub async fn rescan_and_await(&mut self) -> Result<SyncResult, LightClientError> {
         self.rescan().await?;
         self.await_sync().await
+    }
+
+    /// Polls the sync task and, if it failed, returns the recommended
+    /// recovery action alongside the error description.
+    ///
+    /// This is the primary entry point for consumers (CLI, mobile, PC)
+    /// that need to decide whether to retry, switch servers, or give up
+    /// after a sync failure.
+    ///
+    /// Returns `None` if sync has not been launched, is still running,
+    /// or completed successfully.
+    pub fn poll_sync_recovery(&mut self) -> Option<(SyncRecoveryObservables, String)> {
+        match self.poll_sync() {
+            PollReport::Ready(Err(e)) => {
+                let action = e.recovery_recommendation();
+                let description = e.to_string();
+                Some((action, description))
+            }
+            _ => None,
+        }
     }
 }
 
