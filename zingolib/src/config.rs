@@ -375,7 +375,10 @@ impl ClientConfigBuilder {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type);
         let wallet_name = wallet_name_or_default(self.wallet_name);
         ClientConfig {
-            indexer_uri: self.indexer_uri.clone().unwrap_or_default(),
+            indexer_uri: self
+                .indexer_uri
+                .clone()
+                .unwrap_or_else(|| DEFAULT_INDEXER_URI.parse().expect("valid constant URI")),
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
