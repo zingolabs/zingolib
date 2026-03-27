@@ -108,6 +108,10 @@ impl LightClient {
     /// `overwrite` has no effect if a wallet is being read from file.
     #[allow(clippy::result_large_err)]
     pub fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
+        // GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
+        // install_default is idempotent: Ok(()) on first call, Err on subsequent (ignored).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
                 let buffer = BufReader::new(
