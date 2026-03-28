@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `error::SyncRecoveryObservables` enum with variants `MaybeRecoverableServer`,
+  `ServerUnavailable`, and `Abort` — classifies sync errors for consumer retry logic.
+- `error::SyncError::is_retryable()` — returns `true` for transient errors
+  (server timeouts, connection drops, mempool failures).
+- `error::SyncError::recovery_recommendation()` — maps any sync error to a
+  `SyncRecoveryObservables` without callers needing to match on error internals.
+- `error::ServerError::is_retryable()` — distinguishes transport failures from
+  invalid server data.
+- `error::ServerError::recovery_recommendation()` — server-level recovery classification.
 
 ### Changed
 

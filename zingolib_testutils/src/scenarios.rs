@@ -13,10 +13,7 @@
 //! build the scenario with the most common settings. This simplifies test writing in
 //! most cases by removing the need for configuration.
 
-use std::num::NonZeroU32;
 use std::path::PathBuf;
-
-use bip0039::Mnemonic;
 
 use portpicker::Port;
 use tempfile::TempDir;
@@ -31,20 +28,19 @@ use zcash_local_net::validator::{Validator, ValidatorConfig};
 
 use network_combo::DefaultIndexer;
 use network_combo::DefaultValidator;
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::{FUND_OFFLOAD_ORCHARD_ONLY, seeds};
-use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::config::WalletConfig;
+use zingolib::config::{ChainType, ClientConfig};
 use zingolib::get_base_address_macro;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::LightClientError;
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::{self, quick_send};
 use zingolib::testutils::lightclient::get_base_address;
 use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::sync_to_target_height;
-use zingolib::wallet::WalletBase;
 use zingolib::wallet::keys::unified::ReceiverSelection;
-use zingolib::wallet::{LightWallet, WalletSettings};
 
 /// Default regtest network processes for testing and zingo-cli regtest mode
 #[cfg(feature = "test_zainod_zcashd")]
@@ -151,10 +147,11 @@ impl ClientBuilder {
         }
     }
 
-    pub fn make_unique_data_dir_and_load_config(
+    pub fn make_unique_data_dir_and_create_config(
         &mut self,
         configured_activation_heights: ActivationHeights,
-    ) -> ZingoConfig {
+        wallet_config: WalletConfig,
+    ) -> ClientConfig {
         //! Each client requires a unique `data_dir`, we use the
         //! `client_number` counter for this.
         self.client_number += 1;
@@ -163,7 +160,11 @@ impl ClientBuilder {
             self.zingo_datadir.path().to_string_lossy(),
             self.client_number
         );
-        self.create_clientconfig(PathBuf::from(conf_path), configured_activation_heights)
+        self.create_clientconfig(
+            PathBuf::from(conf_path),
+            configured_activation_heights,
+            wallet_config,
+        )
     }
 
     /// TODO: Add Doc Comment Here!
@@ -171,64 +172,53 @@ impl ClientBuilder {
         &self,
         conf_path: PathBuf,
         configured_activation_heights: ActivationHeights,
-    ) -> ZingoConfig {
+        wallet_config: WalletConfig,
+    ) -> ClientConfig {
         std::fs::create_dir(&conf_path).unwrap();
-        ZingoConfig::builder()
+        ClientConfig::builder()
             .set_indexer_uri(self.server_id.clone())
-            .set_network_type(ChainType::Regtest(configured_activation_heights))
+            .set_chain_type(ChainType::Regtest(configured_activation_heights))
             .set_wallet_dir(conf_path)
-            .set_wallet_name("".to_string())
-            .set_wallet_settings(WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            })
-            .set_no_of_accounts(NonZeroU32::try_from(1).unwrap())
+            .set_wallet_config(wallet_config)
             .build()
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn build_faucet(
+    pub async fn build_faucet(
         &mut self,
         overwrite: bool,
         configured_activation_heights: ActivationHeights,
     ) -> LightClient {
         //! A "faucet" is a lightclient that receives mining rewards
         self.build_client(
-            seeds::ABANDON_ART_SEED.to_string(),
-            1,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::ABANDON_ART_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
             overwrite,
             configured_activation_heights,
         )
+        .await
     }
 
     /// TODO: Add Doc Comment Here!
-    pub fn build_client(
+    pub async fn build_client(
         &mut self,
-        mnemonic_phrase: String,
-        birthday: u64,
+        wallet_config: WalletConfig,
         overwrite: bool,
         configured_activation_heights: ActivationHeights,
     ) -> LightClient {
-        let config = self.make_unique_data_dir_and_load_config(configured_activation_heights);
-        let mnemonic = Mnemonic::from_phrase(mnemonic_phrase).unwrap();
-        let birthday = (birthday as u32).into();
-        let mut wallet = LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic,
-                no_of_accounts: 1.try_into().unwrap(),
-            },
-            birthday,
-            config.wallet_settings(),
-        )
-        .unwrap();
-        wallet
+        let config = self
+            .make_unique_data_dir_and_create_config(configured_activation_heights, wallet_config);
+        let mut lightclient = LightClient::new(config, overwrite).unwrap();
+        lightclient
             .generate_unified_address(ReceiverSelection::sapling_only(), zip32::AccountId::ZERO)
+            .await
             .unwrap();
-        LightClient::create_from_wallet(wallet, config, overwrite).unwrap()
+
+        lightclient
     }
 }
 
@@ -244,12 +234,18 @@ pub async fn unfunded_client(
     )
     .await;
 
-    let mut lightclient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        configured_activation_heights,
-    );
+    let mut lightclient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            configured_activation_heights,
+        )
+        .await;
     lightclient.sync_and_await().await.unwrap();
 
     (local_net, lightclient)
@@ -279,7 +275,9 @@ pub async fn faucet(
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
+    let mut faucet = client_builder
+        .build_faucet(true, configured_activation_heights)
+        .await;
 
     if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
@@ -308,13 +306,21 @@ pub async fn faucet_recipient(
     let (local_net, mut client_builder) =
         custom_clients(mine_to_pool, configured_activation_heights, chain_cache).await;
 
-    let mut faucet = client_builder.build_faucet(true, configured_activation_heights);
-    let mut recipient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        configured_activation_heights,
-    );
+    let mut faucet = client_builder
+        .build_faucet(true, configured_activation_heights)
+        .await;
+    let mut recipient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            configured_activation_heights,
+        )
+        .await;
 
     if matches!(DefaultValidator::PROCESS, ProcessId::Zebrad) {
         zebrad_shielded_funds(&local_net, mine_to_pool, &mut faucet).await;
@@ -494,14 +500,21 @@ pub async fn funded_orchard_mobileclient(value: u64) -> LocalNet<DefaultValidato
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
-    let recipient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        local_net.validator().get_activation_heights().await,
-    );
+    let mut faucet = client_builder
+        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .await;
+    let recipient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            local_net.validator().get_activation_heights().await,
+        )
+        .await;
     faucet.sync_and_await().await.unwrap();
     quick_send(
         &mut faucet,
@@ -523,14 +536,21 @@ pub async fn funded_orchard_with_3_txs_mobileclient(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
-    let mut recipient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        local_net.validator().get_activation_heights().await,
-    );
+    let mut faucet = client_builder
+        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .await;
+    let mut recipient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            local_net.validator().get_activation_heights().await,
+        )
+        .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -581,14 +601,21 @@ pub async fn funded_transparent_mobileclient(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
-    let mut recipient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        local_net.validator().get_activation_heights().await,
-    );
+    let mut faucet = client_builder
+        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .await;
+    let mut recipient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            local_net.validator().get_activation_heights().await,
+        )
+        .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();
@@ -622,14 +649,21 @@ pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         port_to_localhost_uri(local_net.indexer().port()),
         tempfile::tempdir().unwrap(),
     );
-    let mut faucet =
-        client_builder.build_faucet(true, local_net.validator().get_activation_heights().await);
-    let mut recipient = client_builder.build_client(
-        seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        local_net.validator().get_activation_heights().await,
-    );
+    let mut faucet = client_builder
+        .build_faucet(true, local_net.validator().get_activation_heights().await)
+        .await;
+    let mut recipient = client_builder
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            local_net.validator().get_activation_heights().await,
+        )
+        .await;
     increase_height_and_wait_for_client(&local_net, &mut faucet, 1)
         .await
         .unwrap();

@@ -6,22 +6,21 @@
 
 mod commands;
 mod examples;
+mod most_up_indexer_uris;
+mod server_select;
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use bip0039::Mnemonic;
 use clap::{self, Arg};
 use log::{error, info};
 
-use zcash_protocol::consensus::BlockHeight;
-
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use zingo_netutils::Indexer as _;
-use zingolib::config::{ChainType, ZingoConfig};
+use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::lightclient::LightClient;
-use zingolib::wallet::{LightWallet, WalletBase, WalletSettings};
+use zingolib::wallet::WalletSettings;
 
 use crate::commands::{RT, ShortCircuitedCommand};
 
@@ -66,7 +65,7 @@ pub fn build_clap_app() -> clap::Command {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .value_parser(parse_uri)
-                .default_value(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER))
+                .default_value(zingolib::config::DEFAULT_INDEXER_URI))
             .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
@@ -75,6 +74,10 @@ pub fn build_clap_app() -> clap::Command {
                 .long("tor")
                 .help("Enable tor for price fetching")
                 .action(clap::ArgAction::SetTrue) )
+            .arg(Arg::new("log-file")
+                .long("log-file")
+                .value_name("PATH")
+                .help("Path to the log file for interactive mode. Defaults to .zingo-cli/cli.log"))
             .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -122,22 +125,6 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
             }
         }
         Err(_) => Err("Unexpected failure to parse String!!".to_string()),
-    }
-}
-#[cfg(target_os = "linux")]
-/// This function is only tested against Linux.
-fn report_permission_error() {
-    let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
-    let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
-    let current_executable =
-        std::env::current_exe().expect("Unexpected error reporting executable path!");
-    eprintln!("USER: {user}");
-    eprintln!("HOME: {home}");
-    eprintln!("Executable: {}", current_executable.display());
-    if home == "/" {
-        eprintln!("User {user} must have permission to write to '{home}.zcash/' .");
-    } else {
-        eprintln!("User {user} must have permission to write to '{home}/.zcash/' .");
     }
 }
 
@@ -189,10 +176,33 @@ fn sync_indicator_from_status(send_command: &impl Fn(String, Vec<String>) -> Str
     }
 }
 
-/// TODO: `start_interactive` does not explicitly reference a wallet, do we need
-/// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
-/// the CLI?
-fn start_interactive(ch: CommandChannel) {
+/// Formats the ranked server list for display by the `servers` command.
+fn format_ranked_servers(cli_config: &ConfigTemplate) -> String {
+    if cli_config.ranked_servers.is_empty() {
+        return format!(
+            "Server was set explicitly: {}\nNo other servers were probed.",
+            cli_config.server
+        );
+    }
+    let mut out = String::from("Servers ranked by get_info() response time:\n");
+    for (i, r) in cli_config.ranked_servers.iter().enumerate() {
+        let marker = if r.uri == cli_config.server {
+            " (active)"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "  {:>2}. {} {:>8.1}ms{}\n",
+            i + 1,
+            r.uri,
+            r.latency.as_secs_f64() * 1000.0,
+            marker,
+        ));
+    }
+    out
+}
+
+fn start_interactive(cli_config: &ConfigTemplate, ch: CommandChannel) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
@@ -259,6 +269,12 @@ fn start_interactive(ch: CommandChannel) {
 
                 let cmd = cmd_args.remove(0);
                 let args: Vec<String> = cmd_args;
+
+                // CLI-only commands that don't need the LightClient.
+                if cmd == "servers" {
+                    println!("{}", format_ranked_servers(cli_config));
+                    continue;
+                }
 
                 println!("{}", send_command(cmd, args));
 
@@ -353,11 +369,43 @@ fn get_mode_of_operation(matches: &clap::ArgMatches) -> ModeOfOperation {
     }
 }
 
+/// Whether the CLI communicates with a remote indexer or operates locally.
+///
+/// Currently always [`Online`](CommunicationMode::Online). The [`Offline`](CommunicationMode::Offline)
+/// variant exists so that offline wallet support has a clean place to land.
+#[derive(Debug, PartialEq)]
+enum CommunicationMode {
+    /// Connected to a remote indexer for sync, send, etc.
+    Online,
+    /// Operating without network access — local-only commands.
+    /// Will be used by offline wallet support:
+    /// <https://github.com/zingolabs/zingolib/issues/2286>
+    #[allow(dead_code)]
+    Offline,
+}
+
+/// Determines the communication mode from parsed CLI arguments.
+///
+/// Currently always returns [`CommunicationMode::Online`]. When offline mode
+/// is added, this will inspect a CLI flag (e.g. `--offline`).
+fn get_communication_mode(_matches: &clap::ArgMatches) -> CommunicationMode {
+    CommunicationMode::Online
+}
+
 /// TODO: Add Doc Comment Here!
 #[derive(Debug)]
 pub(crate) struct ConfigTemplate {
     mode: ModeOfOperation,
+    /// Will be read by offline wallet support:
+    /// <https://github.com/zingolabs/zingolib/issues/2286>
+    #[allow(dead_code)]
+    communication_mode: CommunicationMode,
     server: http::Uri,
+    /// All servers that responded to `get_info()` during dynamic selection,
+    /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
+    /// Will be used for automatic failover when sync fails.
+    #[allow(dead_code)]
+    ranked_servers: Vec<server_select::RankedServer>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -369,7 +417,11 @@ pub(crate) struct ConfigTemplate {
 }
 
 impl ConfigTemplate {
-    fn fill(mode: ModeOfOperation, matches: clap::ArgMatches) -> Result<Self, String> {
+    fn fill(
+        mode: ModeOfOperation,
+        communication_mode: CommunicationMode,
+        matches: clap::ArgMatches,
+    ) -> Result<Self, String> {
         let tor_enabled = matches.get_flag("tor");
         let seed = matches.get_one::<String>("seed").cloned();
         let ufvk = matches.get_one::<String>("viewkey").cloned();
@@ -405,11 +457,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         } else {
             PathBuf::from("wallets")
         };
-        let server = matches
-            .get_one::<http::Uri>("server")
-            .map(ToString::to_string);
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
-        let server = zingolib::config::construct_lightwalletd_uri(server);
+        let (server, ranked_servers) =
+            server_select::resolve_server(&matches).map_err(|e| e.to_string())?;
         let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
             ChainType::try_from(chain.as_str()).map_err(|e| e.to_string())?
         } else {
@@ -427,7 +477,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         let waitsync = matches.get_flag("waitsync");
         Ok(Self {
             mode,
+            communication_mode,
             server,
+            ranked_servers,
             seed,
             ufvk,
             birthday,
@@ -440,94 +492,78 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
     }
 }
 
-/// Used by the zingocli crate, and the zingo-mobile application:
-/// <https://github.com/zingolabs/zingolib/tree/dev/cli>
-/// <https://github.com/zingolabs/zingo-mobile>
-/// Builds a [`ZingoConfig`] from the filled config template.
+/// Builds a `ClientConfig` from the filled config template.
 ///
 /// This is a pure function — no I/O or side effects — and is the
 /// first testable seam inside the startup sequence.
-fn build_zingo_config(filled_template: &ConfigTemplate) -> ZingoConfig {
-    ZingoConfig::builder()
-        .set_indexer_uri(filled_template.server.clone())
-        .set_network_type(filled_template.chaintype)
-        .set_wallet_dir(filled_template.data_dir.clone())
-        .set_wallet_settings(WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(3).unwrap(),
-        })
-        .set_no_of_accounts(NonZeroU32::try_from(1).expect("hard-coded non-zero integer"))
-        .set_wallet_name("".to_string())
-        .build()
-}
+fn build_zingo_config(filled_template: &ConfigTemplate) -> std::io::Result<ClientConfig> {
+    let wallet_path = filled_template.data_dir.clone().join(DEFAULT_WALLET_NAME);
+    let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer");
+    let wallet_settings = WalletSettings {
+        sync_config: SyncConfig {
+            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            performance_level: PerformanceLevel::High,
+        },
+        min_confirmations: NonZeroU32::try_from(3).unwrap(),
+    };
 
-pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
-    let config = build_zingo_config(filled_template);
-
-    let mut lightclient = if let Some(seed_phrase) = filled_template.seed.clone() {
-        let wallet = LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(seed_phrase).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Invalid seed phrase. {e}"),
-                    )
-                })?,
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            (filled_template.birthday as u32).into(),
-            config.wallet_settings(),
-        )
-        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
-        LightClient::create_from_wallet(wallet, config.clone(), false)
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+    let wallet_config = if let Some(seed_phrase) = filled_template.seed.clone() {
+        // Create client from seed phrase
+        WalletConfig::MnemonicPhrase {
+            mnemonic_phrase: seed_phrase,
+            no_of_accounts,
+            birthday: filled_template.birthday as u32,
+            wallet_settings,
+        }
     } else if let Some(ufvk) = filled_template.ufvk.clone() {
         // Create client from UFVK
-        let wallet = LightWallet::new(
-            config.network_type(),
-            WalletBase::Ufvk(ufvk),
-            (filled_template.birthday as u32).into(),
-            config.wallet_settings(),
-        )
-        .map_err(|e| std::io::Error::other(format!("Failed to create wallet. {e}")))?;
-        LightClient::create_from_wallet(wallet, config.clone(), false)
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
-    } else if config.get_wallet_path().exists() {
-        // Open existing wallet from path
-        LightClient::create_from_wallet_path(config.clone())
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        WalletConfig::Ufvk {
+            ufvk,
+            birthday: filled_template.birthday as u32,
+            wallet_settings,
+        }
+    } else if wallet_path.exists() {
+        // Create client from wallet file
+        WalletConfig::Read
     } else {
-        // Fresh wallet: query chain tip and initialize at tip-100 to guard against reorgs
+        // Create client from a new wallet
         println!("Creating a new wallet");
-        // Call the lightwalletd server to get the current block-height
-        // Do a getinfo first, before opening the wallet
-        let server_uri = config.indexer_uri();
-
         let chain_height = RT
             .block_on(async move {
-                zingo_netutils::GrpcIndexer::new(server_uri)
+                zingo_netutils::GrpcIndexer::new(filled_template.server.clone())
                     .get_latest_block()
                     .await
-                    .map(|block_id| BlockHeight::from_u32(block_id.height as u32))
+                    .map(|block_id| block_id.height as u32)
                     .map_err(|e| format!("{e:?}"))
             })
             .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
-        LightClient::new(config.clone(), chain_height, false)
-            .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?
+        WalletConfig::NewSeed {
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            chain_height,
+            wallet_settings,
+        }
     };
+
+    Ok(ClientConfig::builder()
+        .set_indexer_uri(filled_template.server.clone())
+        .set_chain_type(filled_template.chaintype)
+        .set_wallet_dir(filled_template.data_dir.clone())
+        .set_wallet_config(wallet_config)
+        .build())
+}
+
+pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<CommandChannel> {
+    let config = build_zingo_config(filled_template)?;
+
+    let mut lightclient = LightClient::new(config, false)
+        .map_err(|e| std::io::Error::other(format!("Failed to create lightclient. {e}")))?;
 
     if matches!(filled_template.mode, ModeOfOperation::Interactive) {
         // Print startup Messages
         info!(""); // Blank line
         info!("Starting Zingo-CLI");
-        info!("Light Client config {config:?}");
-
-        info!("Lightclient connecting to {}", config.indexer_uri());
+        info!("Lightclient connecting to {}", filled_template.server);
     }
 
     if filled_template.sync {
@@ -559,28 +595,11 @@ pub(crate) fn startup(filled_template: &ConfigTemplate) -> std::io::Result<Comma
     // Start the command loop
     Ok(command_loop(lightclient))
 }
-fn start_cli_service(cli_config: &ConfigTemplate) -> CommandChannel {
-    match startup(cli_config) {
-        Ok(ch) => ch,
-        Err(e) => {
-            let emsg = format!("Error during startup:\n{e}\n");
-            eprintln!("{emsg}");
-            error!("{emsg}");
-            #[cfg(target_os = "linux")]
-            // TODO: Test report_permission_error() for macos and change to target_family = "unix"
-            if let Some(13) = e.raw_os_error() {
-                report_permission_error();
-            }
-            panic!();
-        }
-    }
-}
-fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
-    let ch = start_cli_service(cli_config);
+
+fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) -> std::io::Result<()> {
+    let ch = startup(cli_config)?;
     match &cli_config.mode {
-        ModeOfOperation::Interactive => {
-            start_interactive(ch);
-        }
+        ModeOfOperation::Interactive => start_interactive(cli_config, ch),
         ModeOfOperation::Command { name, args } => {
             ch.transmitter.send((name.clone(), args.clone())).unwrap();
 
@@ -601,6 +620,30 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// Returns `true` if the CLI will start the interactive REPL
+/// (i.e. no COMMAND was given).
+///
+/// This is a thin wrapper around `ModeOfOperation` so that the binary
+/// entry point can query the mode without exposing the enum publicly.
+pub fn is_interactive(matches: &clap::ArgMatches) -> bool {
+    matches!(get_mode_of_operation(matches), ModeOfOperation::Interactive)
+}
+
+/// Default log file directory.
+const LOG_DIR: &str = ".zingo-cli";
+/// Default log file name within the log directory.
+const LOG_FILE: &str = "cli.log";
+
+/// Returns the log file path from `--log-file` or the default `.zingo-cli/cli.log`.
+pub fn log_file_path(matches: &clap::ArgMatches) -> PathBuf {
+    if let Some(path) = matches.get_one::<String>("log-file") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(LOG_DIR).join(LOG_FILE)
     }
 }
 
@@ -623,12 +666,13 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 ///
 /// This function never calls `std::process::exit` or reads `std::env::args`.
 /// The caller (the binary entry point) is responsible for parsing arguments,
-/// handling the help short-circuit, and process-level setup.
-pub fn run_cli(matches: clap::ArgMatches) {
-    match ConfigTemplate::fill(get_mode_of_operation(&matches), matches) {
-        Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {e:?}"),
-    }
+/// handling the help short-circuit, process-level setup, and error reporting.
+pub fn run_cli(matches: clap::ArgMatches) -> std::io::Result<()> {
+    let mode = get_mode_of_operation(&matches);
+    let communication_mode = get_communication_mode(&matches);
+    let cli_config =
+        ConfigTemplate::fill(mode, communication_mode, matches).map_err(std::io::Error::other)?;
+    dispatch_command_or_start_interactive(&cli_config)
 }
 
 #[cfg(test)]

@@ -179,6 +179,7 @@ async fn fetch_from_server(
     }
 }
 
+#[instrument(skip(client), name = "fetch::get_latest_block", err, level = "info")]
 async fn get_latest_block(
     client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<BlockId, tonic::Status> {

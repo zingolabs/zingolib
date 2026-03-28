@@ -279,6 +279,58 @@ mod mode_of_operation {
     }
 }
 
+mod communication_mode {
+    use super::*;
+    use crate::{CommunicationMode, get_communication_mode};
+
+    #[test]
+    fn default_is_online() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert_eq!(get_communication_mode(&matches), CommunicationMode::Online);
+    }
+}
+
+mod is_interactive {
+    use super::*;
+    use crate::is_interactive;
+
+    #[test]
+    fn no_command_is_interactive() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert!(is_interactive(&matches));
+    }
+
+    #[test]
+    fn with_command_is_not_interactive() {
+        let matches = parse(&[examples::BIN_NAME, "balance"]);
+        assert!(!is_interactive(&matches));
+    }
+
+    #[test]
+    fn flags_without_command_is_interactive() {
+        let matches = parse(&[examples::BIN_NAME, "--nosync", "--tor"]);
+        assert!(is_interactive(&matches));
+    }
+}
+
+mod log_file_path {
+    use super::*;
+    use crate::log_file_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn default_path() {
+        let matches = parse(&[examples::BIN_NAME]);
+        assert_eq!(log_file_path(&matches), PathBuf::from(".zingo-cli/cli.log"));
+    }
+
+    #[test]
+    fn custom_path() {
+        let matches = parse(&[examples::BIN_NAME, "--log-file", "/tmp/my.log"]);
+        assert_eq!(log_file_path(&matches), PathBuf::from("/tmp/my.log"));
+    }
+}
+
 mod sync {
     use crate::poll_sync_for_prompt_indicator;
     use std::cell::RefCell;
@@ -364,30 +416,36 @@ mod sync {
 
 mod config_template {
     use super::*;
-    use crate::{ConfigTemplate, ModeOfOperation, build_zingo_config, get_mode_of_operation};
+    use crate::{
+        ConfigTemplate, ModeOfOperation, build_zingo_config, get_communication_mode,
+        get_mode_of_operation,
+    };
     use std::path::PathBuf;
     use zingolib::config::ChainType;
 
-    /// Helper: parse args, determine mode, and call fill.
+    /// Helper: parse args, determine mode and communication mode, and call fill.
     fn fill(args: &[&str]) -> Result<ConfigTemplate, String> {
         let matches = parse(args);
         let mode = get_mode_of_operation(&matches);
-        ConfigTemplate::fill(mode, matches)
+        let communication_mode = get_communication_mode(&matches);
+        ConfigTemplate::fill(mode, communication_mode, matches)
     }
 
     /// Helper: parse args, fill config, and build ZingoConfig in one step.
-    fn fill_and_build(args: &[&str]) -> zingolib::config::ZingoConfig {
-        build_zingo_config(&fill(args).unwrap())
+    fn fill_and_build(args: &[&str]) -> zingolib::config::ClientConfig {
+        build_zingo_config(&fill(args).unwrap()).unwrap()
     }
 
     mod happy_paths {
         use super::*;
+        use crate::CommunicationMode;
 
         #[test]
         fn defaults() {
-            let config = fill(&[examples::BIN_NAME]).unwrap();
+            let config = fill(&[examples::BIN_NAME, "--server", examples::SERVER_URI]).unwrap();
             assert_eq!(config.data_dir, PathBuf::from("wallets"));
             assert_eq!(config.chaintype, ChainType::Mainnet);
+            assert_eq!(config.communication_mode, CommunicationMode::Online);
             assert!(config.sync);
             assert!(!config.waitsync);
             assert!(!config.tor_enabled);
@@ -506,20 +564,42 @@ mod config_template {
         use super::*;
         use pepper_sync::config::PerformanceLevel;
         use std::num::NonZeroU32;
+        use zingolib::{
+            config::WalletConfig,
+            wallet::{SyncConfig, TransparentAddressDiscovery},
+        };
+
+        const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
+     unfold vocal weird milk scale social vessel identify \
+     crowd hospital control album rib bulb path oven civil tank";
 
         #[test]
         fn default_server_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             let uri = zc.indexer_uri().to_string();
             assert!(
-                uri.starts_with(zingolib::config::DEFAULT_LIGHTWALLETD_SERVER),
+                uri.starts_with(zingolib::config::DEFAULT_INDEXER_URI),
                 "expected URI to start with default server, got: {uri}"
             );
         }
 
         #[test]
         fn custom_server_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--server", examples::SERVER_URI]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--server",
+                examples::SERVER_URI,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             let uri = zc.indexer_uri().to_string();
             assert!(
                 uri.starts_with(examples::SERVER_URI),
@@ -530,25 +610,57 @@ mod config_template {
 
         #[test]
         fn chain_type_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--chain", "testnet"]);
-            assert_eq!(zc.network_type(), ChainType::Testnet);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--chain",
+                "testnet",
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
+            assert_eq!(zc.chain_type(), ChainType::Testnet);
         }
 
         #[test]
         fn data_dir_is_propagated() {
-            let zc = fill_and_build(&[examples::BIN_NAME, "--data-dir", examples::DATA_DIR]);
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--data-dir",
+                examples::DATA_DIR,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
             assert_eq!(zc.wallet_dir(), PathBuf::from(examples::DATA_DIR));
         }
 
         #[test]
-        fn default_wallet_settings() {
-            let zc = fill_and_build(&[examples::BIN_NAME]);
-            let ws = zc.wallet_settings();
-            assert!(matches!(
-                ws.sync_config.performance_level,
-                PerformanceLevel::High
-            ));
-            assert_eq!(ws.min_confirmations, NonZeroU32::new(3).unwrap());
+        fn default_wallet_config() {
+            let zc = fill_and_build(&[
+                examples::BIN_NAME,
+                "--seed",
+                HOSPITAL_MUSEUM_SEED,
+                "--birthday",
+                "1",
+            ]);
+            let ws = zc.wallet_config();
+            assert_eq!(
+                ws,
+                WalletConfig::MnemonicPhrase {
+                    mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+                    no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+                    birthday: 1,
+                    wallet_settings: zingolib::wallet::WalletSettings {
+                        sync_config: SyncConfig {
+                            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+                            performance_level: PerformanceLevel::High,
+                        },
+                        min_confirmations: NonZeroU32::try_from(3).unwrap(),
+                    },
+                }
+            );
         }
     }
 }

@@ -14,15 +14,14 @@ use zcash_keys::encoding::AddressCodec;
 use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
-use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
+use crate::wallet::WalletSettings;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
-use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 
 pub mod assertions;
 pub mod chain_generics;
@@ -34,6 +33,17 @@ pub mod paths;
 // Re-export test dependencies for convenience
 pub use portpicker;
 pub use tempfile;
+
+/// Default wallet settings for testing
+pub fn default_test_wallet_settings() -> WalletSettings {
+    WalletSettings {
+        sync_config: SyncConfig {
+            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            performance_level: PerformanceLevel::High,
+        },
+        min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
+    }
+}
 
 /// TODO: Add Doc Comment Here!
 #[must_use]
@@ -52,32 +62,6 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
         Fvk::Sapling(sapling_vk.to_bytes()),
         Fvk::P2pkh(transparent_vk_bytes),
     ]
-}
-
-/// TODO: Add Doc Comment Here!
-#[must_use]
-pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
-    let ufvk = zcash_address::unified::Encoding::encode(
-        &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.iter().copied().cloned().collect(),
-        )
-        .unwrap(),
-        &zcash_protocol::consensus::NetworkType::Regtest,
-    );
-    let wallet = LightWallet::new(
-        config.network_type(),
-        WalletBase::Ufvk(ufvk),
-        1.into(),
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-    )
-    .unwrap();
-    LightClient::create_from_wallet(wallet, config, false).unwrap()
 }
 
 /// TODO: doc comment

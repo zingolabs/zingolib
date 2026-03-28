@@ -4,7 +4,7 @@ use zcash_keys::keys::Era;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
 use crate::{
-    config::ZingoConfig,
+    config::ClientConfig,
     lightclient::LightClient,
     wallet::{
         disk::testing::{
@@ -24,10 +24,10 @@ use crate::{
 impl NetworkSeedVersion {
     /// this is enough data to restore wallet from! thus, it is the bronze test for backward compatibility
     async fn load_example_wallet_with_verification(&self) -> LightClient {
-        let client = self.load_example_wallet_with_client().await;
+        let client = self.load_example_wallet().await;
         let wallet = client.wallet().read().await;
 
-        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_base()).await;
+        assert_wallet_capability_matches_seed(&wallet, self.example_wallet_seed()).await;
         for pool in [
             PoolType::Transparent,
             PoolType::Shielded(ShieldedProtocol::Orchard),
@@ -218,39 +218,39 @@ async fn loaded_wallet_assert(
 
 // todo: proptest enum
 #[tokio::test]
-async fn reload_wallet_from_buffer() {
-    use crate::wallet::{LightWallet, WalletBase};
+async fn reload_wallet_from_file() {
+    use crate::wallet::{LightWallet, WalletConfig};
     use zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED;
 
-    let mid_client =
+    let mut mid_client =
         NetworkSeedVersion::Testnet(TestnetSeedVersion::ChimneyBetter(ChimneyBetterVersion::V28))
             .load_example_wallet_with_verification()
             .await;
     let mid_client_network = mid_client.chain_type();
 
-    let mut mid_buffer: Vec<u8> = vec![];
-    mid_client
-        .wallet()
-        .write()
-        .await
-        .write(&mut mid_buffer, &mid_client.chain_type())
-        .unwrap();
+    mid_client.save_task().await;
+    mid_client.wait_for_save().await;
+    mid_client.shutdown_save_task().await.unwrap();
 
-    let config = ZingoConfig::create_testnet();
-    let wallet = LightWallet::read(&mid_buffer[..], config.network_type()).unwrap();
-    let client = LightClient::create_from_wallet(wallet, config, true).unwrap();
-    let wallet = client.wallet().read().await;
+    let config = ClientConfig::builder()
+        .set_indexer_uri(mid_client.indexer_uri().cloned().unwrap())
+        .set_chain_type(mid_client_network)
+        .set_wallet_dir(mid_client.wallet_dir().unwrap())
+        .set_wallet_config(WalletConfig::Read)
+        .build();
+    let loaded_client = LightClient::new(config, true).unwrap();
+    let loaded_wallet = loaded_client.wallet().read().await;
 
     let expected_mnemonic = Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap();
 
     let expected_keys = UnifiedKeyStore::new_from_mnemonic(
-        &mid_client_network,
+        mid_client_network,
         &expected_mnemonic,
         zip32::AccountId::ZERO,
     )
     .unwrap();
 
-    let UnifiedKeyStore::Spend(usk) = &wallet
+    let UnifiedKeyStore::Spend(usk) = &loaded_wallet
         .unified_key_store
         .get(&zip32::AccountId::ZERO)
         .unwrap()
@@ -274,24 +274,22 @@ async fn reload_wallet_from_buffer() {
 
     // TODO: there were 3 UAs associated with this wallet, we reset to 1 to ensure index is upheld correctly and
     // should thoroughly test UA discovery when syncing which should find these UAs again
-    assert_eq!(wallet.unified_addresses.len(), 1);
-    for addr in wallet.unified_addresses.values() {
+    assert_eq!(loaded_wallet.unified_addresses.len(), 1);
+    for addr in loaded_wallet.unified_addresses.values() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_none());
         assert!(addr.transparent().is_none());
     }
 
     let ufvk = usk.to_unified_full_viewing_key();
-    let network = client.chain_type();
-    let ufvk_string = ufvk.encode(&network);
-    let ufvk_base = WalletBase::Ufvk(ufvk_string.clone());
-    let view_wallet = LightWallet::new(
-        network,
-        ufvk_base,
-        client.birthday(),
-        wallet.wallet_settings.clone(),
-    )
-    .unwrap();
+    let chain_type = loaded_client.chain_type();
+    let ufvk_string = ufvk.encode(&chain_type);
+    let wallet_config = WalletConfig::Ufvk {
+        ufvk: ufvk_string.clone(),
+        birthday: loaded_client.birthday(),
+        wallet_settings: loaded_wallet.wallet_settings.clone(),
+    };
+    let view_wallet = LightWallet::new(chain_type, wallet_config).unwrap();
     let UnifiedKeyStore::View(v_ufvk) = &view_wallet
         .unified_key_store
         .get(&zip32::AccountId::ZERO)
@@ -299,7 +297,7 @@ async fn reload_wallet_from_buffer() {
     else {
         panic!("should be viewing key!");
     };
-    let v_ufvk_string = v_ufvk.encode(&view_wallet.network);
+    let v_ufvk_string = v_ufvk.encode(&view_wallet.chain_type);
     assert_eq!(ufvk_string, v_ufvk_string);
 
     // NOTE: removed balance check as need to sync to restore transaction data.

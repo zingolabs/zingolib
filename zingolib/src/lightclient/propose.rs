@@ -4,20 +4,20 @@ use zcash_address::ZcashAddress;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::value::Zatoshis;
 
-use crate::config::ZENNIES_FOR_ZINGO_AMOUNT;
-use crate::config::get_donation_address_for_chain;
+use crate::ZENNIES_FOR_ZINGO_AMOUNT;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
 use crate::data::receivers::Receiver;
 use crate::data::receivers::transaction_request_from_receivers;
+use crate::get_zennies_for_zingo_address;
 use crate::lightclient::LightClient;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::error::ProposeShieldError;
 
 impl LightClient {
     fn append_zingo_zenny_receiver(&self, receivers: &mut Vec<Receiver>) {
-        let zfz_address = get_donation_address_for_chain(&self.chain_type());
+        let zfz_address = get_zennies_for_zingo_address(self.chain_type());
         let dev_donation_receiver = Receiver::new(
             crate::utils::conversion::address_from_str(zfz_address).expect("Hard coded str"),
             Zatoshis::from_u64(ZENNIES_FOR_ZINGO_AMOUNT).expect("Hard coded u64."),
@@ -168,40 +168,28 @@ impl LightClient {
 
 #[cfg(test)]
 mod shielding {
-    use std::num::NonZeroU32;
-
-    use bip0039::Mnemonic;
-    use pepper_sync::config::SyncConfig;
     use zcash_protocol::consensus::Parameters;
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::ZingoConfigBuilder,
+        config::{ClientConfig, WalletConfig},
         lightclient::LightClient,
-        wallet::{LightWallet, WalletBase, WalletSettings, error::ProposeShieldError},
+        testutils::default_test_wallet_settings,
+        wallet::error::ProposeShieldError,
     };
 
     fn create_basic_client() -> LightClient {
-        let config = ZingoConfigBuilder::default().build();
-        let wallet = LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(seeds::HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
+        let config = ClientConfig::builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
                 no_of_accounts: 1.try_into().unwrap(),
-            },
-            419200.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery:
-                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::config::PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-        )
-        .unwrap();
-        LightClient::create_from_wallet(wallet, config, true).unwrap()
+                birthday: 419200,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build();
+        LightClient::new(config, true).unwrap()
     }
+
     #[tokio::test]
     async fn propose_shield_missing_scan_prerequisite() {
         let basic_client = create_basic_client();

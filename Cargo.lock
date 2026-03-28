@@ -1432,8 +1432,6 @@ dependencies = [
  "futures-util",
  "hex",
  "http",
- "hyper",
- "hyper-util",
  "incrementalmerkletree",
  "orchard",
  "proptest",
@@ -1444,7 +1442,6 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
- "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
  "zcash_local_net",
@@ -3327,7 +3324,6 @@ version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
 dependencies = [
- "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -4095,7 +4091,6 @@ dependencies = [
  "zcash_protocol",
  "zcash_transparent",
  "zingo-memo 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zingo-netutils",
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zip32",
 ]
@@ -8616,6 +8611,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "zaino-proto"
+version = "0.2.0"
+source = "git+https://github.com/zingolabs/zaino.git?rev=2e2816cb3755e7ff4d18bed1a96b95dc07c1549c#2e2816cb3755e7ff4d18bed1a96b95dc07c1549c"
+dependencies = [
+ "prost",
+ "prost-build",
+ "tonic",
+ "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "zcash_address"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9286,7 +9294,10 @@ dependencies = [
  "rustls 0.23.37",
  "rustyline",
  "shellwords",
+ "tempfile",
  "tokio",
+ "tokio-stream",
+ "tonic",
  "tracing-subscriber",
  "zcash_address",
  "zcash_client_backend",
@@ -9294,6 +9305,7 @@ dependencies = [
  "zcash_protocol",
  "zingo-netutils",
  "zingo_common_components",
+ "zingo_grpc_proxy",
  "zingolib",
  "zip32",
 ]
@@ -9379,6 +9391,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7ed7ebc771980a59ec5f208d5dcf40c010dce2b5d493164c9d2f7baa73e9284"
 
 [[package]]
+name = "zingo_grpc_proxy"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/grpc_proxy.git?rev=bad24e29529a0bb381f71f02f977752c20c26613#bad24e29529a0bb381f71f02f977752c20c26613"
+dependencies = [
+ "zaino-proto",
+]
+
+[[package]]
 name = "zingo_test_vectors"
 version = "0.0.1"
 source = "git+https://github.com/zingolabs/infrastructure.git?rev=69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f#69d7a4b72ebe871d2c6bc6f18d93d5b4c9dbec9f"
@@ -9402,8 +9422,6 @@ dependencies = [
  "futures",
  "hex",
  "http",
- "hyper-rustls",
- "hyper-util",
  "incrementalmerkletree",
  "json",
  "jubjub",
@@ -9415,24 +9433,18 @@ dependencies = [
  "prost",
  "rand 0.8.5",
  "ring",
- "rusqlite",
  "rust-embed",
  "rustls 0.23.37",
  "sapling-crypto",
  "secp256k1 0.31.1",
  "secrecy",
  "serde",
- "serde_json",
  "shardtree",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tokio-rustls",
- "tonic",
- "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "webpki-roots 1.0.6",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -9447,7 +9459,6 @@ dependencies = [
  "zingo-status 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zingo_common_components",
  "zingo_test_vectors",
- "zingolib",
  "zip32",
 ]
 

@@ -222,44 +222,37 @@ impl LightClient {
 mod test {
     //! all tests below (and in this mod) use example wallets, which describe real-world chains.
 
-    use std::num::NonZeroU32;
-
-    use bip0039::Mnemonic;
-
-    use pepper_sync::config::SyncConfig;
-    use zingo_test_vectors::seeds::ABANDON_ART_SEED;
+    use zingo_test_vectors::seeds;
 
     use crate::{
-        config::ZingoConfig,
+        config::{ClientConfig, WalletConfig},
         lightclient::{LightClient, sync::test::sync_example_wallet},
         mocks::proposal::ProposalBuilder,
-        testutils::chain_generics::{
-            conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment, with_assertions,
+        testutils::{
+            chain_generics::{
+                conduct_chain::ConductChain as _, networked::NetworkedTestEnvironment,
+                with_assertions,
+            },
+            default_test_wallet_settings,
         },
-        wallet::{LightWallet, WalletBase, WalletSettings, disk::testing::examples},
+        wallet::disk::testing::examples,
     };
+
+    fn create_basic_client() -> LightClient {
+        let config = ClientConfig::builder()
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419200,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build();
+        LightClient::new(config, true).unwrap()
+    }
 
     #[tokio::test]
     async fn complete_and_broadcast_unconnected_error() {
-        let config = ZingoConfig::builder().build();
-        let wallet = LightWallet::new(
-            config.network_type(),
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(ABANDON_ART_SEED.to_string()).unwrap(),
-                no_of_accounts: 1.try_into().unwrap(),
-            },
-            419_200.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery:
-                        pepper_sync::config::TransparentAddressDiscovery::minimal(),
-                    performance_level: pepper_sync::config::PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-        )
-        .unwrap();
-        let mut lc = LightClient::create_from_wallet(wallet, config, true).unwrap();
+        let mut lc = create_basic_client();
         let proposal = ProposalBuilder::default().build();
         lc.send(proposal, zip32::AccountId::ZERO).await.unwrap_err();
         // TODO: match on specific error
