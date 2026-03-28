@@ -117,5 +117,4 @@ USER $USER
 # ./entrypoint.sh runs, then executes CMD (or custom command if provided).
 # Prints zingo-cli version, address if a new wallet is created, and info on success.
 ENTRYPOINT [ "./entrypoint.sh" ]
-# Default command. Selected server uses zebra 4.1.0 and lwd v0.4.18-9-gb932e8e at time of commit.
-CMD [ "./zingo-cli", "--server", "https://zzz.stripest.online:443", "settings" ]
+CMD [ "./zingo-cli", "--help"]
