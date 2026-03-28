@@ -58,6 +58,13 @@ contains the `zingo-cli` binary.
 To run interactively with a custom server:
 `docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443`
 
+`zingo-cli` runs with several defaults. Importantly, these include a data-dir
+with wallet file, which are created if they don't already exist:
+a `wallets` dir in location where executable is run, containing the wallet
+(`zingo-wallet.dat`) file. Other defaults inlcude setting the chain to mainnet,
+using a default lightwallet server, using clearnet for price fetching, and not
+executing commands prior to a complete chain sync.
+
 Any `docker run` will initialize a wallet if there was none in the container, and
 by default prints info and then help if no arguments are passed.
 

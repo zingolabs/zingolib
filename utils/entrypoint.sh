@@ -3,17 +3,6 @@
 # Entrypoint for running zingo-cli in Docker.
 #
 # The main script logic is at the bottom.
-#
-# ## Notes
-#
-# zingo-cli runs with several defaults.
-# Importantly, these include a data-dir with wallet file,
-# which are created if they don't already exist:
-#   a `wallets` dir in location where executable is run,
-#   containing the wallet (`zingo-wallet.dat`) file.
-# other defaults inlcude setting the chain to mainnet,
-# using a default lightwallet server, using clearnet for price fetching,
-# and not executing commands prior to a complete chain sync.
 
 set -eo pipefail
 
