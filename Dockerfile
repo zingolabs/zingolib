@@ -1,30 +1,43 @@
 # syntax=docker/dockerfile:1
 # check=skip=UndefinedVar,UserExist
 
+# stages:
+# - release: setup and builds release binaries
+# - export: discrete stage for writing binaries into host build directory
+# - runtime: prepares the release image
+#
+# We first set default values for build arguments used across the stages.
+# Each stage must define the build arguments (ARGs) it uses.
+
+ARG FEATURES=""
+
 ############################
 # Global build args
 ############################
-ARG RUST_VERSION=1.91.1
 ARG UID=10901
 ARG GID=${UID}
-ARG USER=user
-ARG HOME=/home/user
+ARG USER="user"
+ARG HOME="/home/${USER}"
+ARG CARGO_HOME="/usr/local/.cargo"
+ARG CARGO_TARGET_DIR="${HOME}/target"
+ARG TARGET_ARCH="x86_64-unknown-linux-musl"
 
 ############################
 # Dependencies
 ############################
 # Build Deps
-FROM stagex/pallet-rust@sha256:4062550919db682ebaeea07661551b5b89b3921e3f3a2b0bc665ddea7f6af1ca AS pallet-rust
-FROM stagex/user-protobuf@sha256:b399bb058216a55130d83abcba4e5271d8630fff55abbb02ed40818b0d96ced1 AS protobuf
-FROM stagex/user-abseil-cpp@sha256:926f69e9cd112dfe3450a0af56d1560dc0a62589e61047e8c92c3b7edf8dd71e AS abseil-cpp
-FROM stagex/core-sqlite3@sha256:44807b914585c81dda2bb0a5617cab53395255fe6685ce9599628060229c8929 AS sqlite3
+FROM stagex/pallet-rust:1.94.0@sha256:2fbe7b164dd92edb9c1096152f6d27592d8a69b1b8eb2fc907b5fadea7d11668 AS pallet-rust
+FROM stagex/user-protobuf:26.1@sha256:a135aaf060990b6ef8a7c715c16f175811d3a1f5383970f5771adef05a0bc56a AS protobuf
+FROM stagex/user-abseil-cpp:20240116.2@sha256:20a241145158a0aa7cb83ed5dc4f9ad6360dc975352787f4e6b00e8a39943f62 AS abseil-cpp
+FROM stagex/core-sqlite3:3.50.1@sha256:8d2959fcde94119a724315d9c9f58acf59c5ae83cf4ad22a36ac1ed971327237 AS sqlite3
 # Runtime Deps
-FROM stagex/core-busybox@sha256:d608daa946e4799cf28b105aba461db00187657bd55ea7c2935ff11dac237e27 AS busybox
+FROM stagex/core-busybox:1.37.0@sha256:d608daa946e4799cf28b105aba461db00187657bd55ea7c2935ff11dac237e27 AS busybox
+
 
 ############################
-# Builder
+# Release
 ############################
-FROM pallet-rust AS builder
+FROM pallet-rust AS release
 COPY --from=protobuf . /
 COPY --from=abseil-cpp . /
 COPY --from=sqlite3 . /
@@ -64,7 +77,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Export stage
 ############################
 FROM scratch AS export
-COPY --from=builder /usr/local/bin/zingo-cli /zingo-cli
+COPY --from=release /usr/local/bin/zingo-cli /zingo-cli
 
 ############################
 # Runtime stage
