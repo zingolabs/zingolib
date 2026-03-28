@@ -58,6 +58,9 @@ contains the `zingo-cli` binary.
 To run interactively with a custom server:
 `docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443`
 
+Any `docker run` will initialize a wallet if there was none in the container, and
+by default prints info and then help if no arguments are passed.
+
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
