@@ -49,8 +49,14 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 
 A bootstrapped and reproducible build pipeline using StageX is included in this repo.
 If you meet all the compatibility requirements, to create `zingo-cli`, you can run
-`make` in the root directory. The resulting binary will be found in the
-`/build/` directory.
+`make` in the root directory. The resulting binary will be found in the `/build/`
+directory, along with an OCI image in the form of a tar ball.
+
+This image can be loaded into docker with the `make load` convenience script, and
+contains the `zingo-cli` binary.
+
+To run interactively with a custom server:
+`docker run -it zingo-cli:latest ./zingo-cli --server https://zzz.stripest.online:443`
 
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
