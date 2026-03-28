@@ -58,19 +58,19 @@ ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-Wl,--build-id=none"
 # Copy entire workspace
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    --mount=type=cache,target=${CARGO_HOME}/git \
     cargo fetch --locked --target $TARGET_ARCH
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    --mount=type=cache,target=${CARGO_HOME}/git \
     cargo metadata --locked --format-version=1 > /dev/null 2>&1
 
 # TODO : --network=none was removed due to network requests in build script
 # this needs to be re-added to ensure hermeticity
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/src/app/target \
+RUN --mount=type=cache,target=/${CARGO_HOME}registry \
+    --mount=type=cache,target=${CARGO_HOME}/git \
+    --mount=type=cache,target=${HOME}/target \
     cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 
 ############################
