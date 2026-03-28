@@ -23,9 +23,8 @@ docker build -f "$DOCKERFILE" "$REPO_ROOT" \
 	"$@"
 
 # Extract binary locally from export stage
-# removed --quiet
 echo "Extracting binary..."
-docker build -f "$DOCKERFILE" "$REPO_ROOT" \
+docker build -f "$DOCKERFILE" "$REPO_ROOT" --quiet \
 	--platform "$PLATFORM" \
 	--target export \
 	--output type=local,dest="$REPO_ROOT/build" \
