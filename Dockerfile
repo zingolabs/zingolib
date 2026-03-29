@@ -47,15 +47,25 @@ SHELL ["/bin/sh", "-euo", "pipefail", "-c"]
 ARG HOME
 WORKDIR ${HOME}
 
-# Set environment variables
-ENV SOURCE_DATE_EPOCH=1
-ENV CARGO_HOME=/usr/local/cargo
+ARG CARGO_INCREMENTAL
+# default to 0, disables incremental compilation.
+ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
+
+ARG CARGO_HOME
+ENV CARGO_HOME=${CARGO_HOME}
+
+ARG CARGO_TARGET_DIR
+ARG TARGET_ARCH
+
+ARG FEATURES
+ENV FEATURES=${FEATURES}
 
 ENV RUST_BACKTRACE=1
-ENV TARGET_ARCH="x86_64-unknown-linux-musl"
 ENV RUSTFLAGS="-C codegen-units=1"
 ENV RUSTFLAGS="${RUSTFLAGS} -C target-feature=+crt-static"
 ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-Wl,--build-id=none"
+
+ENV SOURCE_DATE_EPOCH=1
 
 # Copy entire workspace
 COPY . .
