@@ -43,7 +43,9 @@ COPY --from=abseil-cpp . /
 COPY --from=sqlite3 . /
 
 SHELL ["/bin/sh", "-euo", "pipefail", "-c"]
-WORKDIR /usr/src/app
+
+ARG HOME
+WORKDIR ${HOME}
 
 # Set environment variables
 ENV SOURCE_DATE_EPOCH=1
