@@ -69,14 +69,16 @@ ENV SOURCE_DATE_EPOCH=1
 
 # Copy entire workspace
 COPY . .
+#todo bind mounts:
+#--mount=type=bind,source=../zingo-cli,target=zingo-cli,ro \
+# etc
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
+    --mount=type=bind,source=rust-toolchain.toml,target=rust-toolchain.toml,ro \
+ 		--mount=type=bind,source=Cargo.toml,target=Cargo.toml,ro \
+		--mount=type=bind,source=Cargo.lock,target=Cargo.lock,ro \
     cargo fetch --locked --target $TARGET_ARCH
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=${CARGO_HOME}/git \
-    cargo metadata --locked --format-version=1 > /dev/null 2>&1
 
 # TODO : --network=none was removed due to network requests in build script
 # this needs to be re-added to ensure hermeticity
