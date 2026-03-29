@@ -9312,6 +9312,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio-rustls",
  "tonic",
+ "zcash_client_backend",
 ]
 
 [[package]]
