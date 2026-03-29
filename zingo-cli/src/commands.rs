@@ -1,5 +1,8 @@
-//! An interface that passes strings (e.g. from a cli, into zingolib)
-//! upgrade-or-replace
+//! Command definitions and dispatch for zingo-cli.
+//!
+//! Each command implements the [`Command`] trait (or [`ShortCircuitedCommand`]
+//! for commands that run without a wallet). All commands are registered in
+//! [`get_commands`] and dispatched by [`do_user_command`].
 
 mod error;
 mod utils;
@@ -37,7 +40,7 @@ pub trait Command {
     /// display command help (in cli)
     fn help(&self) -> &'static str;
 
-    /// TODO: Add Doc Comment for this!
+    /// A one-line summary shown in the two-column command listing.
     fn short_help(&self) -> &'static str;
 
     /// in zingocli, this string is printed to console
@@ -46,9 +49,14 @@ pub trait Command {
     fn exec(&self, _args: &[&str], lightclient: &mut LightClient) -> String;
 }
 
-/// TODO: Add Doc Comment Here!
+/// A command that can execute without an active [`LightClient`].
+///
+/// This is used for commands like `help` that must run before the wallet
+/// is loaded — for example when the user passes `help` as the COMMAND
+/// argument on the command line.
 pub trait ShortCircuitedCommand {
-    /// TODO: Add Doc Comment Here!
+    /// Execute the command without a [`LightClient`], returning the
+    /// output string that will be printed to the console.
     fn exec_without_lc(args: Vec<String>) -> String;
 }
 
@@ -495,7 +503,7 @@ impl Command for ClearCommand {
     }
 }
 
-/// TODO: Add Doc Comment Here!
+/// Lists all available commands or shows detailed help for a specific command.
 pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> &'static str {
@@ -2011,7 +2019,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     all
 }
 
-/// TODO: Add Doc Comment Here!
+/// Dispatches a user command by name to the appropriate [`Command`] implementation.
+///
+/// Returns the command's output string, or an "Unknown command" message
+/// if no command with the given name exists.
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &mut LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
