@@ -123,7 +123,7 @@ where
 
     timestamped_test_log("following proposal, preparing to unwind if an assertion fails.");
 
-    let indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap());
+    let indexer = zingo_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()).unwrap();
     let server_height_at_send =
         BlockHeight::from(indexer.get_latest_block().await.unwrap().height as u32);
     let last_known_chain_height = sender
