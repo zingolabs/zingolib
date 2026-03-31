@@ -139,6 +139,11 @@ impl LightClient {
             }
         };
 
+        // Install the ring crypto provider for rustls. Required because both
+        // `ring` and `aws-lc-rs` features are unified in via transitive deps,
+        // preventing rustls from auto-selecting a provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let indexer = zingo_netutils::GrpcIndexer::new(config.indexer_uri())?;
 
         Ok(LightClient {
