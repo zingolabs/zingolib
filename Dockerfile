@@ -98,7 +98,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #    cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 # --frozen was removed due to ...
 # process didn't exit successfully: `/home/user/target/release/build/zingolib-c20046aef66d0882/build-script-build` (exit status: 101)
-#
 
 # TODO : get rid of:
 #    --mount=type=cache,target=${HOME}/.zcash-params \
@@ -124,7 +123,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=bind,source=/zingo-price,target=zingo-price,ro \
     --mount=type=bind,source=/zingo-status,target=zingo-status,ro \
     --mount=type=bind,source=/zingolib_testutils,target=zingolib_testutils,ro \
-    cargo build --release --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
+    cargo build --release --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 
 ############################
 # Export stage
