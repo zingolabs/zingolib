@@ -79,15 +79,15 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=bind,source=rust-toolchain.toml,target=rust-toolchain.toml,ro \
  		--mount=type=bind,source=Cargo.toml,target=Cargo.toml,ro \
 		--mount=type=bind,source=Cargo.lock,target=Cargo.lock,ro \
-    --mount=type=bind,source=../darkside-tests,target=darkside-tests,ro \
-    --mount=type=bind,source=../libtonode-tests,target=libtonode-tests,ro \
-    --mount=type=bind,source=../pepper-sync,target=pepper-sync,ro \
-    --mount=type=bind,source=../zingo-cli,target=zingo-cli,ro \
-    --mount=type=bind,source=../zingolib,target=zingolib,ro \
-    --mount=type=bind,source=../zingo-memo,target=zingo-memo,ro \
-    --mount=type=bind,source=../zingo-price,target=zingo-price,ro \
-    --mount=type=bind,source=../zingo-status,target=zingo-status,ro \
-    --mount=type=bind,source=../zingolib_testutils,target=zingolib_testutils,ro \
+    --mount=type=bind,source=/darkside-tests,target=darkside-tests,ro \
+    --mount=type=bind,source=/libtonode-tests,target=libtonode-tests,ro \
+    --mount=type=bind,source=/pepper-sync,target=pepper-sync,ro \
+    --mount=type=bind,source=/zingo-cli,target=zingo-cli,ro \
+    --mount=type=bind,source=/zingolib,target=zingolib,ro \
+    --mount=type=bind,source=/zingo-memo,target=zingo-memo,ro \
+    --mount=type=bind,source=/zingo-price,target=zingo-price,ro \
+    --mount=type=bind,source=/zingo-status,target=zingo-status,ro \
+    --mount=type=bind,source=/zingolib_testutils,target=zingolib_testutils,ro \
     cargo fetch --target $TARGET_ARCH
 
 # TODO : --network=none was removed due to network requests in build script
@@ -98,21 +98,32 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #    cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 # --frozen was removed due to ...
 # process didn't exit successfully: `/home/user/target/release/build/zingolib-c20046aef66d0882/build-script-build` (exit status: 101)
+#
+
+# TODO : get rid of:
+#    --mount=type=cache,target=${HOME}/.zcash-params \
+# this works!
+# TODO : get rid of:
+#     --mount=type=cache,target=zingolib/zcash-params \
+# This seems to soothe the savage beast as well!
+
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=${HOME}/target \
+    --mount=type=cache,target=${HOME}/.zcash-params \
+    --mount=type=cache,target=zingolib/zcash-params \
     --mount=type=bind,source=rust-toolchain.toml,target=rust-toolchain.toml,ro \
  		--mount=type=bind,source=Cargo.toml,target=Cargo.toml,ro \
 		--mount=type=bind,source=Cargo.lock,target=Cargo.lock,ro \
-    --mount=type=bind,source=../darkside-tests,target=darkside-tests,ro \
-    --mount=type=bind,source=../libtonode-tests,target=libtonode-tests,ro \
-    --mount=type=bind,source=../pepper-sync,target=pepper-sync,ro \
-    --mount=type=bind,source=../zingo-cli,target=zingo-cli,ro \
-    --mount=type=bind,source=../zingolib,target=zingolib,ro \
-    --mount=type=bind,source=../zingo-memo,target=zingo-memo,ro \
-    --mount=type=bind,source=../zingo-price,target=zingo-price,ro \
-    --mount=type=bind,source=../zingo-status,target=zingo-status,ro \
-    --mount=type=bind,source=../zingolib_testutils,target=zingolib_testutils,ro \
+    --mount=type=bind,source=/darkside-tests,target=darkside-tests,ro \
+    --mount=type=bind,source=/libtonode-tests,target=libtonode-tests,ro \
+    --mount=type=bind,source=/pepper-sync,target=pepper-sync,ro \
+    --mount=type=bind,source=/zingo-cli,target=zingo-cli,ro \
+    --mount=type=bind,source=/zingolib,target=zingolib,ro \
+    --mount=type=bind,source=/zingo-memo,target=zingo-memo,ro \
+    --mount=type=bind,source=/zingo-price,target=zingo-price,ro \
+    --mount=type=bind,source=/zingo-status,target=zingo-status,ro \
+    --mount=type=bind,source=/zingolib_testutils,target=zingolib_testutils,ro \
     cargo build --release --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 
 ############################
