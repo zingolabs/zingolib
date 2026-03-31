@@ -67,13 +67,11 @@ ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-Wl,--build-id=none"
 
 ENV SOURCE_DATE_EPOCH=1
 
-# Copy entire workspace
-# COPY . .
-
 # TODO : restore:
 #    cargo fetch --locked --target $TARGET_ARCH
 # --locked was removed due to consistant breakage between Cargo.Toml and Cargo.lock
 # see Github issues #2114 and #2311
+
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=bind,source=rust-toolchain.toml,target=rust-toolchain.toml,ro \
@@ -92,19 +90,21 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 
 # TODO : --network=none was removed due to network requests in build script
 # (docker level network denial)
-# and cargo build requiring network access as well (GH #....)
+# and cargo build requiring network access as well (see Github issue #2162)
 # this needs to be re-added to ensure hermeticity
+#
 # TODO: additionally, restore
-#    cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
-# --frozen was removed due to ...
-# process didn't exit successfully: `/home/user/target/release/build/zingolib-c20046aef66d0882/build-script-build` (exit status: 101)
+#    cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
+# --frozen was als removed due to build script
 
 # TODO : get rid of:
 #    --mount=type=cache,target=${HOME}/.zcash-params \
+# See Github issue #2314
 # this works!
 # TODO : get rid of:
 #     --mount=type=cache,target=zingolib/zcash-params \
-# This seems to soothe the savage beast as well!
+# This soothes the savage beast as well!
+# see Github issue #2315
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
@@ -123,7 +123,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=bind,source=/zingo-price,target=zingo-price,ro \
     --mount=type=bind,source=/zingo-status,target=zingo-status,ro \
     --mount=type=bind,source=/zingolib_testutils,target=zingolib_testutils,ro \
-    cargo build --release --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
+    cargo build --release ${FEATURES:+--features ${FEATURES}} --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
 
 ############################
 # Export stage
