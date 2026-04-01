@@ -3,11 +3,16 @@ use darkside_tests::utils::prepare_darksidewalletd;
 use darkside_tests::utils::update_tree_states_for_transaction;
 use tempfile::TempDir;
 use zcash_local_net::indexer::Indexer;
-use zcash_local_net::network::localhost_uri;
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::DARKSIDE_SEED;
+use zingolib::config::ChainType;
+use zingolib::config::ClientConfig;
+use zingolib::config::WalletConfig;
 use zingolib::get_base_address_macro;
+use zingolib::lightclient::LightClient;
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs;
+use zingolib::testutils::port_to_localhost_uri;
 use zingolib::testutils::tempfile;
 use zingolib::wallet::balance::AccountBalance;
 use zingolib_testutils::scenarios::ClientBuilder;
@@ -19,18 +24,24 @@ use darkside_tests::utils::lightwalletd;
 async fn simple_sync() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let activation_heights = all_height_one_nus();
+    let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id, wallet_dir).build_client(
-        DARKSIDE_SEED.to_string(),
-        0,
-        true,
-        activation_heights,
-    );
+    let mut light_client = ClientBuilder::new(server_id, wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            activation_heights,
+        )
+        .await;
 
     let result = light_client.sync_and_await().await.unwrap();
 
@@ -62,19 +73,25 @@ async fn simple_sync() {
 async fn reorg_receipt_sync_generic() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
-    let activation_heights = all_height_one_nus();
+    let activation_heights = ActivationHeights::default();
     let wallet_dir = TempDir::new().unwrap();
-    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir).build_client(
-        DARKSIDE_SEED.to_string(),
-        0,
-        true,
-        activation_heights,
-    );
+    let mut light_client = ClientBuilder::new(server_id.clone(), wallet_dir)
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            activation_heights,
+        )
+        .await;
     light_client.sync_and_await().await.unwrap();
 
     assert_eq!(
@@ -122,22 +139,38 @@ async fn reorg_receipt_sync_generic() {
 async fn sent_transaction_reorged_into_mempool() {
     let lightwalletd = lightwalletd().await.unwrap();
 
-    let server_id = localhost_uri(lightwalletd.listen_port());
+    let server_id = port_to_localhost_uri(lightwalletd.listen_port());
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
 
     let wallet_dir = TempDir::new().unwrap();
     let mut client_manager = ClientBuilder::new(server_id.clone(), wallet_dir);
-    let activation_heights = all_height_one_nus();
-    let mut light_client =
-        client_manager.build_client(DARKSIDE_SEED.to_string(), 0, true, activation_heights);
-    let mut recipient = client_manager.build_client(
-        zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-        1,
-        true,
-        activation_heights,
-    );
+    let activation_heights = ActivationHeights::default();
+    let mut light_client = client_manager
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: DARKSIDE_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            activation_heights,
+        )
+        .await;
+    let mut recipient = client_manager
+        .build_client(
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 1,
+                wallet_settings: default_test_wallet_settings(),
+            },
+            true,
+            activation_heights,
+        )
+        .await;
 
     light_client.sync_and_await().await.unwrap();
     assert_eq!(
@@ -221,10 +254,19 @@ async fn sent_transaction_reorged_into_mempool() {
             .await
             .unwrap()
     );
-    let mut loaded_client =
-        zingolib::testutils::lightclient::new_client_from_save_buffer(&mut light_client)
-            .await
-            .unwrap();
+
+    light_client.save_task().await;
+    light_client.wait_for_save().await;
+    light_client.shutdown_save_task().await.unwrap();
+
+    let config = ClientConfig::builder()
+        .set_indexer_uri(client_manager.server_id.clone())
+        .set_chain_type(ChainType::Regtest(activation_heights))
+        .set_wallet_dir(light_client.wallet_dir().unwrap())
+        .set_wallet_config(WalletConfig::Read)
+        .build();
+    let mut loaded_client = LightClient::new(config, true).unwrap();
+
     loaded_client.sync_and_await().await.unwrap();
     assert_eq!(
         loaded_client

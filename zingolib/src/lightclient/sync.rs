@@ -5,8 +5,7 @@ use std::sync::atomic;
 use std::time::Duration;
 
 use futures::FutureExt;
-use pepper_sync::error::SyncError;
-use pepper_sync::error::SyncModeError;
+use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
 use pepper_sync::wallet::SyncMode;
 
 use crate::data::PollReport;
@@ -27,15 +26,19 @@ impl LightClient {
             ));
         }
 
-        let client = crate::grpc_client::get_zcb_client(self.config.get_lightwalletd_uri()).await?;
-        let wallet_guard = self.wallet.read().await;
-        let network = wallet_guard.network;
-        let sync_config = wallet_guard.wallet_settings.sync_config.clone();
-        drop(wallet_guard);
-        let wallet = self.wallet.clone();
+        let client = self.indexer.get_zcb_client().await?;
+        let chain_type = self.chain_type();
+        let sync_config = self
+            .wallet()
+            .read()
+            .await
+            .wallet_settings
+            .sync_config
+            .clone();
+        let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();
         let sync_handle = tokio::spawn(async move {
-            pepper_sync::sync(client, &network, wallet, sync_mode, sync_config).await
+            pepper_sync::sync(client, &chain_type, wallet, sync_mode, sync_config).await
         });
         self.sync_handle = Some(sync_handle);
 
@@ -56,7 +59,7 @@ impl LightClient {
                 interval.tick().await;
             }
         }
-        self.wallet.write().await.clear_all();
+        self.wallet().write().await.clear_all();
         self.sync().await
     }
 
@@ -148,6 +151,26 @@ impl LightClient {
         self.rescan().await?;
         self.await_sync().await
     }
+
+    /// Polls the sync task and, if it failed, returns the recommended
+    /// recovery action alongside the error description.
+    ///
+    /// This is the primary entry point for consumers (CLI, mobile, PC)
+    /// that need to decide whether to retry, switch servers, or give up
+    /// after a sync failure.
+    ///
+    /// Returns `None` if sync has not been launched, is still running,
+    /// or completed successfully.
+    pub fn poll_sync_recovery(&mut self) -> Option<(SyncRecoveryObservables, String)> {
+        match self.poll_sync() {
+            PollReport::Ready(Err(e)) => {
+                let action = e.recovery_recommendation();
+                let description = e.to_string();
+                Some((action, description))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -165,7 +188,7 @@ pub mod test {
             log::error!("Error installing crypto provider: {e:?}");
         }
 
-        let mut lc = wallet_case.load_example_wallet_with_client().await;
+        let mut lc = wallet_case.load_example_wallet().await;
 
         let sync_result = lc.sync_and_await().await.unwrap();
         tracing::info!("{sync_result}");

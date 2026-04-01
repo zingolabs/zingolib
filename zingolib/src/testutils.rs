@@ -11,18 +11,17 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedProtocol, consensus};
 
-use crate::config::ZingoConfig;
 use crate::lightclient::LightClient;
 use crate::lightclient::error::LightClientError;
+use crate::wallet::WalletSettings;
 use crate::wallet::keys::unified::UnifiedKeyStore;
 use crate::wallet::output::SpendStatus;
 use crate::wallet::summary::data::{
     BasicCoinSummary, BasicNoteSummary, OutgoingNoteSummary, TransactionSummary,
 };
-use crate::wallet::{LightWallet, WalletBase, WalletSettings};
 
 pub mod assertions;
 pub mod chain_generics;
@@ -35,13 +34,24 @@ pub mod paths;
 pub use portpicker;
 pub use tempfile;
 
+/// Default wallet settings for testing
+pub fn default_test_wallet_settings() -> WalletSettings {
+    WalletSettings {
+        sync_config: SyncConfig {
+            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            performance_level: PerformanceLevel::High,
+        },
+        min_confirmations: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
+    }
+}
+
 /// TODO: Add Doc Comment Here!
 #[must_use]
 pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [Fvk; 3] {
     let orchard_vk: orchard::keys::FullViewingKey = unified_keystore.try_into().unwrap();
     let sapling_vk: sapling_crypto::zip32::DiversifiableFullViewingKey =
         unified_keystore.try_into().unwrap();
-    let transparent_vk: zcash_primitives::legacy::keys::AccountPubKey =
+    let transparent_vk: zcash_transparent::keys::AccountPubKey =
         unified_keystore.try_into().unwrap();
 
     let mut transparent_vk_bytes = [0u8; 65];
@@ -52,36 +62,6 @@ pub fn build_fvks_from_unified_keystore(unified_keystore: &UnifiedKeyStore) -> [
         Fvk::Sapling(sapling_vk.to_bytes()),
         Fvk::P2pkh(transparent_vk_bytes),
     ]
-}
-
-/// TODO: Add Doc Comment Here!
-#[must_use]
-pub fn build_fvk_client(fvks: &[&Fvk], config: ZingoConfig) -> LightClient {
-    let ufvk = zcash_address::unified::Encoding::encode(
-        &<zcash_address::unified::Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.iter().copied().cloned().collect(),
-        )
-        .unwrap(),
-        &zcash_protocol::consensus::NetworkType::Regtest,
-    );
-    LightClient::create_from_wallet(
-        LightWallet::new(
-            config.chain,
-            WalletBase::Ufvk(ufvk),
-            0.into(),
-            WalletSettings {
-                sync_config: SyncConfig {
-                    transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                    performance_level: PerformanceLevel::High,
-                },
-                min_confirmations: NonZeroU32::try_from(1).unwrap(),
-            },
-        )
-        .unwrap(),
-        config,
-        false,
-    )
-    .unwrap()
 }
 
 /// TODO: doc comment
@@ -230,7 +210,7 @@ pub async fn sync_to_target_height(
     client.sync_and_await().await?;
     while u32::from(
         client
-            .wallet
+            .wallet()
             .read()
             .await
             .sync_state
@@ -606,7 +586,7 @@ pub(crate) use build_push_list;
 /// Take a P2PKH taddr and interpret it as a tex addr
 pub fn interpret_taddr_as_tex_addr(
     taddr_bytes: [u8; 20],
-    p: &impl zcash_primitives::consensus::Parameters,
+    p: &impl zcash_protocol::consensus::Parameters,
 ) -> String {
     bech32::encode::<bech32::Bech32m>(
         bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),

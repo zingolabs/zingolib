@@ -131,33 +131,6 @@ impl PriceList {
         Ok(current_price)
     }
 
-    /// Updates historical daily price list.
-    ///
-    /// Currently only USD is supported.
-    // TODO: under development
-    pub async fn update_historical_price_list(&mut self) -> Result<(), PriceError> {
-        let current_time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("should never fail when comparing with an instant so far in the past")
-            .as_secs() as u32;
-
-        if let Some(time_last_updated) = self.time_historical_prices_last_updated {
-            self.daily_prices.append(
-                &mut get_daily_prices(
-                    u128::from(time_last_updated) * 1000,
-                    u128::from(current_time) * 1000,
-                )
-                .await?,
-            );
-        } else {
-            return Err(PriceError::PriceListNotInitialized);
-        }
-
-        self.time_historical_prices_last_updated = Some(current_time);
-
-        todo!()
-    }
-
     /// Prunes historical price list to only retain prices for the days containing `transaction_times`.
     ///
     /// Will not remove prices above or equal to the `prune_below` threshold.
@@ -273,10 +246,4 @@ async fn get_current_price_tor(tor_client: &tor::Client) -> Result<Price, PriceE
         time: current_time,
         price_usd: current_price.try_into()?,
     })
-}
-
-/// Get daily prices in USD from `start` to `end` time in milliseconds.
-// TODO: under development
-async fn get_daily_prices(_start: u128, _end: u128) -> Result<Vec<Price>, PriceError> {
-    todo!()
 }

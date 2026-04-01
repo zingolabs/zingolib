@@ -1,25 +1,25 @@
 //! implementation of conduct chain for live chains
 
 use http::Uri;
+
 use zcash_protocol::consensus::BlockHeight;
 
-use crate::{config::DEFAULT_TESTNET_LIGHTWALLETD_SERVER, lightclient::LightClient};
+use zingo_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
+use crate::{config::DEFAULT_INDEXER_URI_TESTNET, lightclient::LightClient};
 
 /// this is essentially a placeholder.
 /// allows using existing `ChainGeneric` functions with `TestNet` wallets
-pub struct TestnetEnvironment {
+pub struct NetworkedTestEnvironment {
     indexer_uri: Uri,
     latest_known_server_height: Option<BlockHeight>,
 }
 
-impl TestnetEnvironment {
+impl NetworkedTestEnvironment {
     async fn update_server_height(&mut self) {
-        let latest = crate::grpc_connector::get_latest_block(self.lightserver_uri().unwrap())
-            .await
-            .unwrap()
-            .height as u32;
+        let indexer = zingo_netutils::GrpcIndexer::new(self.lightserver_uri().unwrap()).unwrap();
+        let latest = indexer.get_latest_block().await.unwrap().height as u32;
         self.latest_known_server_height = Some(BlockHeight::from(latest));
         crate::testutils::timestamped_test_log(
             format!("Networked Test Chain is now at height {latest}").as_str(),
@@ -27,11 +27,10 @@ impl TestnetEnvironment {
     }
 }
 
-impl ConductChain for TestnetEnvironment {
+impl ConductChain for NetworkedTestEnvironment {
     async fn setup() -> Self {
         Self {
-            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_TESTNET_LIGHTWALLETD_SERVER)
-                .unwrap(),
+            indexer_uri: <Uri as std::str::FromStr>::from_str(DEFAULT_INDEXER_URI_TESTNET).unwrap(),
             latest_known_server_height: None,
         }
     }
@@ -40,7 +39,7 @@ impl ConductChain for TestnetEnvironment {
         unimplemented!()
     }
 
-    async fn zingo_config(&mut self) -> crate::config::ZingoConfig {
+    async fn zingo_config(&mut self) -> crate::config::ClientConfig {
         unimplemented!()
     }
 

@@ -7,9 +7,10 @@ use pepper_sync::wallet::{
 };
 
 use super::LightWallet;
-use super::error::{FeeError, RemovalError, SpendError};
+use super::error::{FeeError, SpendError};
 use super::summary::data::{SendType, TransactionKind};
-use crate::config::get_donation_address_for_chain;
+use crate::get_zennies_for_zingo_address;
+use crate::wallet::error::WalletError;
 
 impl LightWallet {
     /// Gets all outputs of a given type spent in the given `transaction`.
@@ -91,27 +92,25 @@ impl LightWallet {
             .expect("fee should not be negative"))
     }
 
-    /// Removes transaction with the given `txid` from the wallet.
-    /// Also sets the `spending_transaction` fields of any outputs spent in this transaction to `None` restoring the
-    /// wallet balance and allowing these outputs to be re-selected for spending in future sends.
+    /// Removes failed transaction with the given `txid` from the wallet.
     ///
     /// # Error
     ///
-    /// Returns error if transaction is confirmed or does not exist in the wallet.
-    pub fn remove_unconfirmed_transaction(&mut self, txid: TxId) -> Result<(), RemovalError> {
-        if let Some(transaction) = self.wallet_transactions.get(&txid) {
-            if transaction.status().is_confirmed() {
-                return Err(RemovalError::TransactionAlreadyConfirmed);
+    /// Returns error if transaction is not `Failed` or does not exist in the wallet.
+    pub fn remove_failed_transaction(&mut self, txid: TxId) -> Result<(), WalletError> {
+        match self
+            .wallet_transactions
+            .get(&txid)
+            .map(|tx| tx.status().is_failed())
+        {
+            Some(true) => {
+                self.wallet_transactions.remove(&txid);
+                self.save_required = true;
+                Ok(())
             }
-        } else {
-            return Err(RemovalError::TransactionNotFound);
+            Some(false) => Err(WalletError::RemovalError),
+            None => Err(WalletError::TransactionNotFound(txid)),
         }
-
-        pepper_sync::reset_spends(&mut self.wallet_transactions, vec![txid]);
-        self.wallet_transactions.remove(&txid);
-        self.save_required = true;
-
-        Ok(())
     }
 
     /// Determine the kind of transaction from the current state of wallet data.
@@ -119,7 +118,7 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
     ) -> Result<TransactionKind, SpendError> {
-        let zfz_address = get_donation_address_for_chain(&self.network);
+        let zfz_address = get_zennies_for_zingo_address(self.chain_type);
 
         let transparent_spends = self.find_spends::<TransparentCoin>(transaction, false)?;
         let sapling_spends = self.find_spends::<SaplingNote>(transaction, false)?;
@@ -152,7 +151,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
             && transaction
@@ -163,7 +162,7 @@ impl LightWallet {
                         .is_some()
                         || outgoing_note.key_id().scope == zip32::Scope::Internal
                         || outgoing_note
-                            .encoded_recipient_full_unified_address(&self.network)
+                            .encoded_recipient_full_unified_address(&self.chain_type)
                             .is_some_and(|unified_address| unified_address == *zfz_address)
                 })
         {
@@ -171,5 +170,73 @@ impl LightWallet {
         } else {
             Ok(TransactionKind::Sent(SendType::Send))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pepper_sync::wallet::WalletTransaction;
+    use zcash_primitives::transaction::TxId;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+
+    use crate::{
+        config::{ChainType, WalletConfig},
+        testutils::default_test_wallet_settings,
+        wallet::{LightWallet, error::WalletError},
+    };
+
+    fn test_wallet() -> LightWallet {
+        LightWallet::new(
+            ChainType::Mainnet,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419_200,
+                wallet_settings: default_test_wallet_settings(),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn remove_failed_transaction_not_found() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([0u8; 32]);
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::TransactionNotFound(id)) if id == txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_not_failed() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([1u8; 32]);
+        let status = ConfirmationStatus::Calculated(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(matches!(result, Err(WalletError::RemovalError)));
+        assert!(wallet.wallet_transactions.contains_key(&txid));
+    }
+
+    #[test]
+    fn remove_failed_transaction_success() {
+        let mut wallet = test_wallet();
+        let txid = TxId::from_bytes([2u8; 32]);
+        let status = ConfirmationStatus::Failed(1.into());
+        wallet
+            .wallet_transactions
+            .insert(txid, WalletTransaction::new_for_test(txid, status));
+
+        let result = wallet.remove_failed_transaction(txid);
+
+        assert!(result.is_ok());
+        assert!(!wallet.wallet_transactions.contains_key(&txid));
+        assert!(wallet.save_required);
     }
 }

@@ -12,7 +12,7 @@ use pepper_sync::{
     },
 };
 use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
-use zcash_primitives::consensus::BlockHeight;
+use zcash_protocol::consensus::BlockHeight;
 use zip32::{AccountId, DiversifierIndex};
 
 use super::{
@@ -25,7 +25,7 @@ impl SyncWallet for LightWallet {
     type Error = WalletError;
 
     fn get_birthday(&self) -> Result<BlockHeight, Self::Error> {
-        Ok(self.birthday)
+        Ok(self.birthday())
     }
 
     fn get_sync_state(&self) -> Result<&SyncState, Self::Error> {

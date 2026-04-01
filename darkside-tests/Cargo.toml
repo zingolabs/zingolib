@@ -10,13 +10,11 @@ chain_generic_tests = []
 [dependencies]
 zingolib = { workspace = true, features = ["darkside_tests", "testutils"] }
 zingo-netutils = { workspace = true }
-zingo_common_components = { workspace = true, features = ["for_test"] }
+zingo_common_components = { workspace = true }
 
-zingolib_testutils = { version = "0.1.0", path = "../zingolib_testutils" }
+zingolib_testutils = { path = "../zingolib_testutils" }
 zcash_local_net.workspace = true
 zingo_test_vectors.workspace = true
-
-zebra-chain = { workspace = true }
 
 orchard = { workspace = true }
 sapling-crypto = { workspace = true }
@@ -28,12 +26,9 @@ zip32.workspace = true
 
 tokio = { workspace = true, features = ["full"] }
 http = { workspace = true }
-hyper = { workspace = true }
-hyper-util = { workspace = true }
 tonic = { workspace = true }
 tonic-prost = { workspace = true }
 prost = { workspace = true }
-tower = { workspace = true }
 hex = { workspace = true }
 futures-util = { workspace = true }
 serde_json = { workspace = true }
@@ -46,5 +41,5 @@ tracing-subscriber.workspace = true
 [build-dependencies]
 tonic-prost-build = { workspace = true }
 
-[package.metadata.cargo-machete]
-ignored = ["prost"]
+[package.metadata.cargo-shear]
+ignored = ["prost", "tonic-prost", "futures-util"]

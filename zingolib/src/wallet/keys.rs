@@ -9,7 +9,8 @@ use pepper_sync::{
 };
 use unified::{ReceiverSelection, UnifiedAddressId};
 use zcash_keys::address::UnifiedAddress;
-use zcash_primitives::legacy::{TransparentAddress, keys::NonHardenedChildIndex};
+use zcash_transparent::address::TransparentAddress;
+use zcash_transparent::keys::NonHardenedChildIndex;
 use zip32::DiversifierIndex;
 
 use super::{LightWallet, error::KeyError};
@@ -117,7 +118,7 @@ impl LightWallet {
             .generate_transparent_address(address_id.address_index(), address_id.scope())?;
         self.transparent_addresses.insert(
             address_id,
-            transparent::encode_address(&self.network, external_address),
+            transparent::encode_address(&self.chain_type, external_address),
         );
         self.save_required = true;
 
@@ -163,7 +164,7 @@ impl LightWallet {
 
                 self.transparent_addresses.insert(
                     address_id,
-                    transparent::encode_address(&self.network, refund_address),
+                    transparent::encode_address(&self.chain_type, refund_address),
                 );
 
                 Ok((address_id, refund_address))
@@ -181,7 +182,7 @@ impl LightWallet {
         &self,
         encoded_address: &str,
     ) -> Result<Option<WalletAddressRef>, KeyError> {
-        Ok(match decode_address(&self.network, encoded_address)? {
+        Ok(match decode_address(&self.chain_type, encoded_address)? {
             zcash_keys::address::Address::Unified(address) => {
                 let orchard = address
                     .orchard()
@@ -262,7 +263,7 @@ impl LightWallet {
         &self,
         encoded_address: &str,
     ) -> Result<Option<WalletAddressRef>, KeyError> {
-        Ok(match decode_address(&self.network, encoded_address)? {
+        Ok(match decode_address(&self.chain_type, encoded_address)? {
             zcash_keys::address::Address::Unified(address) => {
                 let orchard = address
                     .orchard()
@@ -375,7 +376,7 @@ impl LightWallet {
         &self,
         address: &TransparentAddress,
     ) -> Option<TransparentAddressId> {
-        let encoded_address = transparent::encode_address(&self.network, *address);
+        let encoded_address = transparent::encode_address(&self.chain_type, *address);
 
         self.transparent_addresses
             .iter()
@@ -474,7 +475,7 @@ mod test {
                         account_id: zip32::AccountId::ZERO,
                     })
                     .unwrap()
-                    .encode(&self.network),
+                    .encode(&self.chain_type),
                 PoolType::SAPLING => self
                     .unified_addresses()
                     .get(&UnifiedAddressId {
@@ -482,7 +483,7 @@ mod test {
                         account_id: zip32::AccountId::ZERO,
                     })
                     .unwrap()
-                    .encode(&self.network),
+                    .encode(&self.chain_type),
                 PoolType::Transparent => {
                     self.transparent_addresses.values().next().unwrap().clone()
                 }

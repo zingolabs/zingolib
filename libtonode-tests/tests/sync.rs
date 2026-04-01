@@ -1,21 +1,20 @@
 use std::{num::NonZeroU32, time::Duration};
 
-use bip0039::Mnemonic;
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use shardtree::store::ShardStore;
 use zcash_local_net::validator::Validator;
 use zcash_protocol::consensus::BlockHeight;
-use zingo_common_components::protocol::activation_heights::for_test::all_height_one_nus;
+use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
+use zingolib::config::{ChainType, ClientConfig, WalletConfig};
+use zingolib::testutils::default_test_wallet_settings;
 use zingolib::testutils::lightclient::from_inputs::quick_send;
 use zingolib::testutils::paths::get_cargo_manifest_dir;
 use zingolib::testutils::tempfile::TempDir;
 use zingolib::{
-    config::{DEFAULT_LIGHTWALLETD_SERVER, construct_lightwalletd_uri, load_clientconfig},
+    config::{DEFAULT_INDEXER_URI, construct_lightwalletd_uri},
     get_base_address_macro,
     lightclient::LightClient,
     testutils::lightclient::from_inputs::{self},
-    wallet::{LightWallet, WalletBase, WalletSettings},
 };
 use zingolib_testutils::scenarios::{self, increase_height_and_wait_for_client};
 
@@ -27,46 +26,28 @@ async fn sync_mainnet_test() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.chain,
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            1_500_000.into(),
-            config.wallet_settings.clone(),
-        )
-        .unwrap(),
-        config,
-        true,
-    )
-    .unwrap();
+    let config = ClientConfig::builder()
+        .set_indexer_uri(uri.clone())
+        .set_chain_type(ChainType::Mainnet)
+        .set_wallet_dir(temp_path)
+        .set_wallet_config(WalletConfig::MnemonicPhrase {
+            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            birthday: 1_500_000,
+            wallet_settings: default_test_wallet_settings(),
+        })
+        .build();
+    let mut lightclient = LightClient::new(config, true).unwrap();
 
     lightclient.sync().await.unwrap();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
     loop {
         interval.tick().await;
         {
-            let wallet = lightclient.wallet.read().await;
+            let wallet = lightclient.wallet().read().await;
             tracing::info!(
                 "{}",
                 json::JsonValue::from(pepper_sync::sync_status(&*wallet).await.unwrap())
@@ -80,7 +61,7 @@ async fn sync_mainnet_test() {
             tracing::info!("nullifiers s: {}", wallet.nullifier_map.sapling.len());
             tracing::info!("outpoints: {}", wallet.outpoint_map.len());
         }
-        lightclient.wallet.write().await.save().unwrap();
+        lightclient.wallet().write().await.save().unwrap();
     }
 
     // let wallet = lightclient.wallet.read().await;
@@ -97,39 +78,21 @@ async fn sync_status() {
         .expect("Ring to work as a default");
     tracing_subscriber::fmt().init();
 
-    let uri = construct_lightwalletd_uri(Some(DEFAULT_LIGHTWALLETD_SERVER.to_string()));
+    let uri = construct_lightwalletd_uri(Some(DEFAULT_INDEXER_URI.to_string())).unwrap();
     let temp_dir = TempDir::new().unwrap();
     let temp_path = temp_dir.path().to_path_buf();
-    let config = load_clientconfig(
-        uri.clone(),
-        Some(temp_path),
-        zingolib::config::ChainType::Mainnet,
-        WalletSettings {
-            sync_config: SyncConfig {
-                transparent_address_discovery: TransparentAddressDiscovery::minimal(),
-                performance_level: PerformanceLevel::High,
-            },
-            min_confirmations: NonZeroU32::try_from(1).unwrap(),
-        },
-        1.try_into().unwrap(),
-        "".to_string(),
-    )
-    .unwrap();
-    let mut lightclient = LightClient::create_from_wallet(
-        LightWallet::new(
-            config.chain,
-            WalletBase::Mnemonic {
-                mnemonic: Mnemonic::from_phrase(HOSPITAL_MUSEUM_SEED.to_string()).unwrap(),
-                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
-            },
-            2_496_152.into(),
-            config.wallet_settings.clone(),
-        )
-        .unwrap(),
-        config,
-        true,
-    )
-    .unwrap();
+    let config = ClientConfig::builder()
+        .set_indexer_uri(uri.clone())
+        .set_chain_type(ChainType::Mainnet)
+        .set_wallet_dir(temp_path)
+        .set_wallet_config(WalletConfig::MnemonicPhrase {
+            mnemonic_phrase: HOSPITAL_MUSEUM_SEED.to_string(),
+            no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded integer"),
+            birthday: 2_496_152,
+            wallet_settings: default_test_wallet_settings(),
+        })
+        .build();
+    let mut lightclient = LightClient::new(config, true).unwrap();
 
     lightclient.sync_and_await().await.unwrap();
 }
@@ -227,7 +190,7 @@ async fn store_all_checkpoints_in_verification_window_chain_cache() {
 #[tokio::test]
 async fn store_all_checkpoints_in_verification_window() {
     let (_local_net, lightclient) = scenarios::unfunded_client(
-        all_height_one_nus(),
+        ActivationHeights::default(),
         Some(get_cargo_manifest_dir().join("store_all_checkpoints_test")),
     )
     .await;
@@ -235,7 +198,7 @@ async fn store_all_checkpoints_in_verification_window() {
     for height in 12..112 {
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees
@@ -248,7 +211,7 @@ async fn store_all_checkpoints_in_verification_window() {
         );
         assert!(
             lightclient
-                .wallet
+                .wallet()
                 .read()
                 .await
                 .shard_trees

@@ -1,8 +1,8 @@
 //! BIP32 key derivation primitives
 use std::io;
-use zcash_primitives::consensus::NetworkConstants;
+use zcash_protocol::consensus::NetworkConstants;
 
-use crate::config::ZingoConfig;
+use crate::config::ClientConfig;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use std::sync::LazyLock;
@@ -101,7 +101,7 @@ impl ExtendedPrivKey {
     /// TODO: Add Doc Comment Here!
     #[must_use]
     pub fn get_ext_taddr_from_bip39seed(
-        config: &ZingoConfig,
+        config: &ClientConfig,
         bip39_seed: &[u8],
         position: u32,
     ) -> Self {
@@ -112,7 +112,7 @@ impl ExtendedPrivKey {
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
             .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.chain.coin_type()).unwrap(),
+                KeyIndex::hardened_from_normalize_index(config.chain_type().coin_type()).unwrap(),
             )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(position).unwrap())

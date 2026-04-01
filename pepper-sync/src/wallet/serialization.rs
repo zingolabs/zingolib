@@ -17,7 +17,6 @@ use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     block::BlockHash,
-    legacy::Script,
     memo::Memo,
     merkle_tree::HashSer,
     transaction::{Transaction, TxId},
@@ -26,6 +25,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
     value::Zatoshis,
 };
+use zcash_transparent::address::Script;
 
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zingo_status::confirmation_status::ConfirmationStatus;
@@ -1139,12 +1139,17 @@ impl ShardTrees {
 
         // Write checkpoints
         let mut checkpoints = Vec::new();
+        let checkpoint_count = store.checkpoint_count().expect("Infallible");
         store
-            .with_checkpoints(MAX_REORG_ALLOWANCE as usize, |checkpoint_id, checkpoint| {
+            .with_checkpoints(checkpoint_count, |checkpoint_id, checkpoint| {
                 checkpoints.push((*checkpoint_id, checkpoint.clone()));
                 Ok(())
             })
             .expect("Infallible");
+        if checkpoints.len() > MAX_REORG_ALLOWANCE as usize {
+            let keep_from = checkpoints.len() - MAX_REORG_ALLOWANCE as usize;
+            checkpoints.drain(..keep_from);
+        }
         write_with_error_handling!(write_checkpoints, checkpoints);
 
         // Write cap
@@ -1154,5 +1159,73 @@ impl ShardTrees {
         *shardtree = shardtree::ShardTree::new(store, MAX_REORG_ALLOWANCE as usize);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shardtree_roundtrip_keeps_newest_checkpoints() {
+        let mut shard_trees = ShardTrees::new();
+
+        for height in 1..=150 {
+            let height = BlockHeight::from_u32(height);
+            shard_trees
+                .sapling
+                .store_mut()
+                .add_checkpoint(
+                    height,
+                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
+                )
+                .expect("infallible");
+            shard_trees
+                .orchard
+                .store_mut()
+                .add_checkpoint(
+                    height,
+                    Checkpoint::from_parts(TreeState::Empty, BTreeSet::new()),
+                )
+                .expect("infallible");
+        }
+
+        let mut bytes = Vec::new();
+        shard_trees.write(&mut bytes).expect("write should succeed");
+        let roundtripped = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
+
+        let sapling_store = roundtripped.sapling.store();
+        let orchard_store = roundtripped.orchard.store();
+
+        assert_eq!(sapling_store.checkpoint_count().expect("infallible"), 100);
+        assert_eq!(orchard_store.checkpoint_count().expect("infallible"), 100);
+        assert_eq!(
+            sapling_store.min_checkpoint_id().expect("infallible"),
+            Some(BlockHeight::from_u32(51))
+        );
+        assert_eq!(
+            sapling_store.max_checkpoint_id().expect("infallible"),
+            Some(BlockHeight::from_u32(150))
+        );
+        assert_eq!(
+            orchard_store.min_checkpoint_id().expect("infallible"),
+            Some(BlockHeight::from_u32(51))
+        );
+        assert_eq!(
+            orchard_store.max_checkpoint_id().expect("infallible"),
+            Some(BlockHeight::from_u32(150))
+        );
+        assert!(
+            sapling_store
+                .get_checkpoint(&BlockHeight::from_u32(149))
+                .expect("infallible")
+                .is_some()
+        );
+        assert!(
+            sapling_store
+                .get_checkpoint(&BlockHeight::from_u32(50))
+                .expect("infallible")
+                .is_none()
+        );
     }
 }

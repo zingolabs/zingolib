@@ -62,14 +62,15 @@ fn find_scan_targets(
 }
 
 /// Update scan ranges for scanning.
-pub(super) async fn update_scan_ranges(
+/// Returns the block height that reorg detection will start from.
+pub(super) fn update_scan_ranges(
     consensus_parameters: &impl consensus::Parameters,
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
-) {
+) -> BlockHeight {
     reset_scan_ranges(sync_state);
-    create_scan_range(last_known_chain_height, chain_height, sync_state).await;
+    create_scan_range(last_known_chain_height, chain_height, sync_state);
     let scan_targets = sync_state.scan_targets.clone();
     set_found_note_scan_ranges(
         consensus_parameters,
@@ -80,13 +81,19 @@ pub(super) async fn update_scan_ranges(
     set_chain_tip_scan_range(consensus_parameters, sync_state, chain_height);
     merge_scan_ranges(sync_state, ScanPriority::ChainTip);
 
-    let verification_height = sync_state
+    let reorg_detection_start_height = sync_state
         .highest_scanned_height()
         .expect("scan ranges must be non-empty")
         + 1;
-    if verification_height <= chain_height {
-        set_verify_scan_range(sync_state, verification_height, VerifyEnd::VerifyLowest);
+    if reorg_detection_start_height <= chain_height {
+        set_verify_scan_range(
+            sync_state,
+            reorg_detection_start_height,
+            VerifyEnd::VerifyLowest,
+        );
     }
+
+    reorg_detection_start_height
 }
 
 /// Merges all adjacent ranges of a given `scan_priority`.
@@ -127,7 +134,7 @@ pub(super) fn merge_scan_ranges(sync_state: &mut SyncState, scan_priority: ScanP
 }
 
 /// Create scan range between the wallet height and the chain height from the server.
-async fn create_scan_range(
+fn create_scan_range(
     last_known_chain_height: BlockHeight,
     chain_height: BlockHeight,
     sync_state: &mut SyncState,
@@ -144,6 +151,35 @@ async fn create_scan_range(
         ScanPriority::Historic,
     );
     sync_state.scan_ranges.push(new_scan_range);
+}
+
+/// Splits the range containing [`truncate_height` + 1] and removes all ranges containing block heights above
+/// `truncate_height`.
+/// If `truncate_height` is zero, the sync state will be cleared completely.
+pub(super) fn truncate_scan_ranges(truncate_height: BlockHeight, sync_state: &mut SyncState) {
+    if truncate_height == zcash_protocol::consensus::H0 {
+        *sync_state = SyncState::new();
+    }
+    let Some((index, range_to_split)) = sync_state
+        .scan_ranges()
+        .iter()
+        .cloned()
+        .enumerate()
+        .find(|(_index, range)| range.block_range().contains(&(truncate_height + 1)))
+    else {
+        return;
+    };
+
+    if let Some((first_segment, second_segment)) = range_to_split.split_at(truncate_height + 1) {
+        let split_ranges = vec![first_segment, second_segment];
+        sync_state.scan_ranges.splice(index..=index, split_ranges);
+    }
+
+    let truncated_scan_ranges = sync_state.scan_ranges[..sync_state
+        .scan_ranges()
+        .partition_point(|range| range.block_range().start <= truncate_height)]
+        .to_vec();
+    sync_state.scan_ranges = truncated_scan_ranges;
 }
 
 /// Resets scan ranges to recover from previous sync interruptions.
@@ -1028,6 +1064,33 @@ pub(super) fn update_found_note_shard_priority(
             sync_state,
             Some(shielded_protocol),
             wallet_transaction.status().get_height(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_scan_ranges() {
+        let mut sync_state = SyncState::new();
+        sync_state.scan_ranges = vec![
+            ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+            ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+            ScanRange::from_parts(200.into()..299.into(), ScanPriority::Historic),
+            ScanRange::from_parts(300.into()..399.into(), ScanPriority::Historic),
+        ];
+
+        super::truncate_scan_ranges(250.into(), &mut sync_state);
+
+        assert_eq!(
+            sync_state.scan_ranges,
+            vec![
+                ScanRange::from_parts(1.into()..99.into(), ScanPriority::Historic),
+                ScanRange::from_parts(100.into()..199.into(), ScanPriority::Historic),
+                ScanRange::from_parts(200.into()..251.into(), ScanPriority::Historic),
+            ]
         );
     }
 }

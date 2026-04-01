@@ -4,28 +4,8 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedProtocol};
 
-use crate::{
-    lightclient::{LightClient, error::LightClientError},
-    wallet::LightWallet,
-};
+use crate::lightclient::LightClient;
 
-/// Create a lightclient from the buffer of another
-pub async fn new_client_from_save_buffer(
-    template_client: &mut LightClient,
-) -> Result<LightClient, LightClientError> {
-    let mut wallet_bytes: Vec<u8> = vec![];
-    template_client
-        .wallet
-        .write()
-        .await
-        .write(&mut wallet_bytes, &template_client.config.chain)?;
-
-    LightClient::create_from_wallet(
-        LightWallet::read(wallet_bytes.as_slice(), template_client.config.chain)?,
-        template_client.config.clone(),
-        false,
-    )
-}
 /// gets the first address that will allow a sender to send to a specific pool, as a string
 pub async fn get_base_address(client: &LightClient, pooltype: PoolType) -> String {
     match pooltype {
@@ -74,7 +54,7 @@ pub mod from_inputs {
     use zcash_primitives::transaction::TxId;
 
     use crate::{
-        lightclient::{LightClient, error::QuickSendError},
+        lightclient::{LightClient, error::LightClientError},
         wallet::error::ProposeSendError,
     };
 
@@ -82,7 +62,7 @@ pub mod from_inputs {
     pub async fn quick_send(
         quick_sender: &mut crate::lightclient::LightClient,
         raw_receivers: Vec<(&str, u64, Option<&str>)>,
-    ) -> Result<NonEmpty<TxId>, QuickSendError> {
+    ) -> Result<NonEmpty<TxId>, LightClientError> {
         let request = transaction_request_from_send_inputs(raw_receivers)
             .expect("should be able to create a transaction request as receivers are valid.");
         quick_sender
@@ -138,7 +118,7 @@ pub async fn lookup_statuses(
     client: &LightClient,
     txids: nonempty::NonEmpty<TxId>,
 ) -> nonempty::NonEmpty<Option<zingo_status::confirmation_status::ConfirmationStatus>> {
-    let wallet = client.wallet.read().await;
+    let wallet = client.wallet().read().await;
 
     txids.map(|txid| {
         wallet
