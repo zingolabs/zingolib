@@ -7,6 +7,7 @@ members = [
     "zingo-memo",
     "zingo-price",
     "zingo-status",
+    "zingo_wallet",
     "zingolib",
     "zingolib_testutils",
 ]
@@ -16,6 +17,7 @@ resolver = "2"
 # groups ordered from most specific to least specific
 
 ### Workspace
+libtonode-tests = { path = "libtonode-tests" }
 # pepper-sync = "0.2.0"
 pepper-sync = { path = "pepper-sync" } # NOTE: for development between releases
 # zingo-memo = { path = "zingo-memo" } # NOTE: for development between releases
