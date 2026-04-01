@@ -404,7 +404,9 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
                     "--data-dir must be a directory, not a file.\n\
                      You provided: {dir}\n\
                      Hint: use the parent directory instead, e.g. --data-dir {}",
-                    path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".into())
+                    path.parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| ".".into())
                 ));
             }
             path
@@ -620,7 +622,7 @@ pub fn help_output(matches: &clap::ArgMatches) -> Option<String> {
 pub fn run_cli(matches: clap::ArgMatches) {
     match ConfigTemplate::fill(get_mode_of_operation(&matches), matches) {
         Ok(cli_config) => dispatch_command_or_start_interactive(&cli_config),
-        Err(e) => eprintln!("Error filling config template: {e:?}"),
+        Err(e) => eprintln!("Error filling config template: {e}"),
     }
 }
 
