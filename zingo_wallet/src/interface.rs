@@ -144,12 +144,6 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             // this seems like a lot of set up. Do we really need all this right here??
             let no_of_accounts = NonZeroU32::try_from(1).expect("hard-coded integer"); // seems like this should default. Also why are we stringing it in in two places??
 
-            let wallet_base = zingolib::wallet::WalletBase::Mnemonic {
-                mnemonic: bip0039::Mnemonic::from_phrase(key)
-                    .map_err(|e| BeginScanningServerRangeError::ParseSeed(key.clone(), e))?,
-                no_of_accounts,
-            };
-
             let wallet_settings = WalletSettings {
                 sync_config: SyncConfig {
                     transparent_address_discovery: TransparentAddressDiscovery::minimal(),
@@ -157,9 +151,16 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 },
                 min_confirmations: NonZeroU32::try_from(1).expect("1 aint 0"),
             }; // maybe this could be defaulted
-            let wallet =
-                LightWallet::new(chain_type, wallet_base, birthday, wallet_settings.clone())
-                    .map_err(BeginScanningServerRangeError::CreateLightWallet)?;
+
+            let wallet_config = zingolib::config::WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: key.clone(),
+                no_of_accounts,
+                birthday,
+                wallet_settings: wallet_settings.clone(),
+            };
+
+            let wallet = LightWallet::new(chain_type, wallet_config.clone())
+                .map_err(BeginScanningServerRangeError::CreateLightWallet)?;
             // ZingoConfig allows a save-director of None, but crashes if that value is used.
             let save_dir = tempfile::TempDir::new()?;
             let config = {
