@@ -104,7 +104,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         if self.keys.len() == 1
             && let Some(key) = self.keys.first()
         {
-            let server_uri = Uri::from_str(server_address.as_str()).map_err(|invalid_uri| {
+            let indexer_uri = Uri::from_str(server_address.as_str()).map_err(|invalid_uri| {
                 BeginScanningServerRangeError::ParseUri(server_address, invalid_uri)
             })?;
 
@@ -114,11 +114,11 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 let mut client = {
                     // global configuration must be manually set *somewhere*
                     let _ = rustls::crypto::ring::default_provider().install_default();
-                    zingolib::grpc_client::get_zcb_client(server_uri.clone())
+                    zingolib::grpc_client::get_zcb_client(indexer_uri.clone())
                         .await
                         .map_err(|e| {
                             BeginScanningServerRangeError::CreateNetworkClient(
-                                server_uri.clone(),
+                                indexer_uri.clone(),
                                 e,
                             )
                         })?
@@ -165,14 +165,23 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
             let save_dir = tempfile::TempDir::new()?;
             let config = {
                 ZingoConfigBuilder::default()
-                    .set_lightwalletd_uri(server_uri)
+                    .set_lightwalletd_uri(indexer_uri)
                     .set_wallet_settings(wallet_settings)
                     .set_no_of_accounts(no_of_accounts)
                     .set_wallet_dir(save_dir.path().to_path_buf())
                     .create()
             };
             let overwrite = false;
-            let mut lightclient = LightClient::create_from_wallet(wallet, config, overwrite)?;
+
+            let client_config = zingolib::config::ClientConfigBuilder::new()
+                .set_indexer_uri(indexer_uri)
+                .set_chain_type(chain_type)
+                .set_chain_type(chain_type)
+                .set_wallet_dir(save_dir.path().to_path_buf())
+                .set_wallet_config(wallet_config)
+                .build();
+
+            let mut lightclient = LightClient::new(client_config, overwrite)?;
             lightclient
                 .sync()
                 .await
