@@ -25,7 +25,7 @@ include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 extern crate rust_embed;
 /// Embedded zcash-params.
 #[derive(RustEmbed)]
-#[folder = "zcash-params/"]
+#[folder = "$OUT_DIR/zcash-params/"]
 pub struct SaplingParams;
 
 /// Developer donation address
