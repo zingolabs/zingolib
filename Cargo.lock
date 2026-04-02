@@ -9283,7 +9283,7 @@ dependencies = [
 name = "zingo-memo"
 version = "0.1.0"
 dependencies = [
- "rand 0.8.5",
+ "rand 0.10.0",
  "zcash_address",
  "zcash_encoding",
  "zcash_keys",
@@ -9398,7 +9398,7 @@ dependencies = [
  "pepper-sync",
  "portpicker",
  "prost",
- "rand 0.8.5",
+ "rand 0.10.0",
  "ring",
  "rust-embed",
  "rustls 0.23.37",
