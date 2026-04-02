@@ -9251,7 +9251,6 @@ dependencies = [
 name = "zingo-cli"
 version = "0.2.0"
 dependencies = [
- "bip0039 0.14.0",
  "clap",
  "http",
  "indoc",
@@ -9334,7 +9333,6 @@ name = "zingo-status"
 version = "0.2.0"
 dependencies = [
  "byteorder",
- "zcash_primitives",
  "zcash_protocol",
 ]
 
@@ -9381,7 +9379,6 @@ dependencies = [
  "bip32",
  "bs58",
  "byteorder",
- "bytes",
  "chrono",
  "dirs",
  "futures",
@@ -9409,7 +9406,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
@@ -9431,9 +9427,7 @@ dependencies = [
 name = "zingolib_testutils"
 version = "0.1.0"
 dependencies = [
- "bip0039 0.14.0",
  "http",
- "pepper-sync",
  "portpicker",
  "tempfile",
  "zcash_local_net",

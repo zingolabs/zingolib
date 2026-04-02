@@ -12,7 +12,6 @@ test_lwd_zcashd = []
 
 # zingolib
 zingolib = { workspace = true, features = ["testutils"] }
-pepper-sync.workspace = true
 zingo_common_components.workspace = true
 
 # zingo infrastructure
@@ -21,10 +20,6 @@ zingo_test_vectors.workspace = true
 
 # zcash
 zcash_protocol.workspace = true
-
-# bitcoin
-
-bip0039.workspace = true
 
 # utilties
 

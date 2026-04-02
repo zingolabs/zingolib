@@ -14,7 +14,6 @@ zcash_client_backend = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_protocol = { workspace = true }
 
-bip0039 = { workspace = true }
 clap = { workspace = true }
 http = { workspace = true }
 indoc = { workspace = true }
