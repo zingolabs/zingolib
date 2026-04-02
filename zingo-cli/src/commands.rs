@@ -93,17 +93,17 @@ impl Command for ChangeServerCommand {
         match args.len() {
             0 => match lightclient.set_indexer_uri(http::Uri::default()) {
                 Ok(()) => "server set".to_string(),
-                Err(e) => format!("invalid server uri: {e}"),
+                Err(e) => format!("failed to set server: {e}"),
             },
             1 => match http::Uri::from_str(args[0]) {
                 Ok(uri) => match lightclient.set_indexer_uri(uri) {
                     Ok(()) => "server set".to_string(),
-                    Err(e) => format!("invalid server uri: {e}"),
+                    Err(e) => format!("failed to set server: {e}"),
                 },
                 Err(_) => match args[0] {
                     "" => match lightclient.set_indexer_uri(http::Uri::default()) {
                         Ok(()) => "server set".to_string(),
-                        Err(e) => format!("invalid server uri: {e}"),
+                        Err(e) => format!("failed to set server: {e}"),
                     },
                     _ => "invalid server uri".to_string(),
                 },
