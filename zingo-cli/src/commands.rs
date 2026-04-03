@@ -91,24 +91,23 @@ impl Command for ChangeServerCommand {
 
     fn exec(&self, args: &[&str], lightclient: &mut LightClient) -> String {
         match args.len() {
-            0 => {
-                lightclient.set_indexer_uri(http::Uri::default());
-                "server set".to_string()
-            }
+            0 => match lightclient.set_indexer_uri(http::Uri::default()) {
+                Ok(()) => "server set".to_string(),
+                Err(e) => format!("failed to set server: {e}"),
+            },
             1 => match http::Uri::from_str(args[0]) {
-                Ok(uri) => {
-                    lightclient.set_indexer_uri(uri);
-                    "server set"
-                }
-                Err(_) => match args[0] {
-                    "" => {
-                        lightclient.set_indexer_uri(http::Uri::default());
-                        "server set"
-                    }
-                    _ => "invalid server uri",
+                Ok(uri) => match lightclient.set_indexer_uri(uri) {
+                    Ok(()) => "server set".to_string(),
+                    Err(e) => format!("failed to set server: {e}"),
                 },
-            }
-            .to_string(),
+                Err(_) => match args[0] {
+                    "" => match lightclient.set_indexer_uri(http::Uri::default()) {
+                        Ok(()) => "server set".to_string(),
+                        Err(e) => format!("failed to set server: {e}"),
+                    },
+                    _ => "invalid server uri".to_string(),
+                },
+            },
             _ => self.help().to_string(),
         }
     }
@@ -516,49 +515,56 @@ impl Command for HelpCommand {
     }
 
     fn exec(&self, args: &[&str], _: &mut LightClient) -> String {
-        let mut responses = vec![];
-
-        // Print a list of all commands
-        match args.len() {
-            0 => {
-                responses.push("Available commands:".to_string());
-                for (cmd, obj) in &get_commands() {
-                    responses.push(format!("{} - {}", cmd, obj.short_help()));
-                }
-
-                responses.sort();
-                responses.join("\n")
-            }
-            1 => match get_commands().get(args[0]) {
-                Some(cmd) => cmd.help().to_string(),
-                None => format!("Command {} not found", args[0]),
-            },
-            _ => self.help().to_string(),
-        }
+        format_help(args)
     }
 }
 
 impl ShortCircuitedCommand for HelpCommand {
     fn exec_without_lc(args: Vec<String>) -> String {
-        let mut responses = vec![];
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        format_help(&refs)
+    }
+}
 
-        // Print a list of all commands
-        match args.len() {
-            0 => {
-                responses.push("Available commands:".to_string());
-                for (cmd, obj) in &get_commands() {
-                    responses.push(format!("{} - {}", cmd, obj.short_help()));
-                }
+fn format_help(args: &[&str]) -> String {
+    match args.len() {
+        0 => {
+            let mut lines = Vec::new();
 
-                responses.sort();
-                responses.join("\n")
+            lines.push("Standalone commands (no wallet required):".to_string());
+            let standalone = get_standalone_commands();
+            let mut standalone_lines: Vec<_> = standalone
+                .iter()
+                .map(|(cmd, obj)| format!("  {} - {}", cmd, obj.short_help()))
+                .collect();
+            // Also include `servers` which is handled by the REPL directly.
+            standalone_lines
+                .push("  servers - Show ranked indexer servers and response times".to_string());
+            standalone_lines.sort();
+            lines.extend(standalone_lines);
+
+            lines.push(String::new());
+            lines.push("Wallet commands:".to_string());
+            let wallet = get_wallet_commands();
+            let mut wallet_lines: Vec<_> = wallet
+                .iter()
+                .map(|(cmd, obj)| format!("  {} - {}", cmd, obj.short_help()))
+                .collect();
+            wallet_lines.sort();
+            lines.extend(wallet_lines);
+
+            lines.join("\n")
+        }
+        1 => {
+            if args[0] == "servers" {
+                return "Show ranked indexer servers and their get_info() response times.\nUsage: servers".to_string();
             }
-            1 => match get_commands().get(args[0].as_str()) {
+            match get_commands().get(args[0]) {
                 Some(cmd) => cmd.help().to_string(),
                 None => format!("Command {} not found", args[0]),
-            },
-            _ => panic!("Unexpected number of parameters."),
+            }
         }
+        _ => "Usage: help [command_name]".to_string(),
     }
 }
 
@@ -1929,61 +1935,79 @@ impl Command for QuitCommand {
     }
 }
 
-/// TODO: Add Doc Comment Here!
-pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: Vec<(&'static str, Box<dyn Command>)> = vec![
-        ("version", Box::new(GetVersionCommand {})),
-        ("sync", Box::new(SyncCommand {})),
+/// Commands that do not require a wallet connection.
+pub fn get_standalone_commands() -> HashMap<&'static str, Box<dyn Command>> {
+    vec![
+        ("help", Box::new(HelpCommand {}) as Box<dyn Command>),
         ("parse_address", Box::new(ParseAddressCommand {})),
         ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
-        ("change_server", Box::new(ChangeServerCommand {})),
-        ("rescan", Box::new(RescanCommand {})),
-        ("clear", Box::new(ClearCommand {})),
-        ("help", Box::new(HelpCommand {})),
+        ("version", Box::new(GetVersionCommand {})),
+    ]
+    .into_iter()
+    .collect()
+}
+
+/// Commands that require a wallet connection.
+pub fn get_wallet_commands() -> HashMap<&'static str, Box<dyn Command>> {
+    vec![
+        (
+            "addresses",
+            Box::new(UnifiedAddressesCommand {}) as Box<dyn Command>,
+        ),
         ("balance", Box::new(BalanceCommand {})),
-        ("spendable_balance", Box::new(SpendableBalanceCommand {})),
-        ("max_send_value", Box::new(MaxSendValueCommand {})),
-        ("send_all", Box::new(SendAllCommand {})),
-        ("quicksend", Box::new(QuickSendCommand {})),
-        ("quickshield", Box::new(QuickShieldCommand {})),
-        ("confirm", Box::new(ConfirmCommand {})),
-        ("addresses", Box::new(UnifiedAddressesCommand {})),
-        ("t_addresses", Box::new(TransparentAddressesCommand {})),
+        ("birthday", Box::new(BirthdayCommand {})),
+        ("change_server", Box::new(ChangeServerCommand {})),
         ("check_address", Box::new(CheckAddressCommand {})),
+        ("clear", Box::new(ClearCommand {})),
+        ("coins", Box::new(CoinsCommand {})),
+        ("confirm", Box::new(ConfirmCommand {})),
+        ("current_price", Box::new(CurrentPriceCommand {})),
+        ("delete", Box::new(DeleteCommand {})),
+        ("export_ufvk", Box::new(ExportUfvkCommand {})),
         ("height", Box::new(HeightCommand {})),
-        ("value_transfers", Box::new(ValueTransfersCommand {})),
-        ("transactions", Box::new(TransactionsCommand {})),
-        ("value_to_address", Box::new(ValueToAddressCommand {})),
-        ("sends_to_address", Box::new(SendsToAddressCommand {})),
-        ("messages", Box::new(MessagesFilterCommand {})),
+        ("info", Box::new(InfoCommand {})),
+        ("max_send_value", Box::new(MaxSendValueCommand {})),
         (
             "memobytes_to_address",
             Box::new(MemoBytesToAddressCommand {}),
         ),
-        ("export_ufvk", Box::new(ExportUfvkCommand {})),
-        ("info", Box::new(InfoCommand {})),
-        ("current_price", Box::new(CurrentPriceCommand {})),
-        ("send", Box::new(SendCommand {})),
-        ("shield", Box::new(ShieldCommand {})),
-        ("save", Box::new(SaveCommand {})),
-        ("settings", Box::new(SettingsCommand {})),
-        ("quit", Box::new(QuitCommand {})),
-        ("notes", Box::new(NotesCommand {})),
-        ("coins", Box::new(CoinsCommand {})),
+        ("messages", Box::new(MessagesFilterCommand {})),
         ("new_address", Box::new(NewUnifiedAddressCommand {})),
         ("new_taddress", Box::new(NewTransparentAddressCommand {})),
         (
             "new_taddress_allow_gap",
             Box::new(NewTransparentAddressAllowGapCommand {}),
         ),
+        ("notes", Box::new(NotesCommand {})),
+        ("quicksend", Box::new(QuickSendCommand {})),
+        ("quickshield", Box::new(QuickShieldCommand {})),
+        ("quit", Box::new(QuitCommand {})),
         ("recovery_info", Box::new(RecoveryInfoCommand {})),
-        ("birthday", Box::new(BirthdayCommand {})),
-        ("wallet_kind", Box::new(WalletKindCommand {})),
-        ("delete", Box::new(DeleteCommand {})),
         ("remove_transaction", Box::new(RemoveTransactionCommand {})),
-    ];
+        ("rescan", Box::new(RescanCommand {})),
+        ("save", Box::new(SaveCommand {})),
+        ("send", Box::new(SendCommand {})),
+        ("send_all", Box::new(SendAllCommand {})),
+        ("sends_to_address", Box::new(SendsToAddressCommand {})),
+        ("settings", Box::new(SettingsCommand {})),
+        ("shield", Box::new(ShieldCommand {})),
+        ("spendable_balance", Box::new(SpendableBalanceCommand {})),
+        ("sync", Box::new(SyncCommand {})),
+        ("t_addresses", Box::new(TransparentAddressesCommand {})),
+        ("transactions", Box::new(TransactionsCommand {})),
+        ("value_to_address", Box::new(ValueToAddressCommand {})),
+        ("value_transfers", Box::new(ValueTransfersCommand {})),
+        ("wallet_kind", Box::new(WalletKindCommand {})),
+    ]
+    .into_iter()
+    .collect()
+}
 
-    entries.into_iter().collect()
+/// All commands (standalone + wallet). Used for dispatch and `help <command>`.
+pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
+    let mut all = get_standalone_commands();
+    all.extend(get_wallet_commands());
+    all
 }
 
 /// TODO: Add Doc Comment Here!
