@@ -209,10 +209,14 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         _server: String,
     ) -> Result<zcash_wallet_interface::BlockHeight, Self::GetMaxScannedHeightError> {
         match &self.lightclient {
-            Some(client) => {
-                let sync_status = pepper_sync::sync_status(&*client.wallet().read().await).await?;
-                Ok(())
-            }
+            Some(client) => client
+                .wallet()
+                .read()
+                .await
+                .sync_state
+                .fully_scanned_height()
+                .ok_or(GetMaxScannedHeightError::NoHeightFoundForServer)
+                .map(|block_height| BlockHeight(u32::from(block_height))),
             None => Err(GetMaxScannedHeightError::NoServer),
         }
     }
