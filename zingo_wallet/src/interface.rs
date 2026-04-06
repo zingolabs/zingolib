@@ -1,5 +1,6 @@
 use http::Uri;
 use zcash_wallet_interface::BlockHeight;
+use zingolib::wallet::{SyncConfig, TransparentAddressDiscovery};
 
 use crate::ZingoWallet;
 
@@ -15,12 +16,14 @@ pub enum BeginScanningServerRangeError {
     NeedsSingleSeed,
     #[error("URI parse from string '{0}' failed with >{1}<.")]
     ParseUri(String, http::uri::InvalidUri),
-    #[error("Creating network-client connected to '{0}' failed with >{1}<.")]
-    CreateNetworkClient(Uri, zingo_netutils::GetClientError),
+    #[error("Preparing GRPC network-client to connect to '{0}' failed with >{1}<.")]
+    PrepareGrpcConnection(Uri, zingo_netutils::GetClientError),
+    #[error("Grcp to '{0}' failed with >{1}<.")]
+    GrpcConnection(Uri, zingo_netutils::GetClientError),
     #[error("Server call returned unexpected result: >{0}<.")]
     Callback(#[from] tonic::Status),
     #[error("Server reported unusable chain: >{0}<.")]
-    Chain(#[from] zingolib::config::ChainFromStringError),
+    Chain(#[from] zingolib::config::InvalidChainType),
     #[error("Server reported overflow block height: >{0}<.")]
     BlockHeight(#[from] std::num::TryFromIntError),
     #[error("Seed parse from string '{0}' failed with >{1}<.")]
@@ -86,11 +89,7 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
         use std::str::FromStr as _;
 
         use zingolib::config::ChainType;
-        use zingolib::config::SyncConfig;
-        use zingolib::config::TransparentAddressDiscovery;
 
-        use zingolib::config::ZingoConfigBuilder;
-        use zingolib::config::chain_from_str;
         use zingolib::lightclient::LightClient;
         use zingolib::wallet::LightWallet;
         use zingolib::wallet::WalletSettings;
@@ -114,13 +113,17 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 let mut client = {
                     // global configuration must be manually set *somewhere*
                     let _ = rustls::crypto::ring::default_provider().install_default();
-                    zingolib::grpc_client::get_zcb_client(indexer_uri.clone())
+                    zingo_netutils::GrpcIndexer::new(indexer_uri.clone())
+                        .map_err(|err| {
+                            BeginScanningServerRangeError::PrepareGrpcConnection(
+                                indexer_uri.clone(),
+                                err,
+                            )
+                        })?
+                        .get_zcb_client()
                         .await
                         .map_err(|e| {
-                            BeginScanningServerRangeError::CreateNetworkClient(
-                                indexer_uri.clone(),
-                                e,
-                            )
+                            BeginScanningServerRangeError::GrpcConnection(indexer_uri.clone(), e)
                         })?
                 };
 
@@ -132,10 +135,10 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                     .into_inner();
 
                 let chain_name = &lightd_info.chain_name;
-                let chain_type: ChainType = chain_from_str(chain_name)?;
+                let chain_type = ChainType::try_from(chain_name.as_str())?;
 
-                let birthday: zcash_primitives::consensus::BlockHeight = match minimum_block {
-                    Some(minimum_block_height) => minimum_block_height.0.into(),
+                let birthday: u32 = match minimum_block {
+                    Some(minimum_block_height) => minimum_block_height.0,
                     None => lightd_info.block_height.try_into()?,
                 };
                 (chain_type, birthday)
@@ -159,18 +162,16 @@ impl zcash_wallet_interface::Wallet for ZingoWallet {
                 wallet_settings: wallet_settings.clone(),
             };
 
-            let wallet = LightWallet::new(chain_type, wallet_config.clone())
-                .map_err(BeginScanningServerRangeError::CreateLightWallet)?;
             // ZingoConfig allows a save-director of None, but crashes if that value is used.
             let save_dir = tempfile::TempDir::new()?;
-            let config = {
-                ZingoConfigBuilder::default()
-                    .set_lightwalletd_uri(indexer_uri)
-                    .set_wallet_settings(wallet_settings)
-                    .set_no_of_accounts(no_of_accounts)
-                    .set_wallet_dir(save_dir.path().to_path_buf())
-                    .create()
-            };
+            // let config = {
+            //     ZingoConfigBuilder::default()
+            //         .set_lightwalletd_uri(indexer_uri)
+            //         .set_wallet_settings(wallet_settings)
+            //         .set_no_of_accounts(no_of_accounts)
+            //         .set_wallet_dir(save_dir.path().to_path_buf())
+            //         .create()
+            // };
             let overwrite = false;
 
             let client_config = zingolib::config::ClientConfigBuilder::new()
